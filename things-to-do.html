@@ -51,6 +51,28 @@ a.button[href*="google.com/maps"]:hover {
   box-shadow: 0 6px 20px rgba(234, 54, 57, 0.35) !important;
 }
 
+/* Navbar Layout - Logo left-center, Links right-aligned */
+.navbar .container-large.is-nav,
+.nav_component .container-large.is-nav {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  width: 100% !important;
+}
+
+.nav_logo-link_wrapper,
+.nav_logo-link_wrapper.click-through-on {
+  margin-left: 2rem !important;
+  flex-shrink: 0 !important;
+}
+
+@media (max-width: 991px) {
+  .nav_logo-link_wrapper,
+  .nav_logo-link_wrapper.click-through-on {
+    margin-left: 1rem !important;
+  }
+}
+
 /* Remove underlines from navigation links */
 .nav_link-line,
 .nav_link::after,
@@ -387,6 +409,12 @@ body {
 	width: max-content !important;
 	display: inline-flex !important;
 	margin: 0 !important;
+	/* iOS Touch Fix */
+	cursor: pointer !important;
+	-webkit-tap-highlight-color: rgba(0, 0, 0, 0.1) !important;
+	touch-action: manipulation !important;
+	user-select: none !important;
+	-webkit-user-select: none !important;
 }
 
 .nav_dropdown-toggle div {
@@ -397,6 +425,18 @@ body {
 
 .nav_dropdown-toggle:hover {
 	color: #1a3d2a !important;
+}
+
+/* iOS Touch Fix - Ensure all clickable elements work on iOS Safari */
+.nav_dropdown,
+.w-dropdown,
+.nav_dropdown-toggle,
+.w-dropdown-toggle,
+.nav_link,
+.nav_dropdown-link {
+	cursor: pointer !important;
+	-webkit-tap-highlight-color: rgba(0, 0, 0, 0.1) !important;
+	touch-action: manipulation !important;
 }
 
 /* Dropdown content - base styles */
@@ -670,6 +710,12 @@ body {
 		align-items: center !important;
 		vertical-align: middle !important;
 		line-height: 1.2 !important;
+		/* iOS Touch Fix */
+		cursor: pointer !important;
+		-webkit-tap-highlight-color: rgba(0, 0, 0, 0.1) !important;
+		touch-action: manipulation !important;
+		user-select: none !important;
+		-webkit-user-select: none !important;
 	}
 	
 	.nav_menu .nav_dropdown-toggle div {
