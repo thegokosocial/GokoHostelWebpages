@@ -6,6 +6,51 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Goko Brand Red - Book Now Buttons */
+.button.is-nav,
+.button.is-blue,
+.button.is-green,
+.button.is-orange,
+.button.is-overlay-footer-cta,
+.button.w-button,
+.book-now-blink,
+.cta-button,
+.cta-button.secondary,
+.cta-button.primary,
+.home-room-tab_ctas .button,
+.home-intro_component .button,
+.section-home-intro .button,
+.home-header_cta-wrapper .button,
+.events-cta .cta-button,
+a.button[href*="google.com/maps"] {
+  background-color: #EA3639 !important;
+  background-image: linear-gradient(135deg, #EA3639 0%, #D32F2F 100%) !important;
+  border-color: #EA3639 !important;
+  transition: all 0.3s ease !important;
+}
+
+.button.is-nav:hover,
+.button.is-blue:hover,
+.button.is-green:hover,
+.button.is-orange:hover,
+.button.is-overlay-footer-cta:hover,
+.button.w-button:hover,
+.book-now-blink:hover,
+.cta-button:hover,
+.cta-button.secondary:hover,
+.cta-button.primary:hover,
+.home-room-tab_ctas .button:hover,
+.home-intro_component .button:hover,
+.section-home-intro .button:hover,
+.home-header_cta-wrapper .button:hover,
+.events-cta .cta-button:hover,
+a.button[href*="google.com/maps"]:hover {
+  background-color: #F44336 !important;
+  background-image: linear-gradient(135deg, #F44336 0%, #EA3639 100%) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(234, 54, 57, 0.35) !important;
+}
+
 /* Remove underlines from navigation links */
 .nav_link-line,
 .nav_link::after,
@@ -3247,4 +3292,5 @@ $(document).ready(function() {
 <script>
 (function(){const bookingUrl='https://bookingengine.stayflexi.com/?hotel_id=30819';const overlay=document.getElementById('booking-popup-overlay');const closeBtn=document.getElementById('popup-close');const checkbox=document.getElementById('terms-checkbox');const reserveBtn=document.getElementById('reserve-btn');const earlyCheckinOverlay=document.getElementById('early-checkin-overlay');const earlyCheckinClose=document.getElementById('early-checkin-close');const earlyCheckinThanks=document.getElementById('early-checkin-thanks');const earlyCheckinLink=document.getElementById('early-checkin-link');const termsOverlay=document.getElementById('terms-overlay');const termsClose=document.getElementById('terms-close');const termsLink=document.getElementById('terms-link');document.addEventListener('click',function(e){const link=e.target.closest('a[href*="bookingengine.stayflexi.com"]');if(link){e.preventDefault();overlay.style.display='block';document.body.style.overflow='hidden'}});if(earlyCheckinLink){earlyCheckinLink.addEventListener('click',function(e){e.preventDefault();earlyCheckinOverlay.style.display='block'})}function closeEarlyCheckinPopup(){earlyCheckinOverlay.style.display='none'}if(earlyCheckinClose){earlyCheckinClose.addEventListener('click',closeEarlyCheckinPopup)}if(earlyCheckinThanks){earlyCheckinThanks.addEventListener('click',closeEarlyCheckinPopup)}if(earlyCheckinOverlay){earlyCheckinOverlay.addEventListener('click',function(e){if(e.target===earlyCheckinOverlay){closeEarlyCheckinPopup()}})}if(termsLink){termsLink.addEventListener('click',function(e){e.preventDefault();termsOverlay.style.display='block'})}function closeTermsPopup(){termsOverlay.style.display='none';const cb=document.getElementById('terms-accept-checkbox');const btn=document.getElementById('terms-book-now');if(cb)cb.checked=false;if(btn){btn.style.background='#ccc';btn.style.cursor='not-allowed';btn.disabled=true}}if(termsClose){termsClose.addEventListener('click',closeTermsPopup)}if(termsOverlay){termsOverlay.addEventListener('click',function(e){if(e.target===termsOverlay){closeTermsPopup()}})}const termsAcceptCb=document.getElementById('terms-accept-checkbox');const termsBookBtn=document.getElementById('terms-book-now');if(termsAcceptCb&&termsBookBtn){termsAcceptCb.addEventListener('change',function(){if(this.checked){termsBookBtn.style.background='#ea3639';termsBookBtn.style.cursor='pointer';termsBookBtn.disabled=false}else{termsBookBtn.style.background='#ccc';termsBookBtn.style.cursor='not-allowed';termsBookBtn.disabled=true}});termsBookBtn.addEventListener('click',function(){if(termsAcceptCb.checked){window.location.href=bookingUrl}})}closeBtn.addEventListener('click',function(){overlay.style.display='none';document.body.style.overflow='';checkbox.checked=false;reserveBtn.disabled=true});overlay.addEventListener('click',function(e){if(e.target===overlay){overlay.style.display='none';document.body.style.overflow='';checkbox.checked=false;reserveBtn.disabled=true}});checkbox.addEventListener('change',function(){reserveBtn.disabled=!this.checked});reserveBtn.addEventListener('click',function(){if(!this.disabled){window.open(bookingUrl,'_blank');overlay.style.display='none';document.body.style.overflow='';checkbox.checked=false;reserveBtn.disabled=true}});document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(termsOverlay&&termsOverlay.style.display==='block'){closeTermsPopup()}else if(earlyCheckinOverlay&&earlyCheckinOverlay.style.display==='block'){closeEarlyCheckinPopup()}else if(overlay.style.display==='block'){overlay.style.display='none';document.body.style.overflow='';checkbox.checked=false;reserveBtn.disabled=true}}})})();
 </script>
+<script src="js/booking-modal.js"></script>
 </body></html>
