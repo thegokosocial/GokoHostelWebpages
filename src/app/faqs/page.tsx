@@ -1,7 +1,7 @@
 import { FaqAccordion } from "@/components/faq/FaqAccordion";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Container } from "@/components/ui/Container";
-import { ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/button";
 import { faqCategories, faqHero, faqStillHaveQuestions } from "@/content/faqs";
 import { buildMetadata } from "@/lib/seo";
 import { site } from "@/lib/site";

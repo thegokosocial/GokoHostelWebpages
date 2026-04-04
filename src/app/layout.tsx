@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import { Mohave, Roboto, Geist } from "next/font/google";
+import { Mohave, Roboto } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { SiteShell } from "@/components/layout/SiteShell";
 import { localBusinessJsonLd } from "@/lib/seo";
 import { site } from "@/lib/site";
-import { cn } from "@/lib/utils";
-
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const gtmScript = `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -60,7 +57,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn(mohave.variable, roboto.variable, "font-sans", geist.variable)}>
+    <html lang="en" className={`${mohave.variable} ${roboto.variable} font-sans`}>
       <body className="font-sans">
         <noscript>
           <iframe

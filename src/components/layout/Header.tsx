@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { mainNav, type NavItem } from "@/content/nav";
 import { site } from "@/lib/site";
 import { BookNowButton } from "@/components/booking/BookNowButton";
-import { ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { MobileDrawer } from "./MobileDrawer";
 
@@ -110,11 +110,11 @@ export function Header() {
         </nav>
 
         <div className="hidden items-center gap-2 lg:flex">
-          <BookNowButton variant="primary">Book now</BookNowButton>
+          <BookNowButton>Book now</BookNowButton>
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
-          <BookNowButton variant="primary" className="!px-4 !py-2 text-xs md:text-sm">
+          <BookNowButton className="!px-4 !py-2 text-xs md:text-sm">
             Book
           </BookNowButton>
           <button

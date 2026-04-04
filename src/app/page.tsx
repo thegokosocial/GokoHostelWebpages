@@ -5,7 +5,8 @@ import { BookingPlatformsStrip } from "@/components/sections/BookingPlatformsStr
 import { HomeHeroPremium } from "@/components/sections/HomeHeroPremium";
 import { RoomTabs } from "@/components/sections/RoomTabs";
 import { BookNowButton } from "@/components/booking/BookNowButton";
-import { ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Container } from "@/components/ui/Container";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import {
@@ -67,8 +68,8 @@ export default function HomePage() {
                   <Image
                     src={homeIntro.image}
                     alt={homeIntro.imageAlt}
-                    width={900}
-                    height={700}
+                    width={1400}
+                    height={1050}
                     className="h-auto w-full object-cover transition-transform duration-700 hover:scale-[1.02] motion-reduce:transition-none"
                   />
                 </div>
@@ -176,7 +177,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <div className="mt-8 text-center">
-                <ButtonLink href={homeFaqTeaser.cta.href} variant="secondary">
+                <ButtonLink href={homeFaqTeaser.cta.href} variant="ctaOutline">
                   {homeFaqTeaser.cta.label}
                 </ButtonLink>
               </div>
@@ -204,25 +205,29 @@ export default function HomePage() {
           <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {homeReviewGrid.map((t, i) => (
               <Reveal key={`${t.author}-${i}`} delay={i * 0.05}>
-                <blockquote className="group relative h-full overflow-hidden rounded-2xl border border-white/15 bg-white/[0.08] p-6 backdrop-blur-md transition-colors duration-300 hover:bg-white/[0.12] md:p-7">
-                  <div
-                    className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-brand-red/30 blur-2xl transition-opacity group-hover:opacity-80"
-                    aria-hidden
-                  />
-                  <p className="relative text-sm leading-relaxed text-white/95 md:text-[0.95rem]">
-                    “{excerpt(t.quote, 240)}”
-                  </p>
-                  <footer className="relative mt-5 font-display text-xs font-semibold uppercase tracking-wide text-white/70">
-                    — {t.author}
-                  </footer>
-                </blockquote>
+                <Card className="group/card relative h-full border-white/15 bg-white/[0.08] py-6 text-white shadow-none ring-1 ring-white/10 backdrop-blur-md transition-colors duration-300 hover:bg-white/[0.12] md:py-7">
+                  <CardContent className="relative px-6 md:px-7">
+                    <div
+                      className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-brand-red/30 blur-2xl transition-opacity group-hover/card:opacity-80"
+                      aria-hidden
+                    />
+                    <blockquote className="relative m-0 border-0 p-0">
+                      <p className="text-sm leading-relaxed text-white/95 md:text-[0.95rem]">
+                        “{excerpt(t.quote, 240)}”
+                      </p>
+                      <footer className="mt-5 font-display text-xs font-semibold uppercase tracking-wide text-white/70">
+                        — {t.author}
+                      </footer>
+                    </blockquote>
+                  </CardContent>
+                </Card>
               </Reveal>
             ))}
           </div>
           <div className="mt-12 flex flex-wrap justify-center gap-3">
             <ButtonLink
               href="/reviews"
-              variant="secondary"
+              variant="ctaOutline"
               className="!border-white !text-white hover:!bg-white hover:!text-brand-green"
             >
               All guest reviews
@@ -230,8 +235,8 @@ export default function HomePage() {
             <ButtonLink
               href={site.googleReviewsSearchUrl}
               external
-              variant="ghost"
-              className="!text-white hover:!text-white/90"
+              variant="ctaGhost"
+              className="!text-white hover:!text-white/90 !no-underline hover:!underline"
             >
               Google reviews
             </ButtonLink>
@@ -253,7 +258,7 @@ export default function HomePage() {
                 <ButtonLink href={site.mapsUrl} external>
                   Open in Maps
                 </ButtonLink>
-                <ButtonLink href="/how-to-reach" variant="secondary">
+                <ButtonLink href="/how-to-reach" variant="ctaOutline">
                   How to reach
                 </ButtonLink>
               </div>
@@ -274,7 +279,7 @@ export default function HomePage() {
             </p>
             <div className="mt-10 flex flex-wrap justify-center gap-3">
               <BookNowButton>Book now</BookNowButton>
-              <ButtonLink href="/booking-enquiry" variant="secondary">
+              <ButtonLink href="/booking-enquiry" variant="ctaOutline">
                 Booking enquiry
               </ButtonLink>
             </div>

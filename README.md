@@ -13,6 +13,10 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## UI (shadcn + Base UI)
+
+Interactive UI is built with the [shadcn](https://ui.shadcn.com/) **base-nova** stack (Base UI primitives + Tailwind + `class-variance-authority`). Source lives in `src/components/ui/`. Primary site actions use **`cta`**, **`ctaOutline`**, and **`ctaGhost`** on `Button` / `ButtonLink`. Add primitives anytime with `npx shadcn@latest add <name>` (see [`components.json`](./components.json)).
+
 ## Scripts
 
 - `npm run dev` — development server

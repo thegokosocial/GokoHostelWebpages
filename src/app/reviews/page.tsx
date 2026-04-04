@@ -1,7 +1,8 @@
 import { Reveal } from "@/components/motion/Reveal";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { BookNowButton } from "@/components/booking/BookNowButton";
-import { ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Container } from "@/components/ui/Container";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { guestReviews } from "@/content/reviews";
@@ -30,10 +31,10 @@ export default function ReviewsPage() {
             <ButtonLink href={site.googleReviewsSearchUrl} external>
               Google reviews
             </ButtonLink>
-            <ButtonLink href={social.instagram} external variant="secondary">
+            <ButtonLink href={social.instagram} external variant="ctaOutline">
               Instagram
             </ButtonLink>
-            <BookNowButton variant="secondary">Book a bed</BookNowButton>
+            <BookNowButton variant="ctaOutline">Book a bed</BookNowButton>
           </div>
 
           <div className="mt-16">
@@ -46,18 +47,22 @@ export default function ReviewsPage() {
           <div className="mt-14 grid gap-8 md:grid-cols-2">
             {guestReviews.map((t, i) => (
               <Reveal key={`${t.author}-${i}`} delay={(i % 4) * 0.04}>
-                <blockquote className="group relative h-full overflow-hidden rounded-3xl border border-brand-mist bg-white p-8 shadow-card transition-shadow duration-300 hover:shadow-lift">
-                  <div
-                    className="absolute -right-10 top-0 h-40 w-40 rounded-full bg-brand-red/10 blur-3xl transition-opacity group-hover:bg-brand-red/15"
-                    aria-hidden
-                  />
-                  <p className="relative text-base leading-relaxed text-brand-green-dark/92">
-                    “{t.quote}”
-                  </p>
-                  <footer className="relative mt-8 border-t border-brand-mist pt-6 font-display text-sm font-semibold text-brand-green">
-                    — {t.author}
-                  </footer>
-                </blockquote>
+                <Card className="group/card h-full border-brand-mist bg-white py-8 shadow-card transition-shadow duration-300 hover:shadow-lift">
+                  <CardContent className="relative px-8">
+                    <div
+                      className="absolute -right-10 top-0 h-40 w-40 rounded-full bg-brand-red/10 blur-3xl transition-opacity group-hover/card:bg-brand-red/15"
+                      aria-hidden
+                    />
+                    <blockquote className="relative m-0 border-0 p-0">
+                      <p className="text-base leading-relaxed text-brand-green-dark/92">
+                        “{t.quote}”
+                      </p>
+                      <footer className="mt-8 border-t border-brand-mist pt-6 font-display text-sm font-semibold text-brand-green">
+                        — {t.author}
+                      </footer>
+                    </blockquote>
+                  </CardContent>
+                </Card>
               </Reveal>
             ))}
           </div>

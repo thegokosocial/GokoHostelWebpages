@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useBookingGate } from "./BookingGateProvider";
 import type { ComponentProps, MouseEventHandler, ReactNode } from "react";
@@ -9,11 +9,16 @@ type BookNowButtonProps = Omit<ComponentProps<typeof Button>, "type" | "onClick"
   onClick?: MouseEventHandler<HTMLButtonElement>;
 };
 
-export function BookNowButton({ onClick, ...props }: BookNowButtonProps) {
+export function BookNowButton({
+  onClick,
+  variant = "cta",
+  ...props
+}: BookNowButtonProps) {
   const { openBookingGate } = useBookingGate();
   return (
     <Button
       type="button"
+      variant={variant}
       {...props}
       onClick={(e) => {
         onClick?.(e);

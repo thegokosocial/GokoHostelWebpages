@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Reveal } from "@/components/motion/Reveal";
-import { ButtonLink } from "@/components/ui/Button";
+import { WalkingRouteGuide } from "@/components/sections/WalkingRouteGuide";
+import { ButtonLink } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Container } from "@/components/ui/Container";
 import {
   howToReachHero,
@@ -28,24 +30,32 @@ export default function HowToReachPage() {
         imageAlt="Travel to Gokarna"
       />
 
-      <section className="py-16 md:py-24">
+      <section className="goko-mesh goko-noise py-16 md:py-24">
         <Container>
-          <div className="grid gap-8 md:grid-cols-2">
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-brand-green/70">
+            Getting here
+          </p>
+          <h2 className="mt-2 font-display text-2xl font-bold text-brand-green md:text-display-md">
+            Choose your mode
+          </h2>
+          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:gap-8">
             {transportModes.map((m, i) => (
               <Reveal key={m.title} delay={i * 0.04}>
-                <article className="h-full rounded-3xl border border-brand-mist bg-white p-6 shadow-soft md:p-8">
-                  <div className="text-3xl" aria-hidden>
-                    {m.icon}
-                  </div>
-                  <h2 className="mt-4 font-display text-xl font-bold text-brand-green">
-                    {m.title}
-                  </h2>
-                  <div className="mt-4 space-y-3 text-sm leading-relaxed text-brand-green-dark/90 md:text-base">
-                    {m.body.map((p, j) => (
-                      <p key={`${m.title}-${j}`}>{p}</p>
-                    ))}
-                  </div>
-                </article>
+                <Card className="h-full border-brand-mist/80 bg-white/95 py-0 shadow-card ring-brand-green/[0.06] transition-shadow hover:shadow-lift">
+                  <CardContent className="p-6 md:p-8">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-mist/70 text-2xl" aria-hidden>
+                      {m.icon}
+                    </div>
+                    <h3 className="mt-5 font-display text-xl font-bold text-brand-green">
+                      {m.title}
+                    </h3>
+                    <div className="mt-4 space-y-3 text-sm leading-relaxed text-brand-green-dark/90 md:text-base">
+                      {m.body.map((p, j) => (
+                        <p key={`${m.title}-${j}`}>{p}</p>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               </Reveal>
             ))}
           </div>
@@ -105,41 +115,18 @@ export default function HowToReachPage() {
 
       <section className="py-16 md:py-24">
         <Container>
-          <h2 className="font-display text-display-md font-bold text-brand-green">
-            {parkingWalk.title}
-          </h2>
-          <p className="mt-4 max-w-3xl text-brand-green-dark/90">
-            {parkingWalk.intro}
-          </p>
-          <ol className="mt-10 space-y-6">
-            {parkingWalk.steps.map((s, i) => (
-              <Reveal key={s.title} delay={i * 0.05}>
-                <li className="flex gap-4">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-green text-sm font-bold text-white">
-                    {i + 1}
-                  </span>
-                  <div>
-                    <h3 className="font-display text-lg font-semibold text-brand-green-dark">
-                      {s.title}
-                    </h3>
-                    <p className="mt-2 text-sm text-brand-green-dark/85 md:text-base">
-                      {s.text}
-                    </p>
-                  </div>
-                </li>
-              </Reveal>
-            ))}
-          </ol>
-          <ul className="mt-10 space-y-2 rounded-2xl bg-brand-mist p-6 text-sm text-brand-green-dark md:text-base">
-            {parkingWalk.tips.map((t) => (
-              <li key={t}>• {t}</li>
-            ))}
-          </ul>
-          <div className="mt-10 flex flex-wrap gap-3">
+          <WalkingRouteGuide
+            title={parkingWalk.title}
+            intro={parkingWalk.intro}
+            steps={parkingWalk.steps}
+            tips={parkingWalk.tips}
+            video={parkingWalk.video}
+          />
+          <div className="mt-10 flex flex-wrap gap-3 border-t border-brand-mist/80 pt-10">
             <ButtonLink href={site.mapsUrl} external>
               Open in Google Maps
             </ButtonLink>
-            <ButtonLink href={site.whatsAppUrl} external variant="secondary">
+            <ButtonLink href={site.whatsAppUrl} external variant="ctaOutline">
               WhatsApp us
             </ButtonLink>
           </div>

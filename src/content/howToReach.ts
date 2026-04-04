@@ -1,3 +1,7 @@
+import type { WalkingRouteStep, WalkingRouteVideo } from "@/types/walking-route";
+
+export type { WalkingRouteStep, WalkingRouteVideo } from "@/types/walking-route";
+
 export const howToReachHero = {
   title: "🗺️ How to Reach Us",
   subtitle: "Your complete travel guide to finding paradise in Gokarna",
@@ -52,30 +56,55 @@ export const localContacts = {
 };
 
 export const parkingWalk = {
-  title: "From parking to Goko",
+  title: "Walking route: Goko Hostel parking → Goko Hostel",
   intro:
-    "The hostel is a scenic ~300 m walk from the parking area — here's how to find us.",
+    "A short walk on our own property trail — about two minutes. Follow the numbered steps and clips first; the full walkthrough video is at the bottom if you want to see the whole path in one go.",
+  video: {
+    src: "/videos/how-to-reach/goko-hostel-parking-walkthrough.mp4",
+    title: "Video: parking to hostel entrance",
+    description:
+      "About 1 min 40 sec — filmed from Goko Hostel parking along the path to the Goko Hostel sign.",
+  } satisfies WalkingRouteVideo,
   steps: [
     {
-      title: "Reach Kudle Beach parking",
-      text: "The auto drops you at Kudle Beach parking — where the road ends and the beach path begins.",
+      badge: "Step 1",
+      title: "Goko Hostel parking",
+      text: "Begin here — guest parking and scooters along the red dirt path, same as in the video.",
+      image: "/images/how-to-reach/route/01-goko-hostel-parking.gif",
+      imageAlt: "Goko Hostel parking area at the start of the path",
     },
     {
-      title: "Follow the trail",
-      text: "Walk toward Kudle Beach. Look for hostel signboards along the scenic path.",
+      badge: "Step 2",
+      title: "Cross the first fence",
+      text: "Use the opening in the wire fence. Look for the post marked with a red ribbon — that’s the spot shown in the video.",
+      image: "/images/how-to-reach/route/02-cross-the-first-fence.gif",
+      imageAlt: "First fence on the path with a marked post",
     },
     {
-      title: "Find Goko’s sign",
-      text: "After ~200 m, look for the Goko Hostel sign on your right; follow the path.",
+      badge: "Step 3",
+      title: "Take a left",
+      text: "At this bend in the red-earth trail through the trees, turn left — keep straight once you’re on that branch.",
+      image: "/images/how-to-reach/route/03-take-a-left.gif",
+      imageAlt: "Junction on the path where you turn left",
     },
     {
-      title: "Welcome home",
-      text: "Another ~100 m to reception at the entrance. Welcome to paradise!",
+      badge: "Step 4",
+      title: "At the bridge, turn left",
+      text: "When you see the bridge, take the left — do not go over the bridge. Then follow the path along the fields and backwaters.",
+      image: "/images/how-to-reach/route/04-take-a-left-from-here.gif",
+      imageAlt: "Bridge and path; stay left of the bridge along fields and water",
     },
-  ],
+    {
+      badge: "Step 5",
+      title: "Goko Hostel",
+      text: "You’ve reached the entrance sign. Come on in — reception is just ahead from here.",
+      image: "/images/how-to-reach/route/05-youve-reached-goko-hostel.gif",
+      imageAlt: "Goko Hostel hanging sign and entrance",
+    },
+  ] satisfies WalkingRouteStep[],
   tips: [
-    "Travel light — porters aren’t available on the trail.",
-    "Tell autos: \"Goko Hostel, Kudle Beach Road\" or \"Goko Hostel near Zostel, Kudle Beach side\".",
-    "Call us from parking if needed: +91 98336 24363",
+    "Travel light — the path is unpaved sand and red earth; wheels can be awkward.",
+    "Tell drivers “Goko Hostel parking” so you’re dropped at the right lot, not the beach lot.",
+    "Lost on the trail? WhatsApp +91 98336 24363 and we’ll guide you live.",
   ],
 };

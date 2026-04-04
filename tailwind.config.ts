@@ -1,11 +1,8 @@
 import type { Config } from "tailwindcss";
+import type { PluginAPI } from "tailwindcss/types/config";
 
 const config: Config = {
-  content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
       colors: {
@@ -17,9 +14,43 @@ const config: Config = {
           sand: "#faf8f4",
           mist: "rgba(45, 92, 63, 0.08)",
         },
+        border: "var(--border)",
+        input: "var(--input)",
+        ring: "var(--ring)",
+        background: "var(--background)",
+        foreground: "var(--foreground)",
+        primary: {
+          DEFAULT: "var(--primary)",
+          foreground: "var(--primary-foreground)",
+        },
+        secondary: {
+          DEFAULT: "var(--secondary)",
+          foreground: "var(--secondary-foreground)",
+        },
+        destructive: {
+          DEFAULT: "var(--destructive)",
+          foreground: "var(--destructive-foreground)",
+        },
+        muted: {
+          DEFAULT: "var(--muted)",
+          foreground: "var(--muted-foreground)",
+        },
+        accent: {
+          DEFAULT: "var(--accent)",
+          foreground: "var(--accent-foreground)",
+        },
+        popover: {
+          DEFAULT: "var(--popover)",
+          foreground: "var(--popover-foreground)",
+        },
+        card: {
+          DEFAULT: "var(--card)",
+          foreground: "var(--card-foreground)",
+        },
       },
       fontFamily: {
         display: ["var(--font-mohave)", "system-ui", "sans-serif"],
+        heading: ["var(--font-mohave)", "system-ui", "sans-serif"],
         sans: ["var(--font-roboto)", "system-ui", "sans-serif"],
       },
       fontSize: {
@@ -43,6 +74,14 @@ const config: Config = {
         out: "cubic-bezier(0.33, 1, 0.68, 1)",
       },
       keyframes: {
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height, var(--accordion-panel-height, auto))" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height, var(--accordion-panel-height, auto))" },
+          to: { height: "0" },
+        },
         "goko-float": {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-8px)" },
@@ -57,13 +96,21 @@ const config: Config = {
         },
       },
       animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
         "goko-float": "goko-float 7s ease-in-out infinite",
         "goko-shimmer": "goko-shimmer 8s linear infinite",
         "goko-gradient": "goko-gradient 12s ease-in-out infinite",
       },
     },
   },
-  plugins: [],
+  plugins: [
+    ({ addVariant }: PluginAPI) => {
+      addVariant("data-open", '&[data-open]:not([data-open="false"])');
+      addVariant("data-closed", '&[data-closed]:not([data-closed="false"])');
+      addVariant("data-checked", '&[data-checked]:not([data-checked="false"])');
+    },
+  ],
 };
 
 export default config;

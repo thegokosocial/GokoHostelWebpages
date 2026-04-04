@@ -3,7 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { HeroBackdrop } from "@/components/media/HeroBackdrop";
 import { BookNowButton } from "@/components/booking/BookNowButton";
-import { ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/Container";
 import { homeHero } from "@/content/home";
 import { heroLoopVideo } from "@/lib/site";
@@ -60,7 +60,7 @@ export function HomeHeroPremium() {
               <BookNowButton>{homeHero.ctaBook}</BookNowButton>
               <ButtonLink
                 href="/stay"
-                variant="secondary"
+                variant="ctaOutline"
                 className="!border-white/50 !bg-white/12 !text-white hover:!bg-white/20"
               >
                 Explore rooms
@@ -104,7 +104,7 @@ export function HomeHeroPremium() {
               <BookNowButton>{homeHero.ctaBook}</BookNowButton>
               <ButtonLink
                 href="/stay"
-                variant="secondary"
+                variant="ctaOutline"
                 className="!border-white/50 !bg-white/12 !text-white hover:!bg-white/20"
               >
                 Explore rooms

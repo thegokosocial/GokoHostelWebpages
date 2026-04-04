@@ -3,7 +3,7 @@ import { Reveal } from "@/components/motion/Reveal";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Container } from "@/components/ui/Container";
 import { BookNowButton } from "@/components/booking/BookNowButton";
-import { ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/button";
 import { eventsHero, eventsPastCta, upcomingEvents, pastEvents } from "@/content/events";
 import { buildMetadata } from "@/lib/seo";
 
@@ -128,7 +128,7 @@ export default function EventsPage() {
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <ButtonLink href="/stay">View rooms</ButtonLink>
-              <BookNowButton variant="secondary">Book now</BookNowButton>
+              <BookNowButton variant="ctaOutline">Book now</BookNowButton>
             </div>
           </div>
         </Container>

@@ -1,8 +1,12 @@
 "use client";
 
-import { useId, useState } from "react";
 import type { FaqCategory } from "@/content/faqs";
-import { cn } from "@/lib/utils";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import Link from "next/link";
 
 type FaqAccordionProps = {
@@ -20,11 +24,55 @@ export function FaqAccordion({ categories }: FaqAccordionProps) {
           >
             {cat.title}
           </h2>
-          <ul className="mt-6 space-y-3">
-            {cat.items.map((item, idx) => (
-              <FaqItem key={`${slug(cat.title)}-${idx}`} entry={item} />
-            ))}
-          </ul>
+          <Accordion multiple className="mt-6 space-y-3">
+            {cat.items.map((item, idx) => {
+              const itemValue = `${slug(cat.title)}-${idx}`;
+              return (
+                <AccordionItem
+                  key={itemValue}
+                  value={itemValue}
+                  className="rounded-2xl border border-brand-mist bg-white shadow-soft last:border-b"
+                >
+                  <AccordionTrigger className="px-4 py-4 text-base font-semibold text-brand-green-dark hover:no-underline md:px-5 md:text-lg">
+                    {item.question}
+                  </AccordionTrigger>
+                  <AccordionContent className="px-4 pb-5 pt-0 text-sm leading-relaxed text-brand-green-dark/90 md:px-5 md:text-base">
+                    <div className="space-y-3 border-t border-brand-mist pt-3">
+                      {item.paragraphs.map((p, i) => (
+                        <p key={`${item.question}-${i}`} className="whitespace-pre-line">
+                          {p}
+                        </p>
+                      ))}
+                      {item.bullets?.length ? (
+                        <ul className="list-inside list-disc space-y-1">
+                          {item.bullets.map((b) => (
+                            <li key={b}>{b}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {item.afterBullets?.map((p, i) => (
+                        <p key={`${item.question}-after-${i}`} className="whitespace-pre-line">
+                          {p}
+                        </p>
+                      ))}
+                      {item.answerLink ? (
+                        <p>
+                          {item.answerLink.before}
+                          <Link
+                            href={item.answerLink.href}
+                            className="font-semibold text-brand-green underline-offset-2 hover:underline"
+                          >
+                            {item.answerLink.label}
+                          </Link>
+                          {item.answerLink.after}
+                        </p>
+                      ) : null}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
         </section>
       ))}
     </div>
@@ -36,80 +84,4 @@ function slug(title: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")}`;
-}
-
-function FaqItem({
-  entry,
-}: {
-  entry: FaqCategory["items"][number];
-}) {
-  const id = useId();
-  const [open, setOpen] = useState(false);
-  const panelId = `${id}-panel`;
-  const btnId = `${id}-btn`;
-
-  return (
-    <li className="rounded-2xl border border-brand-mist bg-white shadow-soft">
-      <h3 className="text-base font-semibold text-brand-green-dark md:text-lg">
-        <button
-          type="button"
-          id={btnId}
-          aria-expanded={open}
-          aria-controls={panelId}
-          className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left focus-visible:goko-focus md:px-5 md:py-4"
-          onClick={() => setOpen((o) => !o)}
-        >
-          <span>{entry.question}</span>
-          <span
-            className={cn(
-              "mt-1 shrink-0 text-brand-green transition-transform duration-200",
-              open && "rotate-180"
-            )}
-            aria-hidden
-          >
-            ▼
-          </span>
-        </button>
-      </h3>
-      <div
-        id={panelId}
-        role="region"
-        aria-labelledby={btnId}
-        hidden={!open}
-        className={cn(!open && "hidden")}
-      >
-        <div className="space-y-3 border-t border-brand-mist px-4 pb-5 pt-2 text-sm leading-relaxed text-brand-green-dark/90 md:px-5 md:text-base">
-          {entry.paragraphs.map((p, i) => (
-            <p key={`${entry.question}-${i}`} className="whitespace-pre-line">
-              {p}
-            </p>
-          ))}
-          {entry.bullets?.length ? (
-            <ul className="list-inside list-disc space-y-1">
-              {entry.bullets.map((b) => (
-                <li key={b}>{b}</li>
-              ))}
-            </ul>
-          ) : null}
-          {entry.afterBullets?.map((p, i) => (
-            <p key={`${entry.question}-after-${i}`} className="whitespace-pre-line">
-              {p}
-            </p>
-          ))}
-          {entry.answerLink ? (
-            <p>
-              {entry.answerLink.before}
-              <Link
-                href={entry.answerLink.href}
-                className="font-semibold text-brand-green underline-offset-2 hover:underline"
-              >
-                {entry.answerLink.label}
-              </Link>
-              {entry.answerLink.after}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    </li>
-  );
 }

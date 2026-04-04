@@ -4,13 +4,18 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useState,
   type ReactNode,
 } from "react";
 import { bookingGateCopy } from "@/content/bookingGate";
 import { site } from "@/lib/site";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
 type View = "idle" | "main" | "early" | "terms";
@@ -51,87 +56,62 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
     closeAll();
   }, [closeAll]);
 
-  const overlayClick = () => {
-    if (view === "main") closeAll();
-    else if (view === "early" || view === "terms") setView("main");
-  };
-
-  useEffect(() => {
-    if (view === "idle") return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [view]);
-
-  useEffect(() => {
-    if (view === "idle") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (view === "terms" || view === "early") setView("main");
-      else closeAll();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [view, closeAll]);
-
-  const value: BookingGateContextValue = { openBookingGate };
-
   return (
-    <BookingGateContext.Provider value={value}>
+    <BookingGateContext.Provider value={{ openBookingGate }}>
       {children}
-      {view !== "idle" ? (
-        <div
-          className="fixed inset-0 z-[320] flex items-center justify-center bg-brand-green-dark/70 p-3 backdrop-blur-sm md:p-6"
-          role="presentation"
-          onClick={overlayClick}
+      <Dialog
+        open={view !== "idle"}
+        onOpenChange={(open, eventDetails) => {
+          if (open) return;
+          if (view === "early" || view === "terms") {
+            eventDetails?.preventUnmountOnClose();
+            setView("main");
+            return;
+          }
+          closeAll();
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          overlayClassName="bg-brand-green-dark/70 backdrop-blur-sm"
+          className={cn(
+            "max-h-[min(92vh,880px)] max-w-lg gap-0 overflow-hidden border-2 border-brand-mist bg-gradient-to-b from-brand-sand to-white p-0 text-brand-green-dark shadow-[0_25px_80px_rgba(0,0,0,0.22)] sm:max-w-lg",
+            view === "terms" && "flex max-h-[min(92vh,880px)] flex-col"
+          )}
         >
-          <div
-            className={cn(
-              "w-full max-w-lg rounded-2xl border-2 border-brand-mist bg-gradient-to-b from-brand-sand to-white shadow-[0_25px_80px_rgba(0,0,0,0.22)]",
-              view === "terms"
-                ? "flex max-h-[min(92vh,880px)] flex-col overflow-hidden"
-                : "max-h-[min(92vh,880px)] overflow-y-auto"
-            )}
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {view === "main" ? (
-              <MainGateBody
-                mainAgreed={mainAgreed}
-                setMainAgreed={setMainAgreed}
-                onClose={closeAll}
-                onEarly={() => setView("early")}
-                onTerms={() => setView("terms")}
-                onReserve={() => {
-                  if (mainAgreed) goBooking();
-                }}
-              />
-            ) : null}
-            {view === "early" ? (
-              <EarlyCheckinBody onBack={() => setView("main")} />
-            ) : null}
-            {view === "terms" ? (
-              <TermsBody
-                termsAgreed={termsAgreed}
-                setTermsAgreed={setTermsAgreed}
-                onBack={() => {
-                  setTermsAgreed(false);
-                  setView("main");
-                }}
-                onAgreeReserve={() => {
-                  if (termsAgreed) {
-                    setMainAgreed(true);
-                    goBooking();
-                  }
-                }}
-              />
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+          {view === "main" ? (
+            <MainGateBody
+              mainAgreed={mainAgreed}
+              setMainAgreed={setMainAgreed}
+              onClose={closeAll}
+              onEarly={() => setView("early")}
+              onTerms={() => setView("terms")}
+              onReserve={() => {
+                if (mainAgreed) goBooking();
+              }}
+            />
+          ) : null}
+          {view === "early" ? (
+            <EarlyCheckinBody onBack={() => setView("main")} />
+          ) : null}
+          {view === "terms" ? (
+            <TermsBody
+              termsAgreed={termsAgreed}
+              setTermsAgreed={setTermsAgreed}
+              onBack={() => {
+                setTermsAgreed(false);
+                setView("main");
+              }}
+              onAgreeReserve={() => {
+                if (termsAgreed) {
+                  setMainAgreed(true);
+                  goBooking();
+                }
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </BookingGateContext.Provider>
   );
 }
@@ -169,7 +149,7 @@ function MainGateBody({
           {c.mainTitle}
         </h2>
       </div>
-      <div className="px-5 py-4 md:px-6">
+      <div className="max-h-[min(72vh,560px)] overflow-y-auto px-5 py-4 md:max-h-none md:px-6">
         <p className="text-sm font-semibold text-brand-green-dark">
           {c.pleaseNote}
         </p>
@@ -227,11 +207,10 @@ function MainGateBody({
       </div>
       <div className="space-y-4 border-t border-brand-mist bg-brand-sand/30 px-5 py-5 md:px-6">
         <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={mainAgreed}
-            onChange={(e) => setMainAgreed(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-brand-mist text-brand-green focus:ring-brand-green"
+            onCheckedChange={(v) => setMainAgreed(!!v)}
+            className="mt-1"
           />
           <span className="text-sm text-brand-green-dark/95">
             {c.agreeLabelBefore}
@@ -249,7 +228,7 @@ function MainGateBody({
         </label>
         <Button
           type="button"
-          variant="primary"
+          variant="cta"
           className="w-full disabled:opacity-45"
           disabled={!mainAgreed}
           onClick={onReserve}
@@ -290,7 +269,7 @@ function EarlyCheckinBody({ onBack }: { onBack: () => void }) {
           {e.title}
         </h3>
       </div>
-      <div className="space-y-4 px-5 py-5 md:px-6">
+      <div className="space-y-4 overflow-y-auto px-5 py-5 md:px-6">
         <div className="flex gap-3 rounded-xl border border-brand-mist bg-white p-4">
           <span className="text-xl" aria-hidden>
             🛏️
@@ -313,7 +292,7 @@ function EarlyCheckinBody({ onBack }: { onBack: () => void }) {
             {e.checkoutNote}
           </p>
         </div>
-        <Button type="button" variant="secondary" className="w-full" onClick={onBack}>
+        <Button type="button" variant="ctaOutline" className="w-full" onClick={onBack}>
           {e.thanksCta}
         </Button>
       </div>
@@ -351,58 +330,59 @@ function TermsBody({
         </h2>
         <p className="mt-1 text-xs text-brand-green-dark/70">{t.lastUpdated}</p>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 md:px-6">
-        <p className="text-sm leading-relaxed text-brand-green-dark/90">{t.intro}</p>
-        <div className="mt-5 space-y-5">
-          {t.sections.map((sec) => (
-            <section key={sec.title} className="rounded-xl border border-brand-mist bg-white/80 p-4">
-              <div className="flex items-center gap-2">
-                <span aria-hidden>{sec.icon}</span>
-                <h3 className="font-display text-base font-bold text-brand-green-dark">
-                  {sec.title}
-                </h3>
-              </div>
-              <ul className="mt-3 list-inside list-disc space-y-1.5 text-sm text-brand-green-dark/90">
-                {sec.bullets.map((b) => (
-                  <li key={b}>{b}</li>
-                ))}
-              </ul>
-            </section>
-          ))}
+      <ScrollArea className="min-h-0 max-h-[52vh] md:max-h-[56vh]">
+        <div className="px-5 py-4 md:px-6">
+          <p className="text-sm leading-relaxed text-brand-green-dark/90">{t.intro}</p>
+          <div className="mt-5 space-y-5">
+            {t.sections.map((sec) => (
+              <section key={sec.title} className="rounded-xl border border-brand-mist bg-white/80 p-4">
+                <div className="flex items-center gap-2">
+                  <span aria-hidden>{sec.icon}</span>
+                  <h3 className="font-display text-base font-bold text-brand-green-dark">
+                    {sec.title}
+                  </h3>
+                </div>
+                <ul className="mt-3 list-inside list-disc space-y-1.5 text-sm text-brand-green-dark/90">
+                  {sec.bullets.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+          <div className="mt-5 rounded-xl border-2 border-brand-mist bg-amber-50/80 p-4">
+            <p className="flex items-center gap-2 font-display text-sm font-bold text-brand-green-dark">
+              <span aria-hidden>⚡</span>
+              {t.importantTitle}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-brand-green-dark/90">
+              {t.importantBody}
+            </p>
+          </div>
+          <div className="mt-4 space-y-1 text-center text-sm text-brand-green-dark/80">
+            <p>
+              <span aria-hidden>🚀 </span>
+              {t.footerName}
+            </p>
+            <p>
+              <span aria-hidden>📍 </span>
+              {t.footerTagline}
+            </p>
+          </div>
         </div>
-        <div className="mt-5 rounded-xl border-2 border-brand-mist bg-amber-50/80 p-4">
-          <p className="flex items-center gap-2 font-display text-sm font-bold text-brand-green-dark">
-            <span aria-hidden>⚡</span>
-            {t.importantTitle}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-brand-green-dark/90">
-            {t.importantBody}
-          </p>
-        </div>
-        <div className="mt-4 space-y-1 text-center text-sm text-brand-green-dark/80">
-          <p>
-            <span aria-hidden>🚀 </span>
-            {t.footerName}
-          </p>
-          <p>
-            <span aria-hidden>📍 </span>
-            {t.footerTagline}
-          </p>
-        </div>
-      </div>
+      </ScrollArea>
       <div className="shrink-0 space-y-4 border-t border-brand-mist bg-brand-sand/40 px-5 py-4 md:px-6">
         <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={termsAgreed}
-            onChange={(e) => setTermsAgreed(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-brand-mist text-brand-green focus:ring-brand-green"
+            onCheckedChange={(v) => setTermsAgreed(!!v)}
+            className="mt-1"
           />
           <span className="text-sm text-brand-green-dark/95">{t.agreeCheckbox}</span>
         </label>
         <Button
           type="button"
-          variant="primary"
+          variant="cta"
           className="w-full disabled:opacity-45"
           disabled={!termsAgreed}
           onClick={onAgreeReserve}

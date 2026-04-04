@@ -14,8 +14,8 @@ export const homeIntro = {
     "Our space is where friendships form faster than footprints wash away and where no two days ever feel the same.",
     "Whether your stay is for a few days, or a few months, the bonds you create here will last a lifetime...",
   ],
-  image: "/images/IMG_3346.jpg",
-  imageAlt: "Goko community",
+  image: "/images/community-goko-mural-2026.jpg",
+  imageAlt: "Goko community — team and guests by the GOKO mural",
 };
 
 /** Legacy `section-home-yards` — neighbourhood & F&B framing. */
