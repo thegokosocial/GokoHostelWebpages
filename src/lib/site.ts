@@ -27,6 +27,8 @@ export const site = {
   contactEmail: "thegokosocial@gmail.com",
   googleReviewsSearchUrl:
     "https://www.google.com/search?q=Goko+Hostel+Gokarna+reviews",
+  /** Google Tag Manager container ID */
+  googleTagManagerId: "GTM-WM3M8ZKP",
 } as const;
 
 export const social = {
