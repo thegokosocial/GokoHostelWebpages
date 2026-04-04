@@ -1,0 +1,2 @@
+# Copy to `.dev.vars` for local `npm run preview:cf` (not committed).
+NEXTJS_ENV=development
