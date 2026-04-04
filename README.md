@@ -16,12 +16,14 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Scripts
 
 - `npm run dev` — development server
-- `npm run build` — production build (Node / Vercel-style)
-- `npm run start` — serve production build
+- `npm run build` — plain `next build` (what OpenNext calls internally; also fine as Cloudflare’s **Build command**)
+- `npm run cf:build` — full **OpenNext** bundle (`.open-next/`) for Cloudflare
+- `npm run start` — serve the last Next output locally (`next start`)
 - `npm run lint` — ESLint (Next core web vitals)
-- `npm run cf:build` — OpenNext bundle for Cloudflare (use this as the **Workers Builds** build command if you prefer `npm run …`)
 - `npm run preview:cf` — build with [OpenNext Cloudflare](https://opennext.js.org/cloudflare) and preview in the Workers runtime locally ([`.dev.vars.example`](./.dev.vars.example) → `.dev.vars`)
 - `npm run deploy:cf` — build and deploy to Cloudflare (requires `wrangler login`)
+
+`wrangler.jsonc` defines a **custom build** (`npm run cf:build`), so `npx wrangler deploy` runs OpenNext even if the dashboard still uses the default **`npm run build`** (you’ll get two `next build` runs unless you clear the dashboard build step; see below).
 
 ## Deploy
 
@@ -37,21 +39,19 @@ This repo is set up for **Cloudflare Workers** using **`@opennextjs/cloudflare`*
 2. In the GitHub repo → **Settings → Secrets and variables → Actions**, add:
    - `CLOUDFLARE_API_TOKEN` — the token
    - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare dashboard sidebar (Workers & Pages) **Account ID**
-3. Push to `main`; [.github/workflows/deploy-cloudflare.yml](./.github/workflows/deploy-cloudflare.yml) runs `opennextjs-cloudflare build` then `wrangler deploy`.
+3. Push to `main`; [.github/workflows/deploy-cloudflare.yml](./.github/workflows/deploy-cloudflare.yml) runs `npm ci` then `wrangler deploy` (OpenNext runs via **`build.command`** in `wrangler.jsonc`).
 4. In Cloudflare → your Worker **`goko-hostel-web`** → **Triggers → Custom Domains**, attach `www.gokohostel.com` / `gokohostel.com` (or only your canonical host and add a redirect rule for the other).
 
 **Option B — Cloudflare dashboard only (Workers Builds)**
 
 1. Workers & Pages → **Create** → connect this GitHub repo, production branch `main`, **root directory** empty.
 2. **Install command (if the UI asks for it):** `npm ci`
-3. **Build command:** `npx opennextjs-cloudflare build` — **not** `npm run build`. A plain Next build does not produce `.open-next/`; deploy will fail with *“Could not find compiled Open Next config”*.
-4. **Deploy command:** `npx wrangler deploy` (Wrangler will detect OpenNext and run the right deploy step.)
+3. **Build command:** You can keep the default **`npm run build`** — **`wrangler.jsonc`** tells Wrangler to run **`npm run cf:build`** during deploy, which fixes *“Could not find compiled Open Next config”*. To avoid building Next **twice** per deploy, clear the build command or set it to a no-op like `:` if Cloudflare allows it; otherwise leave it.
+4. **Deploy command:** `npx wrangler deploy`
 5. Attach the same custom domains on the Worker.
-
-Equivalent build command: `npm run cf:build`.
 
 Use **either** GitHub Actions **or** Workers Builds for production deploys so you do not deploy twice per commit.
 
 ### Other hosts
 
-For Vercel, Netlify, or a Node server, use `npm run build` / `npm run start`, or the platform’s Next.js preset (no OpenNext step required).
+For **Vercel**, **Netlify**, or a **Node** server, use **`npm run build`** / **`npm run start`**, or the platform’s Next.js preset (no `cf:build` or Wrangler).

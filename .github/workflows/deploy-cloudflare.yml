@@ -32,9 +32,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build (OpenNext for Cloudflare)
-        run: npm run cf:build
-
       - name: Publish to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
