@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "goko-hostel-web",
+  "name": "goko-hostel-latest-webpage",
   "build": {
     "command": "npm run cf:build"
   },

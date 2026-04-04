@@ -40,7 +40,7 @@ This repo is set up for **Cloudflare Workers** using **`@opennextjs/cloudflare`*
    - `CLOUDFLARE_API_TOKEN` — the token
    - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare dashboard sidebar (Workers & Pages) **Account ID**
 3. Push to `main`; [.github/workflows/deploy-cloudflare.yml](./.github/workflows/deploy-cloudflare.yml) runs `npm ci` then `wrangler deploy` (OpenNext runs via **`build.command`** in `wrangler.jsonc`).
-4. In Cloudflare → your Worker **`goko-hostel-web`** → **Triggers → Custom Domains**, attach `www.gokohostel.com` / `gokohostel.com` (or only your canonical host and add a redirect rule for the other).
+4. In Cloudflare → your Worker (**`name` in `wrangler.jsonc` must match**, e.g. **`goko-hostel-latest-webpage`**) → **Custom Domains**, attach `www.gokohostel.com` / `gokohostel.com` (or only your canonical host and add a redirect rule for the other).
 
 **Option B — Cloudflare dashboard only (Workers Builds)**
 
