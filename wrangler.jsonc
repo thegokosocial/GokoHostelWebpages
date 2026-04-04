@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "goko-hostel-latest-webpage",
+  // Used by local/GitHub `wrangler deploy` only. Cloudflare Workers Builds ignores this — set Build command to `npm run cf:build` in the dashboard.
   "build": {
     "command": "npm run cf:build"
   },
