@@ -96,9 +96,16 @@ export const parkingWalk = {
     },
     {
       badge: "Step 5",
+      title: "Keep walking straight",
+      text: "Stay on the path and keep walking for about another 100 metres straight — no turns until you see the hostel sign.",
+      image: "/images/how-to-reach/route/05-keep-walking-straight.gif",
+      imageAlt: "Straight stretch of the path along fields toward the hostel",
+    },
+    {
+      badge: "Step 6",
       title: "Goko Hostel",
       text: "You’ve reached the entrance sign. Come on in — reception is just ahead from here.",
-      image: "/images/how-to-reach/route/05-youve-reached-goko-hostel.gif",
+      image: "/images/how-to-reach/route/06-youve-reached-goko-hostel.gif",
       imageAlt: "Goko Hostel hanging sign and entrance",
     },
   ] satisfies WalkingRouteStep[],
