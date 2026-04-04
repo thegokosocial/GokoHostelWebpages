@@ -19,6 +19,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `npm run build` — production build (Node / Vercel-style)
 - `npm run start` — serve production build
 - `npm run lint` — ESLint (Next core web vitals)
+- `npm run cf:build` — OpenNext bundle for Cloudflare (use this as the **Workers Builds** build command if you prefer `npm run …`)
 - `npm run preview:cf` — build with [OpenNext Cloudflare](https://opennext.js.org/cloudflare) and preview in the Workers runtime locally ([`.dev.vars.example`](./.dev.vars.example) → `.dev.vars`)
 - `npm run deploy:cf` — build and deploy to Cloudflare (requires `wrangler login`)
 
@@ -43,9 +44,11 @@ This repo is set up for **Cloudflare Workers** using **`@opennextjs/cloudflare`*
 
 1. Workers & Pages → **Create** → connect this GitHub repo, production branch `main`, **root directory** empty.
 2. **Install command (if the UI asks for it):** `npm ci`
-3. **Build command:** `npx opennextjs-cloudflare build`
-4. **Deploy command:** `npx wrangler deploy` (default is fine if it matches your Wrangler version from `package.json`)
+3. **Build command:** `npx opennextjs-cloudflare build` — **not** `npm run build`. A plain Next build does not produce `.open-next/`; deploy will fail with *“Could not find compiled Open Next config”*.
+4. **Deploy command:** `npx wrangler deploy` (Wrangler will detect OpenNext and run the right deploy step.)
 5. Attach the same custom domains on the Worker.
+
+Equivalent build command: `npm run cf:build`.
 
 Use **either** GitHub Actions **or** Workers Builds for production deploys so you do not deploy twice per commit.
 
