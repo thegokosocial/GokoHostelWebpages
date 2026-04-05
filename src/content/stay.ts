@@ -77,11 +77,6 @@ export const stayAmenities = [
     description: "High-speed WiFi across the hostel.",
   },
   {
-    icon: "🍳",
-    title: "Kitchen access",
-    description: "Fully equipped communal kitchen for your own meals.",
-  },
-  {
     icon: "🌊",
     title: "Beach access",
     description: "A short walk to Gokarna’s beaches and sacred temples.",

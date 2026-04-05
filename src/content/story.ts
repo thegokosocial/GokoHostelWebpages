@@ -10,6 +10,7 @@ export const storyBegin = {
     "After years of traveling the world and staying in countless hostels, we knew what made a place special. It wasn't just about clean beds and good WiFi—it was about the connections you make, the stories you share, and the feeling of belonging somewhere, even if just for a few nights.",
     "We chose Gokarna, Karnataka, not just for its stunning beaches and sacred temples, but for its unique blend of spirituality and adventure. Here, where the Arabian Sea meets ancient culture, we found the perfect place to build our dream.",
     "Goko Hostel was born from our belief that travel should be more than just seeing new places—it should be about experiencing new perspectives, making lasting friendships, and creating memories that stay with you forever.",
+    "We care just as much about our neighbours as our guests: we hire locally, train team members in hospitality, and build roles that offer steady income and growth—so people in Gokarna and the wider region benefit from tourism through real employment and upliftment, not just passing footfall.",
   ],
 };
 

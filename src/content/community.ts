@@ -33,14 +33,6 @@ export const communitySpaces = [
     image: "/images/community-area/games/common-area5.jpg",
   },
   {
-    title: "Outdoor terrace",
-    emoji: "🌴",
-    description:
-      "Fresh air, sunshine, and ocean breeze. Our outdoor space is perfect for morning yoga, evening gatherings, or just soaking in the Gokarna vibes.",
-    image:
-      "/legacy-images/62f5bf7bfc22850018b36726-62f5bf7bfc22854957b3677f_home-front-yard.webp",
-  },
-  {
     title: "Co-working space",
     emoji: "💻",
     description:
