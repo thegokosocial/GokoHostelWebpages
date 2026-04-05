@@ -5,9 +5,10 @@ import { Container } from "@/components/ui/Container";
 import {
   founders,
   storyBegin,
+  storyFoundersGroupPhoto,
   storyHero,
-  storyStaff,
-  storyTeamLeads,
+  storyTeamAlso,
+  storyTeamPhotos,
   storyValues,
 } from "@/content/story";
 import { buildMetadata } from "@/lib/seo";
@@ -72,44 +73,65 @@ export default function StoryPage() {
               </Reveal>
             ))}
           </div>
+
+          <Reveal delay={0.12}>
+            <figure className="mt-14 overflow-hidden rounded-3xl border border-brand-mist bg-brand-sand shadow-soft">
+              <div className="relative aspect-[21/9] min-h-[200px] md:aspect-[2.4/1] md:min-h-[280px]">
+                <Image
+                  src={storyFoundersGroupPhoto.image}
+                  alt={storyFoundersGroupPhoto.imageAlt}
+                  fill
+                  className="object-cover object-center"
+                  sizes="(max-width:1024px) 100vw, 1024px"
+                />
+              </div>
+              <figcaption className="border-t border-brand-mist/80 bg-white px-5 py-4 text-center text-sm font-medium text-brand-green-dark/85">
+                {storyFoundersGroupPhoto.caption}
+              </figcaption>
+            </figure>
+          </Reveal>
         </Container>
       </section>
 
       <section className="py-16 md:py-20">
         <Container>
-          <div className="grid gap-12 lg:grid-cols-2">
-            <div>
-              <h2 className="font-display text-2xl font-bold text-brand-green">
-                Team leads
-              </h2>
-              <ul className="mt-6 space-y-3">
-                {storyTeamLeads.map((m) => (
-                  <li
-                    key={m.name}
-                    className="rounded-2xl bg-brand-mist px-5 py-4"
-                  >
-                    <p className="font-display font-semibold text-brand-green-dark">
+          <h2 className="text-center font-display text-display-md font-bold text-brand-green">
+            Team & operations
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-center text-base text-brand-green-dark/85">
+            The people who keep Goko running day to day — say hi when you see us by the mural.
+          </p>
+          <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+            {storyTeamPhotos.map((m, i) => (
+              <Reveal key={m.image} delay={i * 0.05}>
+                <article className="overflow-hidden rounded-3xl border border-brand-mist bg-white shadow-soft">
+                  <div className="relative aspect-[4/5]">
+                    <Image
+                      src={m.image}
+                      alt={m.imageAlt}
+                      fill
+                      className="object-cover object-top"
+                      sizes="(max-width:1024px) 50vw, 20vw"
+                    />
+                  </div>
+                  <div className="p-4">
+                    <h3 className="font-display text-base font-bold text-brand-green-dark md:text-lg">
                       {m.name}
-                    </p>
-                    <p className="text-sm text-brand-green-dark/80">{m.role}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h2 className="font-display text-2xl font-bold text-brand-green">
-                Staff & operations
-              </h2>
-              <ul className="mt-6 space-y-2 text-brand-green-dark/90">
-                {storyStaff.map((m) => (
-                  <li key={m.name}>
-                    <span className="font-medium">{m.name}</span>
-                    <span className="text-brand-green/80"> — {m.role}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                    </h3>
+                    <p className="text-sm font-semibold text-brand-red">{m.role}</p>
+                  </div>
+                </article>
+              </Reveal>
+            ))}
           </div>
+          <ul className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-center text-sm text-brand-green-dark/80">
+            {storyTeamAlso.map((x) => (
+              <li key={x.name}>
+                <span className="font-medium text-brand-green-dark">{x.name}</span>
+                <span className="text-brand-green/75"> — {x.role}</span>
+              </li>
+            ))}
+          </ul>
         </Container>
       </section>
 

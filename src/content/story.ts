@@ -43,19 +43,63 @@ export const founders: Founder[] = [
   },
 ];
 
-export const storyTeamLeads = [
-  { name: "Sunny", role: "Co-Founder & On-Site Manager" },
-  { name: "Sakhi", role: "Host & Guest Relations" },
+/** Portrait grid on /story (GOKO mural backdrop). Order matches on-page layout. */
+export type StoryTeamPhoto = {
+  name: string;
+  role: string;
+  image: string;
+  imageAlt: string;
+};
+
+export const storyTeamPhotos: StoryTeamPhoto[] = [
+  {
+    name: "Yeshvant",
+    role: "Master cook",
+    image: "/images/story/staff/yeshvant.png",
+    imageAlt: "Yeshvant in front of the hand-painted GOKO games mural",
+  },
+  {
+    name: "Housekeeping lead",
+    role: "Operations",
+    image: "/images/story/staff/housekeeping-lead.png",
+    imageAlt: "Housekeeping lead in front of the GOKO mural",
+  },
+  {
+    name: "Timmo",
+    role: "Staff member manager",
+    image: "/images/story/staff/timmo.png",
+    imageAlt: "Timmo in front of the GOKO mural",
+  },
+  {
+    name: "Dilip",
+    role: "Staff",
+    image: "/images/story/staff/dilip.png",
+    imageAlt: "Dilip in front of the GOKO games mural",
+  },
+  {
+    name: "Sunny & Sakhi",
+    role: "Team leads",
+    image: "/images/story/staff/team-leads-sunny-sakhi.png",
+    imageAlt: "Sunny and Sakhi together in front of the GOKO mural",
+  },
+  {
+    name: "Bhaskar",
+    role: "Maintenance",
+    image: "/images/story/staff/bhaskar-maintenance.png",
+    imageAlt: "Bhaskar in front of the GOKO mural",
+  },
 ];
 
-export const storyStaff = [
-  { name: "Timmo", role: "Staff Member" },
-  { name: "Dilip", role: "Staff Member" },
-  { name: "Yeshvant", role: "Staff Member" },
-  { name: "Housekeeping", role: "Housekeeping Lead" },
-  { name: "Kitchen Staff", role: "Kitchen Coordinator" },
-  { name: "Maintenance", role: "Maintenance & Repairs" },
-];
+/** Full-width shot below individual founder cards */
+export const storyFoundersGroupPhoto = {
+  image: "/images/story/staff/founders-group.png",
+  imageAlt:
+    "Goko founders and team in front of the GOKO games mural on the sand",
+  caption: "The crew behind Goko",
+};
+
+/** Names not shown in the portrait grid */
+export const storyTeamAlso = [{ name: "Kitchen team", role: "Food & hospitality" }];
 
 export const storyValues = [
   {

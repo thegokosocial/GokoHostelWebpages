@@ -20,10 +20,13 @@ else
   SLOW="$(awk -v p="$PLAYBACK_SPEED" 'BEGIN{printf "%.10f", 1/p}')"
 fi
 
-# MP4 timeline (full speed): step 4 ~STEP4_VIDEO_START; step 5 after ~STEP4_SOURCE_SPAN
+# MP4 timeline (full speed): step 4 ~STEP4_VIDEO_START; step 5 starts after step 4’s
+# clip plus STEP5_SKIP_CAPTION_SECONDS so burnt-in “take a left from here” (or similar)
+# is gone — avoids repeating step 4’s on-screen text in step 5.
 STEP4_VIDEO_START="${STEP4_VIDEO_START:-53}"
 STEP4_SOURCE_SPAN="${STEP4_SOURCE_SPAN:-3}"
-STEP5_START="${STEP5_START:-$((STEP4_VIDEO_START + STEP4_SOURCE_SPAN))}"
+STEP5_SKIP_CAPTION_SECONDS="${STEP5_SKIP_CAPTION_SECONDS:-3}"
+STEP5_START="${STEP5_START:-$((STEP4_VIDEO_START + STEP4_SOURCE_SPAN + STEP5_SKIP_CAPTION_SECONDS))}"
 CLIP_STEP5_SECONDS="${CLIP_STEP5_SECONDS:-3.5}"
 
 GIT_REF_FOR_1X="${GIT_REF_FOR_1X:-}"
@@ -69,4 +72,4 @@ for f in "$TMP"/*.gif; do
   mv "$f" "$ROUT/$(basename "$f")"
 done
 
-echo "Done. PLAYBACK_SPEED=${PLAYBACK_SPEED} (setpts × ${SLOW}). step5 from ${STEP5_START}s (${CLIP_STEP5_SECONDS}s source). Optional: GIT_REF_FOR_1X=<commit> to read 1× GIFs from git."
+echo "Done. PLAYBACK_SPEED=${PLAYBACK_SPEED} (setpts × ${SLOW}). step5 from ${STEP5_START}s (${CLIP_STEP5_SECONDS}s source, skip caption ${STEP5_SKIP_CAPTION_SECONDS}s). Optional: GIT_REF_FOR_1X=<commit> for 1× sources."
