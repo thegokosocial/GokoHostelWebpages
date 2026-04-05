@@ -90,9 +90,11 @@ export const storyTeamPhotos: StoryTeamPhoto[] = [
   },
 ];
 
-/** Full-width shot below individual founder cards */
+/** Group shot below individual founder cards (native aspect — avoid cropping faces). */
 export const storyFoundersGroupPhoto = {
   image: "/images/story/staff/founders-group.png",
+  width: 931,
+  height: 1024,
   imageAlt:
     "Goko founders and team in front of the GOKO games mural on the sand",
   caption: "The crew behind Goko",

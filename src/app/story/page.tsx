@@ -75,14 +75,16 @@ export default function StoryPage() {
           </div>
 
           <Reveal delay={0.12}>
-            <figure className="mt-14 overflow-hidden rounded-3xl border border-brand-mist bg-brand-sand shadow-soft">
-              <div className="relative aspect-[21/9] min-h-[200px] md:aspect-[2.4/1] md:min-h-[280px]">
+            <figure className="mt-14 overflow-hidden rounded-3xl border border-brand-mist bg-gradient-to-b from-brand-sand via-brand-sand to-brand-mist/25 shadow-soft">
+              <div className="flex justify-center px-2 py-6 sm:px-4 sm:py-8 md:py-10">
                 <Image
                   src={storyFoundersGroupPhoto.image}
                   alt={storyFoundersGroupPhoto.imageAlt}
-                  fill
-                  className="object-cover object-center"
-                  sizes="(max-width:1024px) 100vw, 1024px"
+                  width={storyFoundersGroupPhoto.width}
+                  height={storyFoundersGroupPhoto.height}
+                  className="h-auto w-full max-w-md object-contain sm:max-w-lg md:max-w-xl lg:max-w-2xl"
+                  sizes="(max-width:640px) 100vw, (max-width:1024px) 80vw, 672px"
+                  priority={false}
                 />
               </div>
               <figcaption className="border-t border-brand-mist/80 bg-white px-5 py-4 text-center text-sm font-medium text-brand-green-dark/85">
