@@ -19,9 +19,8 @@ export const site = {
     "Your home away from home in Gokarna. Conscious travelers, rest, relaxation, and connection.",
   url: "https://www.gokohostel.com",
   bookingUrl: "https://bookingengine.stayflexi.com/?hotel_id=30819",
-  mapsUrl: "https://maps.app.goo.gl/TLbC8ZShCArEL5kJ7",
-  googleBusinessUrl:
-    "https://www.google.com/maps/place//data=!4m2!3m1!1s0x30e29ea63a9fbd95:0xcf9b9a5ccc209f2a?source=g.page.share",
+  mapsUrl: "https://maps.app.goo.gl/t5Bgbrx66h1fsS9t7",
+  googleBusinessUrl: "https://maps.app.goo.gl/t5Bgbrx66h1fsS9t7",
   ogImage: "/images/IMG_7403.jpg",
   whatsAppUrl: "https://wa.me/919833624363",
   contactEmail: "thegokosocial@gmail.com",
