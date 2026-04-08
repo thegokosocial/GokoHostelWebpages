@@ -60,34 +60,34 @@ export const storyTeamPhotos: StoryTeamPhoto[] = [
     imageAlt: "Yeshvant in front of the hand-painted GOKO games mural",
   },
   {
-    name: "Housekeeping lead",
-    role: "Operations",
+    name: "Leelawati",
+    role: "Housekeeping",
     image: "/images/story/staff/housekeeping-lead.png",
-    imageAlt: "Housekeeping lead in front of the GOKO mural",
+    imageAlt: "Leelawati in front of the GOKO mural",
   },
   {
     name: "Timmo",
-    role: "Staff member manager",
+    role: "Manager",
     image: "/images/story/staff/timmo.png",
     imageAlt: "Timmo in front of the GOKO mural",
   },
   {
     name: "Dilip",
-    role: "Staff",
+    role: "Expert Cook",
     image: "/images/story/staff/dilip.png",
     imageAlt: "Dilip in front of the GOKO games mural",
   },
   {
     name: "Sunny & Sakhi",
-    role: "Team leads",
+    role: "Community Managers",
     image: "/images/story/staff/team-leads-sunny-sakhi.png",
     imageAlt: "Sunny and Sakhi together in front of the GOKO mural",
   },
   {
-    name: "Bhaskar",
+    name: "Vijay",
     role: "Maintenance",
     image: "/images/story/staff/bhaskar-maintenance.png",
-    imageAlt: "Bhaskar in front of the GOKO mural",
+    imageAlt: "Vijay in front of the GOKO mural",
   },
 ];
 
@@ -102,7 +102,7 @@ export const storyFoundersGroupPhoto = {
 };
 
 /** Names not shown in the portrait grid */
-export const storyTeamAlso = [{ name: "Kitchen team", role: "Food & hospitality" }];
+export const storyTeamAlso: { name: string; role: string }[] = [];
 
 export const storyValues = [
   {
@@ -112,10 +112,10 @@ export const storyValues = [
       "We believe that the best travel experiences come from the connections you make. At Goko, you're joining a family, not just booking a bed.",
   },
   {
-    icon: "🌍",
-    title: "Sustainable Travel",
+    icon: "🌿",
+    title: "Slow Living",
     description:
-      "We're committed to protecting the beautiful environment that surrounds us. From reducing plastic waste to supporting local businesses, sustainability is at our core.",
+      "We believe in easing the pace — unhurried mornings, real conversations, and space to breathe. At Goko, slow living means being present: savoring simple rituals, the beach, and community without the rush of constant doing.",
   },
   {
     icon: "🏖️",

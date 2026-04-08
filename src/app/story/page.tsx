@@ -126,14 +126,16 @@ export default function StoryPage() {
               </Reveal>
             ))}
           </div>
-          <ul className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-center text-sm text-brand-green-dark/80">
-            {storyTeamAlso.map((x) => (
-              <li key={x.name}>
-                <span className="font-medium text-brand-green-dark">{x.name}</span>
-                <span className="text-brand-green/75"> — {x.role}</span>
-              </li>
-            ))}
-          </ul>
+          {storyTeamAlso.length > 0 ? (
+            <ul className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-center text-sm text-brand-green-dark/80">
+              {storyTeamAlso.map((x) => (
+                <li key={x.name}>
+                  <span className="font-medium text-brand-green-dark">{x.name}</span>
+                  <span className="text-brand-green/75"> — {x.role}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </Container>
       </section>
 
@@ -144,15 +146,15 @@ export default function StoryPage() {
           </h2>
           <div className="mt-12 grid gap-8 md:grid-cols-2">
             {storyValues.map((v, i) => (
-              <Reveal key={v.title} delay={i * 0.05}>
-                <div className="rounded-3xl border border-brand-mist p-6 shadow-soft">
+              <Reveal key={v.title} delay={i * 0.05} className="h-full">
+                <div className="flex h-full flex-col rounded-3xl border border-brand-mist p-6 shadow-soft">
                   <div className="text-3xl" aria-hidden>
                     {v.icon}
                   </div>
                   <h3 className="mt-4 font-display text-xl font-bold text-brand-green-dark">
                     {v.title}
                   </h3>
-                  <p className="mt-3 text-sm leading-relaxed text-brand-green-dark/85 md:text-base">
+                  <p className="mt-3 flex-1 text-sm leading-relaxed text-brand-green-dark/85 md:text-base">
                     {v.description}
                   </p>
                 </div>
