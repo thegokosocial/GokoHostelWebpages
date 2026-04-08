@@ -278,14 +278,11 @@ export default function HomePage() {
               Ready when you are
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-brand-green-dark/85">
-              Instant confirmation on our booking partner, or message us first—we love
-              helping you plan.
+              Instant confirmation on our booking partner when you&apos;re ready to stay
+              with us.
             </p>
             <div className="mt-10 flex flex-wrap justify-center gap-3">
               <BookNowButton>Book now</BookNowButton>
-              <ButtonLink href="/booking-enquiry" variant="ctaOutline">
-                Booking enquiry
-              </ButtonLink>
             </div>
           </Reveal>
         </Container>

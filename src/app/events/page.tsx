@@ -4,7 +4,13 @@ import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Container } from "@/components/ui/Container";
 import { BookNowButton } from "@/components/booking/BookNowButton";
 import { ButtonLink } from "@/components/ui/button";
-import { eventsHero, eventsPastCta, upcomingEvents, pastEvents } from "@/content/events";
+import {
+  eventsHero,
+  eventsPastCta,
+  upcomingEvents,
+  pastEvents,
+  type EventItem,
+} from "@/content/events";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata = buildMetadata({
@@ -14,6 +20,41 @@ export const metadata = buildMetadata({
 });
 
 const fallbackImg = "/images/IMG_3345.jpg";
+
+function EventHighlightCard({ ev }: { ev: EventItem }) {
+  return (
+    <article className="overflow-hidden rounded-3xl border border-brand-mist bg-white shadow-card">
+      <div className="relative aspect-[16/10]">
+        <Image
+          src={ev.cover ?? fallbackImg}
+          alt=""
+          fill
+          className="object-cover"
+          sizes="(max-width:768px) 100vw, 50vw"
+        />
+      </div>
+      <div className="p-6">
+        <time className="text-sm font-semibold uppercase tracking-wide text-brand-red">
+          {ev.date}
+        </time>
+        <h3 className="mt-2 font-display text-xl font-bold text-brand-green-dark">{ev.title}</h3>
+        <p className="mt-3 text-sm leading-relaxed text-brand-green-dark/85 md:text-base">
+          {ev.description}
+        </p>
+        <ul className="mt-4 flex flex-wrap gap-2">
+          {ev.tags.map((t) => (
+            <li
+              key={t}
+              className="rounded-full bg-brand-sand px-3 py-1 text-xs font-medium text-brand-green"
+            >
+              {t}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </article>
+  );
+}
 
 export default function EventsPage() {
   return (
@@ -47,38 +88,7 @@ export default function EventsPage() {
           <div className="mt-10 grid gap-8 md:grid-cols-2">
             {upcomingEvents.map((ev, i) => (
               <Reveal key={ev.title} delay={i * 0.04}>
-                <article className="overflow-hidden rounded-3xl border border-brand-mist bg-white shadow-card">
-                  <div className="relative aspect-[16/10]">
-                    <Image
-                      src={ev.cover ?? fallbackImg}
-                      alt=""
-                      fill
-                      className="object-cover"
-                      sizes="(max-width:768px) 100vw, 50vw"
-                    />
-                  </div>
-                  <div className="p-6">
-                    <time className="text-sm font-semibold uppercase tracking-wide text-brand-red">
-                      {ev.date}
-                    </time>
-                    <h3 className="mt-2 font-display text-xl font-bold text-brand-green-dark">
-                      {ev.title}
-                    </h3>
-                    <p className="mt-3 text-sm leading-relaxed text-brand-green-dark/85 md:text-base">
-                      {ev.description}
-                    </p>
-                    <ul className="mt-4 flex flex-wrap gap-2">
-                      {ev.tags.map((t) => (
-                        <li
-                          key={t}
-                          className="rounded-full bg-brand-sand px-3 py-1 text-xs font-medium text-brand-green"
-                        >
-                          {t}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </article>
+                <EventHighlightCard ev={ev} />
               </Reveal>
             ))}
           </div>
@@ -93,28 +103,7 @@ export default function EventsPage() {
           <div className="mt-10 grid gap-8 md:grid-cols-2">
             {pastEvents.map((ev, i) => (
               <Reveal key={ev.title} delay={i * 0.04}>
-                <article className="flex flex-col overflow-hidden rounded-3xl border border-brand-mist bg-brand-sand/50 sm:flex-row">
-                  <div className="relative aspect-video sm:aspect-auto sm:h-auto sm:min-h-[200px] sm:w-2/5 sm:shrink-0">
-                    <Image
-                      src={ev.cover ?? fallbackImg}
-                      alt=""
-                      fill
-                      className="object-cover"
-                      sizes="(max-width:640px) 100vw, 240px"
-                    />
-                  </div>
-                  <div className="flex flex-1 flex-col p-6">
-                    <time className="text-xs font-bold uppercase tracking-wide text-brand-green/70">
-                      {ev.date}
-                    </time>
-                    <h3 className="mt-2 font-display text-lg font-bold text-brand-green-dark">
-                      {ev.title}
-                    </h3>
-                    <p className="mt-2 flex-1 text-sm text-brand-green-dark/85">
-                      {ev.description}
-                    </p>
-                  </div>
-                </article>
+                <EventHighlightCard ev={ev} />
               </Reveal>
             ))}
           </div>

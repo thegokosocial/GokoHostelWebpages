@@ -23,7 +23,6 @@ const footerCols: { title: string; links: FooterLink[] }[] = [
       { label: "Directions", href: site.mapsUrl, external: true },
       { label: "FAQs", href: "/faqs" },
       { label: "Reviews", href: "/reviews" },
-      { label: "Booking enquiry", href: "/booking-enquiry" },
       { label: "Book", bookNow: true },
     ],
   },

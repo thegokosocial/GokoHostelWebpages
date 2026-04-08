@@ -76,7 +76,7 @@ export const faqCategories: FaqCategory[] = [
           "Free high-speed WiFi throughout the property",
           "Individual fan at each bed — we don't have air conditioning in the dorms",
           "Individual lockers with locks (bring your own padlock)",
-          "Reading lights and charging sockets",
+          "Charging sockets at each bed",
           "Clean bed linens and towels",
         ],
       },

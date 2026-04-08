@@ -16,9 +16,7 @@ export const stayRoomSummaries = [
       "12 beds",
       "2 shared bathrooms",
       "Private lockers",
-      "Reading lights",
       "Charging points",
-      "Private curtains",
       "Fan at each bed (no AC)",
     ],
   },
@@ -31,9 +29,7 @@ export const stayRoomSummaries = [
       "6 beds",
       "Ensuite washroom",
       "Private lockers",
-      "Reading lights",
       "Charging points",
-      "Private curtains",
       "Fan at each bed (no AC)",
     ],
   },
@@ -46,9 +42,7 @@ export const stayRoomSummaries = [
       "8 beds",
       "Open roof washroom",
       "Private lockers",
-      "Reading lights",
       "Charging points",
-      "Private curtains",
       "Fan at each bed (no AC)",
     ],
   },
@@ -59,7 +53,7 @@ export const stayAmenities = [
     icon: "🛏️",
     title: "Comfortable beds",
     description:
-      "Private curtains, reading lights, charging points, and an individual fan at every bed — we're a non-AC hostel.",
+      "Charging points and an individual fan at every bed — we're a non-AC hostel.",
   },
   {
     icon: "🔒",
@@ -86,8 +80,8 @@ export const stayAmenities = [
 export const stayWhy = {
   title: "Why choose Goko Hostel?",
   paragraphs: [
-    "Located in the heart of Gokarna, just minutes from the beach, Goko Hostel offers the perfect blend of comfort, community, and adventure.",
-    "Our rooms are designed with your comfort in mind — private lockers, reading lights, charging points, and a fan at every bed (no AC). Clean, secure, and welcoming.",
+    "Located in the heart of Gokarna on the beach, Goko Hostel offers the perfect blend of comfort, community, and adventure.",
+    "Our rooms are designed with your comfort in mind — private lockers, charging points, and a fan at every bed (no AC). Clean, secure, and welcoming.",
     "What truly sets us apart is our community. Meet travelers from around the world, share stories, and create memories that last a lifetime.",
   ],
 };

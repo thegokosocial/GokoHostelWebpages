@@ -19,5 +19,4 @@ export const mainNav: NavItem[] = [
   { label: "Stay", href: "/stay" },
   { label: "Community Area", href: "/community-area" },
   { label: "Reviews", href: "/reviews" },
-  { label: "Booking Enquiry", href: "/booking-enquiry" },
 ];

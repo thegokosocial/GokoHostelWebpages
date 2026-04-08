@@ -58,13 +58,11 @@ export const communityActivities = {
     "♟️ Chess & checkers",
     "🃏 Card games",
     "🎸 Music jam sessions",
-    "🧘 Morning yoga",
     "🍳 Cooking together",
     "🎬 Movie nights",
     "🔥 Bonfire stories",
     "🎤 Open mic nights",
     "🎨 Art & craft",
-    "🌍 Language exchange",
     "📚 Book club",
   ],
   rhythmTitle: "Weekly rhythm",
@@ -73,7 +71,7 @@ export const communityActivities = {
   weekly: [
     { label: "Monday", text: "Game night — board games, cards, and friendly competition" },
     { label: "Tuesday", text: "Community dinner — potluck style, everyone brings something!" },
-    { label: "Wednesday", text: "Yoga & meditation — start your morning right" },
+    { label: "Wednesday", text: "Just do nothing — sip a coconut and chill" },
     { label: "Thursday", text: "Movie night — classic films and travel documentaries" },
     { label: "Friday", text: "Open mic night — share your talent, poetry, or stories" },
     { label: "Saturday", text: "Beach day — group trips to Gokarna's beautiful beaches" },
@@ -101,9 +99,9 @@ export const communitySpecialEvents = {
         "With travelers from all corners of the globe, every day is a cultural exchange. Share your traditions, learn about others, and expand your worldview.",
     },
     {
-      title: "🔥 Beach bonfires",
+      title: "🔥 Bonfires & barbecue",
       description:
-        "Regular beach bonfire nights under the stars. Bring your guitar, stories, and good vibes. Some of our most magical moments happen around the fire!",
+        "Evening bonfires paired with easygoing barbecue feasts—grill-side chats, guitars, and good company. Some of our best memories spark when the coals are still warm.",
     },
   ],
 };
