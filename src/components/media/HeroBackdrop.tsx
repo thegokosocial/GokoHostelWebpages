@@ -6,9 +6,9 @@ import { useEffect, useRef } from "react";
 import type { HeroLoopVideo } from "@/lib/site";
 
 type HeroBackdropProps = {
-  /** Shown when video is off (`prefers-reduced-motion`) or as Next/Image optimization target for static export. */
-  image: string;
-  imageAlt: string;
+  /** Shown when video is off (`prefers-reduced-motion`) or as Next/Image optimization target for static export. Omit for solid gradient fallback. */
+  image?: string;
+  imageAlt?: string;
   video?: HeroLoopVideo | null;
   priority?: boolean;
 };
@@ -38,14 +38,19 @@ export function HeroBackdrop({
 
   return (
     <div className="relative h-full min-h-full w-full">
-      {!showVideo ? (
+      {!showVideo && image ? (
         <Image
           src={image}
-          alt={imageAlt}
+          alt={imageAlt ?? ""}
           fill
           className="object-cover"
           sizes="100vw"
           priority={priority}
+        />
+      ) : !showVideo ? (
+        <div
+          className="absolute inset-0 bg-gradient-to-br from-brand-green-dark via-brand-green to-brand-green-dark"
+          aria-hidden
         />
       ) : (
         <video

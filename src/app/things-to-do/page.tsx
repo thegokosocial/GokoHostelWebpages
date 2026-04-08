@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Reveal } from "@/components/motion/Reveal";
 import { Container } from "@/components/ui/Container";
@@ -11,35 +10,8 @@ import {
   temples,
   templesIntro,
   thingsToDoHero,
-  type PlacePhoto,
 } from "@/content/thingsToDo";
-import { cn } from "@/lib/utils";
 import { buildMetadata } from "@/lib/seo";
-
-function PlacePhotoGrid({ photos }: { photos: PlacePhoto[] }) {
-  if (photos.length === 0) return null;
-  const cols =
-    photos.length >= 3 ? "sm:grid-cols-3" : photos.length === 2 ? "sm:grid-cols-2" : "grid-cols-1";
-
-  return (
-    <div className={cn("mt-4 grid grid-cols-1 gap-2", cols)}>
-      {photos.map((p) => (
-        <div
-          key={p.src}
-          className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-brand-mist"
-        >
-          <Image
-            src={p.src}
-            alt={p.alt}
-            fill
-            className="object-cover"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 45vw, 280px"
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export const metadata = buildMetadata({
   title: "Things to Do",
@@ -53,8 +25,7 @@ export default function ThingsToDoPage() {
       <PageRibbon
         title={thingsToDoHero.title}
         subtitle={thingsToDoHero.subtitle}
-        image="/images/things-to-do/om-beach.jpg"
-        imageAlt="Gokarna coastline"
+        heroVideo={null}
       />
 
       <section className="py-16 md:py-24">
@@ -75,7 +46,6 @@ export default function ThingsToDoPage() {
                   <p className="mt-1 text-sm font-semibold uppercase tracking-wide text-brand-red">
                     {b.distance}
                   </p>
-                  <PlacePhotoGrid photos={b.photos} />
                   <p className="mt-3 flex-1 text-sm leading-relaxed text-brand-green-dark/90 md:text-base">
                     {b.description}
                   </p>
@@ -114,7 +84,6 @@ export default function ThingsToDoPage() {
                   <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-brand-green/80">
                     {t.meta}
                   </p>
-                  <PlacePhotoGrid photos={t.photos} />
                   <p className="mt-3 flex-1 text-sm text-brand-green-dark/90 md:text-base">
                     {t.description}
                   </p>
@@ -144,7 +113,6 @@ export default function ThingsToDoPage() {
                     {d.name}
                   </h3>
                   <p className="text-sm font-medium text-brand-red">{d.meta}</p>
-                  <PlacePhotoGrid photos={d.photos} />
                   <p className="mt-3 flex-1 text-sm leading-relaxed text-brand-green-dark/90 md:text-base">
                     {d.description}
                   </p>

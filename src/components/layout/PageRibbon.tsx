@@ -5,8 +5,8 @@ import { heroLoopVideo, type HeroLoopVideo } from "@/lib/site";
 type PageRibbonProps = {
   title: string;
   subtitle?: string;
-  /** Used when video is disabled or for `prefers-reduced-motion` (per-page artwork). */
-  image: string;
+  /** Used when video is disabled or for `prefers-reduced-motion` (per-page artwork). Omit for gradient-only hero. */
+  image?: string;
   imageAlt?: string;
   className?: string;
   /** Set false to use only `image` (no loop). Defaults to legacy Webflow yard clip. */
@@ -31,7 +31,7 @@ export function PageRibbon({
       <div className="absolute inset-0 z-0 overflow-hidden">
         <HeroBackdrop
           image={image}
-          imageAlt={imageAlt || title}
+          imageAlt={imageAlt ?? title}
           video={heroVideo}
           priority
         />
