@@ -17,31 +17,7 @@ export const eventsHero = {
 
 export const upcomingEvents: EventItem[] = [
   {
-    date: "December 25, 2024",
-    title: "Christmas Beach Celebration",
-    description:
-      "Celebrate Christmas Goko style! Join us for a magical beachside celebration with decorations, Secret Santa, bonfire, live music, and a special feast. Bring your festive spirit!",
-    tags: ["Secret Santa", "Live music", "Special dinner"],
-    cover: "/images/goko-deepawali-2024/IMG_5502.jpg",
-  },
-  {
-    date: "December 31, 2024",
-    title: "New Year's Eve Beach Party",
-    description:
-      "Ring in the new year with your Goko family! Countdown on the beach with DJ, fireworks, dancing, and unlimited good vibes. Let's welcome 2025 together!",
-    tags: ["Fireworks", "DJ night", "Cocktails"],
-    cover: "/images/goko-haloween-2024/IMG_7257.jpg",
-  },
-  {
-    date: "March 14, 2025",
-    title: "Holi - Festival of Colors",
-    description:
-      "Experience the vibrant Festival of Colors at Goko! Organic colors, traditional music, bhang thandai, water balloons, and endless fun. Get ready to get colorful!",
-    tags: ["Organic colors", "Thandai", "Dancing"],
-    cover: "/images/goko-holi-2024/IMG_6052.jpg",
-  },
-  {
-    date: "September 2025",
+    date: "September 2026",
     title: "Ganesha Chaturthi Celebration",
     description:
       "Honor Lord Ganesha with traditional puja, modak making workshop, devotional music, and beach immersion ceremony. Experience authentic Indian spirituality!",
@@ -57,12 +33,20 @@ export const upcomingEvents: EventItem[] = [
     cover: "/images/IMG_3347.jpg",
   },
   {
-    date: "October 31, 2025",
+    date: "October 31, 2026",
     title: "Halloween Spooktacular",
     description:
       "Get spooky at Goko! Costume contest, horror movie marathon, pumpkin carving, themed cocktails, and a haunted beach walk. Best costume wins a prize!",
     tags: ["Costume contest", "Pumpkin carving", "Movie marathon"],
     cover: "/images/goko-haloween-2024/IMG_7128.jpg",
+  },
+  {
+    date: "December 31, 2026",
+    title: "New Year's Eve Beach Party",
+    description:
+      "Ring in the new year with your Goko family! Countdown on the beach with DJ, fireworks, dancing, and unlimited good vibes. Let's welcome 2027 together!",
+    tags: ["Fireworks", "DJ night", "Cocktails"],
+    cover: "/images/goko-haloween-2024/IMG_7257.jpg",
   },
 ];
 

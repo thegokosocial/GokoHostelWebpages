@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Reveal } from "@/components/motion/Reveal";
-import { BookingPlatformsStrip } from "@/components/sections/BookingPlatformsStrip";
 import { HomeHeroPremium } from "@/components/sections/HomeHeroPremium";
 import { RoomTabs } from "@/components/sections/RoomTabs";
 import { BookNowButton } from "@/components/booking/BookNowButton";
@@ -33,7 +32,6 @@ export default function HomePage() {
   return (
     <>
       <HomeHeroPremium />
-      <BookingPlatformsStrip />
 
       <section className="relative goko-mesh goko-noise py-20 md:py-28">
         <Container>
@@ -139,7 +137,7 @@ export default function HomePage() {
                 <SectionHeader
                   align="left"
                   eyebrow="Neighbourhood"
-                  title={homeNeighborhood.title}
+                  title={homeNeighborhood.titleLead}
                   className="!max-w-xl"
                   subtitle={undefined}
                 />
@@ -148,6 +146,12 @@ export default function HomePage() {
                     <p key={i}>{p}</p>
                   ))}
                 </div>
+                <Link
+                  href={homeNeighborhood.communityAreaLink.href}
+                  className="mt-8 inline-flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-wide text-brand-red transition-transform hover:translate-x-1"
+                >
+                  {homeNeighborhood.communityAreaLink.label} →
+                </Link>
               </div>
             </Reveal>
           </div>

@@ -10,7 +10,7 @@ export const homeHero = {
 export const homeIntro = {
   title: "A community for conscious travelers seeking rest, relaxation and good vibes.",
   paragraphs: [
-    "It's more than a hostel — it's a feeling. At Goko you don't just check-in, you belong from the moment you set foot on the sand. Our space isn't like other hostels because we put our people first. 6000+ previous guests from over 12 countries have visited looking for meaningful connections, a comfortable bed, and a place to call home.",
+    "It's more than a hostel — it's a feeling. At Goko you don't just check-in, you belong from the moment you set foot on the sand. Our space isn't like other hostels because we put our people first. 10,000+ guests from over 12 countries have visited looking for meaningful connections, a comfortable bed, and a place to call home.",
     "Our space is where friendships form faster than footprints wash away and where no two days ever feel the same.",
     "Whether your stay is for a few days, or a few months, the bonds you create here will last a lifetime...",
   ],
@@ -18,12 +18,12 @@ export const homeIntro = {
   imageAlt: "Goko community — team and guests by the GOKO mural",
 };
 
-/** Legacy `section-home-yards` — neighbourhood & F&B framing. */
+/** Neighbourhood + community area block on home. */
 export const homeNeighborhood = {
-  title: "Goko Hostel",
+  titleLead: "Goko Hostel",
+  communityAreaLink: { href: "/community-area", label: "Community area" } as const,
   paragraphs: [
-    "Goko Hostel is open to the neighborhood and our guests. We've curated a community of shops, restaurants, cafes and saloons to facilitate friendship and bonding between staff, locals, and guests.",
-    "Enjoy award-winning burgers, mouth-watering salads, authentic Japanese street food, and more at Goko Hostel.",
+    "Our community area is the beating heart of Goko Hostel — where travelers gather to share stories, play games, enjoy meals together, and create memories that last a lifetime. Whether you unwind with a book, play chess, or join an event, there's always something happening here.",
   ],
   image: "/images/IMG_7403.jpg",
   imageAlt: "Goko Hostel & community space",
@@ -40,14 +40,14 @@ export const homeLocation = {
 export const homeFaqTeaser = {
   title: "Frequently asked questions",
   items: [
-    { question: "How far is it from the airport?", href: "/faqs" },
-    { question: "Can I work remotely from Goko?", href: "/faqs" },
+    { question: "Is it beach front property?", href: "/faqs" },
+    { question: "Do you have Rental Scooty available?", href: "/faqs" },
   ],
   cta: { label: "See all FAQs", href: "/faqs" },
 };
 
 export const homeStats = [
-  { value: "6,000+", label: "Previous guests" },
+  { value: "10,000+", label: "Guests" },
   { value: "4.9/5", label: "Average rating" },
   { value: "Since 2023", label: "Welcoming travelers" },
 ];
