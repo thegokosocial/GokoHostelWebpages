@@ -37,13 +37,13 @@ export const faqCategories: FaqCategory[] = [
       {
         question: "What is your cancellation policy?",
         paragraphs: [
-          "Free cancellation up to 48 hours before check-in. Cancellations made less than 48 hours before check-in or no-shows will be charged the full amount of the first night's stay.",
+          "Free cancellation up to 7 days before check-in. Cancellations made less than 7 days before check-in or no-shows will be charged the full amount of the first night's stay.",
         ],
       },
       {
         question: "What are your check-in and check-out times?",
         paragraphs: [
-          "Check-in: 12:00 noon onwards\nCheck-out: 10:00 AM\n\nEarly check-in and late check-out are subject to availability. Please contact us in advance if you need flexible timing.",
+          "Check-in: 12:00 noon to 11:00 PM\nCheck-out: 10:00 AM\n\nFeel free to arrive earlier. You're welcome to use the community areas (lounge and shared spaces) anytime while you wait for your reserved room to be ready at check-in.\n\nEarly check-in and late check-out are subject to availability. Please contact us in advance if you need flexible timing.",
         ],
       },
       {
@@ -66,7 +66,7 @@ export const faqCategories: FaqCategory[] = [
           "8 Bed Mixed Dorm (Luxury): Fun and affordable with open roof washroom",
         ],
         afterBullets: [
-          "All beds come with private curtains, reading lights, private lockers, and charging points.",
+          "All beds come with private fan, lockers, and charging points.",
         ],
       },
       {
@@ -75,23 +75,21 @@ export const faqCategories: FaqCategory[] = [
         bullets: [
           "Free high-speed WiFi throughout the property",
           "Individual fan at each bed — we don't have air conditioning in the dorms",
-          "Private curtained beds for privacy",
           "Individual lockers with locks (bring your own padlock)",
           "Reading lights and charging sockets",
           "Clean bed linens and towels",
-          "24/7 hot water",
         ],
       },
       {
         question: "Are towels and linens provided?",
         paragraphs: [
-          "Yes! Clean bed linens are provided and changed regularly. Towels are available upon request at the reception.",
+          "Yes! Clean bed linens are provided and changed regularly. Towels are available at the reception on request for a small rental fee—ask staff for current rates.",
         ],
       },
       {
         question: "Do you have private rooms?",
         paragraphs: [
-          "Currently, we only offer shared dormitories. However, our dorms are designed for maximum comfort and privacy with curtained beds and personal lockers. We focus on creating a community atmosphere while respecting personal space.",
+          "Currently, we only offer shared dormitories. However, our dorms are designed for maximum comfort and privacy with personal lockers. We focus on creating a community atmosphere while respecting personal space.",
         ],
       },
     ],
@@ -102,21 +100,21 @@ export const faqCategories: FaqCategory[] = [
       {
         question: "Where is Goko Hostel located?",
         paragraphs: [
-          "We're located in the heart of Gokarna, Karnataka, just 5 minutes walk from the main beach. Our location offers easy access to all major beaches (Om Beach, Kudle Beach, Paradise Beach) and the famous Mahabaleshwar Temple.",
+          "We're right on Gokarna Main Beach in Gokarna, Karnataka—step outside and you're on the sand. From here it's still easy to reach Om Beach, Kudle Beach, Paradise Beach, and the famous Mahabaleshwar Temple.",
         ],
       },
       {
         question: "How do I get to Goko Hostel from the train/bus station?",
         paragraphs: [
-          "From Gokarna Road Railway Station: Take an auto-rickshaw (₹200-250, 15-20 minutes) or bus to Gokarna town.\n\nFrom Gokarna Bus Stand: We're about 10 minutes by auto-rickshaw (₹50-100) or a pleasant 15-minute walk.\n\nShare your arrival details with us, and we'll help coordinate your transport!",
+          "From Gokarna Road Railway Station: Take an auto-rickshaw (₹400-500, 15-20 minutes) or bus to Gokarna town.\n\nFrom Gokarna Bus Stand: We're about 10 minutes by auto-rickshaw (₹150-250) or a pleasant 15-minute walk.\n\nShare your arrival details with us, and we'll help coordinate your transport!",
         ],
       },
       {
         question: "What beaches are nearby?",
         paragraphs: ["All of Gokarna's famous beaches are easily accessible:"],
         bullets: [
-          "Gokarna Main Beach: 5 minutes walk",
-          "Kudle Beach: 15 minutes walk or 5 minutes by auto",
+          "Gokarna Main Beach: on the beach—Goko Hostel is here",
+          "Kudle Beach: 10 minutes by auto",
           "Om Beach: 20 minutes by auto or trek via Kudle Beach",
           "Paradise Beach & Half Moon Beach: Accessible via trek or boat",
         ],
@@ -129,7 +127,7 @@ export const faqCategories: FaqCategory[] = [
       {
         question: "What is your age policy?",
         paragraphs: [
-          "Guests must be 18 years or older to stay at Goko Hostel. Valid government-issued ID is required at check-in.",
+          "Guests must be aged 18–35 to stay at Goko Hostel. Valid government-issued ID is required at check-in.",
         ],
       },
       {
@@ -158,19 +156,7 @@ export const faqCategories: FaqCategory[] = [
       {
         question: "Do you serve food at the hostel?",
         paragraphs: [
-          "We don't have a restaurant on-site, but we have a shared kitchen where you can cook your own meals. There are also numerous restaurants and cafes within walking distance serving delicious local and international cuisine.",
-        ],
-      },
-      {
-        question: "Is there a kitchen I can use?",
-        paragraphs: [
-          "Yes! We have a fully equipped shared kitchen available for all guests. Basic cooking equipment, utensils, and refrigerator space are provided. Please clean up after yourself to keep it pleasant for everyone.",
-        ],
-      },
-      {
-        question: "Are there good restaurants nearby?",
-        paragraphs: [
-          "Absolutely! Gokarna has amazing food options. You'll find beach shacks, local South Indian restaurants, cafes serving international cuisine, and fresh seafood restaurants—all within 5-10 minutes walk. We're happy to recommend our favorites!",
+          "Yes. We have a restaurant at the hostel where you can order delicious food from a varied menu.",
         ],
       },
     ],
@@ -182,9 +168,8 @@ export const faqCategories: FaqCategory[] = [
         question: "What activities do you organize?",
         paragraphs: ["We organize various activities and events:"],
         bullets: [
-          "Beach bonfires and BBQ nights",
+          "Bonfires and BBQ nights",
           "Movie nights and game evenings",
-          "Yoga and meditation sessions",
           "Festival celebrations (Holi, Christmas, Halloween, etc.)",
           "Beach volleyball and frisbee",
           "Group treks to nearby beaches",
