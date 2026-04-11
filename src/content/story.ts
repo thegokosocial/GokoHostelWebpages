@@ -106,37 +106,37 @@ export const storyTeamAlso: { name: string; role: string }[] = [];
 
 export const storyValues = [
   {
-    icon: "🤝",
+    icon: "handshake",
     title: "Community First",
     description:
       "We believe that the best travel experiences come from the connections you make. At Goko, you're joining a family, not just booking a bed.",
   },
   {
-    icon: "🌿",
+    icon: "leaf",
     title: "Slow Living",
     description:
       "We believe in easing the pace — unhurried mornings, real conversations, and space to breathe. At Goko, slow living means being present: savoring simple rituals, the beach, and community without the rush of constant doing.",
   },
   {
-    icon: "🏖️",
+    icon: "umbrella",
     title: "Beach Life Balance",
     description:
       "Life's too short not to enjoy it. Whether you're here to relax, explore, or party, we create the perfect balance between adventure and chill vibes.",
   },
   {
-    icon: "🎨",
+    icon: "palette",
     title: "Creativity & Expression",
     description:
       "From live music nights to art sessions, we encourage everyone to express themselves and share their talents with our community.",
   },
   {
-    icon: "🌈",
+    icon: "rainbow",
     title: "Safe space & diversity",
     description:
       "Goko is a safe space for everyone. We celebrate diversity and create an environment where all travelers feel welcome and respected.",
   },
   {
-    icon: "💚",
+    icon: "heart",
     title: "We don't just host — we care",
     description:
       "We don't just host—we care. Every interaction is personal, every recommendation is genuine, and every guest becomes part of our story.",

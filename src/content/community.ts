@@ -12,7 +12,7 @@ export const communityIntro = {
 
 export type CommunitySpace = {
   title: string;
-  emoji: string;
+  icon: string;
   description: string;
   image: string;
   photos: string[];
@@ -21,7 +21,7 @@ export type CommunitySpace = {
 export const communitySpaces: CommunitySpace[] = [
   {
     title: "The lounge",
-    emoji: "🛋️",
+    icon: "sofa",
     description:
       "Cozy seating, plenty of cushions, and a laid-back vibe. Perfect for reading, chatting, or simply relaxing after a day at the beach. Our lounge is your second living room.",
     image: "/images/community-area/lounge/common-area5.jpg",
@@ -29,7 +29,7 @@ export const communitySpaces: CommunitySpace[] = [
   },
   {
     title: "Communal dining",
-    emoji: "🍽️",
+    icon: "utensils",
     description:
       "Share meals around our large communal table. Some of the best friendships start over breakfast or a shared dinner. We often host community dinners and potlucks!",
     image: "/images/goko-common-area/IMG_7024.JPG",
@@ -37,7 +37,7 @@ export const communitySpaces: CommunitySpace[] = [
   },
   {
     title: "Games corner",
-    emoji: "🎲",
+    icon: "dice",
     description:
       "Board games, cards, chess, and more! Challenge fellow travelers to a game or join our weekly game nights. Competitive spirits welcome!",
     image: "/images/community-area/games/common-area5.jpg",
@@ -45,7 +45,7 @@ export const communitySpaces: CommunitySpace[] = [
   },
   {
     title: "Co-working space",
-    emoji: "💻",
+    icon: "laptop",
     description:
       "Need to catch up on work? Our quiet co-working area offers fast WiFi, comfortable seating, and a productive atmosphere for digital nomads.",
     image:
@@ -54,7 +54,7 @@ export const communitySpaces: CommunitySpace[] = [
   },
   {
     title: "Book exchange",
-    emoji: "📚",
+    icon: "book",
     description:
       "A carefully curated collection of travel stories, novels, and local guides. Take a book, leave a book, share your favorite reads with fellow travelers.",
     image:
@@ -67,16 +67,16 @@ export const communityActivities = {
   title: "Activities & games",
   subtitle: "There's always something fun happening at Goko!",
   badges: [
-    "🎲 Board games",
-    "♟️ Chess & checkers",
-    "🃏 Card games",
-    "🎸 Music jam sessions",
-    "🍳 Cooking together",
-    "🎬 Movie nights",
-    "🔥 Bonfire stories",
-    "🎤 Open mic nights",
-    "🎨 Art & craft",
-    "📚 Book club",
+    "Board games",
+    "Chess & checkers",
+    "Card games",
+    "Music jam sessions",
+    "Cooking together",
+    "Movie nights",
+    "Bonfire stories",
+    "Open mic nights",
+    "Art & craft",
+    "Book club",
   ],
   rhythmTitle: "Weekly rhythm",
   rhythmIntro:
@@ -97,22 +97,22 @@ export const communitySpecialEvents = {
   subtitle: "Beyond the everyday, we celebrate together",
   cards: [
     {
-      title: "🎉 Festival celebrations",
+      title: "Festival celebrations",
       description:
         "From Holi to Christmas, Halloween to Diwali — we celebrate cultures from around the world. Join us for colorful festivals, traditional foods, and unforgettable memories!",
     },
     {
-      title: "🎨 Workshops & classes",
+      title: "Workshops & classes",
       description:
         "Learn something new! We host workshops on everything from local cooking to meditation, photography to sustainable travel. Share your skills or learn from others.",
     },
     {
-      title: "🌏 Cultural exchanges",
+      title: "Cultural exchanges",
       description:
         "With travelers from all corners of the globe, every day is a cultural exchange. Share your traditions, learn about others, and expand your worldview.",
     },
     {
-      title: "🔥 Bonfires & barbecue",
+      title: "Bonfires & barbecue",
       description:
         "Evening bonfires paired with easygoing barbecue feasts—grill-side chats, guitars, and good company. Some of our best memories spark when the coals are still warm.",
     },

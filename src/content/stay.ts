@@ -50,28 +50,28 @@ export const stayRoomSummaries = [
 
 export const stayAmenities = [
   {
-    icon: "🛏️",
+    icon: "bed",
     title: "Comfortable beds",
     description:
       "Charging points and an individual fan at every bed — we're a non-AC hostel.",
   },
   {
-    icon: "🔒",
+    icon: "lock",
     title: "Secure lockers",
     description: "Private lockers in every room for your belongings.",
   },
   {
-    icon: "🚿",
+    icon: "shower",
     title: "Clean bathrooms",
     description: "Well-maintained shared and ensuite bathrooms with hot water.",
   },
   {
-    icon: "📶",
+    icon: "wifi",
     title: "Free WiFi",
     description: "High-speed WiFi across the hostel.",
   },
   {
-    icon: "🌊",
+    icon: "waves",
     title: "Beach access",
     description: "A short walk to Gokarna’s beaches and sacred temples.",
   },

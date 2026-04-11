@@ -3,6 +3,7 @@ import { Reveal } from "@/components/motion/Reveal";
 import { StayRoomCard } from "@/components/sections/CardWithModal";
 import { BookNowButton } from "@/components/booking/BookNowButton";
 import { Container } from "@/components/ui/Container";
+import { Icon } from "@/components/ui/Icon";
 import {
   stayAmenities,
   stayHero,
@@ -61,10 +62,10 @@ export default function StayPage() {
           <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
             {stayAmenities.map((a) => (
               <div key={a.title} className="text-center">
-                <div className="text-4xl" aria-hidden>
-                  {a.icon}
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-green/[0.07]">
+                  <Icon name={a.icon} className="h-6 w-6 text-brand-green" />
                 </div>
-                <h3 className="mt-3 font-display text-lg font-semibold text-brand-green">
+                <h3 className="mt-4 font-display text-lg font-semibold text-brand-green">
                   {a.title}
                 </h3>
                 <p className="mt-2 text-sm text-brand-green-dark/85 md:text-base">

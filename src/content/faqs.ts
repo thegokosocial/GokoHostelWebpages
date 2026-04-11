@@ -26,7 +26,7 @@ export const faqStillHaveQuestions = {
 
 export const faqCategories: FaqCategory[] = [
   {
-    title: "🏨 Booking & Reservations",
+    title: "Booking & Reservations",
     items: [
       {
         question: "How do I make a reservation?",
@@ -55,7 +55,7 @@ export const faqCategories: FaqCategory[] = [
     ],
   },
   {
-    title: "🛏️ Rooms & Facilities",
+    title: "Rooms & Facilities",
     items: [
       {
         question: "What types of rooms do you offer?",
@@ -95,7 +95,7 @@ export const faqCategories: FaqCategory[] = [
     ],
   },
   {
-    title: "📍 Location & Transportation",
+    title: "Location & Transportation",
     items: [
       {
         question: "Where is Goko Hostel located?",
@@ -122,7 +122,7 @@ export const faqCategories: FaqCategory[] = [
     ],
   },
   {
-    title: "📋 Policies & Rules",
+    title: "Policies & Rules",
     items: [
       {
         question: "What is your age policy?",
@@ -151,7 +151,7 @@ export const faqCategories: FaqCategory[] = [
     ],
   },
   {
-    title: "🍽️ Food & Dining",
+    title: "Food & Dining",
     items: [
       {
         question: "Do you serve food at the hostel?",
@@ -162,7 +162,7 @@ export const faqCategories: FaqCategory[] = [
     ],
   },
   {
-    title: "🎯 Activities & Services",
+    title: "Activities & Services",
     items: [
       {
         question: "What activities do you organize?",

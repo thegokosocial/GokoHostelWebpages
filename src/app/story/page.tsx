@@ -2,6 +2,7 @@ import Image from "next/image";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Reveal } from "@/components/motion/Reveal";
 import { Container } from "@/components/ui/Container";
+import { Icon } from "@/components/ui/Icon";
 import {
   founders,
   storyBegin,
@@ -150,8 +151,8 @@ export default function StoryPage() {
             {storyValues.map((v, i) => (
               <Reveal key={v.title} delay={i * 0.05} className="h-full">
                 <div className="flex h-full flex-col rounded-3xl border border-brand-mist p-6 shadow-soft">
-                  <div className="text-3xl" aria-hidden>
-                    {v.icon}
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-green/[0.07]">
+                    <Icon name={v.icon} className="h-5 w-5 text-brand-green" />
                   </div>
                   <h3 className="mt-4 font-display text-xl font-bold text-brand-green-dark">
                     {v.title}

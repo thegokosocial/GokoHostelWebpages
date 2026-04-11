@@ -34,7 +34,7 @@ export default function HomePage() {
       <HomeHeroPremium />
 
       {/* ── Intro / The vibe ── */}
-      <section className="relative goko-mesh goko-noise py-24 md:py-32">
+      <section className="relative goko-mesh goko-noise py-20 md:py-28">
         <Container>
           <div className="grid gap-14 lg:grid-cols-2 lg:items-center">
             <Reveal>
@@ -80,7 +80,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Goko = Gokarna ── */}
-      <section className="relative overflow-hidden py-24 md:py-32">
+      <section className="relative overflow-hidden py-16 md:py-24">
         <div
           className="pointer-events-none absolute inset-0 bg-gradient-to-b from-brand-sand via-white to-brand-sand/60"
           aria-hidden
@@ -144,9 +144,9 @@ export default function HomePage() {
       </section>
 
       {/* ── Stats ── */}
-      <section className="relative py-16 md:py-20">
+      <section className="relative py-10 md:py-14">
         <div className="goko-divider-fade mx-auto max-w-4xl" aria-hidden />
-        <Container className="py-14 md:py-16">
+        <Container className="py-10 md:py-12">
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-4">
             {homeStats.map((s, i) => (
               <Reveal key={s.label} delay={i * 0.08}>
@@ -166,7 +166,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Room types ── */}
-      <section className="relative py-24 md:py-32">
+      <section className="relative py-16 md:py-24">
         <div
           className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-brand-sand/30 to-transparent"
           aria-hidden
@@ -184,7 +184,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Neighbourhood ── */}
-      <section className="relative overflow-hidden py-24 md:py-32">
+      <section className="relative overflow-hidden py-16 md:py-24">
         <div
           className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white via-brand-sand/50 to-white"
           aria-hidden
@@ -272,7 +272,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Reviews ── */}
-      <section className="relative overflow-hidden bg-brand-green py-24 text-white md:py-32">
+      <section className="relative overflow-hidden bg-brand-green py-20 text-white md:py-28">
         <div
           className="absolute inset-0"
           style={{
@@ -334,7 +334,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Location ── */}
-      <section className="relative py-24 md:py-28">
+      <section className="relative py-16 md:py-24">
         <div
           className="pointer-events-none absolute inset-0 bg-gradient-to-b from-brand-sand/40 via-white to-brand-sand/60"
           aria-hidden
@@ -362,8 +362,8 @@ export default function HomePage() {
       </section>
 
       {/* ── Closing CTA ── */}
-      <section className="relative overflow-hidden bg-brand-sand py-20 md:py-24">
-        <div className="goko-divider-fade mx-auto mb-16 max-w-4xl" aria-hidden />
+      <section className="relative overflow-hidden bg-brand-sand py-16 md:py-20">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container className="text-center">
           <Reveal>
             <h2 className="font-display text-display-md font-bold text-brand-green">

@@ -8,6 +8,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BookNowButton } from "@/components/booking/BookNowButton";
+import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import type { EventItem } from "@/content/events";
 import type { CommunitySpace } from "@/content/community";
@@ -102,7 +103,11 @@ export function EventCard({ ev }: { ev: EventItem }) {
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger
         render={
-          <article className="group/event cursor-pointer overflow-hidden rounded-3xl border border-brand-mist bg-white shadow-card transition-all duration-300 hover:shadow-lift hover:-translate-y-1" />
+          <article
+            role="button"
+            tabIndex={0}
+            className="group/event cursor-pointer overflow-hidden rounded-3xl border border-brand-mist bg-white shadow-card transition-all duration-300 hover:shadow-lift hover:-translate-y-1"
+          />
         }
       >
         <div className="relative aspect-[16/10] overflow-hidden">
@@ -204,7 +209,11 @@ export function CommunitySpaceCard({ space }: { space: CommunitySpace }) {
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger
         render={
-          <article className="group/space cursor-pointer overflow-hidden rounded-3xl border border-brand-mist bg-brand-sand shadow-soft transition-all duration-300 hover:shadow-lift hover:-translate-y-1" />
+          <article
+            role="button"
+            tabIndex={0}
+            className="group/space cursor-pointer overflow-hidden rounded-3xl border border-brand-mist bg-brand-sand shadow-soft transition-all duration-300 hover:shadow-lift hover:-translate-y-1"
+          />
         }
       >
         <div className="relative aspect-[16/10] overflow-hidden">
@@ -222,10 +231,10 @@ export function CommunitySpaceCard({ space }: { space: CommunitySpace }) {
           </div>
         </div>
         <div className="p-6">
-          <div className="text-2xl" aria-hidden>
-            {space.emoji}
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-green/[0.07]">
+            <Icon name={space.icon} className="h-5 w-5 text-brand-green" />
           </div>
-          <h3 className="mt-2 font-display text-xl font-bold text-brand-green">
+          <h3 className="mt-3 font-display text-xl font-bold text-brand-green">
             {space.title}
           </h3>
           <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-brand-green-dark/90 md:text-base">
@@ -254,10 +263,10 @@ export function CommunitySpaceCard({ space }: { space: CommunitySpace }) {
           </div>
 
           <div className="p-6 md:p-8">
-            <div className="text-3xl" aria-hidden>
-              {space.emoji}
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-green/[0.07]">
+              <Icon name={space.icon} className="h-6 w-6 text-brand-green" />
             </div>
-            <DialogPrimitive.Title className="mt-2 font-display text-2xl font-bold text-brand-green md:text-3xl">
+            <DialogPrimitive.Title className="mt-3 font-display text-2xl font-bold text-brand-green md:text-3xl">
               {space.title}
             </DialogPrimitive.Title>
             <DialogPrimitive.Description className="mt-4 text-base leading-relaxed text-brand-green-dark/85 md:text-lg">
@@ -290,7 +299,7 @@ export function StayRoomCard({
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger
         render={
-          <div className="group/room cursor-pointer" />
+          <div role="button" tabIndex={0} className="group/room cursor-pointer" />
         }
       >
         <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
