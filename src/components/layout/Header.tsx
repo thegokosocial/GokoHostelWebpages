@@ -22,6 +22,7 @@ function isNavGroup(
 export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const aboutWrap = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,8 +33,22 @@ export function Header() {
     return () => document.removeEventListener("click", onDoc);
   }, []);
 
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   return (
-    <header className="sticky top-0 z-50 border-b border-brand-mist/80 bg-brand-sand/90 backdrop-blur-md">
+    <header
+      className={cn(
+        "sticky top-0 z-50 transition-all duration-300",
+        scrolled
+          ? "border-b border-brand-mist/60 bg-brand-sand/85 shadow-soft backdrop-blur-xl backdrop-saturate-[1.8]"
+          : "border-b border-transparent bg-brand-sand/60 backdrop-blur-md"
+      )}
+    >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 md:px-6">
         <Link
           href="/"
@@ -101,7 +116,7 @@ export function Header() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="rounded-full px-3 py-2 font-display text-sm font-semibold uppercase tracking-wide text-brand-green-dark hover:bg-brand-mist focus-visible:goko-focus min-h-11 flex items-center"
+                className="relative rounded-full px-3.5 py-2 font-display text-sm font-semibold uppercase tracking-wide text-brand-green-dark transition-colors duration-200 hover:bg-brand-green/[0.06] hover:text-brand-green focus-visible:goko-focus min-h-11 flex items-center"
               >
                 {item.label}
               </Link>

@@ -30,8 +30,8 @@ const footerCols: { title: string; links: FooterLink[] }[] = [
 
 export function Footer() {
   return (
-    <footer className="relative mt-16 bg-brand-green text-white">
-      <div className="mx-auto max-w-6xl px-4 py-14 md:px-6">
+    <footer className="relative mt-0 bg-brand-green text-white">
+      <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-20">
         <div className="flex flex-col gap-10 md:flex-row md:justify-between">
           <div className="max-w-sm">
             <Link
@@ -52,7 +52,7 @@ export function Footer() {
                 Goko Hostel
               </span>
             </Link>
-            <p className="mt-4 text-sm leading-relaxed text-white/85">
+            <p className="mt-5 text-sm leading-relaxed text-white/75">
               Conscious travel, beach mornings, and a community that lasts beyond
               checkout.
             </p>
@@ -148,7 +148,7 @@ export function Footer() {
               WhatsApp
             </a>
           </div>
-          <p className="text-sm text-white/60">© 2023 – Goko Hostel</p>
+          <p className="text-sm text-white/60">© 2023–{new Date().getFullYear()} Goko Hostel</p>
         </div>
       </div>
 

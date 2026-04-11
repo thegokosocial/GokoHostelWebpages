@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { BookingGateProvider } from "@/components/booking/BookingGateProvider";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
+import { BackToTop } from "./BackToTop";
+import { WhatsAppFloat } from "./WhatsAppFloat";
 
 export function SiteShell({ children }: { children: ReactNode }) {
   return (
@@ -15,6 +17,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
       <Header />
       <main id="main-content">{children}</main>
       <Footer />
+      <BackToTop />
+      <WhatsAppFloat />
     </BookingGateProvider>
   );
 }

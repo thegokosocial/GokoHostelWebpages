@@ -10,13 +10,22 @@ export const communityIntro = {
     "Our community area is the beating heart of Goko Hostel — where travelers gather to share stories, play games, enjoy meals together, and create memories that last a lifetime. Whether you unwind with a book, play chess, or join an event, there's always something happening here.",
 };
 
-export const communitySpaces = [
+export type CommunitySpace = {
+  title: string;
+  emoji: string;
+  description: string;
+  image: string;
+  photos: string[];
+};
+
+export const communitySpaces: CommunitySpace[] = [
   {
     title: "The lounge",
     emoji: "🛋️",
     description:
       "Cozy seating, plenty of cushions, and a laid-back vibe. Perfect for reading, chatting, or simply relaxing after a day at the beach. Our lounge is your second living room.",
     image: "/images/community-area/lounge/common-area5.jpg",
+    photos: ["/images/community-area/lounge/common-area5.jpg"],
   },
   {
     title: "Communal dining",
@@ -24,6 +33,7 @@ export const communitySpaces = [
     description:
       "Share meals around our large communal table. Some of the best friendships start over breakfast or a shared dinner. We often host community dinners and potlucks!",
     image: "/images/goko-common-area/IMG_7024.JPG",
+    photos: ["/images/goko-common-area/IMG_7024.JPG"],
   },
   {
     title: "Games corner",
@@ -31,6 +41,7 @@ export const communitySpaces = [
     description:
       "Board games, cards, chess, and more! Challenge fellow travelers to a game or join our weekly game nights. Competitive spirits welcome!",
     image: "/images/community-area/games/common-area5.jpg",
+    photos: ["/images/community-area/games/common-area5.jpg"],
   },
   {
     title: "Co-working space",
@@ -39,6 +50,7 @@ export const communitySpaces = [
       "Need to catch up on work? Our quiet co-working area offers fast WiFi, comfortable seating, and a productive atmosphere for digital nomads.",
     image:
       "/images/community-area/workspace/Screenshot%20at%20Dec%2006%2022-19-37.png",
+    photos: ["/images/community-area/workspace/Screenshot%20at%20Dec%2006%2022-19-37.png"],
   },
   {
     title: "Book exchange",
@@ -47,6 +59,7 @@ export const communitySpaces = [
       "A carefully curated collection of travel stories, novels, and local guides. Take a book, leave a book, share your favorite reads with fellow travelers.",
     image:
       "/images/community-area/book-exchange/Screenshot%20at%20Dec%2006%2022-19-37.png",
+    photos: ["/images/community-area/book-exchange/Screenshot%20at%20Dec%2006%2022-19-37.png"],
   },
 ];
 

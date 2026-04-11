@@ -1,5 +1,5 @@
-import Image from "next/image";
 import { Reveal } from "@/components/motion/Reveal";
+import { EventCard } from "@/components/sections/CardWithModal";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Container } from "@/components/ui/Container";
 import { BookNowButton } from "@/components/booking/BookNowButton";
@@ -9,7 +9,6 @@ import {
   eventsPastCta,
   upcomingEvents,
   pastEvents,
-  type EventItem,
 } from "@/content/events";
 import { buildMetadata } from "@/lib/seo";
 
@@ -18,43 +17,6 @@ export const metadata = buildMetadata({
   description: eventsHero.subtitle,
   path: "/events",
 });
-
-const fallbackImg = "/images/IMG_3345.jpg";
-
-function EventHighlightCard({ ev }: { ev: EventItem }) {
-  return (
-    <article className="overflow-hidden rounded-3xl border border-brand-mist bg-white shadow-card">
-      <div className="relative aspect-[16/10]">
-        <Image
-          src={ev.cover ?? fallbackImg}
-          alt=""
-          fill
-          className="object-cover"
-          sizes="(max-width:768px) 100vw, 50vw"
-        />
-      </div>
-      <div className="p-6">
-        <time className="text-sm font-semibold uppercase tracking-wide text-brand-red">
-          {ev.date}
-        </time>
-        <h3 className="mt-2 font-display text-xl font-bold text-brand-green-dark">{ev.title}</h3>
-        <p className="mt-3 text-sm leading-relaxed text-brand-green-dark/85 md:text-base">
-          {ev.description}
-        </p>
-        <ul className="mt-4 flex flex-wrap gap-2">
-          {ev.tags.map((t) => (
-            <li
-              key={t}
-              className="rounded-full bg-brand-sand px-3 py-1 text-xs font-medium text-brand-green"
-            >
-              {t}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </article>
-  );
-}
 
 export default function EventsPage() {
   return (
@@ -85,17 +47,21 @@ export default function EventsPage() {
           <h2 className="font-display text-display-md font-bold text-brand-green">
             Upcoming highlights
           </h2>
+          <p className="mt-3 text-base text-brand-green-dark/70">
+            Click on any event to see details and promotional images
+          </p>
           <div className="mt-10 grid gap-8 md:grid-cols-2">
             {upcomingEvents.map((ev, i) => (
               <Reveal key={ev.title} delay={i * 0.04}>
-                <EventHighlightCard ev={ev} />
+                <EventCard ev={ev} />
               </Reveal>
             ))}
           </div>
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-white py-12 md:py-20">
+      <section className="relative py-12 md:py-20">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="font-display text-display-md font-bold text-brand-green">
             Memories from past events
@@ -103,12 +69,12 @@ export default function EventsPage() {
           <div className="mt-10 grid gap-8 md:grid-cols-2">
             {pastEvents.map((ev, i) => (
               <Reveal key={ev.title} delay={i * 0.04}>
-                <EventHighlightCard ev={ev} />
+                <EventCard ev={ev} />
               </Reveal>
             ))}
           </div>
 
-          <div className="mx-auto mt-14 max-w-2xl rounded-3xl border border-brand-mist bg-brand-sand/60 p-8 text-center shadow-soft md:p-10">
+          <div className="goko-border-gradient mx-auto mt-14 max-w-2xl rounded-3xl bg-brand-sand/60 p-8 text-center shadow-soft md:p-10">
             <h3 className="font-display text-xl font-bold text-brand-green-dark md:text-2xl">
               {eventsPastCta.title}
             </h3>

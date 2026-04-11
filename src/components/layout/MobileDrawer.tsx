@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { mainNav, type NavItem } from "@/content/nav";
 import { BookNowButton } from "@/components/booking/BookNowButton";
 import {
@@ -24,6 +25,8 @@ type MobileDrawerProps = {
 };
 
 export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
+  const pathname = usePathname();
+
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
       <SheetContent
@@ -41,32 +44,49 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
           <ul className="flex flex-col gap-1">
             {mainNav.map((item) => {
               if (isNavGroup(item)) {
+                const childActive = item.children.some((c) => pathname === c.href);
                 return (
-                  <li key={item.label} className="rounded-xl bg-white/60 py-2">
+                  <li key={item.label} className={cn("rounded-xl py-2", childActive ? "bg-brand-green/[0.06]" : "bg-white/60")}>
                     <div className="px-3 pb-2 font-display text-xs font-bold uppercase tracking-widest text-brand-green/80">
                       {item.label}
                     </div>
                     <ul className="flex flex-col">
-                      {item.children.map((c) => (
-                        <li key={c.href}>
-                          <Link
-                            href={c.href}
-                            className="block min-h-11 rounded-lg px-4 py-3 text-base text-brand-green-dark hover:bg-brand-mist"
-                            onClick={onClose}
-                          >
-                            {c.label}
-                          </Link>
-                        </li>
-                      ))}
+                      {item.children.map((c) => {
+                        const active = pathname === c.href;
+                        return (
+                          <li key={c.href}>
+                            <Link
+                              href={c.href}
+                              className={cn(
+                                "block min-h-11 rounded-lg px-4 py-3 text-base transition-colors",
+                                active
+                                  ? "bg-brand-green/[0.08] font-semibold text-brand-green"
+                                  : "text-brand-green-dark hover:bg-brand-mist"
+                              )}
+                              aria-current={active ? "page" : undefined}
+                              onClick={onClose}
+                            >
+                              {c.label}
+                            </Link>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </li>
                 );
               }
+              const active = pathname === item.href;
               return (
                 <li key={item.href}>
                   <Link
                     href={item.href}
-                    className="block min-h-11 rounded-xl px-4 py-3 font-medium text-brand-green-dark hover:bg-brand-mist"
+                    className={cn(
+                      "block min-h-11 rounded-xl px-4 py-3 font-medium transition-colors",
+                      active
+                        ? "bg-brand-green/[0.08] text-brand-green"
+                        : "text-brand-green-dark hover:bg-brand-mist"
+                    )}
+                    aria-current={active ? "page" : undefined}
                     onClick={onClose}
                   >
                     {item.label}

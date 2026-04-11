@@ -23,11 +23,11 @@ const buttonVariants = cva(
           "rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 dark:bg-destructive/20 dark:hover:bg-destructive/30",
         link: "rounded-lg text-primary underline-offset-4 hover:underline",
         /** Goko marketing CTAs */
-        cta: "goko-gradient-cta min-h-11 rounded-full px-6 py-2.5 font-display text-sm font-semibold uppercase tracking-wide text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 md:text-base",
+        cta: "goko-gradient-cta min-h-11 rounded-full px-7 py-2.5 font-display text-sm font-semibold uppercase tracking-wide text-white shadow-md transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0 active:shadow-md md:text-base",
         ctaOutline:
-          "min-h-11 rounded-full border-2 border-brand-green bg-white/80 px-6 py-2.5 font-display text-sm font-semibold uppercase tracking-wide text-brand-green hover:bg-brand-green hover:text-white md:text-base",
+          "min-h-11 rounded-full border-2 border-brand-green bg-white/80 px-7 py-2.5 font-display text-sm font-semibold uppercase tracking-wide text-brand-green transition-all duration-200 hover:bg-brand-green hover:text-white hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 md:text-base",
         ctaGhost:
-          "font-display text-sm font-semibold uppercase tracking-wide text-brand-green underline-offset-4 hover:underline md:text-base",
+          "font-display text-sm font-semibold uppercase tracking-wide text-brand-green underline-offset-4 transition-colors duration-200 hover:underline hover:text-brand-green-dark md:text-base",
       },
       size: {
         default:

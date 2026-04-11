@@ -6,6 +6,7 @@ export type EventItem = {
   past?: boolean;
   imageDir?: string;
   cover?: string;
+  photos?: string[];
 };
 
 export const eventsHero = {
@@ -23,6 +24,7 @@ export const upcomingEvents: EventItem[] = [
       "Honor Lord Ganesha with traditional puja, modak making workshop, devotional music, and beach immersion ceremony. Experience authentic Indian spirituality!",
     tags: ["Puja ceremony", "Modak workshop", "Devotional music"],
     cover: "/images/mahabaleshwar_temple.jpg",
+    photos: ["/images/mahabaleshwar_temple.jpg"],
   },
   {
     date: "Monthly",
@@ -31,6 +33,7 @@ export const upcomingEvents: EventItem[] = [
       "Monthly celebration under the full moon! Dance barefoot on the beach with live DJ, bonfire, beach games, and magical moon energy. Every full moon, we celebrate!",
     tags: ["Live DJ", "Bonfire", "Beach games"],
     cover: "/images/IMG_3347.jpg",
+    photos: ["/images/IMG_3347.jpg"],
   },
   {
     date: "October 31, 2026",
@@ -39,6 +42,7 @@ export const upcomingEvents: EventItem[] = [
       "Get spooky at Goko! Costume contest, horror movie marathon, pumpkin carving, themed cocktails, and a haunted beach walk. Best costume wins a prize!",
     tags: ["Costume contest", "Pumpkin carving", "Movie marathon"],
     cover: "/images/goko-haloween-2024/IMG_7128.jpg",
+    photos: ["/images/goko-haloween-2024/IMG_7128.jpg"],
   },
   {
     date: "December 31, 2026",
@@ -47,6 +51,7 @@ export const upcomingEvents: EventItem[] = [
       "Ring in the new year with your Goko family! Countdown on the beach with DJ, fireworks, dancing, and unlimited good vibes. Let's welcome 2027 together!",
     tags: ["Fireworks", "DJ night", "Cocktails"],
     cover: "/images/goko-haloween-2024/IMG_7257.jpg",
+    photos: ["/images/goko-haloween-2024/IMG_7257.jpg"],
   },
 ];
 
@@ -66,6 +71,7 @@ export const pastEvents: EventItem[] = [
     past: true,
     imageDir: "goko-holi-2024",
     cover: "/images/goko-holi-2024/IMG_6046.jpg",
+    photos: ["/images/goko-holi-2024/IMG_6046.jpg"],
   },
   {
     date: "November 12, 2023",
@@ -76,6 +82,7 @@ export const pastEvents: EventItem[] = [
     past: true,
     imageDir: "goko-deepawali-2024",
     cover: "/images/goko-deepawali-2024/IMG_3985.jpg",
+    photos: ["/images/goko-deepawali-2024/IMG_3985.jpg"],
   },
   {
     date: "December 25, 2023",
@@ -85,6 +92,7 @@ export const pastEvents: EventItem[] = [
     tags: ["Secret Santa", "Beach bonfire", "Carol singing"],
     past: true,
     cover: "/images/goko-deepawali-2024/IMG_5486.jpg",
+    photos: ["/images/goko-deepawali-2024/IMG_5486.jpg"],
   },
   {
     date: "September 19, 2023",
@@ -94,6 +102,7 @@ export const pastEvents: EventItem[] = [
     tags: ["Traditional puja", "Beach immersion", "Eco-friendly"],
     past: true,
     cover: "/images/mahabaleshwar_temple.jpg",
+    photos: ["/images/mahabaleshwar_temple.jpg"],
   },
   {
     date: "October 31, 2023",
@@ -104,6 +113,7 @@ export const pastEvents: EventItem[] = [
     past: true,
     imageDir: "goko-haloween-2024",
     cover: "/images/goko-haloween-2024/FullSizeRender.jpg",
+    photos: ["/images/goko-haloween-2024/FullSizeRender.jpg"],
   },
   {
     date: "August 15, 2023",
@@ -113,5 +123,6 @@ export const pastEvents: EventItem[] = [
     tags: ["Flag hoisting", "Cultural show", "Indian feast"],
     past: true,
     cover: "/images/IMG_3413.jpg",
+    photos: ["/images/IMG_3413.jpg"],
   },
 ];

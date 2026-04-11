@@ -20,7 +20,7 @@ export default function FaqsPage() {
         title={faqHero.title}
         subtitle={faqHero.subtitle}
         image="/legacy-images/62f5bf7bfc22850018b36726-62f5bf7bfc228579eab3678c_home_faq.webp"
-        imageAlt=""
+        imageAlt="Goko Hostel common area where guests relax and connect"
       />
       <section className="py-16 md:py-24">
         <Container>

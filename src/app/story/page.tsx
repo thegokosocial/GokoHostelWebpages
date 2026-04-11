@@ -42,7 +42,8 @@ export default function StoryPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-white py-16 md:py-24">
+      <section className="relative py-16 md:py-24">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="text-center font-display text-display-md font-bold text-brand-green">
             Meet the founders
@@ -139,7 +140,8 @@ export default function StoryPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-white py-16 md:py-24">
+      <section className="relative py-16 md:py-24">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="text-center font-display text-display-md font-bold text-brand-green">
             What we believe

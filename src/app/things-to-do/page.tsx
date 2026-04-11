@@ -25,6 +25,8 @@ export default function ThingsToDoPage() {
       <PageRibbon
         title={thingsToDoHero.title}
         subtitle={thingsToDoHero.subtitle}
+        image="/images/IMG_7403.jpg"
+        imageAlt="Beaches and things to do in Gokarna"
         heroVideo={null}
       />
 
@@ -66,7 +68,8 @@ export default function ThingsToDoPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-white py-16 md:py-24">
+      <section className="relative py-16 md:py-24">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="font-display text-display-md font-bold text-brand-green">
             Temples & culture

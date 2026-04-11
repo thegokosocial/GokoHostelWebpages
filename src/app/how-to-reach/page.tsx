@@ -62,7 +62,8 @@ export default function HowToReachPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-white py-16 md:py-24">
+      <section className="relative py-16 md:py-24">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="font-display text-display-md font-bold text-brand-green">
             Local transport & rentals
@@ -122,7 +123,8 @@ export default function HowToReachPage() {
             tips={parkingWalk.tips}
             video={parkingWalk.video}
           />
-          <div className="mt-10 flex flex-wrap gap-3 border-t border-brand-mist/80 pt-10">
+          <div className="goko-divider-fade mx-auto mt-10 max-w-4xl" aria-hidden />
+          <div className="mt-10 flex flex-wrap gap-3">
             <ButtonLink href={site.mapsUrl} external>
               Open in Google Maps
             </ButtonLink>
@@ -133,7 +135,7 @@ export default function HowToReachPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist py-10">
+      <section className="py-10">
         <Container>
           <p className="text-center text-sm text-brand-green-dark/75">
             After you arrive, explore{" "}

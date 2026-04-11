@@ -40,7 +40,7 @@ export default function ReviewsPage() {
           <div className="mt-16">
             <SectionHeader
               title="Every card from the original site"
-              subtitle="Ten longer reviews our guests left on Google—lightly edited for typos only."
+              subtitle="Longer reviews our guests left on Google—lightly edited for typos only."
             />
           </div>
 

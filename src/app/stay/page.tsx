@@ -1,6 +1,6 @@
-import { ImageCarousel } from "@/components/media/ImageCarousel";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Reveal } from "@/components/motion/Reveal";
+import { StayRoomCard } from "@/components/sections/CardWithModal";
 import { BookNowButton } from "@/components/booking/BookNowButton";
 import { Container } from "@/components/ui/Container";
 import {
@@ -36,32 +36,15 @@ export default function StayPage() {
           <p className="mx-auto mt-3 max-w-2xl text-center text-brand-green-dark/85">
             Swipe through photos — then lock in your bed on our booking partner.
           </p>
+          <p className="mx-auto mt-2 max-w-2xl text-center text-sm text-brand-green-dark/60">
+            Click any room to browse all photos
+          </p>
           <div className="mt-14 space-y-20">
             {stayRoomSummaries.map((room, i) => {
               const imgs = stayGalleryById[room.id] ?? [];
               return (
                 <Reveal key={room.id} delay={i * 0.05}>
-                  <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
-                    <ImageCarousel images={[...imgs]} alt={room.name} />
-                    <div>
-                      <h3 className="font-display text-2xl font-bold capitalize text-brand-green-dark md:text-3xl">
-                        {room.name}
-                      </h3>
-                      <p className="mt-4 text-base leading-relaxed text-brand-green-dark/90">
-                        {room.description}
-                      </p>
-                      <ul className="mt-6 flex flex-wrap gap-2">
-                        {room.features.map((f) => (
-                          <li
-                            key={f}
-                            className="rounded-full bg-brand-mist px-3 py-1.5 text-sm text-brand-green-dark"
-                          >
-                            {f}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
+                  <StayRoomCard room={room} images={imgs} />
                 </Reveal>
               );
             })}
@@ -69,7 +52,8 @@ export default function StayPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-white py-16 md:py-24">
+      <section className="relative py-16 md:py-24">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="text-center font-display text-display-md font-bold text-brand-green">
             Amenities & facilities
@@ -107,7 +91,8 @@ export default function StayPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist py-16 md:py-20">
+      <section className="relative py-16 md:py-20">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="text-center font-display text-2xl font-bold text-brand-green md:text-display-md">
             {stayWhy.title}

@@ -25,25 +25,28 @@ export function SectionHeader({
       )}
     >
       {eyebrow ? (
-        <p className="font-display text-xs font-bold uppercase tracking-[0.2em] text-brand-red">
+        <p className="font-display text-[0.7rem] font-bold uppercase tracking-[0.25em] text-brand-red">
           {eyebrow}
         </p>
       ) : null}
-      <h2 className="mt-2 font-display text-display-md font-bold text-brand-green">
+      <h2 className="mt-3 font-display text-display-md font-bold text-brand-green">
         {title}
       </h2>
       {subtitle ? (
-        <p className="mt-4 text-base leading-relaxed text-brand-green-dark/85 md:text-lg">
+        <p className="mt-5 text-base leading-relaxed text-brand-green-dark/80 md:text-lg">
           {subtitle}
         </p>
       ) : null}
       <div
         className={cn(
-          "mt-6 h-1 w-16 rounded-full goko-gradient-cta",
-          align === "center" && "mx-auto"
+          "mt-6 flex items-center gap-1",
+          align === "center" && "justify-center"
         )}
         aria-hidden
-      />
+      >
+        <div className="h-1 w-8 rounded-full bg-brand-green" />
+        <div className="h-1 w-3 rounded-full bg-brand-red" />
+      </div>
     </div>
   );
 }

@@ -14,7 +14,7 @@ export type FaqCategory = {
 };
 
 export const faqHero = {
-  title: "❓ Frequently Asked Questions",
+  title: "Frequently Asked Questions",
   subtitle: "Everything you need to know about staying at Goko Hostel in Gokarna",
 };
 

@@ -1,6 +1,6 @@
-import Image from "next/image";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Reveal } from "@/components/motion/Reveal";
+import { CommunitySpaceCard } from "@/components/sections/CardWithModal";
 import { Container } from "@/components/ui/Container";
 import {
   communityActivities,
@@ -40,46 +40,27 @@ export default function CommunityAreaPage() {
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-white py-16 md:py-24">
+      <section className="relative py-16 md:py-24">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <h2 className="text-center font-display text-display-md font-bold text-brand-green">
             Our common spaces
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-center text-brand-green-dark/85">
-            Designed for connection, comfort, and community.
+            Designed for connection, comfort, and community. Click any space to explore photos.
           </p>
           <div className="mt-14 grid gap-10 md:grid-cols-2">
             {communitySpaces.map((s, i) => (
               <Reveal key={s.title} delay={i * 0.05}>
-                <article className="overflow-hidden rounded-3xl border border-brand-mist bg-brand-sand shadow-soft">
-                  <div className="relative aspect-[16/10]">
-                    <Image
-                      src={s.image}
-                      alt={s.title}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width:768px) 100vw, 50vw"
-                    />
-                  </div>
-                  <div className="p-6">
-                    <div className="text-2xl" aria-hidden>
-                      {s.emoji}
-                    </div>
-                    <h3 className="mt-2 font-display text-xl font-bold text-brand-green">
-                      {s.title}
-                    </h3>
-                    <p className="mt-3 text-sm leading-relaxed text-brand-green-dark/90 md:text-base">
-                      {s.description}
-                    </p>
-                  </div>
-                </article>
+                <CommunitySpaceCard space={s} />
               </Reveal>
             ))}
           </div>
         </Container>
       </section>
 
-      <section className="border-t border-brand-mist bg-brand-sand/40 py-16 md:py-24">
+      <section className="relative bg-brand-sand/40 py-16 md:py-24">
+        <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
         <Container>
           <div className="mx-auto max-w-3xl text-center">
             <h2 className="font-display text-display-md font-bold text-brand-green">
