@@ -223,6 +223,46 @@ export default function AdminPage() {
   const [editVisaFiles, setEditVisaFiles] = useState<File[]>([]);
   const [validationOn, setValidationOn] = useState(true);
   const [togglingValidation, setTogglingValidation] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortField, setSortField] = useState<"date" | "place" | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const filteredRows = (() => {
+    let result = [...rows].map((row, origIdx) => ({ row, origIdx }));
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(({ row }) =>
+        row.some((cell) => cell?.toLowerCase().includes(q))
+      );
+    }
+
+    result.reverse();
+
+    if (sortField === "date") {
+      result.sort((a, b) => {
+        const dateA = a.row[1] || "";
+        const dateB = b.row[1] || "";
+        return sortDir === "asc" ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
+      });
+    } else if (sortField === "place") {
+      result.sort((a, b) => {
+        const placeA = (a.row[7] || "").toLowerCase();
+        const placeB = (b.row[7] || "").toLowerCase();
+        return sortDir === "asc" ? placeA.localeCompare(placeB) : placeB.localeCompare(placeA);
+      });
+    }
+
+    return result;
+  })();
+
+  const hasActiveFilters = searchQuery.trim() !== "" || sortField !== null;
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSortField(null);
+    setSortDir("desc");
+  };
 
   const apiCall = async (body: any) => {
     const res = await fetch("/api/admin/checkins", {
@@ -538,9 +578,47 @@ export default function AdminPage() {
           </div>
         )}
 
-        <p className="mt-4 text-sm text-brand-green-dark/70">
-          {rows.length} record{rows.length !== 1 ? "s" : ""} in {currentTab}
-        </p>
+        {/* Search and filters */}
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-1 items-center gap-2">
+            <Input
+              placeholder="Search by name, contact, place..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="max-w-xs"
+            />
+            <select
+              value={sortField || ""}
+              onChange={(e) => setSortField(e.target.value ? e.target.value as "date" | "place" : null)}
+              className="rounded-md border border-input bg-background px-3 py-2 text-xs"
+            >
+              <option value="">Sort by...</option>
+              <option value="date">Date</option>
+              <option value="place">Coming from</option>
+            </select>
+            {sortField && (
+              <button
+                type="button"
+                onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}
+                className="rounded-md border border-input bg-background px-2 py-2 text-xs"
+              >
+                {sortDir === "asc" ? "A-Z" : "Z-A"}
+              </button>
+            )}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="rounded-md bg-brand-red/10 px-3 py-2 text-xs font-medium text-brand-red hover:bg-brand-red/20"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+          <p className="text-sm text-brand-green-dark/70">
+            {filteredRows.length}{filteredRows.length !== rows.length ? ` of ${rows.length}` : ""} record{filteredRows.length !== 1 ? "s" : ""} in {currentTab}
+          </p>
+        </div>
 
         {/* Add entry form */}
         {showAddForm && (
@@ -632,15 +710,15 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={COLUMNS.length + 1} className="px-4 py-12 text-center text-brand-green-dark/50">
-                    No check-in records in this month
+                    {rows.length === 0 ? "No check-in records in this month" : "No records match your search"}
                   </td>
                 </tr>
               ) : (
-                rows.map((row, i) => (
-                  <tr key={i} className="border-b border-brand-mist/60 last:border-b-0 hover:bg-brand-sand/30">
+                filteredRows.map(({ row, origIdx }) => (
+                  <tr key={origIdx} className="border-b border-brand-mist/60 last:border-b-0 hover:bg-brand-sand/30">
                     {COLUMNS.map((_, ci) => {
                       const cell = row[ci] || "";
                       const links = cell.includes(" | ")
@@ -670,7 +748,7 @@ export default function AdminPage() {
                         <div className="flex gap-1">
                           <button
                             type="button"
-                            onClick={() => startEdit(i)}
+                            onClick={() => startEdit(origIdx)}
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-brand-green/70 transition-colors hover:bg-brand-green/[0.06] hover:text-brand-green"
                             title="Edit entry"
                           >
@@ -678,7 +756,7 @@ export default function AdminPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => deleteRow(i)}
+                            onClick={() => deleteRow(origIdx)}
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
                             title="Delete entry and documents"
                           >

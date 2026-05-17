@@ -65,6 +65,7 @@ export type ValidationResult = {
   message: string;
   nameMatch?: boolean;
   layers?: string[];
+  needsBackSide?: boolean;
 };
 
 // --- Layer helpers ---
@@ -127,6 +128,20 @@ function checkNameMatch(text: string, guestName?: string): boolean {
   return false;
 }
 
+const AADHAAR_ADDRESS_PATTERNS = [
+  /\baddress\b/i,
+  /\bS\/O\b|\bD\/O\b|\bW\/O\b|\bC\/O\b/,
+  /pin\s*:?\s*\d{6}/i,
+  /\b\d{6}\b/,
+  /\b(street|road|lane|nagar|colony|apartment|flat|house|floor|sector|block|village|district|taluk|mandal|ward)\b/i,
+  /\b(karnataka|maharashtra|tamil\s*nadu|kerala|andhra|telangana|gujarat|rajasthan|uttar\s*pradesh|madhya\s*pradesh|west\s*bengal|bihar|odisha|punjab|haryana|goa)\b/i,
+];
+
+function hasAadhaarAddress(text: string): boolean {
+  const matchCount = AADHAAR_ADDRESS_PATTERNS.filter((p) => p.test(text)).length;
+  return matchCount >= 2;
+}
+
 function detectDocumentType(text: string): { type: DocumentType; matchCount: number } {
   const checks: { type: DocumentType; patterns: RegExp[] }[] = [
     { type: "aadhaar", patterns: AADHAAR_PATTERNS },
@@ -177,6 +192,20 @@ function runTextValidation(
     }
     if (guestName) layers.push("name_verified");
 
+    if (type === "aadhaar" && !hasAadhaarAddress(text)) {
+      layers.push("address_missing");
+      const conf = matchCount >= 2 ? "high" : "medium";
+      return {
+        valid: true,
+        documentType: type,
+        confidence: conf,
+        nameMatch: true,
+        needsBackSide: true,
+        layers,
+        message: `Aadhaar detected. Name verified. Address not found — please also upload the back side of your Aadhaar.`,
+      };
+    }
+
     const conf = matchCount >= 2 ? "high" : "medium";
     return {
       valid: true,
@@ -184,7 +213,7 @@ function runTextValidation(
       confidence: conf,
       nameMatch: true,
       layers,
-      message: `${type.replace("_", " ")} detected.${nameMatched && guestName ? " Name verified." : ""}`,
+      message: `${type.replace("_", " ")} detected.${nameMatched && guestName ? " Name verified." : ""}${type === "aadhaar" ? " Address found." : ""}`,
     };
   }
 
