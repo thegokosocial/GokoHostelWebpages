@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon } from "lucide-react";
+import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminApi } from "./useAdminApi";
 import { CHECKIN_COLUMNS, type Role } from "./types";
@@ -43,6 +43,8 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<"date" | "place" | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [verifyPopup, setVerifyPopup] = useState<{ origIdx: number; row: string[] } | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   const filteredRows = (() => {
     let result = [...rows].map((row, origIdx) => ({ row, origIdx }));
@@ -138,8 +140,16 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
     try {
       const entry = [...newEntry]; entry[0] = new Date().toISOString();
       const res = await apiCall({ action: "add", entry });
-      if (res.ok) { setShowAddForm(false); setNewEntry(Array(14).fill("")); refresh(); }
+      if (res.ok) { setShowAddForm(false); setNewEntry(Array(15).fill("")); refresh(); }
     } finally { setLoading(false); }
+  };
+
+  const verifyManually = async (origIdx: number, verified: boolean) => {
+    setVerifying(true);
+    try {
+      const res = await apiCall({ action: "verifyCheckin", rowIndex: origIdx, verified, tab: currentTab });
+      if (res.ok) { setVerifyPopup(null); refresh(); }
+    } finally { setVerifying(false); }
   };
 
   if (loading && rows.length === 0) {
@@ -274,9 +284,31 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
             ) : (
               filteredRows.map(({ row, origIdx }) => (
                 <tr key={origIdx} className="border-b border-brand-mist/60 last:border-b-0 hover:bg-brand-sand/30">
-                  {CHECKIN_COLUMNS.map((_, ci) => {
+                  {CHECKIN_COLUMNS.map((col, ci) => {
                     const cell = row[ci] || "";
                     const links = cell.includes(" | ") ? cell.split(" | ").filter((u) => u.startsWith("http")) : cell.startsWith("http") ? [cell] : [];
+
+                    if (col === "Verified") {
+                      return (
+                        <td key={ci} className="whitespace-nowrap px-3 py-3">
+                          {cell === "yes" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                              <ShieldCheckIcon className="h-3 w-3" /> Verified
+                            </span>
+                          ) : cell === "no" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                              <ShieldAlertIcon className="h-3 w-3" /> Rejected
+                            </span>
+                          ) : (
+                            <button type="button" onClick={() => setVerifyPopup({ origIdx, row })}
+                              className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold text-yellow-700 hover:bg-yellow-200">
+                              <ShieldAlertIcon className="h-3 w-3" /> Pending
+                            </button>
+                          )}
+                        </td>
+                      );
+                    }
+
                     return (
                       <td key={ci} className="whitespace-nowrap px-3 py-3">
                         {links.length > 0 ? (
@@ -305,6 +337,77 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
           </tbody>
         </table>
       </div>
+
+      {/* Manual verification popup */}
+      {verifyPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setVerifyPopup(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lift" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-brand-green-dark">Manual ID Verification</h3>
+              <button type="button" onClick={() => setVerifyPopup(null)} className="rounded-lg p-1 hover:bg-brand-sand">
+                <XIcon className="h-5 w-5 text-brand-green-dark/50" />
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-brand-green-dark/70">
+              Review the uploaded ID for <strong>{verifyPopup.row[3]}</strong> and mark as verified or rejected.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-green-dark/50">ID Documents</p>
+              {(() => {
+                const idCell = verifyPopup.row[12] || "";
+                const visaCell = verifyPopup.row[13] || "";
+                const idLinks = idCell.split(" | ").filter((u) => u.startsWith("http"));
+                const visaLinks = visaCell.split(" | ").filter((u) => u.startsWith("http"));
+                return (
+                  <>
+                    {idLinks.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="text-xs text-brand-green-dark/50">ID ({verifyPopup.row[11]}):</span>
+                        {idLinks.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-3 py-1.5 text-xs font-medium text-brand-green hover:bg-brand-green/[0.12]">
+                            {idLinks.length > 1 ? (i === 0 ? "Front" : "Back") : "View ID"} <ExternalLinkIcon className="h-3 w-3" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {visaLinks.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="text-xs text-brand-green-dark/50">Visa:</span>
+                        {visaLinks.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-3 py-1.5 text-xs font-medium text-brand-green hover:bg-brand-green/[0.12]">
+                            View <ExternalLinkIcon className="h-3 w-3" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {idLinks.length === 0 && visaLinks.length === 0 && (
+                      <p className="text-xs text-brand-green-dark/40">No documents uploaded</p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button type="button" disabled={verifying}
+                onClick={() => verifyManually(verifyPopup.origIdx, true)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-500 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-600 disabled:opacity-50">
+                {verifying ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <ShieldCheckIcon className="h-4 w-4" />}
+                Verified
+              </button>
+              <button type="button" disabled={verifying}
+                onClick={() => verifyManually(verifyPopup.origIdx, false)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:opacity-50">
+                {verifying ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <ShieldAlertIcon className="h-4 w-4" />}
+                Rejected
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

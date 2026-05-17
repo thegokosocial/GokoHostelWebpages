@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       const tabs = await sheetsGetTabs(spreadsheetId);
       const tabNames = tabs.map((t) => t.title);
 
-      const allRows = await sheetsGet(spreadsheetId, `'${tabName}'!A:N`);
+      const allRows = await sheetsGet(spreadsheetId, `'${tabName}'!A:O`);
       const rows = allRows.length > 1 ? allRows.slice(1) : [];
 
       return NextResponse.json({ rows, role, tabs: tabNames, currentTab: tabName });
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
       const tabName = getMonthTabName();
       await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
-      await sheetsAppend(spreadsheetId, `'${tabName}'!A:N`, [entry]);
+      await sheetsAppend(spreadsheetId, `'${tabName}'!A:O`, [entry]);
 
       return NextResponse.json({ success: true });
     }
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       }
 
       const rowNumber = rowIndex + 2;
-      await sheetsUpdate(spreadsheetId, `'${tabName}'!A${rowNumber}:N${rowNumber}`, [entry]);
+      await sheetsUpdate(spreadsheetId, `'${tabName}'!A${rowNumber}:O${rowNumber}`, [entry]);
 
       return NextResponse.json({ success: true });
     }
@@ -127,6 +127,14 @@ export async function POST(req: NextRequest) {
         await sheetsDeleteRow(spreadsheetId, sheet.sheetId, rowIndex + 1);
       }
 
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "verifyCheckin") {
+      const { rowIndex, verified, tab } = body;
+      const tabName = tab || getMonthTabName();
+      const rowNum = rowIndex + 2;
+      await sheetsUpdate(spreadsheetId, `'${tabName}'!O${rowNum}:O${rowNum}`, [[verified ? "yes" : "no"]]);
       return NextResponse.json({ success: true });
     }
 
@@ -159,7 +167,7 @@ export async function POST(req: NextRequest) {
       const tabName = getMonthTabName();
       await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
 
-      const allRows = await sheetsGet(spreadsheetId, `'${tabName}'!A:N`);
+      const allRows = await sheetsGet(spreadsheetId, `'${tabName}'!A:O`);
       const checkins = allRows.length > 1 ? allRows.slice(1) : [];
       const today = new Date().toISOString().split("T")[0];
       const todayCheckins = checkins.filter((r) => r[1] === today);
@@ -201,7 +209,7 @@ export async function POST(req: NextRequest) {
 
       const tabName = getMonthTabName();
       await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
-      const allRows = await sheetsGet(spreadsheetId, `'${tabName}'!A:N`);
+      const allRows = await sheetsGet(spreadsheetId, `'${tabName}'!A:O`);
       const checkins = allRows.length > 1 ? allRows.slice(1) : [];
 
       const assignedContacts = new Set(beds.filter((b) => b[4] === "occupied" && b[6]).map((b) => b[6]));

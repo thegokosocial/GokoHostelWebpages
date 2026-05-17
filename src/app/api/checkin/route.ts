@@ -121,9 +121,16 @@ export async function POST(req: NextRequest) {
 
     await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
 
-    await sheetsAppend(spreadsheetId, `'${tabName}'!A:N`, [
+    let verified = "";
+    try {
+      const { getSettingValue } = await import("@/lib/googleApiFetch");
+      const val = await getSettingValue(spreadsheetId, "image_validation");
+      verified = val === "off" ? "pending" : "yes";
+    } catch { verified = "pending"; }
+
+    await sheetsAppend(spreadsheetId, `'${tabName}'!A:O`, [
       [submittedAt, arrivalDate, arrivalTime, name, numberOfPersons, contactNumber,
-        stayingDays, comingFrom, nationality, emergencyName, emergencyPhone, idType, idCardLink, visaLink],
+        stayingDays, comingFrom, nationality, emergencyName, emergencyPhone, idType, idCardLink, visaLink, verified],
     ]);
 
     return NextResponse.json({ success: true });

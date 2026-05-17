@@ -165,7 +165,16 @@ export function AdminDashboard({
             {todayCheckins.map((item, i) => (
               <div key={i} className="flex items-center justify-between rounded-xl border border-brand-mist bg-white px-4 py-3">
                 <div>
-                  <p className="font-medium text-brand-green-dark">{item.row[3]}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-brand-green-dark">{item.row[3]}</p>
+                    {item.row[14] === "yes" ? (
+                      <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold text-green-700">ID verified</span>
+                    ) : item.row[14] === "no" ? (
+                      <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700">ID rejected</span>
+                    ) : !item.row[14] || item.row[14] === "pending" ? (
+                      <span className="rounded-full bg-yellow-100 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700">ID pending</span>
+                    ) : null}
+                  </div>
                   <p className="text-xs text-brand-green-dark/60">{item.row[7]}, {item.row[8]} · {item.row[4]} person{item.row[4] !== "1" ? "s" : ""} · {item.row[6]} days</p>
                 </div>
                 <div className="flex items-center gap-3">

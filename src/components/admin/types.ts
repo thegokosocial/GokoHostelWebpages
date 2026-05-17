@@ -25,5 +25,5 @@ export const BED_HEADERS = [
 export const CHECKIN_COLUMNS = [
   "Submitted At", "Arrival Date", "Arrival Time", "Name", "Persons",
   "Contact", "Days", "Coming From", "Nationality", "Emergency Contact",
-  "Emergency Phone", "ID Type", "ID Card", "Visa",
+  "Emergency Phone", "ID Type", "ID Card", "Visa", "Verified",
 ];
