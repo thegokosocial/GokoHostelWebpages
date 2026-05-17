@@ -307,3 +307,108 @@ export function validateIdFromText(
 ): ValidationResult {
   return runTextValidation(text, expectedCategory, expectedIdType, guestName);
 }
+
+function extractAadhaarNumbers(text: string): string[] {
+  const matches = text.match(/\b\d{4}\s?\d{4}\s?\d{4}\b/g) || [];
+  return matches.map((m) => m.replace(/\s/g, ""));
+}
+
+/** Validate multiple files together (combines OCR, checks Aadhaar number match across pages) */
+export async function validateMultipleFiles(
+  files: { buffer: Buffer; mimeType: string }[],
+  expectedCategory: "id" | "visa",
+  expectedIdType?: "aadhaar" | "driving_licence" | "passport",
+  guestName?: string
+): Promise<ValidationResult> {
+  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!credentials) {
+    return { valid: true, documentType: "unknown", confidence: "low", message: "Validation skipped (no credentials)" };
+  }
+
+  try {
+    const { getSettingValue } = await import("./googleApiFetch");
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+    if (spreadsheetId) {
+      const enabled = await getSettingValue(spreadsheetId, "image_validation");
+      if (enabled === "off") {
+        return { valid: true, documentType: "unknown", confidence: "low", message: "Validation disabled by admin." };
+      }
+    }
+  } catch {}
+
+  try {
+    const allTexts: string[] = [];
+    const allLabels: string[] = [];
+    const allObjects: string[] = [];
+    let safeSearch: any = null;
+
+    for (const file of files) {
+      const base64 = file.buffer.toString("base64");
+      const analysis = await visionAnalyze(base64, file.mimeType);
+      allTexts.push(analysis.text);
+      allLabels.push(...analysis.labels);
+      allObjects.push(...analysis.objects);
+      if (analysis.safeSearch && !safeSearch) safeSearch = analysis.safeSearch;
+    }
+
+    const combinedText = allTexts.join("\n");
+    const layers: string[] = [];
+
+    // Layer 1: Label check (using all labels from all images)
+    if (allLabels.length > 0) {
+      const { isDoc, reason } = checkIsDocument(allLabels, allObjects);
+      if (!isDoc) {
+        return { valid: false, documentType: "unknown", confidence: "high", layers: ["label_rejected"], message: reason || "This does not appear to be an ID document." };
+      }
+      layers.push("label_ok");
+    }
+
+    // Layer 2-4: Text validation on combined text
+    const textResult = runTextValidation(combinedText, expectedCategory, expectedIdType, guestName);
+    layers.push(...(textResult.layers || []));
+
+    if (!textResult.valid) {
+      return { ...textResult, layers };
+    }
+
+    // Aadhaar-specific: check number consistency across pages
+    if (textResult.documentType === "aadhaar" && allTexts.length > 1) {
+      const numberSets = allTexts.map(extractAadhaarNumbers);
+      const allNumbers = numberSets.flat();
+
+      if (allNumbers.length >= 2) {
+        const uniqueNumbers = [...new Set(allNumbers)];
+        const frontNumbers = new Set(numberSets[0]);
+        const hasMatchAcrossPages = numberSets.slice(1).some((nums) =>
+          nums.some((n) => frontNumbers.has(n))
+        );
+
+        if (!hasMatchAcrossPages && uniqueNumbers.length > 1) {
+          layers.push("aadhaar_number_mismatch");
+          return {
+            valid: false,
+            documentType: "aadhaar",
+            confidence: "high",
+            layers,
+            message: "The Aadhaar numbers on the front and back do not match. Please upload front and back of the same Aadhaar card.",
+          };
+        }
+        layers.push("aadhaar_number_match");
+      }
+    }
+
+    // Layer 5: SafeSearch
+    if (safeSearch) {
+      const { safe, reason } = checkSafeSearch(safeSearch);
+      if (!safe) {
+        return { valid: false, documentType: textResult.documentType, confidence: "high", layers: [...layers, "safesearch_rejected"], message: reason };
+      }
+      layers.push("safesearch_ok");
+    }
+
+    return { ...textResult, layers, message: textResult.message };
+  } catch (error) {
+    console.error("Multi-file validation error:", error);
+    return { valid: true, documentType: "unknown", confidence: "low", message: "Validation service unavailable, document accepted." };
+  }
+}

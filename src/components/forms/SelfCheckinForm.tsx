@@ -332,13 +332,10 @@ export function SelfCheckinForm() {
     setValidatingId(true);
     setIdValidationMsg(null);
     try {
-      const firstImage = idFiles.find((f) => f.file.type.startsWith("image/"));
-      const fileToValidate = firstImage?.file || idFiles[0].file;
-
       const idType = watch("idType");
       const guestName = watch("name");
       const formData = new FormData();
-      formData.append("file", fileToValidate);
+      idFiles.forEach((doc) => formData.append("file", doc.file));
       formData.append("category", "id");
       if (idType) formData.append("idType", idType);
       if (guestName) formData.append("guestName", guestName);
