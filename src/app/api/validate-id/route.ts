@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateIdFromText } from "@/lib/validateIdDocument";
 
 async function extractPdfText(pdfBuffer: Buffer): Promise<string> {
-  const pdfParse = (await import("pdf-parse")).default;
+  const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
   const data = await pdfParse(pdfBuffer);
   return data.text || "";
 }

@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
 
     async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
       if (file.type === "application/pdf") {
-        const pdfParse = (await import("pdf-parse")).default;
+        const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
         const pdfBuffer = Buffer.from(await file.arrayBuffer());
         const data = await pdfParse(pdfBuffer);
         return validateIdFromText(data.text || "", category, idTypeHint as any, nameToCheck);

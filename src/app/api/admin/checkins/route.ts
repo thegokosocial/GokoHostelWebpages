@@ -162,8 +162,8 @@ export async function POST(req: NextRequest) {
       }
 
       const meta = await sheets.spreadsheets.get({ spreadsheetId });
-      const sheet = meta.data.sheets?.find((s: any) => s.properties.title === tabName);
-      if (sheet) {
+      const sheet = meta.data.sheets?.find((s: any) => s.properties?.title === tabName);
+      if (sheet?.properties) {
         const sheetId = sheet.properties.sheetId;
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId,
