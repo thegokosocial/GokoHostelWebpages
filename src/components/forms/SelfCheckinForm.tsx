@@ -257,6 +257,7 @@ export function SelfCheckinForm() {
   const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
   const [validatingVisa, setValidatingVisa] = useState(false);
   const [validationEnabled, setValidationEnabled] = useState(true);
+  const [validationLoaded, setValidationLoaded] = useState(false);
   const [detectedIdType, setDetectedIdType] = useState<string | null>(null);
 
   useEffect(() => {
@@ -268,7 +269,8 @@ export function SelfCheckinForm() {
           setIdValidated(true);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setValidationLoaded(true));
   }, []);
 
   const {
@@ -725,7 +727,7 @@ export function SelfCheckinForm() {
       </div>
 
       <div className="mt-10">
-        {validationEnabled && !idValidated && idFiles.length > 0 && (
+        {validationLoaded && validationEnabled && !idValidated && idFiles.length > 0 && (
           <p className="mb-3 text-center text-sm text-brand-red">
             Please click &quot;Verify document&quot; before submitting
           </p>
@@ -734,9 +736,9 @@ export function SelfCheckinForm() {
           type="submit"
           variant="cta"
           className="w-full"
-          disabled={submitting || (validationEnabled && !idValidated)}
+          disabled={submitting || !validationLoaded || (validationEnabled && !idValidated)}
         >
-          {submitting ? "Submitting..." : "Complete Check-in"}
+          {submitting ? "Submitting..." : !validationLoaded ? "Loading..." : "Complete Check-in"}
         </Button>
       </div>
     </form>
