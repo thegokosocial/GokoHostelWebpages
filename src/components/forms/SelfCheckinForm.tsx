@@ -494,6 +494,27 @@ export function SelfCheckinForm() {
     );
   }
 
+  if (submitting) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-3xl border border-brand-mist bg-white p-12 text-center shadow-card md:p-16">
+        <div className="mx-auto flex h-20 w-20 items-center justify-center">
+          <div className="h-16 w-16 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
+        </div>
+        <h2 className="mt-8 font-display text-2xl font-bold text-brand-green">
+          Submitting your check-in...
+        </h2>
+        <p className="mt-3 text-brand-green-dark/70">
+          Uploading documents and saving your details. Please do not close this page or press back.
+        </p>
+        <div className="mt-6 flex justify-center gap-1">
+          <div className="h-2 w-2 animate-bounce rounded-full bg-brand-green [animation-delay:0ms]" />
+          <div className="h-2 w-2 animate-bounce rounded-full bg-brand-green [animation-delay:150ms]" />
+          <div className="h-2 w-2 animate-bounce rounded-full bg-brand-green [animation-delay:300ms]" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
@@ -503,14 +524,14 @@ export function SelfCheckinForm() {
         Guest Self Check-in
       </h2>
       <p className="mt-2 text-sm text-brand-green-dark/70">
-        Please fill in your details. All fields are required.
+        Please fill in your details. Fields marked with <span className="text-brand-red">*</span> are required.
       </p>
 
       <div className="mt-8 space-y-6">
         {/* Date & Time */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="arrivalDate">Date of arrival</Label>
+            <Label htmlFor="arrivalDate">Date of arrival <span className="text-brand-red">*</span></Label>
             <Input
               id="arrivalDate"
               type="date"
@@ -522,7 +543,7 @@ export function SelfCheckinForm() {
             )}
           </div>
           <div>
-            <Label htmlFor="arrivalTime">Time of arrival</Label>
+            <Label htmlFor="arrivalTime">Time of arrival <span className="text-brand-red">*</span></Label>
             <Input
               id="arrivalTime"
               type="time"
@@ -537,7 +558,7 @@ export function SelfCheckinForm() {
 
         {/* Name */}
         <div>
-          <Label htmlFor="name">Full name</Label>
+          <Label htmlFor="name">Full name <span className="text-brand-red">*</span></Label>
           <Input
             id="name"
             placeholder="Enter your full name"
@@ -553,7 +574,7 @@ export function SelfCheckinForm() {
         {/* Number of persons & Staying days */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="numberOfPersons">Number of persons</Label>
+            <Label htmlFor="numberOfPersons">Number of persons <span className="text-brand-red">*</span></Label>
             <Input
               id="numberOfPersons"
               type="text"
@@ -569,7 +590,7 @@ export function SelfCheckinForm() {
             )}
           </div>
           <div>
-            <Label htmlFor="stayingDays">Staying number of days</Label>
+            <Label htmlFor="stayingDays">Staying number of days <span className="text-brand-red">*</span></Label>
             <Input
               id="stayingDays"
               type="text"
@@ -586,7 +607,7 @@ export function SelfCheckinForm() {
 
         {/* Nationality */}
         <div>
-          <Label>Nationality</Label>
+          <Label>Nationality <span className="text-brand-red">*</span></Label>
           <CountrySelect
             value={nationality}
             onChange={(val) => setValue("nationality", val, { shouldValidate: true })}
@@ -599,7 +620,7 @@ export function SelfCheckinForm() {
 
         {/* Coming from */}
         <div>
-          <Label htmlFor="comingFrom">Coming from (city/place)</Label>
+          <Label htmlFor="comingFrom">Coming from (city/place) <span className="text-brand-red">*</span></Label>
           <Input
             id="comingFrom"
             placeholder="e.g. Mumbai"
@@ -613,7 +634,7 @@ export function SelfCheckinForm() {
 
         {/* Contact number */}
         <div>
-          <Label htmlFor="contactNumber">Contact number</Label>
+          <Label htmlFor="contactNumber">Contact number <span className="text-brand-red">*</span></Label>
           <div className="flex gap-2">
             <div className="flex h-9 w-[5rem] shrink-0 items-center justify-center rounded-md border border-input bg-brand-sand/50 px-2 text-sm font-medium text-brand-green-dark">
               {countryDialCodes[nationality] || "+91"}
@@ -636,7 +657,7 @@ export function SelfCheckinForm() {
         {/* Emergency contact */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="emergencyName">Emergency contact name</Label>
+            <Label htmlFor="emergencyName">Emergency contact name <span className="text-brand-red">*</span></Label>
             <Input
               id="emergencyName"
               placeholder="e.g. Parent or friend"
@@ -648,7 +669,7 @@ export function SelfCheckinForm() {
             )}
           </div>
           <div>
-            <Label htmlFor="emergencyPhone">Emergency contact phone</Label>
+            <Label htmlFor="emergencyPhone">Emergency contact phone <span className="text-brand-red">*</span></Label>
             <div className="flex gap-2">
               <div className="flex h-9 w-[5rem] shrink-0 items-center justify-center rounded-md border border-input bg-brand-sand/50 px-2 text-sm font-medium text-brand-green-dark">
                 {countryDialCodes[nationality] || "+91"}
@@ -670,7 +691,7 @@ export function SelfCheckinForm() {
 
         {/* ID Type Selection */}
         <div>
-          <Label htmlFor="idType">ID document type</Label>
+          <Label htmlFor="idType">ID document type <span className="text-brand-red">*</span></Label>
           <select
             id="idType"
             {...register("idType")}
@@ -699,7 +720,7 @@ export function SelfCheckinForm() {
 
         {/* ID Upload (multiple images/PDF) */}
         <MultiDocUpload
-          label="ID document (upload front & back)"
+          label="ID document (upload front & back) *"
           error={errors.idImages?.message as string | undefined}
           files={idFiles}
           onAdd={addIdFile}
