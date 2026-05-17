@@ -38,31 +38,32 @@ export const checkinSchema = z
       .string()
       .min(10, "Phone number must be at least 10 digits")
       .regex(phoneRegex, "Enter a valid phone number"),
-    idCardImage: z
+    idType: z.enum(["aadhaar", "driving_licence", "passport"], {
+      required_error: "Please select your ID type",
+    }),
+    idImages: z
       .any()
       .refine(
         (files) => files && files.length > 0,
-        "ID card image is required"
+        "At least one ID image is required"
       )
       .refine(
         (files) =>
-          !files ||
-          files.length === 0 ||
-          files[0].size <= 10 * 1024 * 1024,
-        "File must be less than 10 MB"
+          !files || Array.from(files as File[]).every((f) => f.size <= 10 * 1024 * 1024),
+        "Each file must be less than 10 MB"
       ),
-    visaImage: z.any().optional(),
+    visaImages: z.any().optional(),
   })
   .refine(
     (data) => {
       if (data.nationality && data.nationality !== "India") {
-        return data.visaImage && data.visaImage.length > 0;
+        return data.visaImages && data.visaImages.length > 0;
       }
       return true;
     },
     {
       message: "Visa document is required for non-Indian nationals",
-      path: ["visaImage"],
+      path: ["visaImages"],
     }
   )
   .refine(

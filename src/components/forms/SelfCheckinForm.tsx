@@ -106,84 +106,31 @@ function CountrySelect({
   );
 }
 
-function ImageUpload({
+type ImageFile = { file: File; preview: string };
+
+function MultiImageUpload({
   label,
-  accept,
   error,
-  onChange,
-  value,
-  category = "id",
+  images,
+  onAdd,
+  onRemove,
   helpText,
 }: {
   label: string;
-  accept?: string;
   error?: string;
-  onChange: (files: FileList | null) => void;
-  value: FileList | null | undefined;
-  category?: "id" | "visa";
+  images: ImageFile[];
+  onAdd: (file: File) => void;
+  onRemove: (index: number) => void;
   helpText?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [validating, setValidating] = useState(false);
-  const [validationStatus, setValidationStatus] = useState<{
-    valid: boolean;
-    message: string;
-  } | null>(null);
 
-  const validateImage = useCallback(
-    async (file: File) => {
-      setValidating(true);
-      setValidationStatus(null);
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("category", category);
-
-        const res = await fetch("/api/validate-id", {
-          method: "POST",
-          body: formData,
-        });
-        const result = await res.json();
-        setValidationStatus({ valid: result.valid, message: result.message });
-
-        if (!result.valid) {
-          onChange(null);
-          setPreview(null);
-          if (fileInputRef.current) fileInputRef.current.value = "";
-          if (cameraInputRef.current) cameraInputRef.current.value = "";
-        }
-      } catch {
-        setValidationStatus({ valid: true, message: "Validation skipped" });
-      } finally {
-        setValidating(false);
-      }
-    },
-    [category, onChange]
-  );
-
-  const handleFile = useCallback(
-    (files: FileList | null) => {
-      if (files && files[0]) {
-        onChange(files);
-        const reader = new FileReader();
-        reader.onload = (e) => setPreview(e.target?.result as string);
-        reader.readAsDataURL(files[0]);
-        validateImage(files[0]);
-      } else {
-        onChange(null);
-        setPreview(null);
-        setValidationStatus(null);
-      }
-    },
-    [onChange, validateImage]
-  );
-
-  const clearFile = () => {
-    onChange(null);
-    setPreview(null);
-    setValidationStatus(null);
+  const handleFiles = (files: FileList | null) => {
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      if (file.size <= 10 * 1024 * 1024) onAdd(file);
+    });
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
@@ -193,70 +140,53 @@ function ImageUpload({
       <Label className="mb-2 block text-sm font-medium text-brand-green-dark">
         {label}
       </Label>
-      {preview ? (
-        <div className="flex items-start gap-4">
-          <div className="relative inline-block">
-            <img
-              src={preview}
-              alt="Document preview"
-              className="h-32 w-auto rounded-xl border border-brand-mist object-cover shadow-soft"
-            />
-            <button
-              type="button"
-              onClick={clearFile}
-              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md"
-            >
-              <XIcon className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="flex-1 pt-1">
-            {validating && (
-              <p className="flex items-center gap-2 text-sm text-brand-green-dark/70">
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-green border-t-transparent" />
-                Verifying document...
-              </p>
-            )}
-            {validationStatus && !validating && (
-              <p
-                className={cn(
-                  "text-sm font-medium",
-                  validationStatus.valid
-                    ? "text-brand-green"
-                    : "text-red-500"
-                )}
+
+      {images.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-3">
+          {images.map((img, i) => (
+            <div key={i} className="relative">
+              <img
+                src={img.preview}
+                alt={`Document ${i + 1}`}
+                className="h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft"
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(i)}
+                className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow-md"
               >
-                {validationStatus.valid ? "✓ " : "✗ "}
-                {validationStatus.message}
-              </p>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-mist bg-brand-sand/50 px-4 py-6 text-sm font-medium text-brand-green-dark transition-colors hover:border-brand-green/30 hover:bg-brand-sand"
-          >
-            <UploadIcon className="h-5 w-5 text-brand-green" />
-            Upload file
-          </button>
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-mist bg-brand-sand/50 px-4 py-6 text-sm font-medium text-brand-green-dark transition-colors hover:border-brand-green/30 hover:bg-brand-sand"
-          >
-            <CameraIcon className="h-5 w-5 text-brand-green" />
-            Take photo
-          </button>
+                <XIcon className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-mist bg-brand-sand/50 px-4 py-4 text-sm font-medium text-brand-green-dark transition-colors hover:border-brand-green/30 hover:bg-brand-sand"
+        >
+          <UploadIcon className="h-5 w-5 text-brand-green" />
+          {images.length > 0 ? "Add more" : "Upload file"}
+        </button>
+        <button
+          type="button"
+          onClick={() => cameraInputRef.current?.click()}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-mist bg-brand-sand/50 px-4 py-4 text-sm font-medium text-brand-green-dark transition-colors hover:border-brand-green/30 hover:bg-brand-sand"
+        >
+          <CameraIcon className="h-5 w-5 text-brand-green" />
+          Take photo
+        </button>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
-        accept={accept ?? "image/*"}
+        accept="image/*"
+        multiple
         className="hidden"
-        onChange={(e) => handleFile(e.target.files)}
+        onChange={(e) => handleFiles(e.target.files)}
       />
       <input
         ref={cameraInputRef}
@@ -264,11 +194,11 @@ function ImageUpload({
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={(e) => handleFile(e.target.files)}
+        onChange={(e) => handleFiles(e.target.files)}
       />
       {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
       <p className="mt-1.5 text-xs text-brand-green-dark/50">
-        {helpText || "Accepted: Driving licence, Aadhaar card, or Passport. Max 10 MB."}
+        {helpText || "Upload front & back. Max 10 MB per image."}
       </p>
     </div>
   );
@@ -278,6 +208,8 @@ export function SelfCheckinForm() {
   const { date, time } = getNow();
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [idImages, setIdImages] = useState<ImageFile[]>([]);
+  const [visaImages, setVisaImages] = useState<ImageFile[]>([]);
 
   const {
     register,
@@ -299,10 +231,43 @@ export function SelfCheckinForm() {
       nationality: "India",
       emergencyName: "",
       emergencyPhone: "",
+      idType: undefined,
     },
   });
 
   const nationality = watch("nationality");
+
+  const addIdImage = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const newImages = [...idImages, { file, preview: e.target?.result as string }];
+      setIdImages(newImages);
+      setValue("idImages", newImages.map((img) => img.file), { shouldValidate: true });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeIdImage = (index: number) => {
+    const newImages = idImages.filter((_, i) => i !== index);
+    setIdImages(newImages);
+    setValue("idImages", newImages.length > 0 ? newImages.map((img) => img.file) : null, { shouldValidate: true });
+  };
+
+  const addVisaImage = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const newImages = [...visaImages, { file, preview: e.target?.result as string }];
+      setVisaImages(newImages);
+      setValue("visaImages", newImages.map((img) => img.file), { shouldValidate: true });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeVisaImage = (index: number) => {
+    const newImages = visaImages.filter((_, i) => i !== index);
+    setVisaImages(newImages);
+    setValue("visaImages", newImages.length > 0 ? newImages.map((img) => img.file) : null, { shouldValidate: true });
+  };
 
   const onSubmit = async (data: CheckinFormData) => {
     setSubmitting(true);
@@ -318,13 +283,15 @@ export function SelfCheckinForm() {
       formData.append("nationality", data.nationality);
       formData.append("emergencyName", data.emergencyName);
       formData.append("emergencyPhone", data.emergencyPhone);
+      formData.append("idType", data.idType);
 
-      if (data.idCardImage?.[0]) {
-        formData.append("idCardImage", data.idCardImage[0]);
-      }
-      if (data.visaImage?.[0]) {
-        formData.append("visaImage", data.visaImage[0]);
-      }
+      idImages.forEach((img) => {
+        formData.append("idImages", img.file);
+      });
+
+      visaImages.forEach((img) => {
+        formData.append("visaImages", img.file);
+      });
 
       const res = await fetch("/api/checkin", {
         method: "POST",
@@ -341,6 +308,8 @@ export function SelfCheckinForm() {
 
       setSuccess(true);
       reset();
+      setIdImages([]);
+      setVisaImages([]);
     } catch {
       alert("Something went wrong. Please try again or contact the front desk.");
     } finally {
@@ -546,27 +515,46 @@ export function SelfCheckinForm() {
           </div>
         </div>
 
-        {/* ID Card Upload */}
-        <ImageUpload
-          label="ID Card (Driving licence / Aadhaar / Passport)"
-          error={errors.idCardImage?.message as string | undefined}
-          value={watch("idCardImage")}
-          onChange={(files) =>
-            setValue("idCardImage", files, { shouldValidate: true })
-          }
+        {/* ID Type Selection */}
+        <div>
+          <Label htmlFor="idType">ID document type</Label>
+          <select
+            id="idType"
+            {...register("idType")}
+            className={cn(
+              "mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring",
+              errors.idType && "border-red-400"
+            )}
+          >
+            <option value="">Select ID type...</option>
+            <option value="aadhaar">Aadhaar Card</option>
+            <option value="driving_licence">Driving Licence</option>
+            <option value="passport">Passport</option>
+          </select>
+          {errors.idType && (
+            <p className="mt-1 text-xs text-red-500">{errors.idType.message}</p>
+          )}
+        </div>
+
+        {/* ID Images Upload (multiple) */}
+        <MultiImageUpload
+          label="ID photos (upload front & back)"
+          error={errors.idImages?.message as string | undefined}
+          images={idImages}
+          onAdd={addIdImage}
+          onRemove={removeIdImage}
+          helpText="Upload front and back of your ID. Max 10 MB per image."
         />
 
-        {/* Visa (conditional) */}
+        {/* Visa (conditional, multiple) */}
         {nationality && nationality !== "India" && (
-          <ImageUpload
-            label="Visa document (required for non-Indian nationals)"
-            category="visa"
-            error={errors.visaImage?.message as string | undefined}
-            value={watch("visaImage")}
-            onChange={(files) =>
-              setValue("visaImage", files, { shouldValidate: true })
-            }
-            helpText="Upload a clear photo of your valid visa. Max 10 MB."
+          <MultiImageUpload
+            label="Visa document photos (required for non-Indian nationals)"
+            error={errors.visaImages?.message as string | undefined}
+            images={visaImages}
+            onAdd={addVisaImage}
+            onRemove={removeVisaImage}
+            helpText="Upload all relevant visa pages. Max 10 MB per image."
           />
         )}
       </div>
