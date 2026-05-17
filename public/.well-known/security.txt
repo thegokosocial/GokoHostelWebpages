@@ -1,0 +1,5 @@
+Contact: mailto:thegokosocial@gmail.com
+Contact: https://wa.me/919833624363
+Preferred-Languages: en
+Canonical: https://www.gokohostel.com/.well-known/security.txt
+Expires: 2027-05-17T00:00:00.000Z
