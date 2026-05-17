@@ -2,7 +2,7 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { checkinSchema, type CheckinFormData } from "@/lib/checkinSchema";
 import { countries } from "@/content/countries";
 import { Button } from "@/components/ui/button";
@@ -256,6 +256,19 @@ export function SelfCheckinForm() {
   const [idValidated, setIdValidated] = useState(false);
   const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
   const [validatingVisa, setValidatingVisa] = useState(false);
+  const [validationEnabled, setValidationEnabled] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.image_validation === "off") {
+          setValidationEnabled(false);
+          setIdValidated(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const {
     register,
@@ -289,7 +302,7 @@ export function SelfCheckinForm() {
       setIdFiles(newFiles);
       setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
       setIdValidationMsg(null);
-      setIdValidated(false);
+      if (validationEnabled) setIdValidated(false);
       return;
     }
     const reader = new FileReader();
@@ -298,7 +311,7 @@ export function SelfCheckinForm() {
       setIdFiles(newFiles);
       setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
       setIdValidationMsg(null);
-      setIdValidated(false);
+      if (validationEnabled) setIdValidated(false);
     };
     reader.readAsDataURL(file);
   };
@@ -307,7 +320,7 @@ export function SelfCheckinForm() {
     const newFiles = idFiles.filter((_, i) => i !== index);
     setIdFiles(newFiles);
     setValue("idImages", newFiles.length > 0 ? newFiles.map((f) => f.file) : null, { shouldValidate: true });
-    setIdValidated(false);
+    if (validationEnabled) setIdValidated(false);
     setIdValidationMsg(null);
   };
 
@@ -675,9 +688,9 @@ export function SelfCheckinForm() {
           files={idFiles}
           onAdd={addIdFile}
           onRemove={removeIdFile}
-          onValidate={validateIdFiles}
+          onValidate={validationEnabled ? validateIdFiles : undefined}
           validating={validatingId}
-          validationMsg={idValidationMsg}
+          validationMsg={validationEnabled ? idValidationMsg : null}
           helpText="Upload front and back of your ID. Accepted: JPEG, PNG, WebP, PDF. Max 10 MB per file."
         />
 
@@ -689,16 +702,16 @@ export function SelfCheckinForm() {
             files={visaFiles}
             onAdd={addVisaFile}
             onRemove={removeVisaFile}
-            onValidate={validateVisaFiles}
+            onValidate={validationEnabled ? validateVisaFiles : undefined}
             validating={validatingVisa}
-            validationMsg={visaValidationMsg}
+            validationMsg={validationEnabled ? visaValidationMsg : null}
             helpText="Upload visa pages. Accepted: JPEG, PNG, WebP, PDF. Max 10 MB per file."
           />
         )}
       </div>
 
       <div className="mt-10">
-        {!idValidated && idFiles.length > 0 && (
+        {validationEnabled && !idValidated && idFiles.length > 0 && (
           <p className="mb-3 text-center text-sm text-brand-red">
             Please click &quot;Verify document&quot; before submitting
           </p>
@@ -707,7 +720,7 @@ export function SelfCheckinForm() {
           type="submit"
           variant="cta"
           className="w-full"
-          disabled={submitting || !idValidated}
+          disabled={submitting || (validationEnabled && !idValidated)}
         >
           {submitting ? "Submitting..." : "Complete Check-in"}
         </Button>
