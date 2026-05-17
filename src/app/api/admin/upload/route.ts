@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Drive not configured" }, { status: 500 });
     }
 
-    const stream = require("stream");
+    const { Readable } = await import("stream");
     const buffer = Buffer.from(await file.arrayBuffer());
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const ext = file.name.split(".").pop() || "jpg";
@@ -64,12 +64,9 @@ export async function POST(req: NextRequest) {
       try { targetFolderId = await getOrCreateMonthFolder(drive, folderId); } catch {}
     }
 
-    const readable = new stream.PassThrough();
-    readable.end(buffer);
-
     const response = await drive.files.create({
       requestBody: { name: fileName, parents: targetFolderId ? [targetFolderId] : undefined },
-      media: { mimeType: file.type || "image/jpeg", body: readable },
+      media: { mimeType: file.type || "image/jpeg", body: Readable.from(buffer) },
       fields: "id",
     });
 

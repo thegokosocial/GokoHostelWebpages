@@ -57,7 +57,7 @@ async function getOrCreateMonthFolder(drive: any, parentFolderId: string): Promi
 }
 
 async function uploadToDrive(file: File, guestName: string, fileType: string): Promise<string> {
-  const stream = require("stream");
+  const { Readable } = await import("stream");
 
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
@@ -87,9 +87,6 @@ async function uploadToDrive(file: File, guestName: string, fileType: string): P
     }
   }
 
-  const readable = new stream.PassThrough();
-  readable.end(buffer);
-
   const response = await drive.files.create({
     requestBody: {
       name: fileName,
@@ -97,7 +94,7 @@ async function uploadToDrive(file: File, guestName: string, fileType: string): P
     },
     media: {
       mimeType: file.type || "image/jpeg",
-      body: readable,
+      body: Readable.from(buffer),
     },
     fields: "id",
   });
