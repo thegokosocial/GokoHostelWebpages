@@ -176,7 +176,8 @@ function runTextValidation(
   if (expectedCategory === "id") {
     const validIdTypes: DocumentType[] = ["aadhaar", "driving_licence", "passport"];
     if (!validIdTypes.includes(type) || matchCount === 0) {
-      return { valid: false, documentType: "unknown", confidence: "medium", layers, message: "Could not identify this as a valid ID (Aadhaar, Driving Licence, or Passport). Please upload a clear, readable photo." };
+      layers.push("invalid_id");
+      return { valid: false, documentType: "unknown", confidence: "high", layers, message: "The uploaded document is not a valid ID. Please upload a clear photo of your Aadhaar card, Driving Licence, or Passport." };
     }
 
     if (expectedIdType && type !== expectedIdType) {
@@ -187,8 +188,12 @@ function runTextValidation(
 
     const nameMatched = checkNameMatch(text, guestName);
     if (guestName && !nameMatched) {
+      if (matchCount < 2) {
+        layers.push("weak_id");
+        return { valid: false, documentType: type, confidence: "medium", nameMatch: false, layers, message: "The uploaded document does not appear to be a valid ID. Please upload a clear photo of your Aadhaar card, Driving Licence, or Passport." };
+      }
       layers.push("name_mismatch");
-      return { valid: false, documentType: type, confidence: "high", nameMatch: false, layers, message: `Your name was not found on the document. Please upload your own ID.` };
+      return { valid: false, documentType: type, confidence: "high", nameMatch: false, layers, message: `Your name was not found on the ${type.replace("_", " ")}. Please upload your own ID document.` };
     }
     if (guestName) layers.push("name_verified");
 
