@@ -177,6 +177,16 @@ export async function ensureMonthTab(spreadsheetId: string, tabName: string, hea
 
 // --- Google Drive ---
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunks: string[] = [];
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.slice(i, i + chunkSize)));
+  }
+  return btoa(chunks.join(""));
+}
+
 export async function driveUploadFile(
   fileName: string,
   mimeType: string,
@@ -192,10 +202,11 @@ export async function driveUploadFile(
   });
 
   const boundary = "----goko" + Date.now();
+  const fileBase64 = arrayBufferToBase64(fileBuffer);
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
     `--${boundary}\r\nContent-Type: ${mimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n` +
-    btoa(String.fromCharCode(...new Uint8Array(fileBuffer))) +
+    fileBase64 +
     `\r\n--${boundary}--`;
 
   const res = await fetch(
