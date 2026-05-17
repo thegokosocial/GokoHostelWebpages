@@ -1,4 +1,7 @@
-import { google } from "googleapis";
+async function getGoogleApis() {
+  const { google } = await import("googleapis");
+  return google;
+}
 
 const AADHAAR_PATTERNS = [
   /aadhaar/i,
@@ -87,6 +90,7 @@ export async function validateIdDocument(
   }
 
   try {
+    const google = await getGoogleApis();
     const key = JSON.parse(credentials);
     const privateKey = key.private_key.replace(/\\n/g, "\n");
     const auth = new google.auth.GoogleAuth({

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
 
 function getMonthFolderName(): string {
   const d = new Date();
@@ -50,6 +49,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { Readable } = await import("stream");
+    const { google } = await import("googleapis");
     const buffer = Buffer.from(await file.arrayBuffer());
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const ext = file.name.split(".").pop() || "jpg";

@@ -1,24 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
 import { validateIdDocument, validateIdFromText } from "@/lib/validateIdDocument";
 
-const SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/cloud-vision"];
+async function getGoogleApis() {
+  const { google } = await import("googleapis");
+  return google;
+}
 
-async function getAuthClient() {
+async function getSheetsClient() {
+  const google = await getGoogleApis();
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!credentials) {
-    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY env variable not set");
-  }
+  if (!credentials) throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY not set");
   const key = JSON.parse(credentials);
   const privateKey = key.private_key.replace(/\\n/g, "\n");
   const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: key.client_email,
-      private_key: privateKey,
-    },
-    scopes: SCOPES,
+    credentials: { client_email: key.client_email, private_key: privateKey },
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
-  return auth;
+  const authClient = await auth.getClient();
+  return google.sheets({ version: "v4", auth: authClient as any });
 }
 
 function getMonthFolderName(): string {
@@ -32,7 +31,8 @@ function getMonthTab(): string {
   return getMonthFolderName();
 }
 
-async function getOrCreateMonthFolder(drive: any, parentFolderId: string): Promise<string> {
+async function getOrCreateMonthFolder(drive: any, parentFolderId: string | undefined): Promise<string | undefined> {
+  if (!parentFolderId) return undefined;
   const folderName = getMonthFolderName();
 
   const search = await drive.files.list({
@@ -58,6 +58,7 @@ async function getOrCreateMonthFolder(drive: any, parentFolderId: string): Promi
 
 async function uploadToDrive(file: File, guestName: string, fileType: string): Promise<string> {
   const { Readable } = await import("stream");
+  const google = await getGoogleApis();
 
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
@@ -176,7 +177,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const auth = await getAuthClient();
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
 
     if (!spreadsheetId) {
@@ -208,8 +208,7 @@ export async function POST(req: NextRequest) {
     const idCardLink = idCardLinks.join(" | ");
     const visaLink = visaLinks.join(" | ");
 
-    const authClient = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: authClient as any });
+    const sheets = await getSheetsClient();
     const submittedAt = new Date().toISOString();
     const tabName = getMonthTab();
 
