@@ -106,29 +106,38 @@ function CountrySelect({
   );
 }
 
-type ImageFile = { file: File; preview: string };
+type DocFile = { file: File; preview: string };
 
-function MultiImageUpload({
+const ACCEPTED_TYPES = "image/*,.pdf";
+const PDF_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232d5c3f' stroke-width='1.5'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3Cpath d='M10 13h4'/%3E%3Cpath d='M10 17h4'/%3E%3C/svg%3E";
+
+function MultiDocUpload({
   label,
   error,
-  images,
+  files,
   onAdd,
   onRemove,
+  onValidate,
+  validating,
+  validationMsg,
   helpText,
 }: {
   label: string;
   error?: string;
-  images: ImageFile[];
+  files: DocFile[];
   onAdd: (file: File) => void;
   onRemove: (index: number) => void;
+  onValidate?: () => void;
+  validating?: boolean;
+  validationMsg?: { valid: boolean; message: string } | null;
   helpText?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFiles = (files: FileList | null) => {
-    if (!files) return;
-    Array.from(files).forEach((file) => {
+  const handleFiles = (fileList: FileList | null) => {
+    if (!fileList) return;
+    Array.from(fileList).forEach((file) => {
       if (file.size <= 10 * 1024 * 1024) onAdd(file);
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -141,15 +150,21 @@ function MultiImageUpload({
         {label}
       </Label>
 
-      {images.length > 0 && (
+      {files.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-3">
-          {images.map((img, i) => (
+          {files.map((doc, i) => (
             <div key={i} className="relative">
               <img
-                src={img.preview}
+                src={doc.file.type === "application/pdf" ? PDF_ICON : doc.preview}
                 alt={`Document ${i + 1}`}
-                className="h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft"
+                className={cn(
+                  "h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft",
+                  doc.file.type === "application/pdf" && "bg-brand-sand/50 p-4 object-contain"
+                )}
               />
+              <p className="mt-1 max-w-[6rem] truncate text-center text-[10px] text-brand-green-dark/60">
+                {doc.file.name.length > 12 ? doc.file.name.slice(0, 10) + "..." : doc.file.name}
+              </p>
               <button
                 type="button"
                 onClick={() => onRemove(i)}
@@ -169,7 +184,7 @@ function MultiImageUpload({
           className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-mist bg-brand-sand/50 px-4 py-4 text-sm font-medium text-brand-green-dark transition-colors hover:border-brand-green/30 hover:bg-brand-sand"
         >
           <UploadIcon className="h-5 w-5 text-brand-green" />
-          {images.length > 0 ? "Add more" : "Upload file"}
+          {files.length > 0 ? "Add more" : "Upload file"}
         </button>
         <button
           type="button"
@@ -180,10 +195,35 @@ function MultiImageUpload({
           Take photo
         </button>
       </div>
+
+      {files.length > 0 && onValidate && (
+        <button
+          type="button"
+          onClick={onValidate}
+          disabled={validating}
+          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-brand-green/[0.08] px-4 py-2 text-sm font-medium text-brand-green transition-colors hover:bg-brand-green/[0.14] disabled:opacity-50"
+        >
+          {validating ? (
+            <>
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-green border-t-transparent" />
+              Verifying...
+            </>
+          ) : (
+            "Verify document"
+          )}
+        </button>
+      )}
+
+      {validationMsg && !validating && (
+        <p className={cn("mt-2 text-sm font-medium", validationMsg.valid ? "text-brand-green" : "text-red-500")}>
+          {validationMsg.valid ? "✓ " : "✗ "}{validationMsg.message}
+        </p>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={ACCEPTED_TYPES}
         multiple
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
@@ -198,7 +238,7 @@ function MultiImageUpload({
       />
       {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
       <p className="mt-1.5 text-xs text-brand-green-dark/50">
-        {helpText || "Upload front & back. Max 10 MB per image."}
+        {helpText || "Upload front & back (images or PDF). Max 10 MB per file."}
       </p>
     </div>
   );
@@ -208,8 +248,12 @@ export function SelfCheckinForm() {
   const { date, time } = getNow();
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [idImages, setIdImages] = useState<ImageFile[]>([]);
-  const [visaImages, setVisaImages] = useState<ImageFile[]>([]);
+  const [idFiles, setIdFiles] = useState<DocFile[]>([]);
+  const [visaFiles, setVisaFiles] = useState<DocFile[]>([]);
+  const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
+  const [validatingId, setValidatingId] = useState(false);
+  const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
+  const [validatingVisa, setValidatingVisa] = useState(false);
 
   const {
     register,
@@ -237,36 +281,114 @@ export function SelfCheckinForm() {
 
   const nationality = watch("nationality");
 
-  const addIdImage = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const newImages = [...idImages, { file, preview: e.target?.result as string }];
-      setIdImages(newImages);
-      setValue("idImages", newImages.map((img) => img.file), { shouldValidate: true });
-    };
-    reader.readAsDataURL(file);
+  const addIdFile = (file: File) => {
+    const isPdf = file.type === "application/pdf";
+    if (isPdf) {
+      const newFiles = [...idFiles, { file, preview: "" }];
+      setIdFiles(newFiles);
+      setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
+      setIdValidationMsg(null);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const newFiles = [...idFiles, { file, preview: e.target?.result as string }];
+        setIdFiles(newFiles);
+        setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
+        setIdValidationMsg(null);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  const removeIdImage = (index: number) => {
-    const newImages = idImages.filter((_, i) => i !== index);
-    setIdImages(newImages);
-    setValue("idImages", newImages.length > 0 ? newImages.map((img) => img.file) : null, { shouldValidate: true });
+  const removeIdFile = (index: number) => {
+    const newFiles = idFiles.filter((_, i) => i !== index);
+    setIdFiles(newFiles);
+    setValue("idImages", newFiles.length > 0 ? newFiles.map((f) => f.file) : null, { shouldValidate: true });
+    if (newFiles.length === 0) setIdValidationMsg(null);
   };
 
-  const addVisaImage = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const newImages = [...visaImages, { file, preview: e.target?.result as string }];
-      setVisaImages(newImages);
-      setValue("visaImages", newImages.map((img) => img.file), { shouldValidate: true });
-    };
-    reader.readAsDataURL(file);
+  const validateIdFiles = async () => {
+    if (idFiles.length === 0) return;
+    setValidatingId(true);
+    setIdValidationMsg(null);
+    try {
+      const firstImage = idFiles.find((f) => f.file.type.startsWith("image/"));
+      const fileToValidate = firstImage?.file || idFiles[0].file;
+
+      const idType = watch("idType");
+      const guestName = watch("name");
+      const formData = new FormData();
+      formData.append("file", fileToValidate);
+      formData.append("category", "id");
+      if (idType) formData.append("idType", idType);
+      if (guestName) formData.append("guestName", guestName);
+
+      const res = await fetch("/api/validate-id", { method: "POST", body: formData });
+      const result = await res.json();
+      setIdValidationMsg({ valid: result.valid, message: result.message });
+
+      if (!result.valid) {
+        setIdFiles([]);
+        setValue("idImages", null, { shouldValidate: true });
+      }
+    } catch {
+      setIdValidationMsg({ valid: true, message: "Validation skipped" });
+    } finally {
+      setValidatingId(false);
+    }
   };
 
-  const removeVisaImage = (index: number) => {
-    const newImages = visaImages.filter((_, i) => i !== index);
-    setVisaImages(newImages);
-    setValue("visaImages", newImages.length > 0 ? newImages.map((img) => img.file) : null, { shouldValidate: true });
+  const addVisaFile = (file: File) => {
+    const isPdf = file.type === "application/pdf";
+    if (isPdf) {
+      const newFiles = [...visaFiles, { file, preview: "" }];
+      setVisaFiles(newFiles);
+      setValue("visaImages", newFiles.map((f) => f.file), { shouldValidate: true });
+      setVisaValidationMsg(null);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const newFiles = [...visaFiles, { file, preview: e.target?.result as string }];
+        setVisaFiles(newFiles);
+        setValue("visaImages", newFiles.map((f) => f.file), { shouldValidate: true });
+        setVisaValidationMsg(null);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeVisaFile = (index: number) => {
+    const newFiles = visaFiles.filter((_, i) => i !== index);
+    setVisaFiles(newFiles);
+    setValue("visaImages", newFiles.length > 0 ? newFiles.map((f) => f.file) : null, { shouldValidate: true });
+    if (newFiles.length === 0) setVisaValidationMsg(null);
+  };
+
+  const validateVisaFiles = async () => {
+    if (visaFiles.length === 0) return;
+    setValidatingVisa(true);
+    setVisaValidationMsg(null);
+    try {
+      const firstImage = visaFiles.find((f) => f.file.type.startsWith("image/"));
+      const fileToValidate = firstImage?.file || visaFiles[0].file;
+
+      const formData = new FormData();
+      formData.append("file", fileToValidate);
+      formData.append("category", "visa");
+
+      const res = await fetch("/api/validate-id", { method: "POST", body: formData });
+      const result = await res.json();
+      setVisaValidationMsg({ valid: result.valid, message: result.message });
+
+      if (!result.valid) {
+        setVisaFiles([]);
+        setValue("visaImages", null, { shouldValidate: true });
+      }
+    } catch {
+      setVisaValidationMsg({ valid: true, message: "Validation skipped" });
+    } finally {
+      setValidatingVisa(false);
+    }
   };
 
   const onSubmit = async (data: CheckinFormData) => {
@@ -285,12 +407,12 @@ export function SelfCheckinForm() {
       formData.append("emergencyPhone", data.emergencyPhone);
       formData.append("idType", data.idType);
 
-      idImages.forEach((img) => {
-        formData.append("idImages", img.file);
+      idFiles.forEach((doc) => {
+        formData.append("idImages", doc.file);
       });
 
-      visaImages.forEach((img) => {
-        formData.append("visaImages", img.file);
+      visaFiles.forEach((doc) => {
+        formData.append("visaImages", doc.file);
       });
 
       const res = await fetch("/api/checkin", {
@@ -308,8 +430,10 @@ export function SelfCheckinForm() {
 
       setSuccess(true);
       reset();
-      setIdImages([]);
-      setVisaImages([]);
+      setIdFiles([]);
+      setVisaFiles([]);
+      setIdValidationMsg(null);
+      setVisaValidationMsg(null);
     } catch {
       alert("Something went wrong. Please try again or contact the front desk.");
     } finally {
@@ -536,25 +660,31 @@ export function SelfCheckinForm() {
           )}
         </div>
 
-        {/* ID Images Upload (multiple) */}
-        <MultiImageUpload
-          label="ID photos (upload front & back)"
+        {/* ID Upload (multiple images/PDF) */}
+        <MultiDocUpload
+          label="ID document (upload front & back)"
           error={errors.idImages?.message as string | undefined}
-          images={idImages}
-          onAdd={addIdImage}
-          onRemove={removeIdImage}
-          helpText="Upload front and back of your ID. Max 10 MB per image."
+          files={idFiles}
+          onAdd={addIdFile}
+          onRemove={removeIdFile}
+          onValidate={validateIdFiles}
+          validating={validatingId}
+          validationMsg={idValidationMsg}
+          helpText="Upload front and back of your ID (images or PDF). Max 10 MB per file."
         />
 
-        {/* Visa (conditional, multiple) */}
+        {/* Visa (conditional, multiple images/PDF) */}
         {nationality && nationality !== "India" && (
-          <MultiImageUpload
-            label="Visa document photos (required for non-Indian nationals)"
+          <MultiDocUpload
+            label="Visa document (required for non-Indian nationals)"
             error={errors.visaImages?.message as string | undefined}
-            images={visaImages}
-            onAdd={addVisaImage}
-            onRemove={removeVisaImage}
-            helpText="Upload all relevant visa pages. Max 10 MB per image."
+            files={visaFiles}
+            onAdd={addVisaFile}
+            onRemove={removeVisaFile}
+            onValidate={validateVisaFiles}
+            validating={validatingVisa}
+            validationMsg={visaValidationMsg}
+            helpText="Upload all relevant visa pages (images or PDF). Max 10 MB per file."
           />
         )}
       </div>

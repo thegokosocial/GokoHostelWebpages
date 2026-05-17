@@ -45,7 +45,15 @@ export type ValidationResult = {
   documentType: DocumentType;
   confidence: "high" | "medium" | "low";
   message: string;
+  nameMatch?: boolean;
 };
+
+function checkNameMatch(text: string, guestName?: string): boolean {
+  if (!guestName || guestName.trim().length < 2) return true;
+  const firstName = guestName.trim().split(/\s+/)[0].toLowerCase();
+  if (firstName.length < 2) return true;
+  return text.toLowerCase().includes(firstName);
+}
 
 function detectDocumentType(text: string): { type: DocumentType; matchCount: number } {
   const checks: { type: DocumentType; patterns: RegExp[] }[] = [
@@ -69,7 +77,9 @@ function detectDocumentType(text: string): { type: DocumentType; matchCount: num
 
 export async function validateIdDocument(
   imageBuffer: Buffer,
-  expectedCategory: "id" | "visa"
+  expectedCategory: "id" | "visa",
+  expectedIdType?: "aadhaar" | "driving_licence" | "passport",
+  guestName?: string
 ): Promise<ValidationResult> {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) {
@@ -120,18 +130,56 @@ export async function validateIdDocument(
     if (expectedCategory === "id") {
       const validIdTypes: DocumentType[] = ["aadhaar", "driving_licence", "passport"];
       if (validIdTypes.includes(type) && matchCount >= 2) {
+        if (expectedIdType && type !== expectedIdType) {
+          return {
+            valid: false,
+            documentType: type,
+            confidence: "high",
+            message: `You selected "${expectedIdType.replace("_", " ")}" but this appears to be a ${type.replace("_", " ")}. Please select the correct ID type or upload the right document.`,
+          };
+        }
+        const nameMatched = checkNameMatch(fullText, guestName);
+        if (guestName && !nameMatched) {
+          return {
+            valid: false,
+            documentType: type,
+            confidence: "high",
+            nameMatch: false,
+            message: `Name "${guestName.split(/\s+/)[0]}" not found on the document. Please upload an ID that matches the name you entered.`,
+          };
+        }
         return {
           valid: true,
           documentType: type,
           confidence: "high",
-          message: `${type.replace("_", " ")} detected successfully.`,
+          nameMatch: true,
+          message: `${type.replace("_", " ")} detected successfully.${nameMatched && guestName ? " Name verified." : ""}`,
         };
       }
       if (validIdTypes.includes(type) && matchCount === 1) {
+        if (expectedIdType && type !== expectedIdType) {
+          return {
+            valid: false,
+            documentType: type,
+            confidence: "medium",
+            message: `You selected "${expectedIdType.replace("_", " ")}" but this looks like a ${type.replace("_", " ")}. Please check your selection.`,
+          };
+        }
+        const nameMatched = checkNameMatch(fullText, guestName);
+        if (guestName && !nameMatched) {
+          return {
+            valid: false,
+            documentType: type,
+            confidence: "medium",
+            nameMatch: false,
+            message: `Name "${guestName.split(/\s+/)[0]}" not found on the document. Please upload your own ID.`,
+          };
+        }
         return {
           valid: true,
           documentType: type,
           confidence: "medium",
+          nameMatch: true,
           message: `Document appears to be a ${type.replace("_", " ")}. Please ensure the image is clear.`,
         };
       }
@@ -163,4 +211,100 @@ export async function validateIdDocument(
     console.error("Vision API error:", error);
     return { valid: true, documentType: "unknown", confidence: "low", message: "Validation service unavailable, document accepted." };
   }
+}
+
+export function validateIdFromText(
+  text: string,
+  expectedCategory: "id" | "visa",
+  expectedIdType?: "aadhaar" | "driving_licence" | "passport",
+  guestName?: string
+): ValidationResult {
+  if (!text || text.trim().length < 10) {
+    return {
+      valid: false,
+      documentType: "unknown",
+      confidence: "high",
+      message: "Could not extract readable text from PDF. Please upload a clear document.",
+    };
+  }
+
+  const { type, matchCount } = detectDocumentType(text);
+
+  if (expectedCategory === "id") {
+    const validIdTypes: DocumentType[] = ["aadhaar", "driving_licence", "passport"];
+    if (validIdTypes.includes(type) && matchCount >= 2) {
+      if (expectedIdType && type !== expectedIdType) {
+        return {
+          valid: false,
+          documentType: type,
+          confidence: "high",
+          message: `You selected "${expectedIdType.replace("_", " ")}" but this PDF appears to be a ${type.replace("_", " ")}. Please select the correct ID type.`,
+        };
+      }
+      const nameMatched = checkNameMatch(text, guestName);
+      if (guestName && !nameMatched) {
+        return {
+          valid: false,
+          documentType: type,
+          confidence: "high",
+          nameMatch: false,
+          message: `Name "${guestName.split(/\s+/)[0]}" not found in the PDF. Please upload an ID that matches your name.`,
+        };
+      }
+      return {
+        valid: true,
+        documentType: type,
+        confidence: "high",
+        nameMatch: true,
+        message: `${type.replace("_", " ")} detected successfully from PDF.${nameMatched && guestName ? " Name verified." : ""}`,
+      };
+    }
+    if (validIdTypes.includes(type) && matchCount === 1) {
+      if (expectedIdType && type !== expectedIdType) {
+        return {
+          valid: false,
+          documentType: type,
+          confidence: "medium",
+          message: `You selected "${expectedIdType.replace("_", " ")}" but this looks like a ${type.replace("_", " ")}.`,
+        };
+      }
+      const nameMatched = checkNameMatch(text, guestName);
+      if (guestName && !nameMatched) {
+        return {
+          valid: false,
+          documentType: type,
+          confidence: "medium",
+          nameMatch: false,
+          message: `Name "${guestName.split(/\s+/)[0]}" not found in the PDF. Please upload your own ID.`,
+        };
+      }
+      return {
+        valid: true,
+        documentType: type,
+        confidence: "medium",
+        nameMatch: true,
+        message: `Document appears to be a ${type.replace("_", " ")} (PDF).`,
+      };
+    }
+    return {
+      valid: false,
+      documentType: "unknown",
+      confidence: "medium",
+      message: "Could not identify this PDF as a valid ID (Aadhaar, Driving Licence, or Passport).",
+    };
+  }
+
+  if (expectedCategory === "visa") {
+    if (type === "visa" && matchCount >= 1) {
+      return { valid: true, documentType: "visa", confidence: "high", message: "Visa document detected from PDF." };
+    }
+    return {
+      valid: false,
+      documentType: "unknown",
+      confidence: "medium",
+      message: "Could not identify this PDF as a valid visa document.",
+    };
+  }
+
+  return { valid: false, documentType: "unknown", confidence: "low", message: "Validation failed." };
 }

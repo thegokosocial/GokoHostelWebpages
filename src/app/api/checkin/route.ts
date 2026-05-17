@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
-import { validateIdDocument } from "@/lib/validateIdDocument";
+import { validateIdDocument, validateIdFromText } from "@/lib/validateIdDocument";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/cloud-vision"];
 
@@ -142,23 +142,40 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const firstIdBuffer = Buffer.from(await idImages[0].arrayBuffer());
-    const idValidation = await validateIdDocument(firstIdBuffer, "id");
-    if (!idValidation.valid) {
-      return NextResponse.json(
-        { error: idValidation.message, field: "idImages" },
-        { status: 422 }
-      );
+    async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
+      if (file.type === "application/pdf") {
+        const pdfParse = (await import("pdf-parse")).default;
+        const pdfBuffer = Buffer.from(await file.arrayBuffer());
+        const data = await pdfParse(pdfBuffer);
+        return validateIdFromText(data.text || "", category, idTypeHint as any, nameToCheck);
+      }
+      const buffer = Buffer.from(await file.arrayBuffer());
+      return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck);
+    }
+
+    try {
+      const idValidation = await validateFile(idImages[0], "id", idType, name);
+      if (!idValidation.valid) {
+        return NextResponse.json(
+          { error: idValidation.message, field: "idImages" },
+          { status: 422 }
+        );
+      }
+    } catch (valErr: any) {
+      console.error("ID validation error:", valErr?.message);
     }
 
     if (visaImages.length > 0) {
-      const visaBuffer = Buffer.from(await visaImages[0].arrayBuffer());
-      const visaValidation = await validateIdDocument(visaBuffer, "visa");
-      if (!visaValidation.valid) {
-        return NextResponse.json(
-          { error: visaValidation.message, field: "visaImages" },
-          { status: 422 }
-        );
+      try {
+        const visaValidation = await validateFile(visaImages[0], "visa");
+        if (!visaValidation.valid) {
+          return NextResponse.json(
+            { error: visaValidation.message, field: "visaImages" },
+            { status: 422 }
+          );
+        }
+      } catch (valErr: any) {
+        console.error("Visa validation error:", valErr?.message);
       }
     }
 

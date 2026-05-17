@@ -33,7 +33,7 @@ export const founders: Founder[] = [
   {
     name: "Joyal",
     role: "Co-Founder",
-    bio: "With a keen eye for detail and a love for sustainable tourism, Joyal ensures Goko operates smoothly while staying true to our values of community and environmental responsibility.",
+    bio: "Guitar playing warden and hospitality enthusiast of Goko who is passionate about creating safe, comfortable, and music‑filled stays where guests feel at home and inspired.",
     image: "/images/story/joyal/joyal1.png",
   },
   {
