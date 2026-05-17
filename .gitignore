@@ -33,5 +33,9 @@ yarn-error.log*
 # env files
 .env*.local
 
+# uploaded guest ID documents (sensitive)
+public/uploads/*
+!public/uploads/.gitkeep
+
 # typescript
 *.tsbuildinfo
