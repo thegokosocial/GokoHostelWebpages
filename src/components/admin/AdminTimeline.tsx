@@ -48,8 +48,10 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
   const [startDate, setStartDate] = useState(fmtDate(new Date()));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [popup, setPopup] = useState<{ bedIdx: number; day: string } | null>(null);
+  const [numDays, setNumDays] = useState(10);
 
-  const days = Array.from({ length: 10 }, (_, i) => { const d = new Date(startDate); d.setDate(d.getDate() + i); return d; });
+  const days = Array.from({ length: numDays }, (_, i) => { const d = new Date(startDate); d.setDate(d.getDate() + i); return d; });
+  const colWidth = numDays <= 5 ? "flex-1" : numDays <= 7 ? "w-[120px] shrink-0" : "w-[100px] shrink-0";
   const today = fmtDate(new Date());
 
   useEffect(() => { load(); }, []);
@@ -78,8 +80,16 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Occupancy Timeline</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40 text-xs" />
+          <select value={numDays} onChange={(e) => setNumDays(parseInt(e.target.value))}
+            className="rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium">
+            <option value="3">3 days</option>
+            <option value="5">5 days</option>
+            <option value="7">7 days</option>
+            <option value="10">10 days</option>
+            <option value="14">14 days</option>
+          </select>
           <Button type="button" variant="ctaOutline" onClick={() => setStartDate(fmtDate(new Date()))}>Today</Button>
           <Button type="button" variant="ctaOutline" onClick={load}>Refresh</Button>
         </div>
@@ -93,11 +103,12 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
       </div>
 
       <div className="mt-3 overflow-x-auto rounded-xl border border-brand-mist bg-white shadow-card" onClick={() => setPopup(null)}>
+        <div style={{ minWidth: `${140 + numDays * (numDays <= 5 ? 100 : numDays <= 7 ? 120 : 100)}px` }}>
         {/* Header */}
         <div className="flex border-b border-brand-mist bg-brand-sand/40">
           <div className="w-[140px] shrink-0 border-r border-brand-mist px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-brand-green-dark/50">Bed</div>
           {days.map((d, i) => (
-            <div key={i} className={cn("w-[100px] shrink-0 px-1 py-2 text-center text-[10px] font-bold uppercase tracking-wide", fmtDate(d) === today ? "bg-brand-green/[0.07] text-brand-green" : "text-brand-green-dark/40")}>
+            <div key={i} className={cn(colWidth, "px-1 py-2 text-center text-[10px] font-bold uppercase tracking-wide", fmtDate(d) === today ? "bg-brand-green/[0.07] text-brand-green" : "text-brand-green-dark/40")}>
               {fmtShort(d)}
             </div>
           ))}
@@ -105,20 +116,30 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
 
         {dorms.length === 0 && <div className="py-12 text-center text-sm text-brand-green-dark/40">No dorms configured</div>}
 
-        {dorms.map((dormName) => {
+        {dorms.map((dormName, dormIdx) => {
           const dormBeds = beds.map((b, i) => ({ bed: b, idx: i })).filter(({ bed }) => bed.dormName === dormName);
           const isOpen = !collapsed.has(dormName);
           const occToday = dormBeds.filter(({ bed }) => cellFor(bed, today, today).status === "occupied").length;
 
+          const dormColors = [
+            { border: "border-l-blue-400", bg: "bg-blue-50/30", header: "bg-blue-50/50", badge: "bg-blue-100 text-blue-700" },
+            { border: "border-l-purple-400", bg: "bg-purple-50/30", header: "bg-purple-50/50", badge: "bg-purple-100 text-purple-700" },
+            { border: "border-l-teal-400", bg: "bg-teal-50/30", header: "bg-teal-50/50", badge: "bg-teal-100 text-teal-700" },
+            { border: "border-l-amber-400", bg: "bg-amber-50/30", header: "bg-amber-50/50", badge: "bg-amber-100 text-amber-700" },
+            { border: "border-l-rose-400", bg: "bg-rose-50/30", header: "bg-rose-50/50", badge: "bg-rose-100 text-rose-700" },
+            { border: "border-l-emerald-400", bg: "bg-emerald-50/30", header: "bg-emerald-50/50", badge: "bg-emerald-100 text-emerald-700" },
+          ];
+          const dc = dormColors[dormIdx % dormColors.length];
+
           return (
             <div key={dormName}>
               {/* Dorm header */}
-              <div className="flex cursor-pointer border-b border-brand-mist bg-brand-sand/20 hover:bg-brand-sand/40"
+              <div className={cn("flex cursor-pointer border-b border-brand-mist border-l-4 hover:brightness-95", dc.border, dc.header)}
                 onClick={(e) => { e.stopPropagation(); setCollapsed((p) => { const n = new Set(p); n.has(dormName) ? n.delete(dormName) : n.add(dormName); return n; }); }}>
                 <div className="flex w-full items-center gap-2 px-3 py-2">
                   {isOpen ? <ChevronDownIcon className="h-3.5 w-3.5 text-brand-green-dark/40" /> : <ChevronRightIcon className="h-3.5 w-3.5 text-brand-green-dark/40" />}
                   <span className="font-display text-xs font-bold text-brand-green-dark">{dormName}</span>
-                  <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-[10px] font-semibold text-brand-green">{occToday}/{dormBeds.length}</span>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", dc.badge)}>{occToday}/{dormBeds.length}</span>
                 </div>
               </div>
 
@@ -143,17 +164,19 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
                 }
 
                 return (
-                  <div key={idx} className={cn("flex border-b border-brand-mist/60", isBusy && "opacity-40")}>
-                    <div className="flex w-[140px] shrink-0 items-center gap-1.5 border-r border-brand-mist bg-white px-3 py-1.5">
+                  <div key={idx} className={cn("flex border-b border-brand-mist/60 border-l-4", dc.border, isBusy && "opacity-40")}>
+                    <div className={cn("flex w-[140px] shrink-0 items-center gap-1.5 border-r border-brand-mist px-3 py-1.5", dc.bg)}>
                       {isBusy && <Loader2Icon className="h-3 w-3 animate-spin text-brand-green" />}
                       <span className="text-[11px] font-semibold text-brand-green-dark">{bed.bedId}</span>
                       <span className="text-[9px] text-brand-green-dark/35">{bed.position}</span>
                     </div>
                     {cells.map((c, ci) => {
                       const isActive = popup?.bedIdx === idx && popup?.day === c.day;
-                      const w = c.spanLen * 100;
+                      const spanClass = numDays <= 5 ? "flex-[" + c.spanLen + "]" : "";
                       return (
-                        <div key={ci} className="relative shrink-0 p-0.5" style={{ width: `${w}px` }} onClick={(e) => e.stopPropagation()}>
+                        <div key={ci} className={cn("relative p-0.5", numDays <= 5 ? "" : "shrink-0")}
+                          style={numDays > 5 ? { width: `${c.spanLen * (numDays <= 7 ? 120 : 100)}px` } : { flex: c.spanLen }}
+                          onClick={(e) => e.stopPropagation()}>
                           <button type="button" disabled={isBusy}
                             onClick={() => setPopup(isActive ? null : { bedIdx: idx, day: c.day })}
                             className={cn(
@@ -210,6 +233,7 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );

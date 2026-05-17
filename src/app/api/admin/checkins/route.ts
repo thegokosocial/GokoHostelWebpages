@@ -171,13 +171,23 @@ export async function POST(req: NextRequest) {
       const available = beds.filter((b) => b[4] === "available").length;
       const cleanup = beds.filter((b) => b[4] === "cleanup").length;
 
-      const todayCheckouts = beds.filter((b) => b[4] === "occupied" && b[8] && b[8] <= today);
+      const todayCheckoutBeds = beds.map((b, i) => ({ bed: b, idx: i })).filter(({ bed }) => bed[4] === "occupied" && bed[8] && bed[8] <= today);
+
+      const assignedContacts = new Map<string, string>();
+      for (const b of beds) {
+        if (b[4] === "occupied" && b[6]) assignedContacts.set(b[6], `${b[0]} / ${b[1]}`);
+      }
+
+      const todayCheckinsWithBed = todayCheckins.map((r) => ({
+        row: r,
+        assignedBed: assignedContacts.get(r[5]) || null,
+      }));
 
       const validationValue = await getSettingValue(spreadsheetId, "image_validation");
 
       return NextResponse.json({
-        todayCheckins,
-        todayCheckouts: todayCheckouts.map((b) => [null, null, null, b[5], null, b[6], null, null, null]),
+        todayCheckins: todayCheckinsWithBed,
+        todayCheckouts: todayCheckoutBeds.map(({ bed, idx }) => ({ name: bed[5], contact: bed[6], bedId: bed[1], dorm: bed[0], bedIdx: idx, expectedCheckout: bed[8] })),
         stats: { total, occupied, available, cleanup },
         validationEnabled: validationValue !== "off",
         role,

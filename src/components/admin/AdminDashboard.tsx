@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import { useAdminApi } from "./useAdminApi";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UsersIcon, CalendarCheckIcon, AlertTriangleIcon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, CalendarCheckIcon, AlertTriangleIcon, LogOutIcon, Loader2Icon } from "lucide-react";
 import type { Role, AdminSection } from "./types";
 
 export function AdminDashboard({
@@ -16,12 +17,13 @@ export function AdminDashboard({
   onNavigate: (section: AdminSection) => void;
 }) {
   const { apiCall } = useAdminApi(password);
-  const [todayCheckins, setTodayCheckins] = useState<string[][]>([]);
-  const [todayCheckouts, setTodayCheckouts] = useState<string[][]>([]);
+  const [todayCheckins, setTodayCheckins] = useState<{ row: string[]; assignedBed: string | null }[]>([]);
+  const [todayCheckouts, setTodayCheckouts] = useState<{ name: string; contact: string; bedId: string; dorm: string; bedIdx: number; expectedCheckout: string }[]>([]);
   const [stats, setStats] = useState({ total: 0, occupied: 0, available: 0, cleanup: 0 });
   const [validationOn, setValidationOn] = useState(true);
   const [togglingValidation, setTogglingValidation] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [busyIdx, setBusyIdx] = useState<number | null>(null);
 
   useEffect(() => { loadDashboard(); }, []);
 
@@ -46,6 +48,15 @@ export function AdminDashboard({
       const res = await apiCall({ action: "setSetting", key: "image_validation", value: newValue });
       if (res.ok) setValidationOn(!validationOn);
     } finally { setTogglingValidation(false); }
+  };
+
+  const checkoutBed = async (bedIdx: number) => {
+    if (!confirm("Checkout this guest?")) return;
+    setBusyIdx(bedIdx);
+    try {
+      const res = await apiCall({ action: "checkoutBed", bedIndex: bedIdx });
+      if (res.ok) await loadDashboard();
+    } finally { setBusyIdx(null); }
   };
 
   const today = new Date().toISOString().split("T")[0];
@@ -119,18 +130,28 @@ export function AdminDashboard({
         </div>
       )}
 
-      {/* Overdue checkouts alert */}
+      {/* Checkouts due */}
       {todayCheckouts.length > 0 && (
         <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 p-4">
           <div className="flex items-center gap-2">
             <AlertTriangleIcon className="h-5 w-5 text-orange-600" />
-            <span className="font-medium text-orange-800">{todayCheckouts.length} guest{todayCheckouts.length !== 1 ? "s" : ""} due for checkout today</span>
+            <span className="font-medium text-orange-800">{todayCheckouts.length} guest{todayCheckouts.length !== 1 ? "s" : ""} due for checkout</span>
           </div>
-          <ul className="mt-2 space-y-1">
-            {todayCheckouts.map((row, i) => (
-              <li key={i} className="text-sm text-orange-700">{row[3]} — {row[5]}</li>
+          <div className="mt-2 space-y-2">
+            {todayCheckouts.map((co, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-white px-3 py-2">
+                <div>
+                  <span className="font-medium text-brand-green-dark">{co.name}</span>
+                  <span className="ml-2 text-xs text-brand-green-dark/50">{co.dorm} / {co.bedId}</span>
+                </div>
+                <button type="button" onClick={() => checkoutBed(co.bedIdx)} disabled={busyIdx === co.bedIdx}
+                  className="flex items-center gap-1 rounded-md bg-red-100 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-200 disabled:opacity-50">
+                  {busyIdx === co.bedIdx ? <Loader2Icon className="h-3 w-3 animate-spin" /> : <LogOutIcon className="h-3 w-3" />}
+                  Checkout
+                </button>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       )}
 
@@ -141,13 +162,25 @@ export function AdminDashboard({
           <p className="mt-2 text-sm text-brand-green-dark/50">No check-ins today yet</p>
         ) : (
           <div className="mt-3 space-y-2">
-            {todayCheckins.map((row, i) => (
+            {todayCheckins.map((item, i) => (
               <div key={i} className="flex items-center justify-between rounded-xl border border-brand-mist bg-white px-4 py-3">
                 <div>
-                  <p className="font-medium text-brand-green-dark">{row[3]}</p>
-                  <p className="text-xs text-brand-green-dark/60">{row[7]}, {row[8]} · {row[4]} person{row[4] !== "1" ? "s" : ""} · {row[6]} days</p>
+                  <p className="font-medium text-brand-green-dark">{item.row[3]}</p>
+                  <p className="text-xs text-brand-green-dark/60">{item.row[7]}, {item.row[8]} · {item.row[4]} person{item.row[4] !== "1" ? "s" : ""} · {item.row[6]} days</p>
                 </div>
-                <span className="text-xs text-brand-green-dark/50">{row[2]}</span>
+                <div className="flex items-center gap-3">
+                  {item.assignedBed ? (
+                    <span className="rounded-full bg-brand-green/10 px-2.5 py-1 text-[11px] font-semibold text-brand-green">
+                      {item.assignedBed}
+                    </span>
+                  ) : (
+                    <button type="button" onClick={() => onNavigate("beds")}
+                      className="rounded-md bg-blue-100 px-3 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-200">
+                      Assign bed
+                    </button>
+                  )}
+                  <span className="text-xs text-brand-green-dark/40">{item.row[2]}</span>
+                </div>
               </div>
             ))}
           </div>
