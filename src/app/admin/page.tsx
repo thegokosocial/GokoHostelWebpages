@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LockIcon, LogOutIcon, ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const COLUMNS = [
   "Submitted At", "Arrival Date", "Arrival Time", "Name", "Persons",
@@ -165,6 +166,42 @@ function AddEntryForm({
   );
 }
 
+function EditFileField({
+  existingLinks,
+  newFiles,
+  onNewFiles,
+  onRemoveExisting,
+}: {
+  existingLinks: string;
+  newFiles: File[];
+  onNewFiles: (files: File[]) => void;
+  onRemoveExisting: (index: number) => void;
+}) {
+  const links = existingLinks ? existingLinks.split(" | ").filter((l) => l.startsWith("http")) : [];
+  return (
+    <div className="mt-1 space-y-2">
+      {links.length > 0 && (
+        <div className="space-y-1">
+          {links.map((url, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <a href={url} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-xs text-brand-red hover:underline">
+                File {idx + 1}
+              </a>
+              <button type="button" onClick={() => onRemoveExisting(idx)} className="text-xs text-red-400 hover:text-red-600">Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
+        <UploadIcon className="h-4 w-4 text-brand-green" />
+        {newFiles.length > 0 ? `${newFiles.length} new file(s) selected` : "Add files"}
+        <input type="file" accept="image/*,.pdf" multiple className="hidden"
+          onChange={(e) => onNewFiles(Array.from(e.target.files || []))} />
+      </label>
+    </div>
+  );
+}
+
 function extractDriveFileId(url: string): string | null {
   const match = url.match(/\/d\/([^/]+)\//);
   return match ? match[1] : null;
@@ -182,6 +219,10 @@ export default function AdminPage() {
   const [newEntry, setNewEntry] = useState<string[]>(Array(14).fill(""));
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editEntry, setEditEntry] = useState<string[]>(Array(14).fill(""));
+  const [editIdFiles, setEditIdFiles] = useState<File[]>([]);
+  const [editVisaFiles, setEditVisaFiles] = useState<File[]>([]);
+  const [validationOn, setValidationOn] = useState(true);
+  const [togglingValidation, setTogglingValidation] = useState(false);
 
   const apiCall = async (body: any) => {
     const res = await fetch("/api/admin/checkins", {
@@ -190,6 +231,27 @@ export default function AdminPage() {
       body: JSON.stringify({ password, ...body }),
     });
     return res;
+  };
+
+  const loadValidationSetting = async () => {
+    try {
+      const res = await apiCall({ action: "getSetting", key: "image_validation" });
+      if (res.ok) {
+        const data = await res.json();
+        setValidationOn(data.value !== "off");
+      }
+    } catch {}
+  };
+
+  const toggleValidation = async () => {
+    setTogglingValidation(true);
+    try {
+      const newValue = validationOn ? "off" : "on";
+      const res = await apiCall({ action: "setSetting", key: "image_validation", value: newValue });
+      if (res.ok) setValidationOn(!validationOn);
+    } finally {
+      setTogglingValidation(false);
+    }
   };
 
   const login = async () => {
@@ -204,6 +266,7 @@ export default function AdminPage() {
       setRole(data.role);
       setTabs(data.tabs || []);
       setCurrentTab(data.currentTab || "");
+      loadValidationSetting();
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -279,15 +342,47 @@ export default function AdminPage() {
     const padded = Array(14).fill("").map((_, i) => row[i] || "");
     setEditEntry(padded);
     setEditIndex(rowIndex);
+    setEditIdFiles([]);
+    setEditVisaFiles([]);
   };
 
   const updateRow = async () => {
     if (editIndex === null) return;
     setLoading(true);
     try {
-      const res = await apiCall({ action: "update", rowIndex: editIndex, entry: editEntry, tab: currentTab });
+      const updated = [...editEntry];
+
+      const uploadFiles = async (files: File[], guestName: string, type: string) => {
+        const links: string[] = [];
+        for (const file of files) {
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("name", guestName);
+          fd.append("type", type);
+          fd.append("password", password);
+          const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.link) links.push(data.link);
+          }
+        }
+        return links.join(" | ");
+      };
+
+      if (editIdFiles.length > 0) {
+        const newLinks = await uploadFiles(editIdFiles, updated[3] || "Guest", "id");
+        updated[12] = newLinks;
+      }
+      if (editVisaFiles.length > 0) {
+        const newLinks = await uploadFiles(editVisaFiles, updated[3] || "Guest", "visa");
+        updated[13] = newLinks;
+      }
+
+      const res = await apiCall({ action: "update", rowIndex: editIndex, entry: updated, tab: currentTab });
       if (res.ok) {
         setEditIndex(null);
+        setEditIdFiles([]);
+        setEditVisaFiles([]);
         refresh();
       } else {
         const data = await res.json();
@@ -395,6 +490,34 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* Validation toggle (admin only) */}
+        {role === "admin" && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-brand-mist bg-white px-4 py-3">
+            <span className="text-sm font-medium text-brand-green-dark">ID Validation (Vision API)</span>
+            <button
+              type="button"
+              onClick={toggleValidation}
+              disabled={togglingValidation}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200",
+                validationOn ? "bg-brand-green" : "bg-brand-green-dark/20"
+              )}
+            >
+              <span className={cn(
+                "inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200",
+                validationOn ? "translate-x-5" : "translate-x-0.5",
+                "mt-0.5"
+              )} />
+            </button>
+            <span className={cn("text-xs font-semibold", validationOn ? "text-brand-green" : "text-brand-green-dark/40")}>
+              {togglingValidation ? "..." : validationOn ? "ON" : "OFF"}
+            </span>
+            {!validationOn && (
+              <span className="text-xs text-brand-green-dark/50">Saves Vision API costs. Documents accepted without verification.</span>
+            )}
+          </div>
+        )}
+
         {/* Month tabs */}
         {tabs.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -455,16 +578,17 @@ export default function AdminPage() {
                       <option value="passport">passport</option>
                     </select>
                   ) : col === "ID Card" || col === "Visa" ? (
-                    <Input
-                      value={editEntry[i]}
-                      onChange={(e) => {
+                    <EditFileField
+                      existingLinks={editEntry[i]}
+                      newFiles={col === "ID Card" ? editIdFiles : editVisaFiles}
+                      onNewFiles={(files) => col === "ID Card" ? setEditIdFiles(files) : setEditVisaFiles(files)}
+                      onRemoveExisting={(linkIdx) => {
+                        const links = editEntry[i].split(" | ").filter(Boolean);
+                        links.splice(linkIdx, 1);
                         const updated = [...editEntry];
-                        updated[i] = e.target.value;
+                        updated[i] = links.join(" | ");
                         setEditEntry(updated);
                       }}
-                      placeholder="Drive link(s)"
-                      className="mt-1 text-xs"
-                      readOnly
                     />
                   ) : (
                     <Input
@@ -525,10 +649,13 @@ export default function AdminPage() {
                       return (
                         <td key={ci} className="whitespace-nowrap px-3 py-3">
                           {links.length > 0 ? (
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-1.5">
                               {links.map((url: string, li: number) => (
-                                <a key={li} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-brand-red hover:underline">
-                                  {links.length > 1 ? `${li + 1}` : "View"} <ExternalLinkIcon className="h-3.5 w-3.5" />
+                                <a key={li} href={url} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-xs font-medium text-brand-green transition-colors hover:bg-brand-green/[0.12]"
+                                >
+                                  {links.length > 1 ? (li === 0 ? "Front" : li === 1 ? "Back" : `Page ${li + 1}`) : "View"}
+                                  <ExternalLinkIcon className="h-3 w-3" />
                                 </a>
                               ))}
                             </div>

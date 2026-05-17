@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateIdDocument, validateIdFromText } from "@/lib/validateIdDocument";
+import { validateIdDocument } from "@/lib/validateIdDocument";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,33 +21,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "File must be an image or PDF" }, { status: 400 });
     }
 
-    if (file.type === "application/pdf") {
-      try {
-        const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
-        const pdfBuffer = Buffer.from(await file.arrayBuffer());
-        const data = await pdfParse(pdfBuffer);
-        const result = validateIdFromText(
-          data.text || "",
-          category as "id" | "visa",
-          idType as any,
-          guestName || undefined
-        );
-        return NextResponse.json(result);
-      } catch (pdfErr: any) {
-        console.error("PDF parse failed:", pdfErr?.message);
-        return NextResponse.json({
-          valid: true, documentType: "unknown", confidence: "low",
-          message: "PDF accepted. Could not extract text — staff will verify manually.",
-        });
-      }
-    }
-
-    const imageBuffer = Buffer.from(await file.arrayBuffer());
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
     const result = await validateIdDocument(
-      imageBuffer,
+      fileBuffer,
       category as "id" | "visa",
       idType as any,
-      guestName || undefined
+      guestName || undefined,
+      file.type
     );
 
     return NextResponse.json(result);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateIdDocument, validateIdFromText } from "@/lib/validateIdDocument";
+import { validateIdDocument } from "@/lib/validateIdDocument";
 import {
   sheetsAppend,
   sheetsUpdate,
@@ -62,18 +62,11 @@ export async function POST(req: NextRequest) {
     }
 
     async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
-      if (file.type === "application/pdf") {
-        try {
-          const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
-          const pdfBuffer = Buffer.from(await file.arrayBuffer());
-          const data = await pdfParse(pdfBuffer);
-          return validateIdFromText(data.text || "", category, idTypeHint as any, nameToCheck);
-        } catch {
-          return { valid: true, documentType: "unknown" as const, confidence: "low" as const, message: "PDF accepted" };
-        }
+      if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
+        return { valid: false, documentType: "unknown" as const, confidence: "high" as const, message: "Only images and PDFs accepted" };
       }
       const buffer = Buffer.from(await file.arrayBuffer());
-      return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck);
+      return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type);
     }
 
     try {

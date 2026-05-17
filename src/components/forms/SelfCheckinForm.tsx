@@ -108,8 +108,7 @@ function CountrySelect({
 
 type DocFile = { file: File; preview: string };
 
-const ACCEPTED_TYPES = "image/*,.pdf";
-const PDF_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232d5c3f' stroke-width='1.5'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3Cpath d='M10 13h4'/%3E%3Cpath d='M10 17h4'/%3E%3C/svg%3E";
+const ACCEPTED_FILE_TYPES = "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf";
 
 function MultiDocUpload({
   label,
@@ -138,6 +137,7 @@ function MultiDocUpload({
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList) return;
     Array.from(fileList).forEach((file) => {
+      if (!file.type.startsWith("image/") && file.type !== "application/pdf") return;
       if (file.size <= 10 * 1024 * 1024) onAdd(file);
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -154,17 +154,18 @@ function MultiDocUpload({
         <div className="mb-3 flex flex-wrap gap-3">
           {files.map((doc, i) => (
             <div key={i} className="relative">
-              <img
-                src={doc.file.type === "application/pdf" ? PDF_ICON : doc.preview}
-                alt={`Document ${i + 1}`}
-                className={cn(
-                  "h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft",
-                  doc.file.type === "application/pdf" && "bg-brand-sand/50 p-4 object-contain"
-                )}
-              />
-              <p className="mt-1 max-w-[6rem] truncate text-center text-[10px] text-brand-green-dark/60">
-                {doc.file.name.length > 12 ? doc.file.name.slice(0, 10) + "..." : doc.file.name}
-              </p>
+              {doc.file.type === "application/pdf" ? (
+                <div className="flex h-24 w-24 flex-col items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 shadow-soft">
+                  <span className="text-2xl">PDF</span>
+                  <span className="mt-1 max-w-[5rem] truncate text-[9px] text-brand-green-dark/60">{doc.file.name}</span>
+                </div>
+              ) : (
+                <img
+                  src={doc.preview}
+                  alt={`Document ${i + 1}`}
+                  className="h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => onRemove(i)}
@@ -223,7 +224,7 @@ function MultiDocUpload({
       <input
         ref={fileInputRef}
         type="file"
-        accept={ACCEPTED_TYPES}
+        accept={ACCEPTED_FILE_TYPES}
         multiple
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
@@ -238,7 +239,7 @@ function MultiDocUpload({
       />
       {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
       <p className="mt-1.5 text-xs text-brand-green-dark/50">
-        {helpText || "Upload front & back (images or PDF). Max 10 MB per file."}
+        {helpText || "Accepted: JPEG, PNG, WebP, PDF. Max 10 MB per file."}
       </p>
     </div>
   );
@@ -252,6 +253,7 @@ export function SelfCheckinForm() {
   const [visaFiles, setVisaFiles] = useState<DocFile[]>([]);
   const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
   const [validatingId, setValidatingId] = useState(false);
+  const [idValidated, setIdValidated] = useState(false);
   const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
   const [validatingVisa, setValidatingVisa] = useState(false);
 
@@ -282,29 +284,31 @@ export function SelfCheckinForm() {
   const nationality = watch("nationality");
 
   const addIdFile = (file: File) => {
-    const isPdf = file.type === "application/pdf";
-    if (isPdf) {
+    if (file.type === "application/pdf") {
       const newFiles = [...idFiles, { file, preview: "" }];
       setIdFiles(newFiles);
       setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
       setIdValidationMsg(null);
-    } else {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const newFiles = [...idFiles, { file, preview: e.target?.result as string }];
-        setIdFiles(newFiles);
-        setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
-        setIdValidationMsg(null);
-      };
-      reader.readAsDataURL(file);
+      setIdValidated(false);
+      return;
     }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const newFiles = [...idFiles, { file, preview: e.target?.result as string }];
+      setIdFiles(newFiles);
+      setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
+      setIdValidationMsg(null);
+      setIdValidated(false);
+    };
+    reader.readAsDataURL(file);
   };
 
   const removeIdFile = (index: number) => {
     const newFiles = idFiles.filter((_, i) => i !== index);
     setIdFiles(newFiles);
     setValue("idImages", newFiles.length > 0 ? newFiles.map((f) => f.file) : null, { shouldValidate: true });
-    if (newFiles.length === 0) setIdValidationMsg(null);
+    setIdValidated(false);
+    setIdValidationMsg(null);
   };
 
   const validateIdFiles = async () => {
@@ -327,34 +331,37 @@ export function SelfCheckinForm() {
       const result = await res.json();
       setIdValidationMsg({ valid: result.valid, message: result.message });
 
-      if (!result.valid) {
+      if (result.valid) {
+        setIdValidated(true);
+      } else {
+        setIdValidated(false);
         setIdFiles([]);
         setValue("idImages", null, { shouldValidate: true });
       }
     } catch {
       setIdValidationMsg({ valid: true, message: "Validation skipped" });
+      setIdValidated(true);
     } finally {
       setValidatingId(false);
     }
   };
 
   const addVisaFile = (file: File) => {
-    const isPdf = file.type === "application/pdf";
-    if (isPdf) {
+    if (file.type === "application/pdf") {
       const newFiles = [...visaFiles, { file, preview: "" }];
       setVisaFiles(newFiles);
       setValue("visaImages", newFiles.map((f) => f.file), { shouldValidate: true });
       setVisaValidationMsg(null);
-    } else {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const newFiles = [...visaFiles, { file, preview: e.target?.result as string }];
-        setVisaFiles(newFiles);
-        setValue("visaImages", newFiles.map((f) => f.file), { shouldValidate: true });
-        setVisaValidationMsg(null);
-      };
-      reader.readAsDataURL(file);
+      return;
     }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const newFiles = [...visaFiles, { file, preview: e.target?.result as string }];
+      setVisaFiles(newFiles);
+      setValue("visaImages", newFiles.map((f) => f.file), { shouldValidate: true });
+      setVisaValidationMsg(null);
+    };
+    reader.readAsDataURL(file);
   };
 
   const removeVisaFile = (index: number) => {
@@ -434,6 +441,7 @@ export function SelfCheckinForm() {
       setVisaFiles([]);
       setIdValidationMsg(null);
       setVisaValidationMsg(null);
+      setIdValidated(false);
     } catch {
       alert("Something went wrong. Please try again or contact the front desk.");
     } finally {
@@ -670,7 +678,7 @@ export function SelfCheckinForm() {
           onValidate={validateIdFiles}
           validating={validatingId}
           validationMsg={idValidationMsg}
-          helpText="Upload front and back of your ID (images or PDF). Max 10 MB per file."
+          helpText="Upload front and back of your ID. Accepted: JPEG, PNG, WebP, PDF. Max 10 MB per file."
         />
 
         {/* Visa (conditional, multiple images/PDF) */}
@@ -684,17 +692,22 @@ export function SelfCheckinForm() {
             onValidate={validateVisaFiles}
             validating={validatingVisa}
             validationMsg={visaValidationMsg}
-            helpText="Upload all relevant visa pages (images or PDF). Max 10 MB per file."
+            helpText="Upload visa pages. Accepted: JPEG, PNG, WebP, PDF. Max 10 MB per file."
           />
         )}
       </div>
 
       <div className="mt-10">
+        {!idValidated && idFiles.length > 0 && (
+          <p className="mb-3 text-center text-sm text-brand-red">
+            Please click &quot;Verify document&quot; before submitting
+          </p>
+        )}
         <Button
           type="submit"
           variant="cta"
           className="w-full"
-          disabled={submitting}
+          disabled={submitting || !idValidated}
         >
           {submitting ? "Submitting..." : "Complete Check-in"}
         </Button>

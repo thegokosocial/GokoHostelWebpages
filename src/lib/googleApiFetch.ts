@@ -270,24 +270,104 @@ export async function driveGetOrCreateFolder(parentId: string, folderName: strin
 
 // --- Google Cloud Vision ---
 
-export async function visionDetectText(imageBase64: string): Promise<string> {
+export type VisionAnalysis = {
+  text: string;
+  labels: string[];
+  objects: string[];
+  safeSearch: {
+    adult: string;
+    spoof: string;
+    violence: string;
+    racy: string;
+  } | null;
+  isPdf: boolean;
+};
+
+export async function visionAnalyze(fileBase64: string, mimeType: string = "image/jpeg"): Promise<VisionAnalysis> {
   const token = await getServiceAccountToken(["https://www.googleapis.com/auth/cloud-vision"]);
+
+  if (mimeType === "application/pdf") {
+    const res = await fetch("https://vision.googleapis.com/v1/files:annotate", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requests: [{
+          inputConfig: { content: fileBase64, mimeType: "application/pdf" },
+          features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
+          pages: [1],
+        }],
+      }),
+    });
+    if (!res.ok) throw new Error(`Vision PDF API failed: ${await res.text()}`);
+    const data = await res.json();
+    const pages = data.responses?.[0]?.responses || [];
+    const text = pages.map((p: any) => p?.fullTextAnnotation?.text || "").join("\n");
+    return { text, labels: [], objects: [], safeSearch: null, isPdf: true };
+  }
 
   const res = await fetch("https://vision.googleapis.com/v1/images:annotate", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       requests: [{
-        image: { content: imageBase64 },
-        features: [{ type: "TEXT_DETECTION", maxResults: 1 }, { type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 }],
+        image: { content: fileBase64 },
+        features: [
+          { type: "TEXT_DETECTION", maxResults: 1 },
+          { type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 },
+          { type: "LABEL_DETECTION", maxResults: 10 },
+          { type: "SAFE_SEARCH_DETECTION" },
+          { type: "OBJECT_LOCALIZATION", maxResults: 5 },
+        ],
       }],
     }),
   });
 
   if (!res.ok) throw new Error(`Vision API failed: ${await res.text()}`);
   const data = await res.json();
-  const annotations = data.responses?.[0];
-  return annotations?.fullTextAnnotation?.text || annotations?.textAnnotations?.[0]?.description || "";
+  const ann = data.responses?.[0];
+
+  const text = ann?.fullTextAnnotation?.text || ann?.textAnnotations?.[0]?.description || "";
+  const labels = (ann?.labelAnnotations || []).map((l: any) => (l.description || "").toLowerCase());
+  const objects = (ann?.localizedObjectAnnotations || []).map((o: any) => (o.name || "").toLowerCase());
+  const ss = ann?.safeSearchAnnotation;
+  const safeSearch = ss ? { adult: ss.adult, spoof: ss.spoof, violence: ss.violence, racy: ss.racy } : null;
+
+  return { text, labels, objects, safeSearch, isPdf: false };
+}
+
+/** Backward-compatible wrapper */
+export async function visionDetectText(fileBase64: string, mimeType: string = "image/jpeg"): Promise<string> {
+  const result = await visionAnalyze(fileBase64, mimeType);
+  return result.text;
+}
+
+// --- Settings (stored in "Settings" tab of the same sheet) ---
+
+export async function getSettingValue(spreadsheetId: string, key: string): Promise<string | null> {
+  try {
+    const tabs = await sheetsGetTabs(spreadsheetId);
+    if (!tabs.find((t) => t.title === "Settings")) return null;
+    const rows = await sheetsGet(spreadsheetId, "'Settings'!A:B");
+    const row = rows.find((r) => r[0] === key);
+    return row ? row[1] || null : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setSettingValue(spreadsheetId: string, key: string, value: string): Promise<void> {
+  const tabs = await sheetsGetTabs(spreadsheetId);
+  if (!tabs.find((t) => t.title === "Settings")) {
+    await sheetsAddTab(spreadsheetId, "Settings");
+    await sheetsUpdate(spreadsheetId, "'Settings'!A1:B1", [["Key", "Value"]]);
+  }
+  const rows = await sheetsGet(spreadsheetId, "'Settings'!A:B");
+  const rowIndex = rows.findIndex((r) => r[0] === key);
+  if (rowIndex >= 0) {
+    await sheetsUpdate(spreadsheetId, `'Settings'!A${rowIndex + 1}:B${rowIndex + 1}`, [[key, value]]);
+  } else {
+    await sheetsAppend(spreadsheetId, "'Settings'!A:B", [[key, value]]);
+  }
 }
 
 // --- Helpers ---

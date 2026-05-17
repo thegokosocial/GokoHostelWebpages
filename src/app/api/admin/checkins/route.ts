@@ -8,6 +8,8 @@ import {
   ensureMonthTab,
   driveDeleteFile,
   getMonthTabName,
+  getSettingValue,
+  setSettingValue,
   CHECKIN_HEADERS,
 } from "@/lib/googleApiFetch";
 
@@ -102,6 +104,21 @@ export async function POST(req: NextRequest) {
         await sheetsDeleteRow(spreadsheetId, sheet.sheetId, rowIndex + 1);
       }
 
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "getSetting") {
+      const { key } = body;
+      const value = await getSettingValue(spreadsheetId, key);
+      return NextResponse.json({ value });
+    }
+
+    if (action === "setSetting") {
+      if (role !== "admin") {
+        return NextResponse.json({ error: "Only admin can change settings" }, { status: 403 });
+      }
+      const { key, value } = body;
+      await setSettingValue(spreadsheetId, key, value);
       return NextResponse.json({ success: true });
     }
 
