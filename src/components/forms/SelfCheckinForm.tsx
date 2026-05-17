@@ -257,6 +257,7 @@ export function SelfCheckinForm() {
   const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
   const [validatingVisa, setValidatingVisa] = useState(false);
   const [validationEnabled, setValidationEnabled] = useState(true);
+  const [detectedIdType, setDetectedIdType] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -346,8 +347,13 @@ export function SelfCheckinForm() {
 
       if (result.valid) {
         setIdValidated(true);
+        setDetectedIdType(null);
+      } else if (result.layers?.includes("type_mismatch") && result.documentType !== "unknown") {
+        setIdValidated(false);
+        setDetectedIdType(result.documentType);
       } else {
         setIdValidated(false);
+        setDetectedIdType(null);
         setIdFiles([]);
         setValue("idImages", null, { shouldValidate: true });
       }
@@ -666,6 +672,14 @@ export function SelfCheckinForm() {
           <select
             id="idType"
             {...register("idType")}
+            onChange={(e) => {
+              setValue("idType", e.target.value as any, { shouldValidate: true });
+              if (detectedIdType && e.target.value === detectedIdType && idFiles.length > 0) {
+                setIdValidated(true);
+                setIdValidationMsg({ valid: true, message: `${detectedIdType.replace("_", " ")} detected. ID type updated.` });
+                setDetectedIdType(null);
+              }
+            }}
             className={cn(
               "mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring",
               errors.idType && "border-red-400"

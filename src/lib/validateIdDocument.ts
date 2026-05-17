@@ -166,7 +166,7 @@ function runTextValidation(
 
     if (expectedIdType && type !== expectedIdType) {
       layers.push("type_mismatch");
-      return { valid: false, documentType: type, confidence: "high", layers, message: `You selected "${expectedIdType.replace("_", " ")}" but this appears to be a ${type.replace("_", " ")}. Please select the correct ID type.` };
+      return { valid: false, documentType: type, confidence: "high", layers, message: `You selected "${expectedIdType.replace("_", " ")}" but this appears to be a ${type.replace("_", " ")}. Please change your ID type selection to "${type.replace("_", " ")}" to proceed.` };
     }
     layers.push("type_match");
 
