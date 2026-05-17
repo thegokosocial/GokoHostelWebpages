@@ -1,7 +1,4 @@
-async function getGoogleApis() {
-  const { google } = await import("googleapis");
-  return google;
-}
+import { visionDetectText } from "./googleApiFetch";
 
 const AADHAAR_PATTERNS = [
   /aadhaar/i,
@@ -90,35 +87,8 @@ export async function validateIdDocument(
   }
 
   try {
-    const google = await getGoogleApis();
-    const key = JSON.parse(credentials);
-    const privateKey = key.private_key.replace(/\\n/g, "\n");
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: key.client_email,
-        private_key: privateKey,
-      },
-      scopes: ["https://www.googleapis.com/auth/cloud-vision"],
-    });
-
-    const vision = google.vision({ version: "v1", auth: auth as any });
-
-    const response = await vision.images.annotate({
-      requestBody: {
-        requests: [
-          {
-            image: { content: imageBuffer.toString("base64") },
-            features: [
-              { type: "TEXT_DETECTION", maxResults: 1 },
-              { type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 },
-            ],
-          },
-        ],
-      },
-    });
-
-    const annotations = response.data.responses?.[0];
-    const fullText = annotations?.fullTextAnnotation?.text || annotations?.textAnnotations?.[0]?.description || "";
+    const imageBase64 = imageBuffer.toString("base64");
+    const fullText = await visionDetectText(imageBase64);
 
     if (!fullText || fullText.length < 10) {
       return {

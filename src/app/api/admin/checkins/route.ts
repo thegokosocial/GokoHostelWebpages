@@ -1,70 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  sheetsGet,
+  sheetsAppend,
+  sheetsUpdate,
+  sheetsGetTabs,
+  sheetsDeleteRow,
+  ensureMonthTab,
+  driveDeleteFile,
+  getMonthTabName,
+  CHECKIN_HEADERS,
+} from "@/lib/googleApiFetch";
 
 type UserRole = "admin" | "manager";
-
-function getMonthTab(date?: Date): string {
-  const d = date || new Date();
-  const months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
-    "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-  return `${months[d.getMonth()]}-${d.getFullYear()}`;
-}
 
 function authenticateUser(password: string): UserRole | null {
   if (password === process.env.ADMIN_PASSWORD) return "admin";
   if (password === process.env.MANAGER_PASSWORD) return "manager";
   return null;
-}
-
-async function getGoogleApis() {
-  const { google } = await import("googleapis");
-  return google;
-}
-
-async function getSheetsClient() {
-  const google = await getGoogleApis();
-  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!credentials) throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY not set");
-  const key = JSON.parse(credentials);
-  const privateKey = key.private_key.replace(/\\n/g, "\n");
-  const auth = new google.auth.GoogleAuth({
-    credentials: { client_email: key.client_email, private_key: privateKey },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  const authClient = await auth.getClient();
-  return google.sheets({ version: "v4", auth: authClient as any });
-}
-
-async function getDriveClient() {
-  const google = await getGoogleApis();
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
-  if (!clientId || !clientSecret || !refreshToken) return null;
-  const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
-  oauth2.setCredentials({ refresh_token: refreshToken });
-  return google.drive({ version: "v3", auth: oauth2 });
-}
-
-async function ensureMonthTab(sheets: any, spreadsheetId: string, tabName: string) {
-  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
-  const existing = meta.data.sheets?.map((s: any) => s.properties?.title) || [];
-
-  if (!existing.includes(tabName)) {
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId,
-      requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `'${tabName}'!A1:N1`,
-      valueInputOption: "RAW",
-      requestBody: {
-        values: [["Submitted At", "Arrival Date", "Arrival Time", "Name", "Persons",
-          "Contact", "Days", "Coming From", "Nationality", "Emergency Contact",
-          "Emergency Phone", "ID Type", "ID Card", "Visa"]],
-      },
-    });
-  }
 }
 
 export async function POST(req: NextRequest) {
@@ -79,45 +31,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-
-    if (!credentials || !spreadsheetId) {
-      return NextResponse.json({ rows: [], role, tabs: [], currentTab: getMonthTab(), warning: "Google Sheets not configured" });
+    if (!spreadsheetId) {
+      return NextResponse.json({ rows: [], role, tabs: [], currentTab: getMonthTabName(), warning: "Google Sheets not configured" });
     }
 
-    const sheets = await getSheetsClient();
-
     if (action === "list" || !action) {
-      const tabName = month || getMonthTab();
-      await ensureMonthTab(sheets, spreadsheetId, tabName);
+      const tabName = month || getMonthTabName();
+      await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
 
-      const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
-      const tabs = (meta.data.sheets?.map((s: any) => s.properties?.title).filter(Boolean) || []);
+      const tabs = await sheetsGetTabs(spreadsheetId);
+      const tabNames = tabs.map((t) => t.title);
 
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `'${tabName}'!A:N`,
-      });
-      const allRows = response.data.values || [];
+      const allRows = await sheetsGet(spreadsheetId, `'${tabName}'!A:N`);
       const rows = allRows.length > 1 ? allRows.slice(1) : [];
 
-      return NextResponse.json({ rows, role, tabs, currentTab: tabName });
+      return NextResponse.json({ rows, role, tabs: tabNames, currentTab: tabName });
     }
 
     if (action === "add") {
       const { entry } = body;
       if (!entry) return NextResponse.json({ error: "No entry data" }, { status: 400 });
 
-      const tabName = getMonthTab();
-      await ensureMonthTab(sheets, spreadsheetId, tabName);
-
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `'${tabName}'!A:N`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [entry] },
-      });
+      const tabName = getMonthTabName();
+      await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
+      await sheetsAppend(spreadsheetId, `'${tabName}'!A:N`, [entry]);
 
       return NextResponse.json({ success: true });
     }
@@ -128,19 +66,14 @@ export async function POST(req: NextRequest) {
       }
 
       const { rowIndex, entry, tab } = body;
-      const tabName = tab || getMonthTab();
+      const tabName = tab || getMonthTabName();
 
       if (!entry || rowIndex === undefined) {
         return NextResponse.json({ error: "Missing entry data or row index" }, { status: 400 });
       }
 
       const rowNumber = rowIndex + 2;
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `'${tabName}'!A${rowNumber}:N${rowNumber}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [entry] },
-      });
+      await sheetsUpdate(spreadsheetId, `'${tabName}'!A${rowNumber}:N${rowNumber}`, [entry]);
 
       return NextResponse.json({ success: true });
     }
@@ -151,35 +84,22 @@ export async function POST(req: NextRequest) {
       }
 
       const { rowIndex, driveFileIds, tab } = body;
-      const tabName = tab || getMonthTab();
+      const tabName = tab || getMonthTabName();
 
       if (driveFileIds && driveFileIds.length > 0) {
-        const drive = await getDriveClient();
-        if (drive) {
-          for (const fileId of driveFileIds) {
-            try {
-              await drive.files.delete({ fileId });
-            } catch (err: any) {
-              console.error(`Failed to delete Drive file ${fileId}:`, err?.message);
-            }
+        for (const fileId of driveFileIds) {
+          try {
+            await driveDeleteFile(fileId);
+          } catch (err: any) {
+            console.error(`Failed to delete Drive file ${fileId}:`, err?.message);
           }
         }
       }
 
-      const meta = await sheets.spreadsheets.get({ spreadsheetId });
-      const sheet = meta.data.sheets?.find((s: any) => s.properties?.title === tabName);
-      if (sheet?.properties) {
-        const sheetId = sheet.properties.sheetId;
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId,
-          requestBody: {
-            requests: [{
-              deleteDimension: {
-                range: { sheetId, dimension: "ROWS", startIndex: rowIndex + 1, endIndex: rowIndex + 2 },
-              },
-            }],
-          },
-        });
+      const tabs = await sheetsGetTabs(spreadsheetId);
+      const sheet = tabs.find((t) => t.title === tabName);
+      if (sheet) {
+        await sheetsDeleteRow(spreadsheetId, sheet.sheetId, rowIndex + 1);
       }
 
       return NextResponse.json({ success: true });
@@ -188,9 +108,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error: any) {
     console.error("Admin API error:", error?.message || error);
-    return NextResponse.json(
-      { error: error?.message || "Internal server error", role },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error?.message || "Internal server error", role }, { status: 500 });
   }
 }

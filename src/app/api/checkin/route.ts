@@ -1,114 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateIdFromText } from "@/lib/validateIdDocument";
-
-async function getGoogleApis() {
-  const { google } = await import("googleapis");
-  return google;
-}
-
-async function getSheetsClient() {
-  const google = await getGoogleApis();
-  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!credentials) throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY not set");
-  const key = JSON.parse(credentials);
-  const privateKey = key.private_key.replace(/\\n/g, "\n");
-  const auth = new google.auth.GoogleAuth({
-    credentials: { client_email: key.client_email, private_key: privateKey },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  const authClient = await auth.getClient();
-  return google.sheets({ version: "v4", auth: authClient as any });
-}
-
-function getMonthFolderName(): string {
-  const d = new Date();
-  const months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
-    "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-  return `${months[d.getMonth()]}-${d.getFullYear()}`;
-}
-
-function getMonthTab(): string {
-  return getMonthFolderName();
-}
-
-async function getOrCreateMonthFolder(drive: any, parentFolderId: string | undefined): Promise<string | undefined> {
-  if (!parentFolderId) return undefined;
-  const folderName = getMonthFolderName();
-
-  const search = await drive.files.list({
-    q: `name='${folderName}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: "files(id)",
-  });
-
-  if (search.data.files?.length > 0) {
-    return search.data.files[0].id;
-  }
-
-  const created = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: "application/vnd.google-apps.folder",
-      parents: [parentFolderId],
-    },
-    fields: "id",
-  });
-
-  return created.data.id;
-}
+import {
+  sheetsAppend,
+  sheetsUpdate,
+  sheetsGetTabs,
+  sheetsAddTab,
+  ensureMonthTab,
+  driveUploadFile,
+  driveGetOrCreateFolder,
+  getMonthTabName,
+  CHECKIN_HEADERS,
+} from "@/lib/googleApiFetch";
 
 async function uploadToDrive(file: File, guestName: string, fileType: string): Promise<string> {
-  const { Readable } = await import("stream");
-  const google = await getGoogleApis();
-
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error("Google Drive OAuth credentials not configured");
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const buffer = await file.arrayBuffer();
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const ext = file.name.split(".").pop() || "jpg";
   const fileName = `${guestName.replace(/[^a-zA-Z]/g, "_")}_${fileType}_${timestamp}.${ext}`;
 
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
-  oauth2Client.setCredentials({ refresh_token: refreshToken });
-
-  const drive = google.drive({ version: "v3", auth: oauth2Client });
-
   let targetFolderId = folderId;
   if (folderId) {
     try {
-      targetFolderId = await getOrCreateMonthFolder(drive, folderId);
+      targetFolderId = await driveGetOrCreateFolder(folderId, getMonthTabName());
     } catch (err: any) {
-      console.error("Month folder creation failed, using root:", err?.message);
+      console.error("Month folder creation failed:", err?.message);
     }
   }
 
-  const response = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: targetFolderId ? [targetFolderId] : undefined,
-    },
-    media: {
-      mimeType: file.type || "image/jpeg",
-      body: Readable.from(buffer),
-    },
-    fields: "id",
-  });
-
-  const fileId = response.data.id;
-  if (!fileId) throw new Error("Drive upload returned no file ID");
-
-  await drive.permissions.create({
-    fileId,
-    requestBody: { role: "reader", type: "anyone" },
-  });
-
-  return `https://drive.google.com/file/d/${fileId}/view`;
+  return driveUploadFile(fileName, file.type || "image/jpeg", buffer, targetFolderId);
 }
 
 export async function POST(req: NextRequest) {
@@ -142,10 +63,14 @@ export async function POST(req: NextRequest) {
 
     async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
       if (file.type === "application/pdf") {
-        const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
-        const pdfBuffer = Buffer.from(await file.arrayBuffer());
-        const data = await pdfParse(pdfBuffer);
-        return validateIdFromText(data.text || "", category, idTypeHint as any, nameToCheck);
+        try {
+          const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
+          const pdfBuffer = Buffer.from(await file.arrayBuffer());
+          const data = await pdfParse(pdfBuffer);
+          return validateIdFromText(data.text || "", category, idTypeHint as any, nameToCheck);
+        } catch {
+          return { valid: true, documentType: "unknown" as const, confidence: "low" as const, message: "PDF accepted" };
+        }
       }
       const buffer = Buffer.from(await file.arrayBuffer());
       return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck);
@@ -154,10 +79,7 @@ export async function POST(req: NextRequest) {
     try {
       const idValidation = await validateFile(idImages[0], "id", idType, name);
       if (!idValidation.valid) {
-        return NextResponse.json(
-          { error: idValidation.message, field: "idImages" },
-          { status: 422 }
-        );
+        return NextResponse.json({ error: idValidation.message, field: "idImages" }, { status: 422 });
       }
     } catch (valErr: any) {
       console.error("ID validation error:", valErr?.message);
@@ -167,10 +89,7 @@ export async function POST(req: NextRequest) {
       try {
         const visaValidation = await validateFile(visaImages[0], "visa");
         if (!visaValidation.valid) {
-          return NextResponse.json(
-            { error: visaValidation.message, field: "visaImages" },
-            { status: 422 }
-          );
+          return NextResponse.json({ error: visaValidation.message, field: "visaImages" }, { status: 422 });
         }
       } catch (valErr: any) {
         console.error("Visa validation error:", valErr?.message);
@@ -178,10 +97,7 @@ export async function POST(req: NextRequest) {
     }
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-
-    if (!spreadsheetId) {
-      throw new Error("GOOGLE_SHEET_ID env variable not set");
-    }
+    if (!spreadsheetId) throw new Error("GOOGLE_SHEET_ID not set");
 
     const idCardLinks: string[] = [];
     for (let i = 0; i < idImages.length; i++) {
@@ -207,64 +123,19 @@ export async function POST(req: NextRequest) {
 
     const idCardLink = idCardLinks.join(" | ");
     const visaLink = visaLinks.join(" | ");
-
-    const sheets = await getSheetsClient();
     const submittedAt = new Date().toISOString();
-    const tabName = getMonthTab();
+    const tabName = getMonthTabName();
 
-    const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
-    const existingTabs = meta.data.sheets?.map((s: any) => s.properties.title) || [];
-    if (!existingTabs.includes(tabName)) {
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [{ addSheet: { properties: { title: tabName } } }],
-        },
-      });
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `'${tabName}'!A1:M1`,
-        valueInputOption: "RAW",
-        requestBody: {
-          values: [["Submitted At", "Arrival Date", "Arrival Time", "Name", "Persons",
-            "Contact", "Days", "Coming From", "Nationality", "Emergency Contact",
-            "Emergency Phone", "ID Type", "ID Card", "Visa"]],
-        },
-      });
-    }
+    await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `'${tabName}'!A:N`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [
-          [
-            submittedAt,
-            arrivalDate,
-            arrivalTime,
-            name,
-            numberOfPersons,
-            contactNumber,
-            stayingDays,
-            comingFrom,
-            nationality,
-            emergencyName,
-            emergencyPhone,
-            idType,
-            idCardLink,
-            visaLink,
-          ],
-        ],
-      },
-    });
+    await sheetsAppend(spreadsheetId, `'${tabName}'!A:N`, [
+      [submittedAt, arrivalDate, arrivalTime, name, numberOfPersons, contactNumber,
+        stayingDays, comingFrom, nationality, emergencyName, emergencyPhone, idType, idCardLink, visaLink],
+    ]);
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Check-in API error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error("Check-in API error:", error?.message || error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateIdFromText } from "@/lib/validateIdDocument";
 
-async function extractPdfText(pdfBuffer: Buffer): Promise<string> {
-  const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
-  const data = await pdfParse(pdfBuffer);
-  return data.text || "";
-}
-
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -29,21 +23,20 @@ export async function POST(req: NextRequest) {
 
     if (file.type === "application/pdf") {
       try {
+        const pdfParse = (await import("pdf-parse") as any).default || (await import("pdf-parse"));
         const pdfBuffer = Buffer.from(await file.arrayBuffer());
-        const text = await extractPdfText(pdfBuffer);
+        const data = await pdfParse(pdfBuffer);
         const result = validateIdFromText(
-          text,
+          data.text || "",
           category as "id" | "visa",
-          idType as "aadhaar" | "driving_licence" | "passport" | undefined,
+          idType as any,
           guestName || undefined
         );
         return NextResponse.json(result);
       } catch (pdfErr: any) {
         console.error("PDF parse failed:", pdfErr?.message);
         return NextResponse.json({
-          valid: true,
-          documentType: "unknown",
-          confidence: "low",
+          valid: true, documentType: "unknown", confidence: "low",
           message: "PDF accepted. Could not extract text — staff will verify manually.",
         });
       }
@@ -53,7 +46,7 @@ export async function POST(req: NextRequest) {
     const result = await validateIdDocument(
       imageBuffer,
       category as "id" | "visa",
-      idType as "aadhaar" | "driving_licence" | "passport" | undefined,
+      idType as any,
       guestName || undefined
     );
 

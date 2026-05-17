@@ -1,25 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-function getMonthFolderName(): string {
-  const d = new Date();
-  const months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
-    "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-  return `${months[d.getMonth()]}-${d.getFullYear()}`;
-}
-
-async function getOrCreateMonthFolder(drive: any, parentFolderId: string): Promise<string> {
-  const folderName = getMonthFolderName();
-  const search = await drive.files.list({
-    q: `name='${folderName}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: "files(id)",
-  });
-  if (search.data.files?.length > 0) return search.data.files[0].id;
-  const created = await drive.files.create({
-    requestBody: { name: folderName, mimeType: "application/vnd.google-apps.folder", parents: [parentFolderId] },
-    fields: "id",
-  });
-  return created.data.id;
-}
+import { driveUploadFile, driveGetOrCreateFolder, getMonthTabName } from "@/lib/googleApiFetch";
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,46 +19,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file" }, { status: 400 });
     }
 
-    const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-    const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-    if (!clientId || !clientSecret || !refreshToken) {
-      return NextResponse.json({ error: "Drive not configured" }, { status: 500 });
-    }
-
-    const { Readable } = await import("stream");
-    const { google } = await import("googleapis");
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = await file.arrayBuffer();
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const ext = file.name.split(".").pop() || "jpg";
     const fileName = `${name.replace(/[^a-zA-Z]/g, "_")}_${type}_${timestamp}.${ext}`;
 
-    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    const drive = google.drive({ version: "v3", auth: oauth2Client });
-
     let targetFolderId = folderId;
     if (folderId) {
-      try { targetFolderId = await getOrCreateMonthFolder(drive, folderId); } catch {}
+      try {
+        targetFolderId = await driveGetOrCreateFolder(folderId, getMonthTabName());
+      } catch {}
     }
 
-    const response = await drive.files.create({
-      requestBody: { name: fileName, parents: targetFolderId ? [targetFolderId] : undefined },
-      media: { mimeType: file.type || "image/jpeg", body: Readable.from(buffer) },
-      fields: "id",
-    });
+    const link = await driveUploadFile(fileName, file.type || "image/jpeg", buffer, targetFolderId);
 
-    const fileId = response.data.id;
-    if (!fileId) throw new Error("Upload failed");
-
-    await drive.permissions.create({
-      fileId,
-      requestBody: { role: "reader", type: "anyone" },
-    });
-
-    return NextResponse.json({ link: `https://drive.google.com/file/d/${fileId}/view` });
+    return NextResponse.json({ link });
   } catch (error: any) {
     console.error("Admin upload error:", error?.message);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
