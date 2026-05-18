@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAdminApi } from "./useAdminApi";
+import { AdminLoading } from "./AdminLoading";
 import { cn } from "@/lib/utils";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import type { BedRow } from "./types";
@@ -78,7 +79,7 @@ export function AdminSetup({ password }: { password: string }) {
   const dorms = [...new Set(beds.map((b) => b.dormName))];
 
   if (loading) {
-    return <div className="flex items-center justify-center py-20"><div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" /></div>;
+    return <AdminLoading message="Loading setup..." />;
   }
 
   return (

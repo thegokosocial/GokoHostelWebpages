@@ -7,6 +7,7 @@ import { useAdminApi } from "./useAdminApi";
 import { cn } from "@/lib/utils";
 import { BedDoubleIcon, UserPlusIcon, SearchIcon, LogOutIcon, SparklesIcon, ClockIcon, Loader2Icon } from "lucide-react";
 import type { Role, BedRow } from "./types";
+import { AdminLoading } from "./AdminLoading";
 
 function parseBedRow(row: string[]): BedRow {
   return {
@@ -225,7 +226,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
   };
 
   if (loading) {
-    return (<div className="flex flex-col items-center justify-center py-20"><div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" /><p className="mt-4 text-sm text-brand-green-dark/60">Loading beds...</p></div>);
+    return <AdminLoading message="Loading beds..." />;
   }
 
   const dorms = [...new Set(beds.map((b) => b.dormName))];

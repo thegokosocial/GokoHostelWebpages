@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useAdminApi } from "./useAdminApi";
+import { AdminLoading } from "./AdminLoading";
 import { cn } from "@/lib/utils";
 import { BedDoubleIcon, UsersIcon, CalendarCheckIcon, AlertTriangleIcon, LogOutIcon, Loader2Icon } from "lucide-react";
 import type { Role, AdminSection } from "./types";
@@ -62,12 +63,7 @@ export function AdminDashboard({
   const today = new Date().toISOString().split("T")[0];
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
-        <p className="mt-4 text-sm text-brand-green-dark/60">Loading dashboard...</p>
-      </div>
-    );
+    return <AdminLoading message="Loading dashboard..." />;
   }
 
   return (

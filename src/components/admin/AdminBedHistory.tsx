@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAdminApi } from "./useAdminApi";
 import { DownloadIcon, Trash2Icon } from "lucide-react";
 import type { Role } from "./types";
+import { AdminLoading } from "./AdminLoading";
 
 const HISTORY_COLUMNS = ["Timestamp", "Bed ID", "Dorm", "Action", "Guest Name", "Guest Contact"];
 
@@ -81,12 +82,7 @@ export function AdminBedHistory({ password, role }: { password: string; role: Ro
   };
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
-        <p className="mt-4 text-sm text-brand-green-dark/60">Loading history...</p>
-      </div>
-    );
+    return <AdminLoading message="Loading history..." />;
   }
 
   return (

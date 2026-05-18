@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAdminApi } from "./useAdminApi";
+import { AdminLoading } from "./AdminLoading";
 import { RefreshCwIcon, EyeIcon, HardDriveIcon, TableIcon, ActivityIcon, AlertTriangleIcon } from "lucide-react";
 
 type StatRow = {
@@ -44,12 +45,7 @@ export function AdminStats({ password }: { password: string }) {
   const totalAll = stats.reduce((sum, r) => sum + r.totalCalls, 0);
 
   if (loading && stats.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
-        <p className="mt-4 text-sm text-brand-green-dark/60">Loading stats...</p>
-      </div>
-    );
+    return <AdminLoading message="Loading stats..." />;
   }
 
   return (

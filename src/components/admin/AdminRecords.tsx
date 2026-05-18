@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminApi } from "./useAdminApi";
+import { AdminLoading } from "./AdminLoading";
 import { CHECKIN_COLUMNS, type Role } from "./types";
 
 const TEXT_FIELDS = [
@@ -153,12 +154,7 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
   };
 
   if (loading && rows.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
-        <p className="mt-4 text-sm text-brand-green-dark/60">Loading records...</p>
-      </div>
-    );
+    return <AdminLoading message="Loading records..." />;
   }
 
   return (
