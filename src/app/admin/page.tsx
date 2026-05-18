@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon } from "lucide-react";
+import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon, BarChart3Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
 import { AdminRecords } from "@/components/admin/AdminRecords";
@@ -12,6 +12,7 @@ import { AdminBeds } from "@/components/admin/AdminBeds";
 import { AdminSetup } from "@/components/admin/AdminSetup";
 import { AdminBedHistory } from "@/components/admin/AdminBedHistory";
 import { AdminTimeline } from "@/components/admin/AdminTimeline";
+import { AdminStats } from "@/components/admin/AdminStats";
 import type { Role, AdminSection } from "@/components/admin/types";
 
 export default function AdminPage() {
@@ -113,6 +114,7 @@ export default function AdminPage() {
     { id: "timeline", label: "Timeline", icon: <CalendarDaysIcon className="h-4 w-4" /> },
     { id: "records", label: "Records", icon: <TableIcon className="h-4 w-4" /> },
     { id: "history", label: "History", icon: <HistoryIcon className="h-4 w-4" /> },
+    { id: "stats", label: "Stats", icon: <BarChart3Icon className="h-4 w-4" /> },
     { id: "setup", label: "Setup", icon: <SettingsIcon className="h-4 w-4" />, adminOnly: true },
   ];
 
@@ -162,6 +164,7 @@ export default function AdminPage() {
         {section === "timeline" && <AdminTimeline password={password} role={role} />}
         {section === "records" && <AdminRecords password={password} role={role} />}
         {section === "history" && <AdminBedHistory password={password} role={role} />}
+        {section === "stats" && <AdminStats password={password} />}
         {section === "setup" && role === "admin" && <AdminSetup password={password} />}
       </div>
     </section>

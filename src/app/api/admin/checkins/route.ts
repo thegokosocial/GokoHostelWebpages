@@ -11,6 +11,7 @@ import {
   getMonthTabName,
   getSettingValue,
   setSettingValue,
+  getApiStats,
   CHECKIN_HEADERS,
 } from "@/lib/googleApiFetch";
 
@@ -138,6 +139,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === "getStats") {
+      const stats = await getApiStats(spreadsheetId);
+      return NextResponse.json({ stats });
+    }
+
     if (action === "getSetting") {
       const { key } = body;
       const value = await getSettingValue(spreadsheetId, key);
@@ -160,6 +166,17 @@ export async function POST(req: NextRequest) {
       const allRows = await sheetsGet(spreadsheetId, `'${HISTORY_TAB}'!A:F`);
       const rows = allRows.length > 1 ? allRows.slice(1) : [];
       return NextResponse.json({ rows, role });
+    }
+
+    if (action === "deleteBedHistory") {
+      if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+      const { rowIndex } = body;
+      const tabs = await sheetsGetTabs(spreadsheetId);
+      const tab = tabs.find((t) => t.title === HISTORY_TAB);
+      if (tab) {
+        await sheetsDeleteRow(spreadsheetId, tab.sheetId, rowIndex + 1);
+      }
+      return NextResponse.json({ success: true });
     }
 
     if (action === "getDashboard") {
@@ -255,6 +272,37 @@ export async function POST(req: NextRequest) {
       const { bedIndex } = body;
       const rowNum = bedIndex + 2;
       await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${rowNum}:J${rowNum}`, [["available", "", "", "", "", ""]]);
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "unassignBed") {
+      const { bedIndex } = body;
+      const rowNum = bedIndex + 2;
+      const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
+      const bed = bedRows[bedIndex + 1];
+      if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
+      await logBedHistory(spreadsheetId, bed[1], bed[0], "unassign", bed[5] || "", bed[6] || "");
+      await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${rowNum}:J${rowNum}`, [["available", "", "", "", "", ""]]);
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "changeBed") {
+      const { fromBedIndex, toBedIndex } = body;
+      const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
+      const fromBed = bedRows[fromBedIndex + 1];
+      const toBed = bedRows[toBedIndex + 1];
+      if (!fromBed || !toBed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
+      if (toBed[4] !== "available") return NextResponse.json({ error: "Target bed is not available" }, { status: 400 });
+
+      const guestName = fromBed[5]; const guestContact = fromBed[6];
+      const checkinDate = fromBed[7]; const expectedCheckout = fromBed[8]; const stayingDays = fromBed[9];
+
+      const fromRowNum = fromBedIndex + 2;
+      const toRowNum = toBedIndex + 2;
+      await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${fromRowNum}:J${fromRowNum}`, [["cleanup", "", "", "", "", ""]]);
+      await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${toRowNum}:J${toRowNum}`, [["occupied", guestName, guestContact, checkinDate, expectedCheckout, stayingDays]]);
+      await logBedHistory(spreadsheetId, fromBed[1], fromBed[0], "change-out", guestName, guestContact);
+      await logBedHistory(spreadsheetId, toBed[1], toBed[0], "change-in", guestName, guestContact);
       return NextResponse.json({ success: true });
     }
 

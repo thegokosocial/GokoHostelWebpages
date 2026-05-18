@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocument";
+import { incrementApiStat } from "@/lib/googleApiFetch";
+
+const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +28,7 @@ export async function POST(req: NextRequest) {
     if (files.length === 1) {
       const fileBuffer = Buffer.from(await files[0].arrayBuffer());
       const result = await validateIdDocument(fileBuffer, category as "id" | "visa", idType as any, guestName || undefined, files[0].type);
+      incrementApiStat(SHEET_ID, "vision", 1).catch(() => {});
       return NextResponse.json(result);
     }
 
@@ -33,6 +37,7 @@ export async function POST(req: NextRequest) {
       mimeType: f.type,
     })));
     const result = await validateMultipleFiles(buffers, category as "id" | "visa", idType as any, guestName || undefined);
+    incrementApiStat(SHEET_ID, "vision", files.length).catch(() => {});
     return NextResponse.json(result);
   } catch (error) {
     console.error("Validate ID error:", error);

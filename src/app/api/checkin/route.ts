@@ -10,6 +10,7 @@ import {
   driveGetOrCreateFolder,
   getMonthTabName,
   CHECKIN_HEADERS,
+  incrementApiStat,
 } from "@/lib/googleApiFetch";
 
 async function uploadToDrive(file: File, guestName: string, fileType: string): Promise<string> {
@@ -69,8 +70,10 @@ export async function POST(req: NextRequest) {
       return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type);
     }
 
+    let serverVisionCalls = 0;
     try {
       const idValidation = await validateFile(idImages[0], "id", idType, name);
+      serverVisionCalls++;
       if (!idValidation.valid) {
         return NextResponse.json({ error: idValidation.message, field: "idImages" }, { status: 422 });
       }
@@ -81,6 +84,7 @@ export async function POST(req: NextRequest) {
     if (visaImages.length > 0) {
       try {
         const visaValidation = await validateFile(visaImages[0], "visa");
+        serverVisionCalls++;
         if (!visaValidation.valid) {
           return NextResponse.json({ error: visaValidation.message, field: "visaImages" }, { status: 422 });
         }
@@ -91,6 +95,8 @@ export async function POST(req: NextRequest) {
 
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     if (!spreadsheetId) throw new Error("GOOGLE_SHEET_ID not set");
+
+    if (serverVisionCalls > 0) incrementApiStat(spreadsheetId, "vision", serverVisionCalls).catch(() => {});
 
     const idCardLinks: string[] = [];
     for (let i = 0; i < idImages.length; i++) {
@@ -132,6 +138,10 @@ export async function POST(req: NextRequest) {
       [submittedAt, arrivalDate, arrivalTime, name, numberOfPersons, contactNumber,
         stayingDays, comingFrom, nationality, emergencyName, emergencyPhone, idType, idCardLink, visaLink, verified],
     ]);
+
+    const driveCount = idCardLinks.filter((l) => l !== "Upload failed").length + visaLinks.filter((l) => l !== "Upload failed").length;
+    if (driveCount > 0) incrementApiStat(spreadsheetId, "drive", driveCount).catch(() => {});
+    incrementApiStat(spreadsheetId, "sheets", 1).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

@@ -58,11 +58,13 @@ function BedSlotSvg({ position, fill }: { position: string; fill: string }) {
   );
 }
 
-function BedCard({ bed, onAssign, onCheckout, onMarkClean, isLoading }: {
+function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeBed, isLoading }: {
   bed: BedRow;
   onAssign: () => void;
   onCheckout: () => void;
   onMarkClean: () => void;
+  onUnassign?: () => void;
+  onChangeBed?: () => void;
   isLoading?: boolean;
 }) {
   const daysLeft = getDaysRemaining(bed.expectedCheckout);
@@ -109,10 +111,24 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, isLoading }: {
               {isOverdue ? `OVERDUE ${Math.abs(daysLeft)}d` : daysLeft === 0 ? "Checkout today" : `${daysLeft}d remaining`}
             </span>
           </div>
-          <button type="button" onClick={(e) => { e.stopPropagation(); onCheckout(); }}
-            className="mt-2 w-full rounded-lg bg-red-500/10 px-2 py-1.5 text-[10px] font-semibold text-red-600 transition-colors hover:bg-red-500/20">
-            Checkout
-          </button>
+          <div className="mt-2 flex gap-1">
+            <button type="button" onClick={(e) => { e.stopPropagation(); onCheckout(); }}
+              className="flex-1 rounded-lg bg-red-500/10 px-1 py-1.5 text-[9px] font-semibold text-red-600 hover:bg-red-500/20">
+              Checkout
+            </button>
+            {onUnassign && (
+              <button type="button" onClick={(e) => { e.stopPropagation(); onUnassign(); }}
+                className="flex-1 rounded-lg bg-gray-100 px-1 py-1.5 text-[9px] font-semibold text-gray-600 hover:bg-gray-200">
+                Unassign
+              </button>
+            )}
+            {onChangeBed && (
+              <button type="button" onClick={(e) => { e.stopPropagation(); onChangeBed(); }}
+                className="flex-1 rounded-lg bg-blue-500/10 px-1 py-1.5 text-[9px] font-semibold text-blue-600 hover:bg-blue-500/20">
+                Change
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -185,6 +201,26 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
     try {
       const res = await apiCall({ action: "markClean", bedIndex: bedIdx });
       if (res.ok) await loadBeds();
+    } finally { setLoadingBedIdx(null); }
+  };
+
+  const unassignBed = async (bedIdx: number) => {
+    if (!confirm("Unassign this bed? (No cleanup needed - for wrong assignment correction)")) return;
+    setLoadingBedIdx(bedIdx);
+    try {
+      const res = await apiCall({ action: "unassignBed", bedIndex: bedIdx });
+      if (res.ok) await loadBeds();
+    } finally { setLoadingBedIdx(null); }
+  };
+
+  const [changingBed, setChangingBed] = useState<number | null>(null);
+
+  const changeBed = async (fromIdx: number, toIdx: number) => {
+    setLoadingBedIdx(fromIdx);
+    try {
+      const res = await apiCall({ action: "changeBed", fromBedIndex: fromIdx, toBedIndex: toIdx });
+      if (res.ok) { setChangingBed(null); await loadBeds(); }
+      else { const d = await res.json(); alert(d.error || "Failed"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -276,6 +312,17 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
             <button type="button" onClick={() => setAssigningGuest(null)} className="text-sm text-brand-green-dark/60 hover:text-brand-red">Cancel</button>
           </div>
           <p className="mt-1 text-xs text-brand-green-dark/60">Click on any available (green) bed below to assign</p>
+        </div>
+      )}
+
+      {/* Changing bed banner */}
+      {changingBed !== null && (
+        <div className="mt-4 rounded-xl border-2 border-blue-400 bg-blue-50/50 p-4">
+          <div className="flex items-center justify-between">
+            <p className="font-medium text-blue-700">Changing bed for: <strong>{beds[changingBed]?.guestName}</strong></p>
+            <button type="button" onClick={() => setChangingBed(null)} className="text-sm text-brand-green-dark/60 hover:text-brand-red">Cancel</button>
+          </div>
+          <p className="mt-1 text-xs text-blue-600/70">Click on any available (green) bed to move the guest there. Old bed will go to cleanup.</p>
         </div>
       )}
 
@@ -387,8 +434,10 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
                     <div className="p-1.5">
                       <BedCard bed={group.upper.bed}
                         isLoading={loadingBedIdx === group.upper.idx}
-                        onAssign={() => assigningGuest && assignBed(group.upper!.idx, assigningGuest)}
+                        onAssign={() => { if (changingBed !== null) changeBed(changingBed, group.upper!.idx); else if (assigningGuest) assignBed(group.upper!.idx, assigningGuest); }}
                         onCheckout={() => checkoutBed(group.upper!.idx)}
+                        onUnassign={() => unassignBed(group.upper!.idx)}
+                        onChangeBed={() => setChangingBed(group.upper!.idx)}
                         onMarkClean={() => markClean(group.upper!.idx)} />
                     </div>
                   )}
@@ -409,8 +458,10 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
                     <div key={li} className="p-1.5 pt-0">
                       <BedCard bed={lower.bed}
                         isLoading={loadingBedIdx === lower.idx}
-                        onAssign={() => assigningGuest && assignBed(lower.idx, assigningGuest)}
+                        onAssign={() => { if (changingBed !== null) changeBed(changingBed, lower.idx); else if (assigningGuest) assignBed(lower.idx, assigningGuest); }}
                         onCheckout={() => checkoutBed(lower.idx)}
+                        onUnassign={() => unassignBed(lower.idx)}
+                        onChangeBed={() => setChangingBed(lower.idx)}
                         onMarkClean={() => markClean(lower.idx)} />
                     </div>
                   ))}
@@ -425,8 +476,10 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
                 <div className="p-1.5">
                   <BedCard bed={bed}
                     isLoading={loadingBedIdx === idx}
-                    onAssign={() => assigningGuest && assignBed(idx, assigningGuest)}
+                    onAssign={() => { if (changingBed !== null) changeBed(changingBed, idx); else if (assigningGuest) assignBed(idx, assigningGuest); }}
                     onCheckout={() => checkoutBed(idx)}
+                    onUnassign={() => unassignBed(idx)}
+                    onChangeBed={() => setChangingBed(idx)}
                     onMarkClean={() => markClean(idx)} />
                 </div>
               </div>

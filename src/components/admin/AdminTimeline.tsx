@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAdminApi } from "./useAdminApi";
 import { cn } from "@/lib/utils";
-import { ChevronDownIcon, ChevronRightIcon, LogOutIcon, SparklesIcon, Loader2Icon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, LogOutIcon, SparklesIcon, Loader2Icon, XCircleIcon } from "lucide-react";
 import type { Role, BedRow } from "./types";
 
 function parseBedRow(row: string[]): BedRow {
@@ -213,6 +213,10 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
                                   <button type="button" onClick={() => act("checkoutBed", idx)}
                                     className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-red-600 hover:bg-red-50">
                                     <LogOutIcon className="h-3 w-3" /> Checkout
+                                  </button>
+                                  <button type="button" onClick={() => act("unassignBed", idx)}
+                                    className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50">
+                                    <XCircleIcon className="h-3 w-3" /> Unassign
                                   </button>
                                 </div>
                               )}

@@ -1,6 +1,6 @@
 export type Role = "admin" | "manager";
 
-export type AdminSection = "dashboard" | "beds" | "timeline" | "records" | "history" | "setup";
+export type AdminSection = "dashboard" | "beds" | "timeline" | "records" | "history" | "setup" | "stats";
 
 export type BedStatus = "available" | "occupied" | "cleanup";
 

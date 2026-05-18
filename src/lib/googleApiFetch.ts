@@ -370,6 +370,66 @@ export async function setSettingValue(spreadsheetId: string, key: string, value:
   }
 }
 
+// --- API Usage Tracking ---
+
+const STATS_TAB = "ApiStats";
+
+export type ApiStatRow = {
+  month: string;
+  vision: number;
+  sheets: number;
+  drive: number;
+  totalCalls: number;
+};
+
+export async function incrementApiStat(spreadsheetId: string, apiType: "vision" | "sheets" | "drive", count = 1): Promise<void> {
+  try {
+    const tabs = await sheetsGetTabs(spreadsheetId);
+    if (!tabs.find((t) => t.title === STATS_TAB)) {
+      await sheetsAddTab(spreadsheetId, STATS_TAB);
+      await sheetsUpdate(spreadsheetId, `'${STATS_TAB}'!A1:E1`, [["Month", "Vision", "Sheets", "Drive", "Total"]]);
+    }
+
+    const monthKey = getMonthTabName();
+    const rows = await sheetsGet(spreadsheetId, `'${STATS_TAB}'!A:E`);
+    const rowIndex = rows.findIndex((r) => r[0] === monthKey);
+
+    if (rowIndex >= 0) {
+      const current = rows[rowIndex];
+      const vision = parseInt(current[1] || "0", 10) + (apiType === "vision" ? count : 0);
+      const sheets = parseInt(current[2] || "0", 10) + (apiType === "sheets" ? count : 0);
+      const drive = parseInt(current[3] || "0", 10) + (apiType === "drive" ? count : 0);
+      const total = vision + sheets + drive;
+      await sheetsUpdate(spreadsheetId, `'${STATS_TAB}'!A${rowIndex + 1}:E${rowIndex + 1}`, [[monthKey, String(vision), String(sheets), String(drive), String(total)]]);
+    } else {
+      const vision = apiType === "vision" ? count : 0;
+      const sheets = apiType === "sheets" ? count : 0;
+      const drive = apiType === "drive" ? count : 0;
+      const total = vision + sheets + drive;
+      await sheetsAppend(spreadsheetId, `'${STATS_TAB}'!A:E`, [[monthKey, String(vision), String(sheets), String(drive), String(total)]]);
+    }
+  } catch (e) {
+    console.error("Failed to log API stat:", e);
+  }
+}
+
+export async function getApiStats(spreadsheetId: string): Promise<ApiStatRow[]> {
+  try {
+    const tabs = await sheetsGetTabs(spreadsheetId);
+    if (!tabs.find((t) => t.title === STATS_TAB)) return [];
+    const rows = await sheetsGet(spreadsheetId, `'${STATS_TAB}'!A:E`);
+    return rows.slice(1).filter((r) => r[0]).map((r) => ({
+      month: r[0],
+      vision: parseInt(r[1] || "0", 10),
+      sheets: parseInt(r[2] || "0", 10),
+      drive: parseInt(r[3] || "0", 10),
+      totalCalls: parseInt(r[4] || "0", 10),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // --- Helpers ---
 
 export function getMonthTabName(date?: Date): string {
