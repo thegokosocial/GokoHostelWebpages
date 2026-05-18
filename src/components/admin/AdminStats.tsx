@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAdminApi } from "./useAdminApi";
 import { RefreshCwIcon, EyeIcon, HardDriveIcon, TableIcon, ActivityIcon, AlertTriangleIcon } from "lucide-react";
 
@@ -16,13 +16,15 @@ const VISION_FREE_TIER = 1000;
 
 export function AdminStats({ password }: { password: string }) {
   const { apiCall } = useAdminApi(password);
+  const apiRef = useRef(apiCall);
+  apiRef.current = apiCall;
   const [stats, setStats] = useState<StatRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = async () => {
     setLoading(true);
     try {
-      const res = await apiCall({ action: "getStats" });
+      const res = await apiRef.current({ action: "getStats" });
       if (res.ok) {
         const d = await res.json();
         setStats(d.stats || []);
@@ -30,9 +32,9 @@ export function AdminStats({ password }: { password: string }) {
     } finally {
       setLoading(false);
     }
-  }, [apiCall]);
+  };
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, []);
 
   const currentMonth = stats.length > 0 ? stats[stats.length - 1] : null;
   const visionUsedPct = currentMonth ? Math.min(100, (currentMonth.vision / VISION_FREE_TIER) * 100) : 0;
