@@ -254,8 +254,10 @@ export function SelfCheckinForm() {
   const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
   const [validatingId, setValidatingId] = useState(false);
   const [idValidated, setIdValidated] = useState(false);
+  const [idServerError, setIdServerError] = useState(false);
   const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
   const [validatingVisa, setValidatingVisa] = useState(false);
+  const [visaServerError, setVisaServerError] = useState(false);
   const [validationEnabled, setValidationEnabled] = useState(true);
   const [validationLoaded, setValidationLoaded] = useState(false);
   const [detectedIdType, setDetectedIdType] = useState<string | null>(null);
@@ -305,7 +307,7 @@ export function SelfCheckinForm() {
       setIdFiles(newFiles);
       setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
       setIdValidationMsg(null);
-      if (validationEnabled) setIdValidated(false);
+      if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
       return;
     }
     const reader = new FileReader();
@@ -314,7 +316,7 @@ export function SelfCheckinForm() {
       setIdFiles(newFiles);
       setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
       setIdValidationMsg(null);
-      if (validationEnabled) setIdValidated(false);
+      if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
     };
     reader.readAsDataURL(file);
   };
@@ -323,7 +325,7 @@ export function SelfCheckinForm() {
     const newFiles = idFiles.filter((_, i) => i !== index);
     setIdFiles(newFiles);
     setValue("idImages", newFiles.length > 0 ? newFiles.map((f) => f.file) : null, { shouldValidate: true });
-    if (validationEnabled) setIdValidated(false);
+    if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
     setIdValidationMsg(null);
   };
 
@@ -331,6 +333,7 @@ export function SelfCheckinForm() {
     if (idFiles.length === 0) return;
     setValidatingId(true);
     setIdValidationMsg(null);
+    setIdServerError(false);
     try {
       const idType = watch("idType");
       const guestName = watch("name");
@@ -341,6 +344,14 @@ export function SelfCheckinForm() {
       if (guestName) formData.append("guestName", guestName);
 
       const res = await fetch("/api/validate-id", { method: "POST", body: formData });
+
+      if (res.status === 503 || res.status >= 500) {
+        setIdValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
+        setIdValidated(false);
+        setIdServerError(true);
+        return;
+      }
+
       const result = await res.json();
       setIdValidationMsg({ valid: result.valid, message: result.message });
 
@@ -357,8 +368,9 @@ export function SelfCheckinForm() {
         setValue("idImages", null, { shouldValidate: true });
       }
     } catch {
-      setIdValidationMsg({ valid: false, message: "Validation service unavailable. Please try again." });
+      setIdValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
       setIdValidated(false);
+      setIdServerError(true);
     } finally {
       setValidatingId(false);
     }
@@ -393,6 +405,7 @@ export function SelfCheckinForm() {
     if (visaFiles.length === 0) return;
     setValidatingVisa(true);
     setVisaValidationMsg(null);
+    setVisaServerError(false);
     try {
       const firstImage = visaFiles.find((f) => f.file.type.startsWith("image/"));
       const fileToValidate = firstImage?.file || visaFiles[0].file;
@@ -402,6 +415,13 @@ export function SelfCheckinForm() {
       formData.append("category", "visa");
 
       const res = await fetch("/api/validate-id", { method: "POST", body: formData });
+
+      if (res.status === 503 || res.status >= 500) {
+        setVisaValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
+        setVisaServerError(true);
+        return;
+      }
+
       const result = await res.json();
       setVisaValidationMsg({ valid: result.valid, message: result.message });
 
@@ -410,7 +430,8 @@ export function SelfCheckinForm() {
         setValue("visaImages", null, { shouldValidate: true });
       }
     } catch {
-      setVisaValidationMsg({ valid: false, message: "Validation service unavailable. Please try again." });
+      setVisaValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
+      setVisaServerError(true);
     } finally {
       setValidatingVisa(false);
     }
@@ -745,7 +766,7 @@ export function SelfCheckinForm() {
       </div>
 
       <div className="mt-10">
-        {validationLoaded && validationEnabled && !idValidated && idFiles.length > 0 && (
+        {validationLoaded && validationEnabled && !idValidated && !idServerError && idFiles.length > 0 && (
           <p className="mb-3 text-center text-sm text-brand-red">
             Please click &quot;Verify document&quot; before submitting
           </p>
@@ -754,7 +775,7 @@ export function SelfCheckinForm() {
           type="submit"
           variant="cta"
           className="w-full"
-          disabled={submitting || !validationLoaded || (validationEnabled && !idValidated)}
+          disabled={submitting || !validationLoaded || (validationEnabled && !idValidated && !idServerError)}
         >
           {submitting ? "Submitting..." : !validationLoaded ? "Loading..." : "Complete Check-in"}
         </Button>
