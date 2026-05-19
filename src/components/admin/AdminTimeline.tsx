@@ -162,7 +162,6 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
                     </div>
                     {cells.map((c, ci) => {
                       const isActive = popup?.bedIdx === idx && popup?.day === c.day;
-                      const spanClass = numDays <= 5 ? "flex-[" + c.spanLen + "]" : "";
                       return (
                         <div key={ci} className={cn("relative p-0.5", numDays <= 5 ? "" : "shrink-0")}
                           style={numDays > 5 ? { width: `${c.spanLen * (numDays <= 7 ? 120 : 100)}px` } : { flex: c.spanLen }}
@@ -204,7 +203,7 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
                                     className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-red-600 hover:bg-red-50">
                                     <LogOutIcon className="h-3 w-3" /> Checkout
                                   </button>
-                                  <button type="button" onClick={() => act("unassignBed", idx)}
+                                  <button type="button" onClick={() => { if (confirm("Unassign this bed? (No cleanup needed)")) act("unassignBed", idx); }}
                                     className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50">
                                     <XCircleIcon className="h-3 w-3" /> Unassign
                                   </button>

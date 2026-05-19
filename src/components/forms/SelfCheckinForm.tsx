@@ -138,7 +138,11 @@ function MultiDocUpload({
     if (!fileList) return;
     Array.from(fileList).forEach((file) => {
       if (!file.type.startsWith("image/") && file.type !== "application/pdf") return;
-      if (file.size <= 10 * 1024 * 1024) onAdd(file);
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`File "${file.name}" exceeds 10 MB limit. Please use a smaller file.`);
+        return;
+      }
+      onAdd(file);
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
@@ -352,6 +356,15 @@ export function SelfCheckinForm() {
         return;
       }
 
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setIdValidationMsg({ valid: false, message: errData.error || "Invalid file. Please try a different image." });
+        setIdValidated(false);
+        setIdFiles([]);
+        setValue("idImages", null, { shouldValidate: true });
+        return;
+      }
+
       const result = await res.json();
       setIdValidationMsg({ valid: result.valid, message: result.message });
 
@@ -468,7 +481,14 @@ export function SelfCheckinForm() {
 
       if (res.status === 422) {
         const errData = await res.json();
-        alert(errData.error || "Document validation failed. Please upload a valid ID.");
+        alert(errData.error || "Document validation failed. Please upload a valid document.");
+        if (errData.field === "visaImages") {
+          setVisaFiles([]);
+          setVisaValidationMsg({ valid: false, message: errData.error || "Visa rejected" });
+        } else {
+          setIdServerError(false);
+          setIdValidated(false);
+        }
         return;
       }
 
@@ -481,6 +501,9 @@ export function SelfCheckinForm() {
       setIdValidationMsg(null);
       setVisaValidationMsg(null);
       setIdValidated(false);
+      setIdServerError(false);
+      setVisaServerError(false);
+      setDetectedIdType(null);
     } catch {
       alert("Something went wrong. Please try again or contact the front desk.");
     } finally {

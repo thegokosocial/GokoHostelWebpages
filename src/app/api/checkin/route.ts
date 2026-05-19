@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     const visaImagesRaw = formData.getAll("visaImages") as File[];
     const visaImages = visaImagesRaw.filter((f) => f.size > 0);
 
-    if (!name || !contactNumber || !nationality || !idType || idImages.length === 0 || !arrivalDate || !stayingDays || !comingFrom) {
+    if (!name || !contactNumber || !nationality || !idType || idImages.length === 0 || !arrivalDate || !stayingDays || !comingFrom || !numberOfPersons) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 

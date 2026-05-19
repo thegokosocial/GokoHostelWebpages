@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocument";
 import { incrementApiStat } from "@/lib/googleApiFetch";
 
-const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
+const SHEET_ID = process.env.GOOGLE_SHEET_ID || "";
 
 export async function POST(req: NextRequest) {
   try {

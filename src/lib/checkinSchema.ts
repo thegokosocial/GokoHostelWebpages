@@ -21,7 +21,8 @@ export const checkinSchema = z
     contactNumber: z
       .string()
       .min(10, "Phone number must be at least 10 digits")
-      .regex(phoneRegex, "Enter a valid phone number"),
+      .regex(phoneRegex, "Enter a valid phone number")
+      .refine((v) => (v.match(/\d/g) || []).length >= 7, "Phone must contain at least 7 digits"),
     stayingDays: z
       .string()
       .min(1, "Number of days is required")
@@ -38,7 +39,8 @@ export const checkinSchema = z
     emergencyPhone: z
       .string()
       .min(10, "Phone number must be at least 10 digits")
-      .regex(phoneRegex, "Enter a valid phone number"),
+      .regex(phoneRegex, "Enter a valid phone number")
+      .refine((v) => (v.match(/\d/g) || []).length >= 7, "Phone must contain at least 7 digits"),
     idType: z.enum(["aadhaar", "driving_licence", "passport"], {
       required_error: "Please select your ID type",
     }),

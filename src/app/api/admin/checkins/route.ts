@@ -40,9 +40,14 @@ async function logBedHistory(spreadsheetId: string, bedId: string, dorm: string,
 type UserRole = "admin" | "manager";
 
 function authenticateUser(password: string): UserRole | null {
-  if (password === process.env.ADMIN_PASSWORD) return "admin";
-  if (password === process.env.MANAGER_PASSWORD) return "manager";
+  if (!password) return null;
+  if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) return "admin";
+  if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD) return "manager";
   return null;
+}
+
+function isValidIndex(val: any): val is number {
+  return typeof val === "number" && Number.isInteger(val) && val >= 0;
 }
 
 export async function POST(req: NextRequest) {
@@ -94,8 +99,8 @@ export async function POST(req: NextRequest) {
       const { rowIndex, entry, tab } = body;
       const tabName = tab || getMonthTabName();
 
-      if (!entry || rowIndex === undefined) {
-        return NextResponse.json({ error: "Missing entry data or row index" }, { status: 400 });
+      if (!entry || !isValidIndex(rowIndex)) {
+        return NextResponse.json({ error: "Missing entry data or valid row index" }, { status: 400 });
       }
 
       const rowNumber = rowIndex + 2;
@@ -110,6 +115,7 @@ export async function POST(req: NextRequest) {
       }
 
       const { rowIndex, driveFileIds, tab } = body;
+      if (!isValidIndex(rowIndex)) return NextResponse.json({ error: "Invalid row index" }, { status: 400 });
       const tabName = tab || getMonthTabName();
 
       if (driveFileIds && driveFileIds.length > 0) {
@@ -133,6 +139,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "verifyCheckin") {
       const { rowIndex, verified, tab } = body;
+      if (!isValidIndex(rowIndex)) return NextResponse.json({ error: "Invalid row index" }, { status: 400 });
       const tabName = tab || getMonthTabName();
       const rowNum = rowIndex + 2;
       await sheetsUpdate(spreadsheetId, `'${tabName}'!O${rowNum}:O${rowNum}`, [[verified ? "yes" : "no"]]);
@@ -171,6 +178,7 @@ export async function POST(req: NextRequest) {
     if (action === "deleteBedHistory") {
       if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
       const { rowIndex } = body;
+      if (!isValidIndex(rowIndex)) return NextResponse.json({ error: "Invalid row index" }, { status: 400 });
       const tabs = await sheetsGetTabs(spreadsheetId);
       const tab = tabs.find((t) => t.title === HISTORY_TAB);
       if (tab) {
@@ -237,17 +245,20 @@ export async function POST(req: NextRequest) {
 
     if (action === "assignBed") {
       const { bedIndex, guestName, guestContact, checkinDate, stayingDays } = body;
-      if (bedIndex === undefined || !guestName) {
+      if (!isValidIndex(bedIndex) || !guestName) {
         return NextResponse.json({ error: "Missing data" }, { status: 400 });
       }
       const days = parseInt(stayingDays) || 1;
       const checkin = checkinDate || new Date().toISOString().split("T")[0];
-      const checkoutDate = new Date(new Date(checkin).getTime() + days * 86400000).toISOString().split("T")[0];
+      const coDate = new Date(checkin + "T12:00:00Z");
+      coDate.setUTCDate(coDate.getUTCDate() + days);
+      const checkoutDate = coDate.toISOString().split("T")[0];
 
       const rowNum = bedIndex + 2;
       const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
       const bed = bedRows[bedIndex + 1];
       if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
+      if (bed[4] !== "available") return NextResponse.json({ error: "Bed is not available" }, { status: 400 });
 
       await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${rowNum}:J${rowNum}`, [["occupied", guestName, guestContact, checkin, checkoutDate, String(days)]]);
       await logBedHistory(spreadsheetId, bed[1], bed[0], "assign", guestName, guestContact);
@@ -257,10 +268,12 @@ export async function POST(req: NextRequest) {
 
     if (action === "checkoutBed") {
       const { bedIndex } = body;
+      if (!isValidIndex(bedIndex)) return NextResponse.json({ error: "Invalid bed index" }, { status: 400 });
       const rowNum = bedIndex + 2;
       const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
       const bed = bedRows[bedIndex + 1];
       if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
+      if (bed[4] !== "occupied") return NextResponse.json({ error: "Bed is not occupied" }, { status: 400 });
 
       await logBedHistory(spreadsheetId, bed[1], bed[0], "checkout", bed[5] || "", bed[6] || "");
       await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${rowNum}:J${rowNum}`, [["cleanup", "", "", "", "", ""]]);
@@ -270,20 +283,25 @@ export async function POST(req: NextRequest) {
 
     if (action === "markClean") {
       const { bedIndex } = body;
+      if (!isValidIndex(bedIndex)) return NextResponse.json({ error: "Invalid bed index" }, { status: 400 });
       const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
       const bed = bedRows[bedIndex + 1];
       if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
+      if (bed[4] !== "cleanup") return NextResponse.json({ error: "Bed is not in cleanup status" }, { status: 400 });
       const rowNum = bedIndex + 2;
+      await logBedHistory(spreadsheetId, bed[1], bed[0], "markClean", "", "");
       await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${rowNum}:J${rowNum}`, [["available", "", "", "", "", ""]]);
       return NextResponse.json({ success: true });
     }
 
     if (action === "unassignBed") {
       const { bedIndex } = body;
+      if (!isValidIndex(bedIndex)) return NextResponse.json({ error: "Invalid bed index" }, { status: 400 });
       const rowNum = bedIndex + 2;
       const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
       const bed = bedRows[bedIndex + 1];
       if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
+      if (bed[4] !== "occupied") return NextResponse.json({ error: "Bed is not occupied" }, { status: 400 });
       await logBedHistory(spreadsheetId, bed[1], bed[0], "unassign", bed[5] || "", bed[6] || "");
       await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${rowNum}:J${rowNum}`, [["available", "", "", "", "", ""]]);
       return NextResponse.json({ success: true });
@@ -291,10 +309,12 @@ export async function POST(req: NextRequest) {
 
     if (action === "changeBed") {
       const { fromBedIndex, toBedIndex } = body;
+      if (!isValidIndex(fromBedIndex) || !isValidIndex(toBedIndex)) return NextResponse.json({ error: "Invalid bed index" }, { status: 400 });
       const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
       const fromBed = bedRows[fromBedIndex + 1];
       const toBed = bedRows[toBedIndex + 1];
       if (!fromBed || !toBed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
+      if (fromBed[4] !== "occupied") return NextResponse.json({ error: "Source bed is not occupied" }, { status: 400 });
       if (toBed[4] !== "available") return NextResponse.json({ error: "Target bed is not available" }, { status: 400 });
 
       const guestName = fromBed[5]; const guestContact = fromBed[6];
@@ -370,6 +390,7 @@ export async function POST(req: NextRequest) {
     if (action === "removeBed") {
       if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
       const { bedIndex } = body;
+      if (!isValidIndex(bedIndex)) return NextResponse.json({ error: "Invalid bed index" }, { status: 400 });
       const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
       const bed = bedRows[bedIndex + 1];
       if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });

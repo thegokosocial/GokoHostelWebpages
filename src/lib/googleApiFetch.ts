@@ -57,7 +57,7 @@ async function createJwt(
 let _saTokenCache: { token: string; expiry: number; scopeKey: string } | null = null;
 
 async function getServiceAccountToken(scopes: string[]): Promise<string> {
-  const scopeKey = scopes.sort().join(",");
+  const scopeKey = [...scopes].sort().join(",");
   if (_saTokenCache && _saTokenCache.scopeKey === scopeKey && Date.now() < _saTokenCache.expiry) {
     return _saTokenCache.token;
   }
@@ -81,6 +81,7 @@ async function getServiceAccountToken(scopes: string[]): Promise<string> {
   }
 
   const data = await res.json();
+  if (!data.access_token) throw new Error("No access_token in token response");
   _saTokenCache = { token: data.access_token, expiry: Date.now() + 50 * 60 * 1000, scopeKey };
   return data.access_token;
 }
@@ -105,6 +106,7 @@ async function getOAuthToken(): Promise<string | null> {
 
   if (!res.ok) return null;
   const data = await res.json();
+  if (!data.access_token) return null;
   _oauthTokenCache = { token: data.access_token, expiry: Date.now() + 50 * 60 * 1000 };
   return data.access_token;
 }
@@ -185,7 +187,13 @@ export async function sheetsDeleteRow(spreadsheetId: string, sheetId: number, ro
 export async function ensureMonthTab(spreadsheetId: string, tabName: string, headers: string[]): Promise<void> {
   const tabs = await sheetsGetTabs(spreadsheetId);
   if (!tabs.find((t) => t.title === tabName)) {
-    await sheetsAddTab(spreadsheetId, tabName);
+    try {
+      await sheetsAddTab(spreadsheetId, tabName);
+    } catch {
+      const recheck = await sheetsGetTabs(spreadsheetId);
+      if (!recheck.find((t) => t.title === tabName)) throw new Error(`Cannot create tab: ${tabName}`);
+      return;
+    }
     await sheetsUpdate(spreadsheetId, `'${tabName}'!A1:${String.fromCharCode(64 + headers.length)}1`, [headers]);
   }
 }
@@ -240,11 +248,14 @@ export async function driveUploadFile(
   const data = await res.json();
   const fileId = data.id;
 
-  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+  const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ role: "reader", type: "anyone" }),
   });
+  if (!permRes.ok) {
+    console.error(`Failed to set file permissions for ${fileId}: ${permRes.status}`);
+  }
 
   return `https://drive.google.com/file/d/${fileId}/view`;
 }

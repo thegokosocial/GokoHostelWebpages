@@ -152,6 +152,7 @@ export function AdminBedHistory({ password, role }: { password: string; role: Ro
                             cell === "unassign" && "bg-gray-100 text-gray-700",
                             cell === "change-out" && "bg-yellow-100 text-yellow-700",
                             cell === "change-in" && "bg-teal-100 text-teal-700",
+                            cell === "markClean" && "bg-emerald-100 text-emerald-700",
                           )}>
                             {cell}
                           </span>

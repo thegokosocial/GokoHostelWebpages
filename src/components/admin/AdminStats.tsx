@@ -189,7 +189,7 @@ function StatCard({ icon, label, value, limit }: {
         <span className="text-xs font-medium text-brand-green-dark/60">{label}</span>
       </div>
       <p className="mt-2 text-2xl font-bold text-brand-green-dark">{value.toLocaleString()}</p>
-      {limit && <p className="mt-0.5 text-[10px] text-brand-green-dark/40">of {limit.toLocaleString()} free</p>}
+      {limit !== undefined && <p className="mt-0.5 text-[10px] text-brand-green-dark/40">of {limit.toLocaleString()} free</p>}
     </div>
   );
 }

@@ -90,7 +90,7 @@ export function AdminSetup({ password }: { password: string }) {
           </div>
           <div>
             <Label className="text-xs">Bed type</Label>
-            <select value={newBedType} onChange={(e) => setNewBedType(e.target.value as any)} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <select value={newBedType} onChange={(e) => setNewBedType(e.target.value as BedRow["type"])} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
               <option value="Bunk">Bunk (1 upper + 1 lower)</option>
               <option value="Bunk2L1U">Bunk (2 lower + 1 upper)</option>
               <option value="Single">Single beds</option>

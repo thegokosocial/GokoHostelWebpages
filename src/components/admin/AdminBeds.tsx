@@ -12,7 +12,9 @@ import { AdminLoading } from "./AdminLoading";
 function getDaysRemaining(expectedCheckout: string): number {
   if (!expectedCheckout) return 0;
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const checkout = new Date(expectedCheckout); checkout.setHours(0, 0, 0, 0);
+  const checkout = new Date(expectedCheckout);
+  if (isNaN(checkout.getTime())) return 0;
+  checkout.setHours(0, 0, 0, 0);
   return Math.ceil((checkout.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
@@ -148,6 +150,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
 
   const loadBeds = async () => {
     setLoading(true);
+    setChangingBed(null);
     try {
       const res = await apiCall({ action: "getBeds" });
       if (res.ok) {
@@ -281,7 +284,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
                   <span className="font-medium text-brand-green-dark">{guest[3]}</span>
                   <span className="ml-2 text-xs text-brand-green-dark/50">{guest[6]} days · {guest[7]}</span>
                 </div>
-                <button type="button" onClick={() => setAssigningGuest(guest)}
+                <button type="button" onClick={() => { setChangingBed(null); setAssigningGuest(guest); }}
                   className="rounded-md bg-brand-green px-3 py-1 text-xs font-medium text-white hover:bg-brand-green-dark">
                   Assign bed
                 </button>
@@ -390,7 +393,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
         <div className="mt-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setSelectedDorm(null)} className="text-sm text-brand-green hover:underline">All dorms</button>
+              <button type="button" onClick={() => { setSelectedDorm(null); setSearchQuery(""); }} className="text-sm text-brand-green hover:underline">All dorms</button>
               <span className="text-brand-green-dark/30">/</span>
               <h3 className="font-display text-lg font-bold text-brand-green-dark">{selectedDorm}</h3>
             </div>
@@ -424,7 +427,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
                         onAssign={() => { if (changingBed !== null) changeBed(changingBed, group.upper!.idx); else if (assigningGuest) assignBed(group.upper!.idx, assigningGuest); }}
                         onCheckout={() => checkoutBed(group.upper!.idx)}
                         onUnassign={() => unassignBed(group.upper!.idx)}
-                        onChangeBed={() => setChangingBed(group.upper!.idx)}
+                        onChangeBed={() => { setAssigningGuest(null); setChangingBed(group.upper!.idx); }}
                         onMarkClean={() => markClean(group.upper!.idx)} />
                     </div>
                   )}
@@ -448,7 +451,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
                         onAssign={() => { if (changingBed !== null) changeBed(changingBed, lower.idx); else if (assigningGuest) assignBed(lower.idx, assigningGuest); }}
                         onCheckout={() => checkoutBed(lower.idx)}
                         onUnassign={() => unassignBed(lower.idx)}
-                        onChangeBed={() => setChangingBed(lower.idx)}
+                        onChangeBed={() => { setAssigningGuest(null); setChangingBed(lower.idx); }}
                         onMarkClean={() => markClean(lower.idx)} />
                     </div>
                   ))}
@@ -466,7 +469,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
                     onAssign={() => { if (changingBed !== null) changeBed(changingBed, idx); else if (assigningGuest) assignBed(idx, assigningGuest); }}
                     onCheckout={() => checkoutBed(idx)}
                     onUnassign={() => unassignBed(idx)}
-                    onChangeBed={() => setChangingBed(idx)}
+                    onChangeBed={() => { setAssigningGuest(null); setChangingBed(idx); }}
                     onMarkClean={() => markClean(idx)} />
                 </div>
               </div>
