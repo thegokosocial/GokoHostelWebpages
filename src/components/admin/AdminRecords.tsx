@@ -77,8 +77,9 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
       const res = await apiCall({ action: "list", month: tab });
       if (res.ok) {
         const data = await res.json();
-        setRows(data.rows || []);
-        const hiddenTabs = ["CheckIns", "Settings", "Dorms", "BedHistory"];
+        const allRows: string[][] = data.rows || [];
+        setRows(allRows.filter((r) => r.some((cell) => cell && cell.trim() !== "")));
+        const hiddenTabs = ["CheckIns", "Settings", "Dorms", "BedHistory", "ApiStats"];
         setTabs((data.tabs || []).filter((t: string) => !hiddenTabs.includes(t)));
         setCurrentTab(data.currentTab || "");
       }
