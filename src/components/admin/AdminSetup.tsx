@@ -8,18 +8,7 @@ import { useAdminApi } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { cn } from "@/lib/utils";
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import type { BedRow } from "./types";
-
-function parseBedRow(row: string[]): BedRow {
-  return {
-    dormName: row[0] || "", bedId: row[1] || "",
-    position: (row[2] || "Lower") as BedRow["position"],
-    type: (row[3] || "Bunk") as BedRow["type"],
-    status: (row[4] || "available") as BedRow["status"],
-    guestName: row[5] || "", guestContact: row[6] || "",
-    checkinDate: row[7] || "", expectedCheckout: row[8] || "", stayingDays: row[9] || "",
-  };
-}
+import { parseBedRow, type BedRow } from "./types";
 
 export function AdminSetup({ password }: { password: string }) {
   const { apiCall } = useAdminApi(password);

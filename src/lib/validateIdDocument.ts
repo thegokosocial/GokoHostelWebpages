@@ -250,17 +250,6 @@ export async function validateIdDocument(
   }
 
   try {
-    const { getSettingValue } = await import("./googleApiFetch");
-    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-    if (spreadsheetId) {
-      const enabled = await getSettingValue(spreadsheetId, "image_validation");
-      if (enabled === "off") {
-        return { valid: true, documentType: "unknown", confidence: "low", message: "Validation disabled by admin." };
-      }
-    }
-  } catch {}
-
-  try {
     const fileBase64 = fileBuffer.toString("base64");
     const analysis = await visionAnalyze(fileBase64, mimeType || "image/jpeg");
     const layers: string[] = [];
@@ -324,17 +313,6 @@ export async function validateMultipleFiles(
   if (!credentials) {
     return { valid: true, documentType: "unknown", confidence: "low", message: "Validation skipped (no credentials)" };
   }
-
-  try {
-    const { getSettingValue } = await import("./googleApiFetch");
-    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-    if (spreadsheetId) {
-      const enabled = await getSettingValue(spreadsheetId, "image_validation");
-      if (enabled === "off") {
-        return { valid: true, documentType: "unknown", confidence: "low", message: "Validation disabled by admin." };
-      }
-    }
-  } catch {}
 
   try {
     const allTexts: string[] = [];

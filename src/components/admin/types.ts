@@ -22,6 +22,21 @@ export const BED_HEADERS = [
   "Guest Name", "Guest Contact", "Check-in Date", "Expected Checkout", "Staying Days",
 ];
 
+export function parseBedRow(row: string[]): BedRow {
+  return {
+    dormName: row[0] || "",
+    bedId: row[1] || "",
+    position: (row[2] || "Lower") as BedRow["position"],
+    type: (row[3] || "Bunk") as BedRow["type"],
+    status: (row[4] || "available") as BedRow["status"],
+    guestName: row[5] || "",
+    guestContact: row[6] || "",
+    checkinDate: row[7] || "",
+    expectedCheckout: row[8] || "",
+    stayingDays: row[9] || "",
+  };
+}
+
 export const CHECKIN_COLUMNS = [
   "Submitted At", "Arrival Date", "Arrival Time", "Name", "Persons",
   "Contact", "Days", "Coming From", "Nationality", "Emergency Contact",

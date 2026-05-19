@@ -54,7 +54,14 @@ async function createJwt(
   return `${unsignedToken}.${sig}`;
 }
 
+let _saTokenCache: { token: string; expiry: number; scopeKey: string } | null = null;
+
 async function getServiceAccountToken(scopes: string[]): Promise<string> {
+  const scopeKey = scopes.sort().join(",");
+  if (_saTokenCache && _saTokenCache.scopeKey === scopeKey && Date.now() < _saTokenCache.expiry) {
+    return _saTokenCache.token;
+  }
+
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY not set");
   const key = JSON.parse(credentials);
@@ -65,7 +72,7 @@ async function getServiceAccountToken(scopes: string[]): Promise<string> {
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
   });
 
   if (!res.ok) {
@@ -74,10 +81,17 @@ async function getServiceAccountToken(scopes: string[]): Promise<string> {
   }
 
   const data = await res.json();
+  _saTokenCache = { token: data.access_token, expiry: Date.now() + 50 * 60 * 1000, scopeKey };
   return data.access_token;
 }
 
+let _oauthTokenCache: { token: string; expiry: number } | null = null;
+
 async function getOAuthToken(): Promise<string | null> {
+  if (_oauthTokenCache && Date.now() < _oauthTokenCache.expiry) {
+    return _oauthTokenCache.token;
+  }
+
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
@@ -86,11 +100,12 @@ async function getOAuthToken(): Promise<string | null> {
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${refreshToken}&grant_type=refresh_token`,
+    body: `client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}&refresh_token=${encodeURIComponent(refreshToken)}&grant_type=refresh_token`,
   });
 
   if (!res.ok) return null;
   const data = await res.json();
+  _oauthTokenCache = { token: data.access_token, expiry: Date.now() + 50 * 60 * 1000 };
   return data.access_token;
 }
 
@@ -236,11 +251,14 @@ export async function driveUploadFile(
 
 export async function driveDeleteFile(fileId: string): Promise<void> {
   const token = await getOAuthToken();
-  if (!token) return;
-  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+  if (!token) throw new Error("OAuth token not available for Drive delete");
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Drive delete failed (${res.status}): ${await res.text()}`);
+  }
 }
 
 export async function driveGetOrCreateFolder(parentId: string, folderName: string): Promise<string> {

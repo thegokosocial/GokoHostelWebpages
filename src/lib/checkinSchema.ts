@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-const alphabetsOnly = /^[A-Za-z\s]+$/;
+const nameChars = /^[A-Za-z\s'.\u00C0-\u024F-]+$/;
+const placeChars = /^[A-Za-z\s'.,\u00C0-\u024F-]+$/;
 const numbersOnly = /^\d+$/;
-const phoneRegex = /^\+?\d{10,15}$/;
+const phoneRegex = /^\+?[\d\s\-]{10,18}$/;
 
 export const checkinSchema = z
   .object({
@@ -12,7 +13,7 @@ export const checkinSchema = z
       .string()
       .min(2, "Name must be at least 2 characters")
       .max(100, "Name is too long")
-      .regex(alphabetsOnly, "Only letters and spaces allowed"),
+      .regex(nameChars, "Only letters, spaces, hyphens, and apostrophes allowed"),
     numberOfPersons: z
       .string()
       .min(1, "Number of persons is required")
@@ -20,7 +21,7 @@ export const checkinSchema = z
     contactNumber: z
       .string()
       .min(10, "Phone number must be at least 10 digits")
-      .regex(phoneRegex, "Enter a valid phone number (10-15 digits, optional + prefix)"),
+      .regex(phoneRegex, "Enter a valid phone number"),
     stayingDays: z
       .string()
       .min(1, "Number of days is required")
@@ -28,12 +29,12 @@ export const checkinSchema = z
     comingFrom: z
       .string()
       .min(2, "City/place is required")
-      .regex(alphabetsOnly, "Only letters and spaces allowed"),
+      .regex(placeChars, "Only letters, spaces, hyphens, and periods allowed"),
     nationality: z.string().min(1, "Nationality is required"),
     emergencyName: z
       .string()
       .min(2, "Emergency contact name is required")
-      .regex(alphabetsOnly, "Only letters and spaces allowed"),
+      .regex(nameChars, "Only letters, spaces, hyphens, and apostrophes allowed"),
     emergencyPhone: z
       .string()
       .min(10, "Phone number must be at least 10 digits")

@@ -357,8 +357,8 @@ export function SelfCheckinForm() {
         setValue("idImages", null, { shouldValidate: true });
       }
     } catch {
-      setIdValidationMsg({ valid: true, message: "Validation skipped" });
-      setIdValidated(true);
+      setIdValidationMsg({ valid: false, message: "Validation service unavailable. Please try again." });
+      setIdValidated(false);
     } finally {
       setValidatingId(false);
     }
@@ -410,7 +410,7 @@ export function SelfCheckinForm() {
         setValue("visaImages", null, { shouldValidate: true });
       }
     } catch {
-      setVisaValidationMsg({ valid: true, message: "Validation skipped" });
+      setVisaValidationMsg({ valid: false, message: "Validation service unavailable. Please try again." });
     } finally {
       setValidatingVisa(false);
     }

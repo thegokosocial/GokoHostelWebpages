@@ -6,19 +6,8 @@ import { Input } from "@/components/ui/input";
 import { useAdminApi } from "./useAdminApi";
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon, ChevronRightIcon, LogOutIcon, SparklesIcon, Loader2Icon, XCircleIcon } from "lucide-react";
-import type { Role, BedRow } from "./types";
+import { parseBedRow, type Role, type BedRow } from "./types";
 import { AdminLoading } from "./AdminLoading";
-
-function parseBedRow(row: string[]): BedRow {
-  return {
-    dormName: row[0] || "", bedId: row[1] || "",
-    position: (row[2] || "Lower") as BedRow["position"],
-    type: (row[3] || "Bunk") as BedRow["type"],
-    status: (row[4] || "available") as BedRow["status"],
-    guestName: row[5] || "", guestContact: row[6] || "",
-    checkinDate: row[7] || "", expectedCheckout: row[8] || "", stayingDays: row[9] || "",
-  };
-}
 
 function fmtDate(d: Date): string { return d.toISOString().split("T")[0]; }
 function fmtShort(d: Date): string {
