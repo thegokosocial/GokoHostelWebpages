@@ -15,8 +15,8 @@ type StatRow = {
 
 const VISION_FREE_TIER = 1000;
 
-export function AdminStats({ password }: { password: string }) {
-  const { apiCall } = useAdminApi(password);
+export function AdminStats({ password, username }: { password: string; username?: string }) {
+  const { apiCall } = useAdminApi(password, username);
   const apiRef = useRef(apiCall);
   apiRef.current = apiCall;
   const [stats, setStats] = useState<StatRow[]>([]);

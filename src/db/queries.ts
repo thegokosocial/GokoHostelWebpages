@@ -1,6 +1,6 @@
 import { eq, desc } from "drizzle-orm";
 import { getDb } from "./index";
-import { checkins, dorms, beds, bedHistory, settings, apiStats } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs } from "./schema";
 
 // --- Check-ins ---
 
@@ -192,4 +192,102 @@ export function getMonthKey(date?: Date): string {
   const months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
     "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
   return `${months[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+// --- Users ---
+
+export async function getAllUsers() {
+  const db = getDb();
+  return db.select().from(users).orderBy(users.id);
+}
+
+export async function getUserByUsername(username: string) {
+  const db = getDb();
+  const rows = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return rows[0] || null;
+}
+
+export async function createUser(data: {
+  username: string; passwordHash: string; displayName: string;
+  role: string; permissions: string; createdBy?: string;
+}) {
+  const db = getDb();
+  return db.insert(users).values({
+    ...data,
+    createdAt: new Date().toISOString(),
+    createdBy: data.createdBy || "",
+    isSystem: 0,
+  });
+}
+
+export async function updateUser(userId: number, data: {
+  displayName?: string; passwordHash?: string; role?: string; permissions?: string;
+}) {
+  const db = getDb();
+  const updateData: any = {};
+  if (data.displayName !== undefined) updateData.displayName = data.displayName;
+  if (data.passwordHash !== undefined) updateData.passwordHash = data.passwordHash;
+  if (data.role !== undefined) updateData.role = data.role;
+  if (data.permissions !== undefined) updateData.permissions = data.permissions;
+  return db.update(users).set(updateData).where(eq(users.id, userId));
+}
+
+export async function deleteUser(userId: number) {
+  const db = getDb();
+  return db.delete(users).where(eq(users.id, userId));
+}
+
+// --- Audit Log ---
+
+export async function addAuditEntry(data: {
+  username: string; action: string; target?: string; details?: string; userId?: number; ipAddress?: string;
+}) {
+  const db = getDb();
+  return db.insert(auditLog).values({
+    timestamp: new Date().toISOString(),
+    username: data.username,
+    action: data.action,
+    target: data.target || "",
+    details: data.details || "",
+    userId: data.userId,
+    ipAddress: data.ipAddress || "",
+  });
+}
+
+export async function getAuditEntries(limit = 500) {
+  const db = getDb();
+  return db.select().from(auditLog).orderBy(desc(auditLog.id)).limit(limit);
+}
+
+// --- System Logs ---
+
+const LOG_LEVELS: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+
+export async function addSystemLog(data: {
+  level: string; source: string; message: string; details?: string; requestId?: string;
+}) {
+  try {
+    const configuredLevel = await getSetting("log_level") || "error";
+    const configuredPriority = LOG_LEVELS[configuredLevel] ?? 3;
+    const messagePriority = LOG_LEVELS[data.level] ?? 0;
+
+    if (messagePriority < configuredPriority) return;
+
+    const db = getDb();
+    return db.insert(systemLogs).values({
+      timestamp: new Date().toISOString(),
+      level: data.level,
+      source: data.source,
+      message: data.message,
+      details: data.details || "",
+      requestId: data.requestId || "",
+    });
+  } catch {
+    // Fail silently — logging should never break the app
+  }
+}
+
+export async function getSystemLogs(limit = 200) {
+  const db = getDb();
+  return db.select().from(systemLogs).orderBy(desc(systemLogs.id)).limit(limit);
 }

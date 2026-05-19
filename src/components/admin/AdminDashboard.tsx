@@ -9,14 +9,16 @@ import type { Role, AdminSection } from "./types";
 
 export function AdminDashboard({
   password,
+  username,
   role,
   onNavigate,
 }: {
   password: string;
+  username?: string;
   role: Role;
   onNavigate: (section: AdminSection) => void;
 }) {
-  const { apiCall } = useAdminApi(password);
+  const { apiCall } = useAdminApi(password, username);
   const [todayCheckins, setTodayCheckins] = useState<{ row: string[]; assignedBed: string | null }[]>([]);
   const [todayCheckouts, setTodayCheckouts] = useState<{ name: string; contact: string; bedId: string; dorm: string; bedIdx: number; expectedCheckout: string }[]>([]);
   const [stats, setStats] = useState({ total: 0, occupied: 0, available: 0, cleanup: 0 });
@@ -204,7 +206,7 @@ export function AdminDashboard({
           <p className="text-xs text-brand-green-dark/50">All check-in entries</p>
         </button>
         {role === "admin" && (
-          <button type="button" onClick={() => onNavigate("setup")} className="rounded-xl border border-brand-mist bg-white p-4 text-left transition-all hover:shadow-soft">
+          <button type="button" onClick={() => onNavigate("management")} className="rounded-xl border border-brand-mist bg-white p-4 text-left transition-all hover:shadow-soft">
             <BedDoubleIcon className="h-5 w-5 text-brand-green" />
             <p className="mt-2 font-medium text-brand-green-dark">Dorm Setup</p>
             <p className="text-xs text-brand-green-dark/50">Configure beds and dorms</p>

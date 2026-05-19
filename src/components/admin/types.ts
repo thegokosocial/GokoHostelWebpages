@@ -1,6 +1,8 @@
-export type Role = "admin" | "manager";
+export type Role = "admin" | "manager" | "staff";
 
-export type AdminSection = "dashboard" | "beds" | "timeline" | "records" | "history" | "setup" | "stats";
+export type AdminSection = "dashboard" | "beds" | "timeline" | "records" | "history" | "management" | "stats";
+
+export type ManagementTab = "dorms" | "users" | "backup" | "audit" | "logs";
 
 export type BedStatus = "available" | "occupied" | "cleanup";
 

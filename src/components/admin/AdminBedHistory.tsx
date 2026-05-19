@@ -11,8 +11,8 @@ import { AdminLoading } from "./AdminLoading";
 
 const HISTORY_COLUMNS = ["Timestamp", "Bed ID", "Dorm", "Action", "Guest Name", "Guest Contact"];
 
-export function AdminBedHistory({ password, role }: { password: string; role: Role }) {
-  const { apiCall } = useAdminApi(password);
+export function AdminBedHistory({ password, username, role }: { password: string; username?: string; role: Role }) {
+  const { apiCall } = useAdminApi(password, username);
   const [rows, setRows] = useState<string[][]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");

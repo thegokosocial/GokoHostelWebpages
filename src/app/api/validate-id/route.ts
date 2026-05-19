@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocument";
-import { incrementStat } from "@/db/queries";
+import { incrementStat, addSystemLog } from "@/db/queries";
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Validate ID error:", error);
+    addSystemLog({ level: "error", source: "validate-id", message: String(error) }).catch(() => {});
     return NextResponse.json(
       { valid: false, documentType: "unknown", confidence: "low", message: "Validation service temporarily unavailable. Please try again." },
       { status: 503 }

@@ -7,17 +7,48 @@ import {
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
   getAllStats, incrementStat, getMonthKey,
+  getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
+  addAuditEntry, getAuditEntries,
+  addSystemLog, getSystemLogs,
 } from "@/db/queries";
 import { beds } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-type UserRole = "admin" | "manager";
+type UserRole = "admin" | "manager" | "staff";
 
-function authenticateUser(password: string): UserRole | null {
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + "goko-salt-2026");
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const computed = await hashPassword(password);
+  return computed === hash;
+}
+
+async function authenticateUser(password: string, username?: string): Promise<UserRole | null> {
   if (!password) return null;
-  if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) return "admin";
-  if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD) return "manager";
-  return null;
+
+  if (!username) {
+    if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) return "admin";
+    if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD) return "manager";
+    return null;
+  }
+
+  if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD && username === "admin") return "admin";
+  if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD && username === "manager") return "manager";
+
+  try {
+    const user = await getUserByUsername(username);
+    if (!user) return null;
+    const valid = await verifyPassword(password, user.passwordHash);
+    if (!valid) return null;
+    return (user.role as UserRole) || "manager";
+  } catch {
+    return null;
+  }
 }
 
 function isValidId(val: any): val is number {
@@ -29,12 +60,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { password, action, month, ...rest } = body;
+    const { password, action, month, username, ...rest } = body;
 
-    role = authenticateUser(password);
+    role = await authenticateUser(password, username);
     if (!role) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const actingUser = username || role;
 
     // --- Check-in Records ---
 
@@ -64,6 +96,7 @@ export async function POST(req: NextRequest) {
         emergencyPhone: e[10] || "", idType: e[11] || "", idCardLink: e[12] || "",
         visaLink: e[13] || "", verified: e[14] || "pending", createdMonth: getMonthKey(),
       });
+      await addAuditEntry({ username: actingUser, action: "checkin_add", target: e[3] || "unknown" });
       return NextResponse.json({ success: true });
     }
 
@@ -81,6 +114,7 @@ export async function POST(req: NextRequest) {
       } : entry;
 
       await updateCheckin(rowId, data);
+      await addAuditEntry({ username: actingUser, action: "record_edit", target: String(rowId) });
       return NextResponse.json({ success: true });
     }
 
@@ -98,6 +132,7 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+      await addAuditEntry({ username: actingUser, action: "record_delete", target: String(rowId) });
       return NextResponse.json({ success: true });
     }
 
@@ -105,6 +140,7 @@ export async function POST(req: NextRequest) {
       const { rowId, verified } = rest;
       if (!isValidId(rowId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
       await updateCheckin(rowId, { verified: verified ? "yes" : "no" });
+      await addAuditEntry({ username: actingUser, action: "verify_id", target: String(rowId) });
       return NextResponse.json({ success: true });
     }
 
@@ -125,6 +161,7 @@ export async function POST(req: NextRequest) {
       if (role !== "admin") return NextResponse.json({ error: "Only admin can change settings" }, { status: 403 });
       const { key, value } = rest;
       await setSetting(key, value);
+      await addAuditEntry({ username: actingUser, action: "setting_changed", target: key });
       return NextResponse.json({ success: true });
     }
 
@@ -223,6 +260,7 @@ export async function POST(req: NextRequest) {
 
       await updateBedStatus(bedId, { status: "occupied", guestName, guestContact: guestContact || "", checkinDate: checkin, expectedCheckout: checkoutDate, stayingDays: String(days) });
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "assign", guestName, guestContact: guestContact || "" });
+      await addAuditEntry({ username: actingUser, action: "bed_assign", target: `${bed.bedId} ${guestName}` });
       return NextResponse.json({ success: true });
     }
 
@@ -236,6 +274,7 @@ export async function POST(req: NextRequest) {
 
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "checkout", guestName: bed.guestName || "", guestContact: bed.guestContact || "" });
       await updateBedStatus(bedId, { status: "cleanup" });
+      await addAuditEntry({ username: actingUser, action: "bed_checkout", target: `${bed.bedId} ${bed.guestName || ""}` });
       return NextResponse.json({ success: true });
     }
 
@@ -249,6 +288,7 @@ export async function POST(req: NextRequest) {
 
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "markClean", guestName: "", guestContact: "" });
       await updateBedStatus(bedId, { status: "available" });
+      await addAuditEntry({ username: actingUser, action: "bed_clean", target: bed.bedId });
       return NextResponse.json({ success: true });
     }
 
@@ -262,6 +302,7 @@ export async function POST(req: NextRequest) {
 
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "unassign", guestName: bed.guestName || "", guestContact: bed.guestContact || "" });
       await updateBedStatus(bedId, { status: "available" });
+      await addAuditEntry({ username: actingUser, action: "bed_unassign", target: `${bed.bedId} ${bed.guestName || ""}` });
       return NextResponse.json({ success: true });
     }
 
@@ -280,6 +321,7 @@ export async function POST(req: NextRequest) {
       await updateBedStatus(toBedId, { status: "occupied", guestName: guestName || "", guestContact: guestContact || "", checkinDate: checkinDate || "", expectedCheckout: expectedCheckout || "", stayingDays: stayingDays || "" });
       await logBedHistoryEntry({ bedIdLabel: fromBed.bedId, dormName: fromBed.dormName, action: "change-out", guestName: guestName || "", guestContact: guestContact || "" });
       await logBedHistoryEntry({ bedIdLabel: toBed.bedId, dormName: toBed.dormName, action: "change-in", guestName: guestName || "", guestContact: guestContact || "" });
+      await addAuditEntry({ username: actingUser, action: "bed_change", target: `${fromBed.bedId} → ${toBed.bedId}` });
       return NextResponse.json({ success: true });
     }
 
@@ -312,6 +354,7 @@ export async function POST(req: NextRequest) {
           await addBed({ dormId: dorm.id, dormName: dorm.name, bedId: `${prefix}-L${i}`, position: "Lower", type: "Bunk" });
         }
       }
+      await addAuditEntry({ username: actingUser, action: "dorm_created", target: dormName.trim() });
       return NextResponse.json({ success: true });
     }
 
@@ -329,6 +372,7 @@ export async function POST(req: NextRequest) {
       if (hasOccupied) return NextResponse.json({ error: "Cannot delete dorm with occupied or cleanup beds" }, { status: 400 });
 
       await deleteDormAndBeds(dorm.id);
+      await addAuditEntry({ username: actingUser, action: "dorm_deleted", target: dormName });
       return NextResponse.json({ success: true });
     }
 
@@ -342,12 +386,82 @@ export async function POST(req: NextRequest) {
       if (bed.status !== "available") return NextResponse.json({ error: "Can only remove available beds" }, { status: 400 });
 
       await deleteBed(bedId);
+      await addAuditEntry({ username: actingUser, action: "bed_removed", target: bed.bedId });
       return NextResponse.json({ success: true });
+    }
+
+    // --- User Management ---
+
+    if (action === "getUsers") {
+      const allUsers = await getAllUsers();
+      const userList = allUsers.map((u) => ({
+        id: u.id, username: u.username, displayName: u.displayName,
+        role: u.role, permissions: JSON.parse(u.permissions || "{}"),
+        createdAt: u.createdAt, isSystem: u.isSystem === 1,
+      }));
+      return NextResponse.json({ users: userList });
+    }
+
+    if (action === "createUser") {
+      if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+      const { username: newUsername, displayName, password: userPass, role: userRole, permissions: perms } = rest;
+      if (!newUsername || !displayName || !userPass) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+      const existing = await getUserByUsername(newUsername);
+      if (existing) return NextResponse.json({ error: "Username already exists" }, { status: 409 });
+      const passwordHash = await hashPassword(userPass);
+      await createUser({ username: newUsername, passwordHash, displayName, role: userRole || "staff", permissions: JSON.stringify(perms || {}) });
+      await addAuditEntry({ username: actingUser, action: "user_created", target: newUsername });
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "updateUser") {
+      if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+      const { userId, displayName, password: userPass, role: userRole, permissions: perms } = rest;
+      if (!isValidId(userId)) return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
+      const data: any = {};
+      if (displayName) data.displayName = displayName;
+      if (userRole) data.role = userRole;
+      if (perms) data.permissions = JSON.stringify(perms);
+      if (userPass) data.passwordHash = await hashPassword(userPass);
+      await updateUser(userId, data);
+      await addAuditEntry({ username: actingUser, action: "user_updated", target: `userId:${userId}` });
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "deleteUser") {
+      if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+      const { userId } = rest;
+      if (!isValidId(userId)) return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
+      await deleteUserById(userId);
+      await addAuditEntry({ username: actingUser, action: "user_deleted", target: `userId:${userId}` });
+      return NextResponse.json({ success: true });
+    }
+
+    // --- Audit & Logs ---
+
+    if (action === "getAuditLog") {
+      const entries = await getAuditEntries();
+      return NextResponse.json({ entries });
+    }
+
+    if (action === "getSystemLogs") {
+      const logs = await getSystemLogs();
+      return NextResponse.json({ logs });
+    }
+
+    if (action === "runBackup") {
+      if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+      await setSetting("last_backup", new Date().toISOString());
+      await addAuditEntry({ username: actingUser, action: "backup_run", target: "manual" });
+      return NextResponse.json({ success: true, message: "Backup timestamp recorded." });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error: any) {
     console.error("Admin API error:", error?.message || error);
+    try {
+      await addSystemLog({ level: "error", source: "admin-checkins-api", message: error?.message || "Unknown error", details: error?.stack });
+    } catch {}
     return NextResponse.json({ error: error?.message || "Internal server error", role }, { status: 500 });
   }
 }

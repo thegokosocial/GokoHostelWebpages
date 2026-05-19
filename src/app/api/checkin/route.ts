@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
-import { addCheckin, incrementStat, getSetting, getMonthKey } from "@/db/queries";
+import { addCheckin, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 
 async function uploadToDrive(file: File, guestName: string, fileType: string): Promise<string> {
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
@@ -145,9 +145,12 @@ export async function POST(req: NextRequest) {
     const driveCount = idCardLinks.filter((l) => l !== "Upload failed").length + visaLinks.filter((l) => l !== "Upload failed").length;
     if (driveCount > 0) incrementStat("drive", driveCount).catch(() => {});
 
+    addAuditEntry({ username: "guest", action: "self_checkin", target: name }).catch(() => {});
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Check-in API error:", error?.message || error);
+    addSystemLog({ level: "error", source: "checkin", message: error?.message || "Unknown error" }).catch(() => {});
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -74,3 +74,43 @@ export const apiStats = sqliteTable("api_stats", {
   drive: integer("drive").notNull().default(0),
   total: integer("total").notNull().default(0),
 });
+
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  displayName: text("display_name").notNull(),
+  role: text("role").notNull().default("staff"),
+  permissions: text("permissions").notNull().default("{}"),
+  createdAt: text("created_at").notNull(),
+  createdBy: text("created_by").default(""),
+  isSystem: integer("is_system").notNull().default(0),
+});
+
+export const auditLog = sqliteTable("audit_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  timestamp: text("timestamp").notNull(),
+  userId: integer("user_id"),
+  username: text("username").notNull(),
+  action: text("action").notNull(),
+  target: text("target").default(""),
+  details: text("details").default(""),
+  ipAddress: text("ip_address").default(""),
+}, (table) => [
+  index("idx_audit_time").on(table.timestamp),
+  index("idx_audit_user").on(table.username),
+  index("idx_audit_action").on(table.action),
+]);
+
+export const systemLogs = sqliteTable("system_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  timestamp: text("timestamp").notNull(),
+  level: text("level").notNull(),
+  source: text("source").default(""),
+  message: text("message").notNull(),
+  details: text("details").default(""),
+  requestId: text("request_id").default(""),
+}, (table) => [
+  index("idx_logs_time").on(table.timestamp),
+  index("idx_logs_level").on(table.level),
+]);

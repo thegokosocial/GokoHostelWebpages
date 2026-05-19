@@ -136,8 +136,8 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeB
   );
 }
 
-export function AdminBeds({ password, role }: { password: string; role: Role }) {
-  const { apiCall } = useAdminApi(password);
+export function AdminBeds({ password, username, role }: { password: string; username?: string; role: Role }) {
+  const { apiCall } = useAdminApi(password, username);
   const [beds, setBeds] = useState<BedRow[]>([]);
   const [unassigned, setUnassigned] = useState<string[][]>([]);
   const [loading, setLoading] = useState(true);

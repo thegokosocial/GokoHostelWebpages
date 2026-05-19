@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { parseBedRow, type BedRow } from "./types";
 
-export function AdminSetup({ password }: { password: string }) {
-  const { apiCall } = useAdminApi(password);
+export function AdminSetup({ password, username }: { password: string; username?: string }) {
+  const { apiCall } = useAdminApi(password, username);
   const [beds, setBeds] = useState<BedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [newDorm, setNewDorm] = useState("");

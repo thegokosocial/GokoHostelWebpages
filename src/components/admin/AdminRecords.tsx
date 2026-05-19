@@ -29,14 +29,15 @@ function extractDriveFileId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-export function AdminRecords({ password, role }: { password: string; role: Role }) {
-  const { apiCall } = useAdminApi(password);
+export function AdminRecords({ password, username, role }: { password: string; username?: string; role: Role }) {
+  const { apiCall } = useAdminApi(password, username);
   const [rows, setRows] = useState<string[][]>([]);
   const [tabs, setTabs] = useState<string[]>([]);
   const [currentTab, setCurrentTab] = useState("");
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEntry, setNewEntry] = useState<string[]>(Array(15).fill(""));
+  const [newIdFiles, setNewIdFiles] = useState<File[]>([]);
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editEntry, setEditEntry] = useState<string[]>(Array(15).fill(""));
   const [editIdFiles, setEditIdFiles] = useState<File[]>([]);
@@ -143,8 +144,20 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
     setLoading(true);
     try {
       const entry = [...newEntry]; entry[0] = new Date().toISOString();
+
+      if (newIdFiles.length > 0) {
+        const links: string[] = [];
+        for (const file of newIdFiles) {
+          const fd = new FormData();
+          fd.append("file", file); fd.append("name", entry[3] || "Guest"); fd.append("type", "id"); fd.append("password", password);
+          const uploadRes = await fetch("/api/admin/upload", { method: "POST", body: fd });
+          if (uploadRes.ok) { const data = await uploadRes.json(); if (data.link) links.push(data.link); }
+        }
+        if (links.length > 0) entry[12] = links.join(" | ");
+      }
+
       const res = await apiCall({ action: "add", entry });
-      if (res.ok) { setShowAddForm(false); setNewEntry(Array(15).fill("")); refresh(); }
+      if (res.ok) { setShowAddForm(false); setNewEntry(Array(15).fill("")); setNewIdFiles([]); refresh(); }
     } finally { setLoading(false); }
   };
 
@@ -225,8 +238,8 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
             <div>
               <Label className="text-xs">ID Card photos</Label>
               <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
-                <UploadIcon className="h-4 w-4 text-brand-green" /> Choose files
-                <input type="file" accept="image/*,.pdf" multiple className="hidden" onChange={(e) => {}} />
+                <UploadIcon className="h-4 w-4 text-brand-green" /> {newIdFiles.length > 0 ? `${newIdFiles.length} file(s) selected` : "Choose files"}
+                <input type="file" accept="image/*,.pdf" multiple className="hidden" onChange={(e) => { if (e.target.files) setNewIdFiles(Array.from(e.target.files)); }} />
               </label>
             </div>
           </div>

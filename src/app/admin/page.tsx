@@ -4,12 +4,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon, BarChart3Icon } from "lucide-react";
+import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon, BarChart3Icon, WrenchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
 import { AdminRecords } from "@/components/admin/AdminRecords";
 import { AdminBeds } from "@/components/admin/AdminBeds";
-import { AdminSetup } from "@/components/admin/AdminSetup";
+import { AdminManagement } from "@/components/admin/AdminManagement";
 import { AdminBedHistory } from "@/components/admin/AdminBedHistory";
 import { AdminTimeline } from "@/components/admin/AdminTimeline";
 import { AdminStats } from "@/components/admin/AdminStats";
@@ -17,6 +17,7 @@ import type { Role, AdminSection } from "@/components/admin/types";
 
 export default function AdminPage() {
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -27,12 +28,15 @@ export default function AdminPage() {
     setLoading(true);
     setError("");
     try {
+      const body: any = { password, action: "list" };
+      if (selectedRole === "manager" && username) body.username = username;
+
       const res = await fetch("/api/admin/checkins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, action: "list" }),
+        body: JSON.stringify(body),
       });
-      if (res.status === 401) { setError("Incorrect password"); return; }
+      if (res.status === 401) { setError("Incorrect credentials"); return; }
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setRole(data.role);
@@ -77,8 +81,21 @@ export default function AdminPage() {
           ) : (
             <form onSubmit={(e) => { e.preventDefault(); login(); }} className="mt-6 space-y-4">
               <p className="text-center text-sm text-brand-green-dark/70">
-                Enter {selectedRole === "admin" ? "admin" : "staff"} password
+                {selectedRole === "admin" ? "Enter admin password" : "Staff login"}
               </p>
+              {selectedRole === "manager" && (
+                <div>
+                  <Label htmlFor="staff-user">Username</Label>
+                  <Input
+                    id="staff-user"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Enter username"
+                    autoFocus
+                  />
+                </div>
+              )}
               <div>
                 <Label htmlFor="admin-pw">Password</Label>
                 <Input
@@ -87,16 +104,16 @@ export default function AdminPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password"
-                  autoFocus
+                  autoFocus={selectedRole === "admin"}
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" variant="cta" className="w-full" disabled={loading || !password}>
+              <Button type="submit" variant="cta" className="w-full" disabled={loading || !password || (selectedRole === "manager" && !username)}>
                 {loading ? "Verifying..." : "Login"}
               </Button>
               <button
                 type="button"
-                onClick={() => { setSelectedRole(null); setPassword(""); setError(""); }}
+                onClick={() => { setSelectedRole(null); setPassword(""); setUsername(""); setError(""); }}
                 className="w-full text-center text-sm text-brand-green-dark/60 hover:text-brand-green"
               >
                 Back to role selection
@@ -115,7 +132,7 @@ export default function AdminPage() {
     { id: "records", label: "Records", icon: <TableIcon className="h-4 w-4" /> },
     { id: "history", label: "History", icon: <HistoryIcon className="h-4 w-4" /> },
     { id: "stats", label: "Stats", icon: <BarChart3Icon className="h-4 w-4" /> },
-    { id: "setup", label: "Setup", icon: <SettingsIcon className="h-4 w-4" />, adminOnly: true },
+    { id: "management", label: "Management", icon: <WrenchIcon className="h-4 w-4" />, adminOnly: true },
   ];
 
   return (
@@ -159,13 +176,13 @@ export default function AdminPage() {
 
       {/* Section content */}
       <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
-        {section === "dashboard" && <AdminDashboard password={password} role={role} onNavigate={setSection} />}
-        {section === "beds" && <AdminBeds password={password} role={role} />}
-        {section === "timeline" && <AdminTimeline password={password} role={role} />}
-        {section === "records" && <AdminRecords password={password} role={role} />}
-        {section === "history" && <AdminBedHistory password={password} role={role} />}
-        {section === "stats" && <AdminStats password={password} />}
-        {section === "setup" && role === "admin" && <AdminSetup password={password} />}
+        {section === "dashboard" && <AdminDashboard password={password} username={username} role={role} onNavigate={setSection} />}
+        {section === "beds" && <AdminBeds password={password} username={username} role={role} />}
+        {section === "timeline" && <AdminTimeline password={password} username={username} role={role} />}
+        {section === "records" && <AdminRecords password={password} username={username} role={role} />}
+        {section === "history" && <AdminBedHistory password={password} username={username} role={role} />}
+        {section === "stats" && <AdminStats password={password} username={username} />}
+        {section === "management" && role === "admin" && <AdminManagement password={password} username={username} role={role} />}
       </div>
     </section>
   );
