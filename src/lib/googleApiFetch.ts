@@ -1,6 +1,6 @@
 /**
- * Lightweight Google API client using native fetch.
- * Replaces `googleapis` npm package for Cloudflare Workers compatibility.
+ * Google API client for Drive and Vision only.
+ * Data storage moved to Cloudflare D1.
  */
 
 // --- JWT Token Generation ---
@@ -53,6 +53,8 @@ async function createJwt(
 
   return `${unsignedToken}.${sig}`;
 }
+
+// --- Token Caching ---
 
 let _saTokenCache: { token: string; expiry: number; scopeKey: string } | null = null;
 
@@ -109,93 +111,6 @@ async function getOAuthToken(): Promise<string | null> {
   if (!data.access_token) return null;
   _oauthTokenCache = { token: data.access_token, expiry: Date.now() + 50 * 60 * 1000 };
   return data.access_token;
-}
-
-// --- Google Sheets ---
-
-export async function sheetsGet(spreadsheetId: string, range: string): Promise<any[][]> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/spreadsheets.readonly"]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`Sheets GET failed: ${await res.text()}`);
-  const data = await res.json();
-  return data.values || [];
-}
-
-export async function sheetsAppend(spreadsheetId: string, range: string, values: any[][]): Promise<void> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/spreadsheets"]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ values }),
-  });
-  if (!res.ok) throw new Error(`Sheets append failed: ${await res.text()}`);
-}
-
-export async function sheetsUpdate(spreadsheetId: string, range: string, values: any[][]): Promise<void> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/spreadsheets"]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ values }),
-  });
-  if (!res.ok) throw new Error(`Sheets update failed: ${await res.text()}`);
-}
-
-export async function sheetsGetTabs(spreadsheetId: string): Promise<{ title: string; sheetId: number }[]> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/spreadsheets.readonly"]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`Sheets meta failed: ${await res.text()}`);
-  const data = await res.json();
-  return (data.sheets || []).map((s: any) => ({
-    title: s.properties?.title || "",
-    sheetId: s.properties?.sheetId || 0,
-  }));
-}
-
-export async function sheetsAddTab(spreadsheetId: string, title: string): Promise<void> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/spreadsheets"]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }),
-  });
-  if (!res.ok) throw new Error(`Sheets addTab failed: ${await res.text()}`);
-}
-
-export async function sheetsDeleteRow(spreadsheetId: string, sheetId: number, rowIndex: number): Promise<void> {
-  const token = await getServiceAccountToken(["https://www.googleapis.com/auth/spreadsheets"]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      requests: [{
-        deleteDimension: {
-          range: { sheetId, dimension: "ROWS", startIndex: rowIndex, endIndex: rowIndex + 1 },
-        },
-      }],
-    }),
-  });
-  if (!res.ok) throw new Error(`Sheets deleteRow failed: ${await res.text()}`);
-}
-
-export async function ensureMonthTab(spreadsheetId: string, tabName: string, headers: string[]): Promise<void> {
-  const tabs = await sheetsGetTabs(spreadsheetId);
-  if (!tabs.find((t) => t.title === tabName)) {
-    try {
-      await sheetsAddTab(spreadsheetId, tabName);
-    } catch {
-      const recheck = await sheetsGetTabs(spreadsheetId);
-      if (!recheck.find((t) => t.title === tabName)) throw new Error(`Cannot create tab: ${tabName}`);
-      return;
-    }
-    await sheetsUpdate(spreadsheetId, `'${tabName}'!A1:${String.fromCharCode(64 + headers.length)}1`, [headers]);
-  }
 }
 
 // --- Google Drive ---
@@ -363,121 +278,3 @@ export async function visionAnalyze(fileBase64: string, mimeType: string = "imag
 
   return { text, labels, objects, safeSearch, isPdf: false };
 }
-
-/** Backward-compatible wrapper */
-export async function visionDetectText(fileBase64: string, mimeType: string = "image/jpeg"): Promise<string> {
-  const result = await visionAnalyze(fileBase64, mimeType);
-  return result.text;
-}
-
-// --- Settings (stored in "Settings" tab of the same sheet) ---
-
-export async function getSettingValue(spreadsheetId: string, key: string): Promise<string | null> {
-  try {
-    const tabs = await sheetsGetTabs(spreadsheetId);
-    if (!tabs.find((t) => t.title === "Settings")) return null;
-    const rows = await sheetsGet(spreadsheetId, "'Settings'!A:B");
-    const row = rows.find((r) => r[0] === key);
-    return row ? row[1] || null : null;
-  } catch {
-    return null;
-  }
-}
-
-export async function setSettingValue(spreadsheetId: string, key: string, value: string): Promise<void> {
-  const tabs = await sheetsGetTabs(spreadsheetId);
-  if (!tabs.find((t) => t.title === "Settings")) {
-    await sheetsAddTab(spreadsheetId, "Settings");
-    await sheetsUpdate(spreadsheetId, "'Settings'!A1:B1", [["Key", "Value"]]);
-  }
-  const rows = await sheetsGet(spreadsheetId, "'Settings'!A:B");
-  const rowIndex = rows.findIndex((r) => r[0] === key);
-  if (rowIndex >= 0) {
-    await sheetsUpdate(spreadsheetId, `'Settings'!A${rowIndex + 1}:B${rowIndex + 1}`, [[key, value]]);
-  } else {
-    await sheetsAppend(spreadsheetId, "'Settings'!A:B", [[key, value]]);
-  }
-}
-
-// --- API Usage Tracking ---
-
-const STATS_TAB = "ApiStats";
-
-export type ApiStatRow = {
-  month: string;
-  vision: number;
-  sheets: number;
-  drive: number;
-  totalCalls: number;
-};
-
-export async function incrementApiStat(spreadsheetId: string, apiType: "vision" | "sheets" | "drive", count = 1): Promise<void> {
-  try {
-    const tabs = await sheetsGetTabs(spreadsheetId);
-    if (!tabs.find((t) => t.title === STATS_TAB)) {
-      try {
-        await sheetsAddTab(spreadsheetId, STATS_TAB);
-      } catch {
-        // Tab may already exist from a concurrent call — verify
-        const recheck = await sheetsGetTabs(spreadsheetId);
-        if (!recheck.find((t) => t.title === STATS_TAB)) throw new Error("Cannot create ApiStats tab");
-      }
-      await sheetsUpdate(spreadsheetId, `'${STATS_TAB}'!A1:E1`, [["Month", "Vision", "Sheets", "Drive", "Total"]]);
-    }
-
-    const monthKey = getMonthTabName();
-    const rows = await sheetsGet(spreadsheetId, `'${STATS_TAB}'!A:E`);
-    const rowIndex = rows.findIndex((r) => r[0] === monthKey);
-
-    if (rowIndex >= 0) {
-      const current = rows[rowIndex];
-      const vision = parseInt(current[1] || "0", 10) + (apiType === "vision" ? count : 0);
-      const sheets = parseInt(current[2] || "0", 10) + (apiType === "sheets" ? count : 0);
-      const drive = parseInt(current[3] || "0", 10) + (apiType === "drive" ? count : 0);
-      const total = vision + sheets + drive;
-      await sheetsUpdate(spreadsheetId, `'${STATS_TAB}'!A${rowIndex + 1}:E${rowIndex + 1}`, [[monthKey, String(vision), String(sheets), String(drive), String(total)]]);
-    } else {
-      const vision = apiType === "vision" ? count : 0;
-      const sheets = apiType === "sheets" ? count : 0;
-      const drive = apiType === "drive" ? count : 0;
-      const total = vision + sheets + drive;
-      // Use row count + 1 to write to specific cell instead of append (avoids table-detection issues)
-      const nextRow = rows.length + 1;
-      await sheetsUpdate(spreadsheetId, `'${STATS_TAB}'!A${nextRow}:E${nextRow}`, [[monthKey, String(vision), String(sheets), String(drive), String(total)]]);
-    }
-  } catch (e) {
-    console.error("Failed to log API stat:", e);
-  }
-}
-
-export async function getApiStats(spreadsheetId: string): Promise<ApiStatRow[]> {
-  try {
-    const tabs = await sheetsGetTabs(spreadsheetId);
-    if (!tabs.find((t) => t.title === STATS_TAB)) return [];
-    const rows = await sheetsGet(spreadsheetId, `'${STATS_TAB}'!A:E`);
-    return rows.slice(1).filter((r) => r[0]).map((r) => ({
-      month: r[0],
-      vision: parseInt(r[1] || "0", 10),
-      sheets: parseInt(r[2] || "0", 10),
-      drive: parseInt(r[3] || "0", 10),
-      totalCalls: parseInt(r[4] || "0", 10),
-    }));
-  } catch {
-    return [];
-  }
-}
-
-// --- Helpers ---
-
-export function getMonthTabName(date?: Date): string {
-  const d = date || new Date();
-  const months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
-    "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-  return `${months[d.getMonth()]}-${d.getFullYear()}`;
-}
-
-export const CHECKIN_HEADERS = [
-  "Submitted At", "Arrival Date", "Arrival Time", "Name", "Persons",
-  "Contact", "Days", "Coming From", "Nationality", "Emergency Contact",
-  "Emergency Phone", "ID Type", "ID Card", "Visa", "Verified",
-];

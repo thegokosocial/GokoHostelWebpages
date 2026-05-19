@@ -166,7 +166,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
     try {
       const res = await apiCall({
         action: "assignBed",
-        bedIndex: bedIdx,
+        bedId: bedIdx,
         guestName: guest[3],
         guestContact: guest[5],
         checkinDate: guest[1],
@@ -180,7 +180,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
     if (!confirm("Checkout this guest?")) return;
     setLoadingBedIdx(bedIdx);
     try {
-      const res = await apiCall({ action: "checkoutBed", bedIndex: bedIdx });
+      const res = await apiCall({ action: "checkoutBed", bedId: bedIdx });
       if (res.ok) await loadBeds();
     } finally { setLoadingBedIdx(null); }
   };
@@ -188,7 +188,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
   const markClean = async (bedIdx: number) => {
     setLoadingBedIdx(bedIdx);
     try {
-      const res = await apiCall({ action: "markClean", bedIndex: bedIdx });
+      const res = await apiCall({ action: "markClean", bedId: bedIdx });
       if (res.ok) await loadBeds();
     } finally { setLoadingBedIdx(null); }
   };
@@ -197,7 +197,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
     if (!confirm("Unassign this bed? (No cleanup needed - for wrong assignment correction)")) return;
     setLoadingBedIdx(bedIdx);
     try {
-      const res = await apiCall({ action: "unassignBed", bedIndex: bedIdx });
+      const res = await apiCall({ action: "unassignBed", bedId: bedIdx });
       if (res.ok) await loadBeds();
     } finally { setLoadingBedIdx(null); }
   };
@@ -207,7 +207,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
   const changeBed = async (fromIdx: number, toIdx: number) => {
     setLoadingBedIdx(fromIdx);
     try {
-      const res = await apiCall({ action: "changeBed", fromBedIndex: fromIdx, toBedIndex: toIdx });
+      const res = await apiCall({ action: "changeBed", fromBedId: fromIdx, toBedId: toIdx });
       if (res.ok) { setChangingBed(null); await loadBeds(); }
       else { const d = await res.json(); alert(d.error || "Failed"); }
     } finally { setLoadingBedIdx(null); }
@@ -244,7 +244,7 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
   const singles: BedItem[] = [];
 
   if (selectedDorm) {
-    let dormBedsWithIdx = beds.map((b, i) => ({ bed: b, idx: i })).filter(({ bed }) => bed.dormName === selectedDorm);
+    let dormBedsWithIdx = beds.map((b) => ({ bed: b, idx: b.id })).filter(({ bed }) => bed.dormName === selectedDorm);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       dormBedsWithIdx = dormBedsWithIdx.filter(({ bed }) =>

@@ -46,7 +46,7 @@ export function AdminSetup({ password }: { password: string }) {
     if (!confirm("Remove this bed? Only available beds can be removed.")) return;
     setLoading(true);
     try {
-      const res = await apiCall({ action: "removeBed", bedIndex: bedIdx });
+      const res = await apiCall({ action: "removeBed", bedId: bedIdx });
       if (res.ok) await loadBeds();
       else { const d = await res.json(); alert(d.error || "Failed"); }
     } finally { setLoading(false); }
@@ -109,7 +109,7 @@ export function AdminSetup({ password }: { password: string }) {
         {dorms.length === 0 ? (
           <p className="py-10 text-center text-brand-green-dark/50">No dorms configured yet. Add one above.</p>
         ) : dorms.map((dormName) => {
-          const dormBeds = beds.map((b, i) => ({ bed: b, idx: i })).filter(({ bed }) => bed.dormName === dormName);
+          const dormBeds = beds.map((b) => ({ bed: b, idx: b.id })).filter(({ bed }) => bed.dormName === dormName);
 
           const groupMap = new Map<string, { upper?: typeof dormBeds[0]; lowers: typeof dormBeds[0][]; singles: typeof dormBeds[0][] }>();
           const singleBeds: typeof dormBeds[0][] = [];

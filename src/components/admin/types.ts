@@ -5,6 +5,7 @@ export type AdminSection = "dashboard" | "beds" | "timeline" | "records" | "hist
 export type BedStatus = "available" | "occupied" | "cleanup";
 
 export type BedRow = {
+  id: number;
   dormName: string;
   bedId: string;
   position: "Upper" | "Lower" | "Single";
@@ -24,6 +25,7 @@ export const BED_HEADERS = [
 
 export function parseBedRow(row: string[]): BedRow {
   return {
+    id: parseInt(row[10] || "0", 10),
     dormName: row[0] || "",
     bedId: row[1] || "",
     position: (row[2] || "Lower") as BedRow["position"],

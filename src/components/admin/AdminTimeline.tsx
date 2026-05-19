@@ -56,7 +56,7 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
 
   const act = async (action: string, bedIdx: number, extra?: Record<string, any>) => {
     setBusyIdx(bedIdx); setPopup(null);
-    try { const r = await apiCall({ action, bedIndex: bedIdx, ...extra }); if (r.ok) await load(); else { const d = await r.json(); alert(d.error || "Failed"); } }
+    try { const r = await apiCall({ action, bedId: bedIdx, ...extra }); if (r.ok) await load(); else { const d = await r.json(); alert(d.error || "Failed"); } }
     finally { setBusyIdx(null); }
   };
 
@@ -107,7 +107,7 @@ export function AdminTimeline({ password, role }: { password: string; role: Role
         {dorms.length === 0 && <div className="py-12 text-center text-sm text-brand-green-dark/40">No dorms configured</div>}
 
         {dorms.map((dormName, dormIdx) => {
-          const dormBeds = beds.map((b, i) => ({ bed: b, idx: i })).filter(({ bed }) => bed.dormName === dormName);
+          const dormBeds = beds.map((b) => ({ bed: b, idx: b.id })).filter(({ bed }) => bed.dormName === dormName);
           const isOpen = !collapsed.has(dormName);
           const occToday = dormBeds.filter(({ bed }) => cellFor(bed, today, today).status === "occupied").length;
 

@@ -95,13 +95,14 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
     setLoading(true);
     try {
       const row = rows[rowIndex];
+      const rowId = parseInt(row[15] || "0", 10);
       const driveFileIds: string[] = [];
       [row[12], row[13]].forEach((cell) => {
         if (cell) cell.split(" | ").forEach((url) => {
           if (url.startsWith("http")) { const id = extractDriveFileId(url); if (id) driveFileIds.push(id); }
         });
       });
-      const res = await apiCall({ action: "delete", rowIndex, driveFileIds, tab: currentTab });
+      const res = await apiCall({ action: "delete", rowId, driveFileIds });
       if (res.ok) setRows((prev) => prev.filter((_, i) => i !== rowIndex));
     } finally { setLoading(false); }
   };
@@ -131,7 +132,8 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
       };
       if (editIdFiles.length > 0) updated[12] = await uploadFiles(editIdFiles, updated[3] || "Guest", "id");
       if (editVisaFiles.length > 0) updated[13] = await uploadFiles(editVisaFiles, updated[3] || "Guest", "visa");
-      const res = await apiCall({ action: "update", rowIndex: editIndex, entry: updated, tab: currentTab });
+      const rowId = parseInt(rows[editIndex!][15] || "0", 10);
+      const res = await apiCall({ action: "update", rowId, entry: updated, tab: currentTab });
       if (res.ok) { setEditIndex(null); refresh(); }
     } finally { setLoading(false); }
   };
@@ -149,7 +151,8 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
   const verifyManually = async (origIdx: number, verified: boolean) => {
     setVerifying(true);
     try {
-      const res = await apiCall({ action: "verifyCheckin", rowIndex: origIdx, verified, tab: currentTab });
+      const rowId = parseInt(rows[origIdx][15] || "0", 10);
+      const res = await apiCall({ action: "verifyCheckin", rowId, verified });
       if (res.ok) { setVerifyPopup(null); refresh(); }
     } finally { setVerifying(false); }
   };

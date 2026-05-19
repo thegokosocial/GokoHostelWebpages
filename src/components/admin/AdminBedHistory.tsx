@@ -38,7 +38,8 @@ export function AdminBedHistory({ password, role }: { password: string; role: Ro
     if (!confirm("Delete this history entry? This cannot be undone.")) return;
     setDeletingIdx(origIdx);
     try {
-      const res = await apiCall({ action: "deleteBedHistory", rowIndex: origIdx });
+      const rowId = parseInt(rows[origIdx][6] || "0", 10);
+      const res = await apiCall({ action: "deleteBedHistory", rowId });
       if (res.ok) await loadHistory();
       else { const d = await res.json(); alert(d.error || "Failed to delete"); }
     } finally { setDeletingIdx(null); }

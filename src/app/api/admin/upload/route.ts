@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { driveUploadFile, driveGetOrCreateFolder, getMonthTabName } from "@/lib/googleApiFetch";
+import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
+import { getMonthKey } from "@/db/queries";
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     let targetFolderId = folderId;
     if (folderId) {
       try {
-        targetFolderId = await driveGetOrCreateFolder(folderId, getMonthTabName());
+        targetFolderId = await driveGetOrCreateFolder(folderId, getMonthKey());
       } catch {}
     }
 

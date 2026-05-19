@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument } from "@/lib/validateIdDocument";
-import {
-  sheetsAppend,
-  ensureMonthTab,
-  driveUploadFile,
-  driveGetOrCreateFolder,
-  getMonthTabName,
-  getSettingValue,
-  CHECKIN_HEADERS,
-  incrementApiStat,
-} from "@/lib/googleApiFetch";
+import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
+import { addCheckin, incrementStat, getSetting, getMonthKey } from "@/db/queries";
 
 async function uploadToDrive(file: File, guestName: string, fileType: string): Promise<string> {
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
@@ -22,7 +14,7 @@ async function uploadToDrive(file: File, guestName: string, fileType: string): P
   let targetFolderId = folderId;
   if (folderId) {
     try {
-      targetFolderId = await driveGetOrCreateFolder(folderId, getMonthTabName());
+      targetFolderId = await driveGetOrCreateFolder(folderId, getMonthKey());
     } catch (err: any) {
       console.error("Month folder creation failed:", err?.message);
     }
@@ -60,12 +52,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-    if (!spreadsheetId) throw new Error("GOOGLE_SHEET_ID not set");
-
     let validationEnabled = true;
     try {
-      const val = await getSettingValue(spreadsheetId, "image_validation");
+      const val = await getSetting("image_validation");
       validationEnabled = val !== "off";
     } catch { /* default to enabled */ }
 
@@ -105,7 +94,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (serverVisionCalls > 0) incrementApiStat(spreadsheetId, "vision", serverVisionCalls).catch(() => {});
+    if (serverVisionCalls > 0) incrementStat("vision", serverVisionCalls).catch(() => {});
 
     const idCardLinks: string[] = [];
     for (let i = 0; i < idImages.length; i++) {
@@ -132,20 +121,29 @@ export async function POST(req: NextRequest) {
     const idCardLink = idCardLinks.join(" | ");
     const visaLink = visaLinks.join(" | ");
     const submittedAt = new Date().toISOString();
-    const tabName = getMonthTabName();
-
-    await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
-
     const verified = !validationEnabled ? "pending" : validationFailed ? "pending" : "yes";
 
-    await sheetsAppend(spreadsheetId, `'${tabName}'!A:O`, [
-      [submittedAt, arrivalDate, arrivalTime, name, numberOfPersons, contactNumber,
-        stayingDays, comingFrom, nationality, emergencyName, emergencyPhone, idType, idCardLink, visaLink, verified],
-    ]);
+    await addCheckin({
+      submittedAt,
+      arrivalDate,
+      arrivalTime: arrivalTime || "",
+      name,
+      persons: numberOfPersons,
+      contact: contactNumber,
+      stayingDays,
+      comingFrom,
+      nationality,
+      emergencyName: emergencyName || "",
+      emergencyPhone: emergencyPhone || "",
+      idType,
+      idCardLink,
+      visaLink,
+      verified,
+      createdMonth: getMonthKey(),
+    });
 
     const driveCount = idCardLinks.filter((l) => l !== "Upload failed").length + visaLinks.filter((l) => l !== "Upload failed").length;
-    if (driveCount > 0) incrementApiStat(spreadsheetId, "drive", driveCount).catch(() => {});
-    incrementApiStat(spreadsheetId, "sheets", 1).catch(() => {});
+    if (driveCount > 0) incrementStat("drive", driveCount).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

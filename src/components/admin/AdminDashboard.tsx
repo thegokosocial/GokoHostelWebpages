@@ -54,7 +54,7 @@ export function AdminDashboard({
     if (!confirm("Checkout this guest?")) return;
     setBusyIdx(bedIdx);
     try {
-      const res = await apiCall({ action: "checkoutBed", bedIndex: bedIdx });
+      const res = await apiCall({ action: "checkoutBed", bedId: bedIdx });
       if (res.ok) await loadDashboard();
     } finally { setBusyIdx(null); }
   };

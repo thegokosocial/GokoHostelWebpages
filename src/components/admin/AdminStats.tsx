@@ -10,7 +10,7 @@ type StatRow = {
   vision: number;
   sheets: number;
   drive: number;
-  totalCalls: number;
+  total: number;
 };
 
 const VISION_FREE_TIER = 1000;
@@ -42,7 +42,7 @@ export function AdminStats({ password }: { password: string }) {
   const totalVision = stats.reduce((sum, r) => sum + r.vision, 0);
   const totalSheets = stats.reduce((sum, r) => sum + r.sheets, 0);
   const totalDrive = stats.reduce((sum, r) => sum + r.drive, 0);
-  const totalAll = stats.reduce((sum, r) => sum + r.totalCalls, 0);
+  const totalAll = stats.reduce((sum, r) => sum + r.total, 0);
 
   if (loading && stats.length === 0) {
     return <AdminLoading message="Loading stats..." />;
@@ -84,7 +84,7 @@ export function AdminStats({ password }: { password: string }) {
             <StatCard
               icon={<ActivityIcon className="h-5 w-5 text-orange-500" />}
               label="Total"
-              value={currentMonth.totalCalls}
+              value={currentMonth.total}
             />
           </div>
 
@@ -153,7 +153,7 @@ export function AdminStats({ password }: { password: string }) {
                     </td>
                     <td className="py-2.5 pr-4 text-right text-brand-green-dark/70">{row.sheets}</td>
                     <td className="py-2.5 pr-4 text-right text-brand-green-dark/70">{row.drive}</td>
-                    <td className="py-2.5 text-right font-semibold text-brand-green-dark">{row.totalCalls}</td>
+                    <td className="py-2.5 text-right font-semibold text-brand-green-dark">{row.total}</td>
                   </tr>
                 ))}
               </tbody>
