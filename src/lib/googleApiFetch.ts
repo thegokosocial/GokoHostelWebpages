@@ -107,7 +107,7 @@ export async function sheetsGet(spreadsheetId: string, range: string): Promise<a
 
 export async function sheetsAppend(spreadsheetId: string, range: string, values: any[][]): Promise<void> {
   const token = await getServiceAccountToken(["https://www.googleapis.com/auth/spreadsheets"]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   const res = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -386,7 +386,13 @@ export async function incrementApiStat(spreadsheetId: string, apiType: "vision" 
   try {
     const tabs = await sheetsGetTabs(spreadsheetId);
     if (!tabs.find((t) => t.title === STATS_TAB)) {
-      await sheetsAddTab(spreadsheetId, STATS_TAB);
+      try {
+        await sheetsAddTab(spreadsheetId, STATS_TAB);
+      } catch {
+        // Tab may already exist from a concurrent call — verify
+        const recheck = await sheetsGetTabs(spreadsheetId);
+        if (!recheck.find((t) => t.title === STATS_TAB)) throw new Error("Cannot create ApiStats tab");
+      }
       await sheetsUpdate(spreadsheetId, `'${STATS_TAB}'!A1:E1`, [["Month", "Vision", "Sheets", "Drive", "Total"]]);
     }
 
@@ -406,7 +412,9 @@ export async function incrementApiStat(spreadsheetId: string, apiType: "vision" 
       const sheets = apiType === "sheets" ? count : 0;
       const drive = apiType === "drive" ? count : 0;
       const total = vision + sheets + drive;
-      await sheetsAppend(spreadsheetId, `'${STATS_TAB}'!A:E`, [[monthKey, String(vision), String(sheets), String(drive), String(total)]]);
+      // Use row count + 1 to write to specific cell instead of append (avoids table-detection issues)
+      const nextRow = rows.length + 1;
+      await sheetsUpdate(spreadsheetId, `'${STATS_TAB}'!A${nextRow}:E${nextRow}`, [[monthKey, String(vision), String(sheets), String(drive), String(total)]]);
     }
   } catch (e) {
     console.error("Failed to log API stat:", e);
