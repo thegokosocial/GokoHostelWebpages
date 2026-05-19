@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAdminApi } from "./useAdminApi";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UserPlusIcon, SearchIcon, LogOutIcon, SparklesIcon, ClockIcon, Loader2Icon } from "lucide-react";
+import { UserPlusIcon, SparklesIcon, ClockIcon, Loader2Icon } from "lucide-react";
 import type { Role, BedRow } from "./types";
 import { AdminLoading } from "./AdminLoading";
 
@@ -250,18 +250,19 @@ export function AdminBeds({ password, role }: { password: string; role: Role }) 
     };
   });
 
-  const activeDormBeds = selectedDorm ? beds.filter((b) => b.dormName === selectedDorm) : [];
-  const filteredBeds = searchQuery
-    ? activeDormBeds.filter((b) => b.guestName.toLowerCase().includes(searchQuery.toLowerCase()) || b.bedId.toLowerCase().includes(searchQuery.toLowerCase()))
-    : activeDormBeds;
-
   type BedItem = { bed: BedRow; idx: number };
   type BunkGroup = { upper?: BedItem; lowers: BedItem[] };
   const bunkGroups: BunkGroup[] = [];
   const singles: BedItem[] = [];
 
   if (selectedDorm) {
-    const dormBedsWithIdx = beds.map((b, i) => ({ bed: b, idx: i })).filter(({ bed }) => bed.dormName === selectedDorm);
+    let dormBedsWithIdx = beds.map((b, i) => ({ bed: b, idx: i })).filter(({ bed }) => bed.dormName === selectedDorm);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      dormBedsWithIdx = dormBedsWithIdx.filter(({ bed }) =>
+        bed.guestName.toLowerCase().includes(q) || bed.bedId.toLowerCase().includes(q)
+      );
+    }
     const groupMap = new Map<string, BunkGroup>();
 
     for (const item of dormBedsWithIdx) {

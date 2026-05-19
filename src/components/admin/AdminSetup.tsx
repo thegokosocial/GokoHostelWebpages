@@ -48,7 +48,7 @@ export function AdminSetup({ password }: { password: string }) {
     setLoading(true);
     try {
       const res = await apiCall({ action: "initDorms", dormName: newDorm.trim(), bedCount: count, bedType: newBedType });
-      if (res.ok) { setNewDorm(""); loadBeds(); }
+      if (res.ok) { setNewDorm(""); await loadBeds(); }
       else { const d = await res.json(); alert(d.error || "Failed"); }
     } finally { setLoading(false); }
   };
@@ -58,7 +58,7 @@ export function AdminSetup({ password }: { password: string }) {
     setLoading(true);
     try {
       const res = await apiCall({ action: "removeBed", bedIndex: bedIdx });
-      if (res.ok) loadBeds();
+      if (res.ok) await loadBeds();
       else { const d = await res.json(); alert(d.error || "Failed"); }
     } finally { setLoading(false); }
   };
@@ -71,7 +71,7 @@ export function AdminSetup({ password }: { password: string }) {
     setLoading(true);
     try {
       const res = await apiCall({ action: "removeDorm", dormName });
-      if (res.ok) loadBeds();
+      if (res.ok) await loadBeds();
       else { const d = await res.json(); alert(d.error || "Failed"); }
     } finally { setLoading(false); }
   };

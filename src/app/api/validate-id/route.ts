@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Validate ID error:", error);
     return NextResponse.json(
-      { valid: true, documentType: "unknown", confidence: "low", message: "Validation service error, document accepted." },
-      { status: 200 }
+      { valid: false, documentType: "unknown", confidence: "low", message: "Validation service temporarily unavailable. Please try again." },
+      { status: 503 }
     );
   }
 }

@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
     } catch { /* default to enabled */ }
 
     let serverVisionCalls = 0;
+    let validationFailed = false;
     if (validationEnabled) {
       async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
         if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
         }
       } catch (valErr: any) {
         console.error("ID validation error:", valErr?.message);
+        validationFailed = true;
       }
 
       if (visaImages.length > 0) {
@@ -98,6 +100,7 @@ export async function POST(req: NextRequest) {
           }
         } catch (valErr: any) {
           console.error("Visa validation error:", valErr?.message);
+          validationFailed = true;
         }
       }
     }
@@ -133,7 +136,7 @@ export async function POST(req: NextRequest) {
 
     await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
 
-    const verified = validationEnabled ? "yes" : "pending";
+    const verified = !validationEnabled ? "pending" : validationFailed ? "pending" : "yes";
 
     await sheetsAppend(spreadsheetId, `'${tabName}'!A:O`, [
       [submittedAt, arrivalDate, arrivalTime, name, numberOfPersons, contactNumber,

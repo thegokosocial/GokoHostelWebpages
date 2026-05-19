@@ -36,9 +36,9 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
   const [currentTab, setCurrentTab] = useState("");
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newEntry, setNewEntry] = useState<string[]>(Array(14).fill(""));
+  const [newEntry, setNewEntry] = useState<string[]>(Array(15).fill(""));
   const [editIndex, setEditIndex] = useState<number | null>(null);
-  const [editEntry, setEditEntry] = useState<string[]>(Array(14).fill(""));
+  const [editEntry, setEditEntry] = useState<string[]>(Array(15).fill(""));
   const [editIdFiles, setEditIdFiles] = useState<File[]>([]);
   const [editVisaFiles, setEditVisaFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -107,7 +107,7 @@ export function AdminRecords({ password, role }: { password: string; role: Role 
   };
 
   const startEdit = (rowIndex: number) => {
-    const padded = Array(14).fill("").map((_, i) => rows[rowIndex][i] || "");
+    const padded = Array(15).fill("").map((_, i) => rows[rowIndex][i] || "");
     setEditEntry(padded);
     setEditIndex(rowIndex);
     setEditIdFiles([]);

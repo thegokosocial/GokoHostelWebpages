@@ -270,6 +270,9 @@ export async function POST(req: NextRequest) {
 
     if (action === "markClean") {
       const { bedIndex } = body;
+      const bedRows = await sheetsGet(spreadsheetId, `'${BED_TAB}'!A:J`);
+      const bed = bedRows[bedIndex + 1];
+      if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
       const rowNum = bedIndex + 2;
       await sheetsUpdate(spreadsheetId, `'${BED_TAB}'!E${rowNum}:J${rowNum}`, [["available", "", "", "", "", ""]]);
       return NextResponse.json({ success: true });

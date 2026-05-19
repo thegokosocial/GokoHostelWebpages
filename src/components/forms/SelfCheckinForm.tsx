@@ -2,7 +2,7 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { checkinSchema, type CheckinFormData } from "@/lib/checkinSchema";
 import { countries } from "@/content/countries";
 import { Button } from "@/components/ui/button";

@@ -8,7 +8,7 @@ export type BedRow = {
   dormName: string;
   bedId: string;
   position: "Upper" | "Lower" | "Single";
-  type: "Bunk" | "Single";
+  type: "Bunk" | "Bunk2L1U" | "Single";
   status: BedStatus;
   guestName: string;
   guestContact: string;
