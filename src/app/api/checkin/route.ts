@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument } from "@/lib/validateIdDocument";
 import {
   sheetsAppend,
-  sheetsUpdate,
-  sheetsGetTabs,
-  sheetsAddTab,
   ensureMonthTab,
   driveUploadFile,
   driveGetOrCreateFolder,
   getMonthTabName,
+  getSettingValue,
   CHECKIN_HEADERS,
   incrementApiStat,
 } from "@/lib/googleApiFetch";
@@ -62,39 +60,47 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
-      if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
-        return { valid: false, documentType: "unknown" as const, confidence: "high" as const, message: "Only images and PDFs accepted" };
-      }
-      const buffer = Buffer.from(await file.arrayBuffer());
-      return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type);
-    }
-
-    let serverVisionCalls = 0;
-    try {
-      const idValidation = await validateFile(idImages[0], "id", idType, name);
-      serverVisionCalls++;
-      if (!idValidation.valid) {
-        return NextResponse.json({ error: idValidation.message, field: "idImages" }, { status: 422 });
-      }
-    } catch (valErr: any) {
-      console.error("ID validation error:", valErr?.message);
-    }
-
-    if (visaImages.length > 0) {
-      try {
-        const visaValidation = await validateFile(visaImages[0], "visa");
-        serverVisionCalls++;
-        if (!visaValidation.valid) {
-          return NextResponse.json({ error: visaValidation.message, field: "visaImages" }, { status: 422 });
-        }
-      } catch (valErr: any) {
-        console.error("Visa validation error:", valErr?.message);
-      }
-    }
-
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     if (!spreadsheetId) throw new Error("GOOGLE_SHEET_ID not set");
+
+    let validationEnabled = true;
+    try {
+      const val = await getSettingValue(spreadsheetId, "image_validation");
+      validationEnabled = val !== "off";
+    } catch { /* default to enabled */ }
+
+    let serverVisionCalls = 0;
+    if (validationEnabled) {
+      async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
+        if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
+          return { valid: false, documentType: "unknown" as const, confidence: "high" as const, message: "Only images and PDFs accepted" };
+        }
+        const buffer = Buffer.from(await file.arrayBuffer());
+        return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type);
+      }
+
+      try {
+        const idValidation = await validateFile(idImages[0], "id", idType, name);
+        serverVisionCalls++;
+        if (!idValidation.valid) {
+          return NextResponse.json({ error: idValidation.message, field: "idImages" }, { status: 422 });
+        }
+      } catch (valErr: any) {
+        console.error("ID validation error:", valErr?.message);
+      }
+
+      if (visaImages.length > 0) {
+        try {
+          const visaValidation = await validateFile(visaImages[0], "visa");
+          serverVisionCalls++;
+          if (!visaValidation.valid) {
+            return NextResponse.json({ error: visaValidation.message, field: "visaImages" }, { status: 422 });
+          }
+        } catch (valErr: any) {
+          console.error("Visa validation error:", valErr?.message);
+        }
+      }
+    }
 
     if (serverVisionCalls > 0) incrementApiStat(spreadsheetId, "vision", serverVisionCalls).catch(() => {});
 
@@ -127,12 +133,7 @@ export async function POST(req: NextRequest) {
 
     await ensureMonthTab(spreadsheetId, tabName, CHECKIN_HEADERS);
 
-    let verified = "";
-    try {
-      const { getSettingValue } = await import("@/lib/googleApiFetch");
-      const val = await getSettingValue(spreadsheetId, "image_validation");
-      verified = val === "off" ? "pending" : "yes";
-    } catch { verified = "pending"; }
+    const verified = validationEnabled ? "yes" : "pending";
 
     await sheetsAppend(spreadsheetId, `'${tabName}'!A:O`, [
       [submittedAt, arrivalDate, arrivalTime, name, numberOfPersons, contactNumber,
