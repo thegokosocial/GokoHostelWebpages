@@ -1,6 +1,6 @@
 export type Role = "admin" | "manager" | "staff";
 
-export type AdminSection = "dashboard" | "bookings" | "beds" | "timeline" | "records" | "history" | "management" | "stats";
+export type AdminSection = "dashboard" | "bookings" | "beds" | "timeline" | "records" | "history" | "rates" | "management" | "stats";
 
 export type ManagementTab = "dorms" | "users" | "backup" | "audit" | "logs";
 

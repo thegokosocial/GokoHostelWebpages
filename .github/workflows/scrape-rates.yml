@@ -1,0 +1,58 @@
+name: Scrape Booking.com Rates
+
+on:
+  workflow_dispatch:
+    inputs:
+      scrapeId:
+        description: 'D1 scrape ID to update with results'
+        required: true
+      city:
+        description: 'City to search'
+        required: true
+        default: 'Gokarna'
+      startDate:
+        description: 'Start date (YYYY-MM-DD)'
+        required: true
+      endDate:
+        description: 'End date (YYYY-MM-DD)'
+        required: true
+      propertyType:
+        description: 'Property type filter'
+        required: false
+        default: 'hostels'
+      proxyUrl:
+        description: 'Proxy URL (optional)'
+        required: false
+        default: ''
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Puppeteer
+        run: npm install puppeteer
+
+      - name: Run scraper
+        env:
+          SCRAPE_ID: ${{ github.event.inputs.scrapeId }}
+          CITY: ${{ github.event.inputs.city }}
+          START_DATE: ${{ github.event.inputs.startDate }}
+          END_DATE: ${{ github.event.inputs.endDate }}
+          PROPERTY_TYPE: ${{ github.event.inputs.propertyType }}
+          API_URL: ${{ secrets.API_URL }}
+          API_PASSWORD: ${{ secrets.API_PASSWORD }}
+          PROXY_URL: ${{ github.event.inputs.proxyUrl || secrets.PROXY_URL }}
+        run: node scripts/scrape-booking-rates.js
+
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-debug
+          path: /tmp/scrape-*.png

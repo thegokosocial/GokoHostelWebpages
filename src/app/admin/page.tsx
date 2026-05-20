@@ -4,12 +4,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon, BarChart3Icon, WrenchIcon, BookOpenIcon } from "lucide-react";
+import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon, BarChart3Icon, WrenchIcon, BookOpenIcon, IndianRupeeIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
 import { AdminRecords } from "@/components/admin/AdminRecords";
 import { AdminBeds } from "@/components/admin/AdminBeds";
 import { AdminBookings } from "@/components/admin/AdminBookings";
+import { AdminCheckRates } from "@/components/admin/AdminCheckRates";
 import { AdminManagement } from "@/components/admin/AdminManagement";
 import { AdminBedHistory } from "@/components/admin/AdminBedHistory";
 import { AdminTimeline } from "@/components/admin/AdminTimeline";
@@ -133,6 +134,7 @@ export default function AdminPage() {
     { id: "timeline", label: "Timeline", icon: <CalendarDaysIcon className="h-4 w-4" /> },
     { id: "records", label: "Records", icon: <TableIcon className="h-4 w-4" /> },
     { id: "history", label: "History", icon: <HistoryIcon className="h-4 w-4" /> },
+    { id: "rates", label: "Rates", icon: <IndianRupeeIcon className="h-4 w-4" /> },
     { id: "stats", label: "Stats", icon: <BarChart3Icon className="h-4 w-4" /> },
     { id: "management", label: "Management", icon: <WrenchIcon className="h-4 w-4" />, adminOnly: true },
   ];
@@ -184,6 +186,7 @@ export default function AdminPage() {
         {section === "timeline" && <AdminTimeline password={password} username={username} role={role} />}
         {section === "records" && <AdminRecords password={password} username={username} role={role} />}
         {section === "history" && <AdminBedHistory password={password} username={username} role={role} />}
+        {section === "rates" && <AdminCheckRates password={password} username={username} role={role} />}
         {section === "stats" && <AdminStats password={password} username={username} />}
         {section === "management" && role === "admin" && <AdminManagement password={password} username={username} role={role} />}
       </div>

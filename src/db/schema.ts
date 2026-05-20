@@ -118,6 +118,18 @@ export const systemLogs = sqliteTable("system_logs", {
   index("idx_logs_level").on(table.level),
 ]);
 
+export const rateScrapes = sqliteTable("rate_scrapes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date").notNull(),
+  propertyType: text("property_type").default("hostels"),
+  status: text("status").notNull().default("pending"),
+  results: text("results").default(""),
+  createdAt: text("created_at").notNull(),
+  completedAt: text("completed_at").default(""),
+});
+
 export const bookings = sqliteTable("bookings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   guestName: text("guest_name").notNull(),

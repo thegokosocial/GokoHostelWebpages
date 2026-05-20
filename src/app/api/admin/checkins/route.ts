@@ -8,6 +8,7 @@ import {
   getSetting, setSetting,
   getAllStats, incrementStat, getMonthKey,
   getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking,
+  createRateScrape, getLatestRateScrape, getRateScrapeById, updateRateScrape,
   getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
   addAuditEntry, getAuditEntries,
   addSystemLog, getSystemLogs,
@@ -27,6 +28,26 @@ async function hashPassword(password: string): Promise<string> {
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
   const computed = await hashPassword(password);
   return computed === hash;
+}
+
+async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPO || "thegokosocial/GokoHostelWebpages";
+  if (!token) throw new Error("GITHUB_TOKEN not set");
+
+  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/scrape-rates.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      ref: "main",
+      inputs: { scrapeId: String(scrapeId), city, startDate, endDate, propertyType, proxyUrl },
+    }),
+  });
+  if (!res.ok) throw new Error(`GitHub API error: ${res.status} ${await res.text()}`);
 }
 
 async function authenticateUser(password: string, username?: string): Promise<UserRole | null> {
@@ -512,6 +533,53 @@ export async function POST(req: NextRequest) {
       if (!isValidId(bookingId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
       await deleteBooking(bookingId);
       await addAuditEntry({ username: actingUser, action: "booking_deleted", target: `id:${bookingId}` });
+      return NextResponse.json({ success: true });
+    }
+
+    // --- Rate Scrapes ---
+
+    if (action === "getLatestRateScrape") {
+      const { city: scrapeCity } = rest;
+      const scrape = await getLatestRateScrape(scrapeCity || "Gokarna");
+      return NextResponse.json({ scrape });
+    }
+
+    if (action === "getRateScrapeStatus") {
+      const { scrapeId } = rest;
+      if (!isValidId(scrapeId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      const scrape = await getRateScrapeById(scrapeId);
+      return NextResponse.json({ scrape });
+    }
+
+    if (action === "startRateScrape") {
+      const { city: scrapeCity, startDate: sDate, endDate: eDate, propertyType: pType, proxyUrl: pUrl } = rest;
+      if (!scrapeCity || !sDate || !eDate) return NextResponse.json({ error: "City and dates required" }, { status: 400 });
+
+      if (!process.env.GITHUB_TOKEN) {
+        return NextResponse.json({ error: "GITHUB_TOKEN not configured. Add it in Cloudflare env vars." }, { status: 500 });
+      }
+
+      const scrape = await createRateScrape({ city: scrapeCity, startDate: sDate, endDate: eDate, propertyType: pType || "hostels" });
+      await addAuditEntry({ username: actingUser, action: "rate_scrape_started", target: `${scrapeCity} ${sDate} → ${eDate}` });
+
+      try {
+        await triggerGithubScrape(scrape.id, scrapeCity, sDate, eDate, pType || "hostels", pUrl || "");
+      } catch (err: any) {
+        await updateRateScrape(scrape.id, { status: "failed", completedAt: new Date().toISOString() });
+        return NextResponse.json({ error: `Failed to trigger scraper: ${err.message}` }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, id: scrape.id });
+    }
+
+    if (action === "updateRateScrapeResults") {
+      const { scrapeId, results, status: scrapeStatus } = rest;
+      if (!isValidId(scrapeId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      await updateRateScrape(scrapeId, {
+        results: typeof results === "string" ? results : JSON.stringify(results),
+        status: scrapeStatus || "done",
+        completedAt: new Date().toISOString(),
+      });
       return NextResponse.json({ success: true });
     }
 

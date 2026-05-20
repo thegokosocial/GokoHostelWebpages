@@ -1,6 +1,6 @@
 import { eq, desc, and, sql } from "drizzle-orm";
 import { getDb } from "./index";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs, bookings } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs, rateScrapes, bookings } from "./schema";
 
 // --- Check-ins ---
 
@@ -343,4 +343,41 @@ export async function updateBookingStatus(id: number, status: string) {
 export async function deleteBooking(id: number) {
   const db = getDb();
   return db.delete(bookings).where(eq(bookings.id, id));
+}
+
+// --- Rate Scrapes ---
+
+export async function createRateScrape(data: { city: string; startDate: string; endDate: string; propertyType: string }) {
+  const db = getDb();
+  const result = await db.insert(rateScrapes).values({
+    city: data.city,
+    startDate: data.startDate,
+    endDate: data.endDate,
+    propertyType: data.propertyType,
+    status: "pending",
+    results: "",
+    createdAt: new Date().toISOString(),
+    completedAt: "",
+  }).returning();
+  return result[0];
+}
+
+export async function getLatestRateScrape(city: string) {
+  const db = getDb();
+  const rows = await db.select().from(rateScrapes)
+    .where(eq(rateScrapes.city, city))
+    .orderBy(desc(rateScrapes.id))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function getRateScrapeById(id: number) {
+  const db = getDb();
+  const rows = await db.select().from(rateScrapes).where(eq(rateScrapes.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function updateRateScrape(id: number, data: { status?: string; results?: string; completedAt?: string }) {
+  const db = getDb();
+  return db.update(rateScrapes).set(data).where(eq(rateScrapes.id, id));
 }
