@@ -74,17 +74,24 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
         let price = null;
 
         // Method 1: data-testid="price-and-discounted-price" contains the final price
-        // Extract price: get the entire card's inner text and find price patterns
-        const cardText = card.innerText || card.textContent || "";
-        // Find all numbers that are 3+ digits (prices are typically 100-50000)
-        const allNums = cardText.match(/\d{3,6}/g) || [];
-        const validPrices = allNums.map(Number).filter((n) => n >= 100 && n <= 50000);
+        // Extract price using ₹-anchored parsing (most reliable)
+        const cardText = (card.innerText || card.textContent || "").replace(/\u00a0/g, " ");
         
-        if (validPrices.length > 0) {
-          // Heuristic: the actual room price is usually the smallest 3+ digit number
-          // that's not a review count or distance. Exclude numbers > 10000 unless only option.
-          const roomPrices = validPrices.filter((n) => n >= 100 && n <= 5000);
-          price = roomPrices.length > 0 ? Math.min(...roomPrices) : Math.min(...validPrices);
+        // Method 1: Find all "₹ X,XXX" or "₹X,XXX" patterns (anchored to currency symbol)
+        const priceMatches = [...cardText.matchAll(/₹\s?([\d,]+)/g)];
+        const parsedPrices = priceMatches
+          .map((m) => parseInt(m[1].replace(/,/g, ""), 10))
+          .filter((n) => n >= 100 && n <= 15000);
+        
+        if (parsedPrices.length > 0) {
+          // Filter out tax amounts (typically < 50, already excluded by >= 100)
+          // Take the LAST price in the list (Booking.com shows: strikethrough first, discounted last)
+          price = parsedPrices[parsedPrices.length - 1];
+          
+          // But if there are exactly 2 prices and second > first, take the first (edge case)
+          if (parsedPrices.length === 2 && parsedPrices[1] > parsedPrices[0]) {
+            price = parsedPrices[0];
+          }
         }
 
         return { name: nameEl?.textContent?.trim() || "Unknown", price, rating: null };
