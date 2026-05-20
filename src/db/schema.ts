@@ -17,11 +17,13 @@ export const checkins = sqliteTable("checkins", {
   idCardLink: text("id_card_link"),
   visaLink: text("visa_link"),
   verified: text("verified").default("pending"),
+  status: text("status").notNull().default("active"),
   createdMonth: text("created_month").notNull(),
 }, (table) => [
   index("idx_checkins_month").on(table.createdMonth),
   index("idx_checkins_contact").on(table.contact),
   index("idx_checkins_arrival").on(table.arrivalDate),
+  index("idx_checkins_status").on(table.status),
 ]);
 
 export const dorms = sqliteTable("dorms", {

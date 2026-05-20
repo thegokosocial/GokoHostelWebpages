@@ -11,8 +11,8 @@ import {
   addAuditEntry, getAuditEntries,
   addSystemLog, getSystemLogs,
 } from "@/db/queries";
-import { beds } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { beds, checkins } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 
 type UserRole = "admin" | "manager" | "staff";
 
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
         r.submittedAt, r.arrivalDate, r.arrivalTime, r.name, r.persons,
         r.contact, r.stayingDays, r.comingFrom, r.nationality, r.emergencyName,
         r.emergencyPhone, r.idType, r.idCardLink, r.visaLink, r.verified,
-        String(r.id),
+        String(r.id), r.status || "active",
       ]);
       const months = await getCheckinMonths();
       return NextResponse.json({ rows, role, tabs: months, currentTab: tabName });
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
       const monthKey = getMonthKey();
       const allCheckins = await getCheckinsByMonth(monthKey);
       const today = new Date().toISOString().split("T")[0];
-      const todayCheckins = allCheckins.filter((r) => r.arrivalDate === today);
+      const todayCheckins = allCheckins.filter((r) => r.arrivalDate === today && r.status === "active");
 
       const allBeds = await getAllBeds();
       const total = allBeds.length;
@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
       const monthCheckins = await getCheckinsByMonth(monthKey);
 
       const assignedContacts = new Set(allBeds.filter((b) => b.status === "occupied" && b.guestContact).map((b) => b.guestContact));
-      const unassignedCheckins = monthCheckins.filter((r) => r.contact && !assignedContacts.has(r.contact));
+      const unassignedCheckins = monthCheckins.filter((r) => r.contact && r.status === "active" && !assignedContacts.has(r.contact));
 
       const bedsArr = allBeds.map((b) => [
         b.dormName, b.bedId, b.position, b.type, b.status,
@@ -274,6 +274,16 @@ export async function POST(req: NextRequest) {
 
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "checkout", guestName: bed.guestName || "", guestContact: bed.guestContact || "" });
       await updateBedStatus(bedId, { status: "cleanup" });
+
+      if (bed.guestContact) {
+        try {
+          const db = getDb();
+          await db.update(checkins).set({ status: "checked_out" }).where(
+            and(eq(checkins.contact, bed.guestContact), eq(checkins.status, "active"))
+          );
+        } catch {}
+      }
+
       await addAuditEntry({ username: actingUser, action: "bed_checkout", target: `${bed.bedId} ${bed.guestName || ""}` });
       return NextResponse.json({ success: true });
     }
@@ -434,6 +444,17 @@ export async function POST(req: NextRequest) {
       if (!isValidId(userId)) return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
       await deleteUserById(userId);
       await addAuditEntry({ username: actingUser, action: "user_deleted", target: `userId:${userId}` });
+      return NextResponse.json({ success: true });
+    }
+
+    // --- Undo Checkout ---
+
+    if (action === "undoCheckout") {
+      const { checkinId } = rest;
+      if (!isValidId(checkinId)) return NextResponse.json({ error: "Invalid checkin ID" }, { status: 400 });
+      const db = getDb();
+      await db.update(checkins).set({ status: "active" }).where(eq(checkins.id, checkinId));
+      await addAuditEntry({ username: actingUser, action: "undo_checkout", target: String(checkinId) });
       return NextResponse.json({ success: true });
     }
 
