@@ -74,35 +74,31 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
         let price = null;
 
         // Method 1: data-testid="price-and-discounted-price" contains the final price
+        // Extract price - multiple strategies
         const priceContainer = card.querySelector('[data-testid="price-and-discounted-price"]');
         if (priceContainer) {
-          // textContent converts &nbsp; to char 160, normalize all whitespace
-          const allText = (priceContainer.textContent || "").replace(/\u00a0/g, " ");
-          // Find all ₹ followed by number patterns
-          const priceMatches = allText.match(/₹\s?[\d,]+/g) || [];
-          if (priceMatches.length > 0) {
-            // Last match is always the final/discounted price
-            const lastPrice = priceMatches[priceMatches.length - 1];
-            const num = parseInt(lastPrice.replace(/[₹,\s]/g, ""));
-            if (num > 50 && num < 50000) price = num;
+          const allText = priceContainer.textContent || "";
+          // Match any sequence of digits (3+) that could be a price
+          const nums = allText.match(/\d[\d,]+/g) || [];
+          const validPrices = nums.map((n) => parseInt(n.replace(/,/g, ""))).filter((n) => n >= 50 && n <= 50000);
+          if (validPrices.length > 0) {
+            // Take the last valid price (discounted/final price)
+            price = validPrices[validPrices.length - 1];
           }
         }
 
-        // Method 2: Fallback - scan all spans for price pattern
+        // Fallback: scan for any element with ₹ and a number
         if (!price) {
-          const priceSpans = [];
-          const allSpans = card.querySelectorAll('span');
-          for (const span of allSpans) {
-            const text = (span.textContent?.trim() || "").replace(/\u00a0/g, " ");
-            // Match ₹ followed by number, but NOT inside taxes section
-            if (/^₹\s?[\d,]+$/.test(text) && !span.closest('[data-testid="taxes-and-charges"]')) {
-              const num = parseInt(text.replace(/[₹,\s]/g, ""));
-              if (num > 50 && num < 50000) priceSpans.push(num);
-            }
-          }
-          // Take the lowest price (discounted is always lower than original)
-          if (priceSpans.length > 0) {
-            price = Math.min(...priceSpans);
+          const allText = card.textContent || "";
+          // Find patterns like "₹ 199" or "₹199" or "₹ 1,044"  
+          const matches = allText.match(/₹[\s\u00a0]?(\d[\d,]*)/g) || [];
+          const validPrices = matches
+            .map((m) => parseInt(m.replace(/[₹,\s\u00a0]/g, "")))
+            .filter((n) => n >= 100 && n <= 50000);
+          if (validPrices.length > 0) {
+            // Filter out tax amounts (usually small, < 50) already done
+            // Take the smallest remaining (likely the discounted room price)
+            price = Math.min(...validPrices);
           }
         }
 
