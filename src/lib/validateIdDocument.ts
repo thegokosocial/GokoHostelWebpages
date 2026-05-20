@@ -353,36 +353,10 @@ export async function validateMultipleFiles(
       return { ...textResult, layers };
     }
 
-    // Aadhaar-specific: check number consistency across pages (lenient)
+    // Aadhaar-specific: skip number matching (OCR is unreliable with QR codes on back)
+    // Both sides are validated individually for being valid ID documents
     if (textResult.documentType === "aadhaar" && allTexts.length > 1) {
-      const numberSets = allTexts.map(extractAadhaarNumbers);
-      const frontNumbers = numberSets[0] || [];
-      const backNumbers = numberSets.slice(1).flat();
-
-      if (frontNumbers.length > 0 && backNumbers.length > 0) {
-        // Check full match OR last-4-digits match (back often shows masked number)
-        const frontLast4 = new Set(frontNumbers.map((n) => n.slice(-4)));
-        const hasMatch = backNumbers.some((n) => 
-          frontNumbers.includes(n) || frontLast4.has(n.slice(-4))
-        );
-
-        if (!hasMatch) {
-          // Only fail if we're very confident both sides have DIFFERENT full 12-digit numbers
-          const fullFront = frontNumbers.filter((n) => n.length === 12);
-          const fullBack = backNumbers.filter((n) => n.length === 12);
-          if (fullFront.length > 0 && fullBack.length > 0 && !fullFront.some((f) => fullBack.includes(f))) {
-            layers.push("aadhaar_number_mismatch");
-            return {
-              valid: false,
-              documentType: "aadhaar",
-              confidence: "high",
-              layers,
-              message: "The Aadhaar numbers on the front and back do not match. Please upload front and back of the same Aadhaar card.",
-            };
-          }
-        }
-        layers.push("aadhaar_number_match");
-      }
+      layers.push("aadhaar_multi_page");
     }
 
     // Layer 5: SafeSearch
