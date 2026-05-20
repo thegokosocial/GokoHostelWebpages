@@ -67,22 +67,35 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
       const cards = document.querySelectorAll('[data-testid="property-card"]');
       return Array.from(cards).slice(0, 20).map((card) => {
         const nameEl = card.querySelector('[data-testid="title"]');
-        const priceEl = card.querySelector('[data-testid="price-and-discounted-price"]') ||
-                        card.querySelector('span[data-testid="price-and-discounted-price"]') ||
-                        card.querySelector('.bui-price-display__value') ||
-                        card.querySelector('[class*="price"]');
-        const ratingEl = card.querySelector('[data-testid="review-score"] > div:first-child') ||
-                         card.querySelector('[class*="review-score"]');
+        
+        // Price: look for the specific price display element
+        let priceText = "";
+        const priceEl = card.querySelector('[data-testid="price-and-discounted-price"]');
+        if (priceEl) {
+          priceText = priceEl.textContent?.trim() || "";
+        } else {
+          // Fallback: find element with currency symbol followed by number
+          const allSpans = card.querySelectorAll('span');
+          for (const span of allSpans) {
+            const text = span.textContent?.trim() || "";
+            if (/^[₹$€£]\s*[\d,]+$/.test(text) || /^\d[\d,]+$/.test(text)) {
+              if (!span.closest('[data-testid="taxes-and-charges"]')) {
+                priceText = text;
+                break;
+              }
+            }
+          }
+        }
+        // Extract just the number: handle ₹ 1,199 or ₹199 or 1199
+        const priceMatch = priceText.match(/[\d,]+/);
+        const price = priceMatch ? parseInt(priceMatch[0].replace(/,/g, "")) : null;
 
-        const name = nameEl?.textContent?.trim() || "Unknown";
-        let priceText = priceEl?.textContent?.trim() || "";
-        priceText = priceText.replace(/[^\d]/g, "");
-        const price = parseInt(priceText) || null;
-
+        // Rating
+        const ratingEl = card.querySelector('[data-testid="review-score"] > div:first-child');
         let ratingText = ratingEl?.textContent?.trim() || "";
         const rating = parseFloat(ratingText) || null;
 
-        return { name, price, rating };
+        return { name: nameEl?.textContent?.trim() || "Unknown", price, rating };
       });
     });
 
