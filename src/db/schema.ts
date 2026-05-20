@@ -18,6 +18,7 @@ export const checkins = sqliteTable("checkins", {
   visaLink: text("visa_link"),
   verified: text("verified").default("pending"),
   status: text("status").notNull().default("active"),
+  checkedOutAt: text("checked_out_at").default(""),
   createdMonth: text("created_month").notNull(),
 }, (table) => [
   index("idx_checkins_month").on(table.createdMonth),

@@ -350,7 +350,7 @@ export function AdminRecords({ password, username, role }: { password: string; u
                   {role === "admin" && (
                     <td className="px-3 py-3">
                       <div className="flex gap-1">
-                        {row[16] === "checked_out" && (
+                        {row[16] === "checked_out" && row[17] && (Date.now() - new Date(row[17]).getTime() < 24 * 60 * 60 * 1000) && (
                           <button type="button" onClick={() => undoCheckout(origIdx)} className="flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-600 hover:bg-blue-100">Reactivate</button>
                         )}
                         <button type="button" onClick={() => startEdit(origIdx)} className="flex h-8 w-8 items-center justify-center rounded-lg text-brand-green/70 hover:bg-brand-green/[0.06]"><PencilIcon className="h-4 w-4" /></button>

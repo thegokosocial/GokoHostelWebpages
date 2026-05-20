@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
         r.submittedAt, r.arrivalDate, r.arrivalTime, r.name, r.persons,
         r.contact, r.stayingDays, r.comingFrom, r.nationality, r.emergencyName,
         r.emergencyPhone, r.idType, r.idCardLink, r.visaLink, r.verified,
-        String(r.id), r.status || "active",
+        String(r.id), r.status || "active", r.checkedOutAt || "",
       ]);
       const months = await getCheckinMonths();
       return NextResponse.json({ rows, role, tabs: months, currentTab: tabName });
@@ -278,7 +278,7 @@ export async function POST(req: NextRequest) {
       if (bed.guestContact) {
         try {
           const db = getDb();
-          await db.update(checkins).set({ status: "checked_out" }).where(
+          await db.update(checkins).set({ status: "checked_out", checkedOutAt: new Date().toISOString() }).where(
             and(eq(checkins.contact, bed.guestContact), eq(checkins.status, "active"))
           );
         } catch {}
