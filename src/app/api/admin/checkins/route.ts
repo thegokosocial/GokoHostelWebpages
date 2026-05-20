@@ -41,6 +41,7 @@ async function triggerGithubScrape(scrapeId: number, city: string, startDate: st
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
       "Content-Type": "application/json",
+      "User-Agent": "GokoHostel-RateScraper",
     },
     body: JSON.stringify({
       ref: "main",
