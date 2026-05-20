@@ -47,6 +47,10 @@ export function AdminRecords({ password, username, role }: { password: string; u
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [verifyPopup, setVerifyPopup] = useState<{ origIdx: number; row: string[] } | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [uploadPopup, setUploadPopup] = useState<{ origIdx: number; type: "id" | "visa"; guestName: string } | null>(null);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadIdType, setUploadIdType] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const filteredRows = (() => {
     let result = [...rows].map((row, origIdx) => ({ row, origIdx }));
@@ -150,8 +154,17 @@ export function AdminRecords({ password, username, role }: { password: string; u
         for (const file of newIdFiles) {
           const fd = new FormData();
           fd.append("file", file); fd.append("name", entry[3] || "Guest"); fd.append("type", "id"); fd.append("password", password);
-          const uploadRes = await fetch("/api/admin/upload", { method: "POST", body: fd });
-          if (uploadRes.ok) { const data = await uploadRes.json(); if (data.link) links.push(data.link); }
+          try {
+            const uploadRes = await fetch("/api/admin/upload", { method: "POST", body: fd });
+            if (uploadRes.ok) {
+              const data = await uploadRes.json();
+              if (data.link) links.push(data.link);
+            } else {
+              console.error("Upload failed:", await uploadRes.text());
+            }
+          } catch (err) {
+            console.error("Upload error:", err);
+          }
         }
         if (links.length > 0) entry[12] = links.join(" | ");
       }
@@ -179,6 +192,39 @@ export function AdminRecords({ password, username, role }: { password: string; u
       const res = await apiCall({ action: "verifyCheckin", rowId, verified });
       if (res.ok) { setVerifyPopup(null); refresh(); }
     } finally { setVerifying(false); }
+  };
+
+  const handleInlineUpload = async () => {
+    if (!uploadPopup || uploadFiles.length === 0) return;
+    if (uploadPopup.type === "id" && !uploadIdType) { alert("Please select ID type"); return; }
+    setUploading(true);
+    try {
+      const links: string[] = [];
+      for (const file of uploadFiles) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("name", uploadPopup.guestName || "Guest");
+        fd.append("type", uploadPopup.type);
+        fd.append("password", password);
+        const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+        if (res.ok) { const data = await res.json(); if (data.link) links.push(data.link); }
+      }
+      if (links.length > 0) {
+        const updated = Array(15).fill("").map((_, i) => rows[uploadPopup.origIdx][i] || "");
+        if (uploadPopup.type === "id") {
+          updated[12] = links.join(" | ");
+          if (uploadIdType) updated[11] = uploadIdType;
+        } else {
+          updated[13] = links.join(" | ");
+        }
+        const rowId = parseInt(rows[uploadPopup.origIdx][15] || "0", 10);
+        await apiCall({ action: "update", rowId, entry: updated, tab: currentTab });
+      }
+      setUploadPopup(null);
+      setUploadFiles([]);
+      setUploadIdType("");
+      refresh();
+    } finally { setUploading(false); }
   };
 
   if (loading && rows.length === 0) {
@@ -343,6 +389,16 @@ export function AdminRecords({ password, username, role }: { password: string; u
                               </a>
                             ))}
                           </div>
+                        ) : col === "ID Card" && !cell && role === "admin" ? (
+                          <button type="button" onClick={() => setUploadPopup({ origIdx, type: "id", guestName: row[3] || "Guest" })}
+                            className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-[10px] font-medium text-brand-green hover:bg-brand-green/[0.12]">
+                            <UploadIcon className="h-3 w-3" /> Upload ID
+                          </button>
+                        ) : col === "Visa" && !cell && (row[8] || "").trim() !== "" && (row[8] || "").toLowerCase() !== "india" && role === "admin" ? (
+                          <button type="button" onClick={() => setUploadPopup({ origIdx, type: "visa", guestName: row[3] || "Guest" })}
+                            className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-600 hover:bg-amber-100">
+                            <UploadIcon className="h-3 w-3" /> Upload Visa
+                          </button>
                         ) : <span className="text-brand-green-dark/90">{cell}</span>}
                       </td>
                     );
@@ -430,6 +486,69 @@ export function AdminRecords({ password, username, role }: { password: string; u
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-600 disabled:opacity-50">
                 {verifying ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <ShieldAlertIcon className="h-4 w-4" />}
                 Rejected
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inline upload popup */}
+      {uploadPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => { if (!uploading) { setUploadPopup(null); setUploadFiles([]); setUploadIdType(""); } }}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lift" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-brand-green-dark">
+                Upload {uploadPopup.type === "id" ? "ID Card" : "Visa"}
+              </h3>
+              <button type="button" disabled={uploading} onClick={() => { setUploadPopup(null); setUploadFiles([]); setUploadIdType(""); }} className="rounded-lg p-1 hover:bg-brand-sand">
+                <XIcon className="h-5 w-5 text-brand-green-dark/50" />
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-brand-green-dark/70">
+              Upload documents for <strong>{uploadPopup.guestName}</strong>
+            </p>
+
+            <div className="mt-4 space-y-4">
+              {uploadPopup.type === "id" && (
+                <div>
+                  <Label className="text-xs">ID Type</Label>
+                  <select value={uploadIdType} onChange={(e) => setUploadIdType(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <option value="">Select type...</option>
+                    <option value="aadhaar">Aadhaar</option>
+                    <option value="driving_licence">Driving Licence</option>
+                    <option value="passport">Passport</option>
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-xs">Files (images or PDF)</Label>
+                <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
+                  <UploadIcon className="h-4 w-4 text-brand-green" />
+                  {uploadFiles.length > 0 ? `${uploadFiles.length} file(s) selected` : "Choose files"}
+                  <input type="file" accept="image/*,.pdf" multiple className="hidden" onChange={(e) => { if (e.target.files) setUploadFiles(Array.from(e.target.files)); }} />
+                </label>
+                {uploadFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {uploadFiles.map((f, i) => (
+                      <p key={i} className="truncate text-xs text-brand-green-dark/60">{f.name}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button type="button" disabled={uploading || uploadFiles.length === 0}
+                onClick={handleInlineUpload}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-green/90 disabled:opacity-50">
+                {uploading ? <><Loader2Icon className="h-4 w-4 animate-spin" /> Uploading...</> : <><UploadIcon className="h-4 w-4" /> Upload</>}
+              </button>
+              <button type="button" disabled={uploading}
+                onClick={() => { setUploadPopup(null); setUploadFiles([]); setUploadIdType(""); }}
+                className="rounded-xl border border-input px-4 py-3 text-sm font-medium text-brand-green-dark/70 transition-colors hover:bg-brand-sand/50">
+                Cancel
               </button>
             </div>
           </div>
