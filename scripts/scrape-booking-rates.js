@@ -63,6 +63,13 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await page.waitForSelector('[data-testid="property-card"]', { timeout: 15000 });
 
+    // Debug: log first card's text to see what the scraper sees
+    const debugText = await page.evaluate(() => {
+      const card = document.querySelector('[data-testid="property-card"]');
+      return card ? card.innerText?.substring(0, 300) : "NO CARDS FOUND";
+    });
+    console.log(`  DEBUG card text: ${debugText.replace(/\n/g, " | ")}`);
+
     const properties = await page.evaluate(() => {
       const cards = document.querySelectorAll('[data-testid="property-card"]');
       return Array.from(cards).slice(0, 20).map((card) => {
@@ -74,21 +81,31 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
         let price = null;
 
         // Method 1: data-testid="price-and-discounted-price" contains the final price
-        // Extract price using ₹-anchored parsing (most reliable)
+        // Extract price using multiple currency symbol patterns
         const cardText = (card.innerText || card.textContent || "").replace(/\u00a0/g, " ");
         
-        // Method 1: Find all "₹ X,XXX" or "₹X,XXX" patterns (anchored to currency symbol)
-        const priceMatches = [...cardText.matchAll(/₹\s?([\d,]+)/g)];
-        const parsedPrices = priceMatches
+        // Try ₹, Rs, Rs., INR, or just the Unicode rupee sign variants
+        const priceRegex = /(?:₹|Rs\.?|INR|&#8377;|\u20B9)\s?([\d,]+)/gi;
+        const priceMatches = [...cardText.matchAll(priceRegex)];
+        let parsedPrices = priceMatches
           .map((m) => parseInt(m[1].replace(/,/g, ""), 10))
           .filter((n) => n >= 100 && n <= 15000);
         
+        // Fallback: if no currency-anchored prices found, look for data-testid element
+        if (parsedPrices.length === 0) {
+          const priceEl = card.querySelector('[data-testid="price-and-discounted-price"]');
+          if (priceEl) {
+            const priceText = (priceEl.innerText || priceEl.textContent || "").replace(/\u00a0/g, " ");
+            const nums = [...priceText.matchAll(/([\d,]+)/g)];
+            parsedPrices = nums.map((m) => parseInt(m[1].replace(/,/g, ""), 10)).filter((n) => n >= 100 && n <= 15000);
+          }
+        }
+
         if (parsedPrices.length > 0) {
-          // Filter out tax amounts (typically < 50, already excluded by >= 100)
-          // Take the LAST price in the list (Booking.com shows: strikethrough first, discounted last)
+          // Take the LAST price (Booking.com: strikethrough first, discounted last)
           price = parsedPrices[parsedPrices.length - 1];
           
-          // But if there are exactly 2 prices and second > first, take the first (edge case)
+          // Edge case: if exactly 2 and second > first, take first
           if (parsedPrices.length === 2 && parsedPrices[1] > parsedPrices[0]) {
             price = parsedPrices[0];
           }
