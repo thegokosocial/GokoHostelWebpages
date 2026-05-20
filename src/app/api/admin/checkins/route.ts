@@ -7,6 +7,7 @@ import {
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
   getAllStats, incrementStat, getMonthKey,
+  getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking,
   getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
   addAuditEntry, getAuditEntries,
   addSystemLog, getSystemLogs,
@@ -475,6 +476,43 @@ export async function POST(req: NextRequest) {
       await setSetting("last_backup", new Date().toISOString());
       await addAuditEntry({ username: actingUser, action: "backup_run", target: "manual" });
       return NextResponse.json({ success: true, message: "Backup timestamp recorded." });
+    }
+
+    // --- Bookings ---
+
+    if (action === "getBookings") {
+      const allBookings = await getAllBookings();
+      return NextResponse.json({ bookings: allBookings });
+    }
+
+    if (action === "getUpcomingBookings") {
+      const upcoming = await getUpcomingBookings();
+      return NextResponse.json({ bookings: upcoming });
+    }
+
+    if (action === "addBooking") {
+      const { guestName, contact, platform, bookingRef, checkinDate, checkoutDate, roomType, persons, paymentStatus, specialRequests, source } = rest;
+      if (!guestName || !checkinDate || !platform) return NextResponse.json({ error: "Guest name, date, and platform required" }, { status: 400 });
+      await addBooking({ guestName, contact, platform, bookingRef, checkinDate, checkoutDate, roomType, persons: parseInt(persons) || 1, paymentStatus, specialRequests, source });
+      await addAuditEntry({ username: actingUser, action: "booking_added", target: `${guestName} (${platform})` });
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "updateBookingStatus") {
+      const { bookingId, status: bookingStatus } = rest;
+      if (!isValidId(bookingId) || !bookingStatus) return NextResponse.json({ error: "Missing data" }, { status: 400 });
+      await updateBookingStatus(bookingId, bookingStatus);
+      await addAuditEntry({ username: actingUser, action: "booking_status_changed", target: `id:${bookingId} → ${bookingStatus}` });
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "deleteBooking") {
+      if (role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+      const { bookingId } = rest;
+      if (!isValidId(bookingId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      await deleteBooking(bookingId);
+      await addAuditEntry({ username: actingUser, action: "booking_deleted", target: `id:${bookingId}` });
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

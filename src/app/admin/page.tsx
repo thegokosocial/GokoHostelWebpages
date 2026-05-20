@@ -4,11 +4,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon, BarChart3Icon, WrenchIcon } from "lucide-react";
+import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, SettingsIcon, HistoryIcon, CalendarDaysIcon, BarChart3Icon, WrenchIcon, BookOpenIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
 import { AdminRecords } from "@/components/admin/AdminRecords";
 import { AdminBeds } from "@/components/admin/AdminBeds";
+import { AdminBookings } from "@/components/admin/AdminBookings";
 import { AdminManagement } from "@/components/admin/AdminManagement";
 import { AdminBedHistory } from "@/components/admin/AdminBedHistory";
 import { AdminTimeline } from "@/components/admin/AdminTimeline";
@@ -127,6 +128,7 @@ export default function AdminPage() {
 
   const NAV_ITEMS: { id: AdminSection; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
     { id: "dashboard", label: "Dashboard", icon: <LayoutDashboardIcon className="h-4 w-4" /> },
+    { id: "bookings", label: "Bookings", icon: <BookOpenIcon className="h-4 w-4" /> },
     { id: "beds", label: "Beds", icon: <BedDoubleIcon className="h-4 w-4" /> },
     { id: "timeline", label: "Timeline", icon: <CalendarDaysIcon className="h-4 w-4" /> },
     { id: "records", label: "Records", icon: <TableIcon className="h-4 w-4" /> },
@@ -177,6 +179,7 @@ export default function AdminPage() {
       {/* Section content */}
       <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
         {section === "dashboard" && <AdminDashboard password={password} username={username} role={role} onNavigate={setSection} />}
+        {section === "bookings" && <AdminBookings password={password} username={username} role={role} />}
         {section === "beds" && <AdminBeds password={password} username={username} role={role} />}
         {section === "timeline" && <AdminTimeline password={password} username={username} role={role} />}
         {section === "records" && <AdminRecords password={password} username={username} role={role} />}

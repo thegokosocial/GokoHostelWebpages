@@ -278,3 +278,58 @@ export async function visionAnalyze(fileBase64: string, mimeType: string = "imag
 
   return { text, labels, objects, safeSearch, isPdf: false };
 }
+
+// --- Gmail API ---
+
+export type GmailMessage = {
+  id: string;
+  snippet: string;
+  subject: string;
+  from: string;
+  date: string;
+  body: string;
+};
+
+export async function gmailListMessages(query: string, maxResults = 20): Promise<{ id: string; threadId: string }[]> {
+  const token = await getOAuthToken();
+  if (!token) return [];
+
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.messages || [];
+}
+
+export async function gmailGetMessage(messageId: string): Promise<GmailMessage | null> {
+  const token = await getOAuthToken();
+  if (!token) return null;
+
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const data = await res.json();
+
+  const headers = data.payload?.headers || [];
+  const getHeader = (name: string) => headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+
+  let body = "";
+  if (data.payload?.body?.data) {
+    body = atob(data.payload.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+  } else if (data.payload?.parts) {
+    const textPart = data.payload.parts.find((p: any) => p.mimeType === "text/plain") ||
+                     data.payload.parts.find((p: any) => p.mimeType === "text/html");
+    if (textPart?.body?.data) {
+      body = atob(textPart.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+    }
+  }
+
+  return {
+    id: data.id,
+    snippet: data.snippet || "",
+    subject: getHeader("Subject"),
+    from: getHeader("From"),
+    date: getHeader("Date"),
+    body,
+  };
+}

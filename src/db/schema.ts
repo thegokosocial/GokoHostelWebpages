@@ -117,3 +117,26 @@ export const systemLogs = sqliteTable("system_logs", {
   index("idx_logs_time").on(table.timestamp),
   index("idx_logs_level").on(table.level),
 ]);
+
+export const bookings = sqliteTable("bookings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  guestName: text("guest_name").notNull(),
+  contact: text("contact").default(""),
+  platform: text("platform").notNull(),
+  bookingRef: text("booking_ref").default(""),
+  checkinDate: text("checkin_date").notNull(),
+  checkoutDate: text("checkout_date").default(""),
+  roomType: text("room_type").default(""),
+  persons: integer("persons").notNull().default(1),
+  paymentStatus: text("payment_status").default("unknown"),
+  specialRequests: text("special_requests").default(""),
+  status: text("status").notNull().default("confirmed"),
+  source: text("source").default("manual"),
+  rawData: text("raw_data").default(""),
+  createdAt: text("created_at").notNull(),
+  syncedAt: text("synced_at").default(""),
+}, (table) => [
+  index("idx_bookings_checkin").on(table.checkinDate),
+  index("idx_bookings_platform").on(table.platform),
+  index("idx_bookings_status").on(table.status),
+]);

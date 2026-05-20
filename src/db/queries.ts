@@ -1,6 +1,6 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { getDb } from "./index";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs, bookings } from "./schema";
 
 // --- Check-ins ---
 
@@ -290,4 +290,57 @@ export async function addSystemLog(data: {
 export async function getSystemLogs(limit = 200) {
   const db = getDb();
   return db.select().from(systemLogs).orderBy(desc(systemLogs.id)).limit(limit);
+}
+
+// --- Bookings ---
+
+export async function getAllBookings() {
+  const db = getDb();
+  return db.select().from(bookings).orderBy(desc(bookings.id));
+}
+
+export async function getUpcomingBookings() {
+  const db = getDb();
+  const today = new Date().toISOString().split("T")[0];
+  return db.select().from(bookings)
+    .where(and(
+      eq(bookings.status, "confirmed"),
+      sql`${bookings.checkinDate} >= ${today}`
+    ))
+    .orderBy(bookings.checkinDate);
+}
+
+export async function addBooking(data: {
+  guestName: string; contact?: string; platform: string; bookingRef?: string;
+  checkinDate: string; checkoutDate?: string; roomType?: string; persons?: number;
+  paymentStatus?: string; specialRequests?: string; status?: string; source?: string; rawData?: string;
+}) {
+  const db = getDb();
+  return db.insert(bookings).values({
+    guestName: data.guestName,
+    contact: data.contact || "",
+    platform: data.platform,
+    bookingRef: data.bookingRef || "",
+    checkinDate: data.checkinDate,
+    checkoutDate: data.checkoutDate || "",
+    roomType: data.roomType || "",
+    persons: data.persons || 1,
+    paymentStatus: data.paymentStatus || "unknown",
+    specialRequests: data.specialRequests || "",
+    status: data.status || "confirmed",
+    source: data.source || "manual",
+    rawData: data.rawData || "",
+    createdAt: new Date().toISOString(),
+    syncedAt: "",
+  });
+}
+
+export async function updateBookingStatus(id: number, status: string) {
+  const db = getDb();
+  return db.update(bookings).set({ status }).where(eq(bookings.id, id));
+}
+
+export async function deleteBooking(id: number) {
+  const db = getDb();
+  return db.delete(bookings).where(eq(bookings.id, id));
 }

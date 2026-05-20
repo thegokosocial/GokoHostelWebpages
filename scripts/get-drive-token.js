@@ -1,15 +1,16 @@
 /**
- * One-time script to get a Google OAuth2 refresh token for Drive uploads.
+ * One-time script to get a Google OAuth2 refresh token for Drive + Gmail access.
  *
  * Prerequisites:
  *   1. Create OAuth 2.0 "Desktop app" credentials in Google Cloud Console
  *   2. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env.local
+ *   3. Enable Gmail API + Drive API in Google Cloud Console
  *
  * Usage:
  *   node scripts/get-drive-token.js
  *
- * It will print a URL -- open it in your browser, sign in with the Gmail account
- * that owns the Drive folder, grant permission, then paste the code back here.
+ * It will print a URL -- open it in your browser, sign in with thegokosocial@gmail.com,
+ * grant permission for Drive + Gmail, then paste the code back here.
  * The script will output a refresh token to add to .env.local.
  */
 
@@ -47,15 +48,18 @@ const oauth2Client = new google.auth.OAuth2(
 
 const authUrl = oauth2Client.generateAuthUrl({
   access_type: "offline",
-  scope: ["https://www.googleapis.com/auth/drive.file"],
+  scope: [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/gmail.readonly",
+  ],
   prompt: "consent",
 });
 
-console.log("\n=== Google Drive OAuth Setup ===\n");
+console.log("\n=== Google OAuth Setup (Drive + Gmail) ===\n");
 console.log("1. Open this URL in your browser:\n");
 console.log(authUrl);
 console.log("\n2. Sign in with: thegokosocial@gmail.com");
-console.log("3. Grant permission to access Google Drive");
+console.log("3. Grant permission for Drive AND Gmail access");
 console.log("4. Copy the authorization code and paste it below:\n");
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
