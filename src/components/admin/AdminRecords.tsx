@@ -160,10 +160,11 @@ export function AdminRecords({ password, username, role }: { password: string; u
               const data = await uploadRes.json();
               if (data.link) links.push(data.link);
             } else {
-              console.error("Upload failed:", await uploadRes.text());
+              const errText = await uploadRes.text();
+              alert(`File upload failed: ${errText}. Entry will be saved without ID document.`);
             }
-          } catch (err) {
-            console.error("Upload error:", err);
+          } catch (err: any) {
+            alert(`File upload error: ${err?.message || "Network error"}. Entry will be saved without ID document.`);
           }
         }
         if (links.length > 0) entry[12] = links.join(" | ");
