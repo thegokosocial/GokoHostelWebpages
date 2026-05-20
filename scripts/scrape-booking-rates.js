@@ -68,27 +68,42 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
       return Array.from(cards).slice(0, 20).map((card) => {
         const nameEl = card.querySelector('[data-testid="title"]');
         
-        // Price: look for the specific price display element
-        let priceText = "";
-        const priceEl = card.querySelector('[data-testid="price-and-discounted-price"]');
-        if (priceEl) {
-          priceText = priceEl.textContent?.trim() || "";
-        } else {
-          // Fallback: find element with currency symbol followed by number
+        // Strategy: find ALL price-like numbers, pick the right one
+        // Booking.com structure: strikethrough price (original) + actual price (discounted)
+        // We want the LAST/LOWEST visible price that's not taxes
+        let price = null;
+
+        // Method 1: data-testid="price-and-discounted-price" contains the final price
+        const priceContainer = card.querySelector('[data-testid="price-and-discounted-price"]');
+        if (priceContainer) {
+          // Get all text nodes with ₹ symbol - the last one is the discounted/final price
+          const allText = priceContainer.textContent || "";
+          const priceMatches = allText.match(/₹\s?[\d,]+/g) || [];
+          if (priceMatches.length > 0) {
+            // Last match is the final/discounted price
+            const lastPrice = priceMatches[priceMatches.length - 1];
+            const num = parseInt(lastPrice.replace(/[₹,\s]/g, ""));
+            if (num > 50 && num < 50000) price = num;
+          }
+        }
+
+        // Method 2: Fallback - scan all spans for price pattern
+        if (!price) {
+          const priceSpans = [];
           const allSpans = card.querySelectorAll('span');
           for (const span of allSpans) {
             const text = span.textContent?.trim() || "";
-            if (/^[₹$€£]\s*[\d,]+$/.test(text) || /^\d[\d,]+$/.test(text)) {
-              if (!span.closest('[data-testid="taxes-and-charges"]')) {
-                priceText = text;
-                break;
-              }
+            // Match ₹ followed by number, but NOT inside taxes section
+            if (/^₹\s?[\d,]+$/.test(text) && !span.closest('[data-testid="taxes-and-charges"]')) {
+              const num = parseInt(text.replace(/[₹,\s]/g, ""));
+              if (num > 50 && num < 50000) priceSpans.push(num);
             }
           }
+          // Take the lowest price (discounted is always lower than original)
+          if (priceSpans.length > 0) {
+            price = Math.min(...priceSpans);
+          }
         }
-        // Extract just the number: handle ₹ 1,199 or ₹199 or 1199
-        const priceMatch = priceText.match(/[\d,]+/);
-        const price = priceMatch ? parseInt(priceMatch[0].replace(/,/g, "")) : null;
 
         // Rating
         const ratingEl = card.querySelector('[data-testid="review-score"] > div:first-child');
