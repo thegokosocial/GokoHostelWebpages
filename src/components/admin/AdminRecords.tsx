@@ -124,18 +124,19 @@ export function AdminRecords({ password, username, role }: { password: string; u
     setLoading(true);
     try {
       const updated = [...editEntry];
-      const uploadFiles = async (files: File[], guestName: string, type: string) => {
+      const doUpload = async (files: File[], guestName: string, type: string) => {
         const links: string[] = [];
         for (const file of files) {
           const fd = new FormData();
           fd.append("file", file); fd.append("name", guestName); fd.append("type", type); fd.append("password", password);
           const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
           if (res.ok) { const data = await res.json(); if (data.link) links.push(data.link); }
+          else { alert(`File upload failed (${res.status}): ${await res.text()}`); }
         }
         return links.join(" | ");
       };
-      if (editIdFiles.length > 0) updated[12] = await uploadFiles(editIdFiles, updated[3] || "Guest", "id");
-      if (editVisaFiles.length > 0) updated[13] = await uploadFiles(editVisaFiles, updated[3] || "Guest", "visa");
+      if (editIdFiles.length > 0) updated[12] = await doUpload(editIdFiles, updated[3] || "Guest", "id");
+      if (editVisaFiles.length > 0) updated[13] = await doUpload(editVisaFiles, updated[3] || "Guest", "visa");
       const rowId = parseInt(rows[editIndex!][15] || "0", 10);
       const res = await apiCall({ action: "update", rowId, entry: updated, tab: currentTab });
       if (res.ok) { setEditIndex(null); refresh(); }
@@ -207,7 +208,13 @@ export function AdminRecords({ password, username, role }: { password: string; u
         fd.append("type", uploadPopup.type);
         fd.append("password", password);
         const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
-        if (res.ok) { const data = await res.json(); if (data.link) links.push(data.link); }
+        if (res.ok) {
+          const data = await res.json();
+          if (data.link) links.push(data.link);
+        } else {
+          const errText = await res.text();
+          alert(`Upload failed (${res.status}): ${errText}`);
+        }
       }
       if (links.length > 0) {
         const updated = Array(15).fill("").map((_, i) => rows[uploadPopup.origIdx][i] || "");
@@ -218,7 +225,13 @@ export function AdminRecords({ password, username, role }: { password: string; u
           updated[13] = links.join(" | ");
         }
         const rowId = parseInt(rows[uploadPopup.origIdx][15] || "0", 10);
-        await apiCall({ action: "update", rowId, entry: updated, tab: currentTab });
+        const updateRes = await apiCall({ action: "update", rowId, entry: updated, tab: currentTab });
+        if (!updateRes.ok) {
+          const errData = await updateRes.json();
+          alert(`Record update failed: ${errData.error || "Unknown error"}`);
+        }
+      } else if (uploadFiles.length > 0) {
+        alert("All file uploads failed. Please try again.");
       }
       setUploadPopup(null);
       setUploadFiles([]);
