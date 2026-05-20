@@ -74,40 +74,20 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
         let price = null;
 
         // Method 1: data-testid="price-and-discounted-price" contains the final price
-        // Extract price - multiple strategies
-        const priceContainer = card.querySelector('[data-testid="price-and-discounted-price"]');
-        if (priceContainer) {
-          const allText = priceContainer.textContent || "";
-          // Match any sequence of digits (3+) that could be a price
-          const nums = allText.match(/\d[\d,]+/g) || [];
-          const validPrices = nums.map((n) => parseInt(n.replace(/,/g, ""))).filter((n) => n >= 50 && n <= 50000);
-          if (validPrices.length > 0) {
-            // Take the last valid price (discounted/final price)
-            price = validPrices[validPrices.length - 1];
-          }
+        // Extract price: get the entire card's inner text and find price patterns
+        const cardText = card.innerText || card.textContent || "";
+        // Find all numbers that are 3+ digits (prices are typically 100-50000)
+        const allNums = cardText.match(/\d{3,6}/g) || [];
+        const validPrices = allNums.map(Number).filter((n) => n >= 100 && n <= 50000);
+        
+        if (validPrices.length > 0) {
+          // Heuristic: the actual room price is usually the smallest 3+ digit number
+          // that's not a review count or distance. Exclude numbers > 10000 unless only option.
+          const roomPrices = validPrices.filter((n) => n >= 100 && n <= 5000);
+          price = roomPrices.length > 0 ? Math.min(...roomPrices) : Math.min(...validPrices);
         }
 
-        // Fallback: scan for any element with ₹ and a number
-        if (!price) {
-          const allText = card.textContent || "";
-          // Find patterns like "₹ 199" or "₹199" or "₹ 1,044"  
-          const matches = allText.match(/₹[\s\u00a0]?(\d[\d,]*)/g) || [];
-          const validPrices = matches
-            .map((m) => parseInt(m.replace(/[₹,\s\u00a0]/g, "")))
-            .filter((n) => n >= 100 && n <= 50000);
-          if (validPrices.length > 0) {
-            // Filter out tax amounts (usually small, < 50) already done
-            // Take the smallest remaining (likely the discounted room price)
-            price = Math.min(...validPrices);
-          }
-        }
-
-        // Rating
-        const ratingEl = card.querySelector('[data-testid="review-score"] > div:first-child');
-        let ratingText = ratingEl?.textContent?.trim() || "";
-        const rating = parseFloat(ratingText) || null;
-
-        return { name: nameEl?.textContent?.trim() || "Unknown", price, rating };
+        return { name: nameEl?.textContent?.trim() || "Unknown", price, rating: null };
       });
     });
 

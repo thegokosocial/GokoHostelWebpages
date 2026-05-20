@@ -202,7 +202,6 @@ export function AdminCheckRates({ password, username, role }: { password: string
             <thead>
               <tr className="border-b border-brand-mist bg-brand-sand/50">
                 <th className="sticky left-0 z-10 bg-brand-sand/50 px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Property</th>
-                <th className="px-3 py-3 text-xs font-bold text-brand-green-dark/70">Rating</th>
                 {dates.map((d) => (
                   <th key={d} className="px-3 py-3 text-center text-[10px] font-bold text-brand-green-dark/70">
                     {new Date(d).toLocaleDateString("en", { day: "numeric", month: "short" })}
@@ -219,7 +218,6 @@ export function AdminCheckRates({ password, username, role }: { password: string
                     {r.property}
                     {r.property.toLowerCase().includes("goko") && <span className="ml-1 text-[9px] text-brand-green">(You)</span>}
                   </td>
-                  <td className="px-3 py-3 text-xs text-brand-green-dark/70">{r.rating || "—"}</td>
                   {dates.map((d) => {
                     const price = r.prices[d];
                     return (
