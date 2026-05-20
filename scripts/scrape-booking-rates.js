@@ -39,7 +39,7 @@ function generateDates(start, end) {
 
 function buildUrl(city, checkin, checkout, propertyType) {
   const filter = PROPERTY_TYPE_IDS[propertyType] || PROPERTY_TYPE_IDS.hostels;
-  return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}&group_adults=1&no_rooms=1&nflt=${filter}`;
+  return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}&group_adults=1&no_rooms=1&nflt=${filter}&selected_currency=INR&lang=en`;
 }
 
 async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
@@ -55,6 +55,7 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
 
   await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
   await page.setViewport({ width: 1366, height: 768 });
+  await page.setExtraHTTPHeaders({ "Accept-Language": "en-IN,en;q=0.9" });
 
   const url = buildUrl(city, checkin, checkout, propertyType);
   console.log(`Fetching: ${checkin} → ${checkout}`);
