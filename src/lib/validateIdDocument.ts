@@ -298,8 +298,12 @@ export function validateIdFromText(
 }
 
 function extractAadhaarNumbers(text: string): string[] {
-  const matches = text.match(/\b\d{4}\s?\d{4}\s?\d{4}\b/g) || [];
-  return matches.map((m) => m.replace(/\s/g, ""));
+  // Match 12-digit Aadhaar numbers in various formats (with/without spaces, dashes, or dots)
+  const matches = text.match(/\b\d{4}[\s.\-]?\d{4}[\s.\-]?\d{4}\b/g) || [];
+  // Also try to find masked numbers like XXXX XXXX 9012 (last 4 visible)
+  const last4Matches = text.match(/[Xx]{4}[\s.\-]?[Xx]{4}[\s.\-]?\d{4}/g) || [];
+  const allNums = [...matches.map((m) => m.replace(/[\s.\-]/g, "")), ...last4Matches.map((m) => m.replace(/[\s.\-]/g, "").slice(-4))];
+  return allNums;
 }
 
 /** Validate multiple files together (combines OCR, checks Aadhaar number match across pages) */
@@ -349,27 +353,33 @@ export async function validateMultipleFiles(
       return { ...textResult, layers };
     }
 
-    // Aadhaar-specific: check number consistency across pages
+    // Aadhaar-specific: check number consistency across pages (lenient)
     if (textResult.documentType === "aadhaar" && allTexts.length > 1) {
       const numberSets = allTexts.map(extractAadhaarNumbers);
-      const allNumbers = numberSets.flat();
+      const frontNumbers = numberSets[0] || [];
+      const backNumbers = numberSets.slice(1).flat();
 
-      if (allNumbers.length >= 2) {
-        const uniqueNumbers = [...new Set(allNumbers)];
-        const frontNumbers = new Set(numberSets[0]);
-        const hasMatchAcrossPages = numberSets.slice(1).some((nums) =>
-          nums.some((n) => frontNumbers.has(n))
+      if (frontNumbers.length > 0 && backNumbers.length > 0) {
+        // Check full match OR last-4-digits match (back often shows masked number)
+        const frontLast4 = new Set(frontNumbers.map((n) => n.slice(-4)));
+        const hasMatch = backNumbers.some((n) => 
+          frontNumbers.includes(n) || frontLast4.has(n.slice(-4))
         );
 
-        if (!hasMatchAcrossPages && uniqueNumbers.length > 1) {
-          layers.push("aadhaar_number_mismatch");
-          return {
-            valid: false,
-            documentType: "aadhaar",
-            confidence: "high",
-            layers,
-            message: "The Aadhaar numbers on the front and back do not match. Please upload front and back of the same Aadhaar card.",
-          };
+        if (!hasMatch) {
+          // Only fail if we're very confident both sides have DIFFERENT full 12-digit numbers
+          const fullFront = frontNumbers.filter((n) => n.length === 12);
+          const fullBack = backNumbers.filter((n) => n.length === 12);
+          if (fullFront.length > 0 && fullBack.length > 0 && !fullFront.some((f) => fullBack.includes(f))) {
+            layers.push("aadhaar_number_mismatch");
+            return {
+              valid: false,
+              documentType: "aadhaar",
+              confidence: "high",
+              layers,
+              message: "The Aadhaar numbers on the front and back do not match. Please upload front and back of the same Aadhaar card.",
+            };
+          }
         }
         layers.push("aadhaar_number_match");
       }
