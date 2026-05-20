@@ -61,7 +61,6 @@ export function AdminBedHistory({ password, username, role }: { password: string
       result = result.filter(({ row }) => row[2] === filterDorm);
     }
 
-    result.reverse();
     return result;
   })();
 
