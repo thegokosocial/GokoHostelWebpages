@@ -76,11 +76,12 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
         // Method 1: data-testid="price-and-discounted-price" contains the final price
         const priceContainer = card.querySelector('[data-testid="price-and-discounted-price"]');
         if (priceContainer) {
-          // Get all text nodes with ₹ symbol - the last one is the discounted/final price
-          const allText = priceContainer.textContent || "";
+          // textContent converts &nbsp; to char 160, normalize all whitespace
+          const allText = (priceContainer.textContent || "").replace(/\u00a0/g, " ");
+          // Find all ₹ followed by number patterns
           const priceMatches = allText.match(/₹\s?[\d,]+/g) || [];
           if (priceMatches.length > 0) {
-            // Last match is the final/discounted price
+            // Last match is always the final/discounted price
             const lastPrice = priceMatches[priceMatches.length - 1];
             const num = parseInt(lastPrice.replace(/[₹,\s]/g, ""));
             if (num > 50 && num < 50000) price = num;
@@ -92,7 +93,7 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
           const priceSpans = [];
           const allSpans = card.querySelectorAll('span');
           for (const span of allSpans) {
-            const text = span.textContent?.trim() || "";
+            const text = (span.textContent?.trim() || "").replace(/\u00a0/g, " ");
             // Match ₹ followed by number, but NOT inside taxes section
             if (/^₹\s?[\d,]+$/.test(text) && !span.closest('[data-testid="taxes-and-charges"]')) {
               const num = parseInt(text.replace(/[₹,\s]/g, ""));
