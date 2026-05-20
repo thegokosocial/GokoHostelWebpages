@@ -513,24 +513,54 @@ export function SelfCheckinForm() {
 
   if (success) {
     return (
-      <div className="mx-auto max-w-md rounded-3xl border border-brand-mist bg-white p-8 text-center shadow-card md:p-12">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-green/10">
-          <CheckCircle2Icon className="h-8 w-8 text-brand-green" />
+      <div className="mx-auto max-w-lg rounded-3xl border border-brand-mist bg-white p-6 shadow-card md:p-10">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-green/10">
+            <CheckCircle2Icon className="h-8 w-8 text-brand-green" />
+          </div>
+          <h2 className="mt-5 font-display text-2xl font-bold text-brand-green">
+            Check-in complete!
+          </h2>
+          <p className="mt-2 text-brand-green-dark/80">
+            Welcome to Goko Hostel. Our team has been notified. Enjoy your stay!
+          </p>
         </div>
-        <h2 className="mt-6 font-display text-2xl font-bold text-brand-green">
-          Check-in complete!
-        </h2>
-        <p className="mt-3 text-brand-green-dark/80">
-          Welcome to Goko Hostel. Our team has been notified. Enjoy your stay!
-        </p>
-        <Button
-          type="button"
-          variant="ctaOutline"
-          className="mt-8"
-          onClick={() => setSuccess(false)}
-        >
-          Submit another check-in
-        </Button>
+
+        {/* Property Rules */}
+        <div className="mt-6 rounded-2xl bg-brand-sand/50 p-5">
+          <h3 className="font-display text-base font-bold text-brand-green-dark">House Rules</h3>
+          <div className="mt-3 space-y-2 text-sm text-brand-green-dark/80">
+            <div className="flex gap-2"><span>🎒</span><p><strong>Solo Travelers & Small Groups (Max 4) Only.</strong> We don&apos;t accommodate large groups.</p></div>
+            <div className="flex gap-2"><span>🎂</span><p><strong>Age Limit:</strong> 18 to 35 years only.</p></div>
+            <div className="flex gap-2"><span>🌿</span><p><strong>Non-AC Property:</strong> We don&apos;t have air conditioning, but each bed has an individual fan.</p></div>
+            <div className="flex gap-2"><span>🚶</span><p><strong>Parking & Access:</strong> Hostel is 300m from parking via a scenic trail. Backpacks recommended.</p></div>
+            <div className="flex gap-2"><span>🚫</span><p><strong>Strictly No:</strong> Hard liquor, drugs, outside food & drinks.</p></div>
+          </div>
+          <div className="mt-4 flex gap-4 rounded-xl bg-white p-3 text-sm">
+            <div><strong className="text-brand-green">Check-in:</strong> <span className="text-brand-green-dark/70">12:00 Noon</span></div>
+            <div><strong className="text-brand-green">Check-out:</strong> <span className="text-brand-green-dark/70">10:00 AM</span></div>
+          </div>
+          <p className="mt-3 text-xs text-brand-green-dark/50">
+            Goko Management reserves the right to cancel any booking if terms and conditions are not met.
+          </p>
+        </div>
+
+        <div className="mt-6 flex flex-col items-center gap-3">
+          <Button
+            type="button"
+            variant="cta"
+            onClick={() => setSuccess(false)}
+          >
+            OK, Got it
+          </Button>
+          <button
+            type="button"
+            onClick={() => setSuccess(false)}
+            className="text-sm text-brand-green-dark/60 hover:text-brand-green"
+          >
+            Submit another check-in
+          </button>
+        </div>
       </div>
     );
   }

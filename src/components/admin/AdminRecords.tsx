@@ -58,7 +58,6 @@ export function AdminRecords({ password, username, role }: { password: string; u
       const q = searchQuery.toLowerCase();
       result = result.filter(({ row }) => row.some((cell) => cell?.toLowerCase().includes(q)));
     }
-    result.reverse();
     if (sortField === "date") {
       result.sort((a, b) => {
         const dateA = a.row[1] || ""; const dateB = b.row[1] || "";
