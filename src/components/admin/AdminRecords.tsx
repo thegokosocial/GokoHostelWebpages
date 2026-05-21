@@ -106,7 +106,8 @@ export function AdminRecords({ password, username, role }: { password: string; u
           if (url.startsWith("http")) { const id = extractDriveFileId(url); if (id) driveFileIds.push(id); }
         });
       });
-      const res = await apiCall({ action: "delete", rowId, driveFileIds });
+      const guestName = row[3] || "";
+      const res = await apiCall({ action: "delete", rowId, driveFileIds, guestName });
       if (res.ok) setRows((prev) => prev.filter((_, i) => i !== rowIndex));
     } finally { setLoading(false); }
   };

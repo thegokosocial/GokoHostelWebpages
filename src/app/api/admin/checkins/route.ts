@@ -137,13 +137,14 @@ export async function POST(req: NextRequest) {
       } : entry;
 
       await updateCheckin(rowId, data);
-      await addAuditEntry({ username: actingUser, action: "record_edit", target: String(rowId) });
+      const guestName = e ? e[3] || "" : entry.name || "";
+      await addAuditEntry({ username: actingUser, action: "record_edit", target: `${guestName} (id:${rowId})`, details: JSON.stringify({ fields: Object.keys(data).filter((k) => data[k]) }) });
       return NextResponse.json({ success: true });
     }
 
     if (action === "delete") {
       if (role !== "admin") return NextResponse.json({ error: "Only admin can delete entries" }, { status: 403 });
-      const { rowId, driveFileIds } = rest;
+      const { rowId, driveFileIds, guestName } = rest;
       if (!isValidId(rowId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
 
       await deleteCheckin(rowId);
@@ -155,7 +156,7 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-      await addAuditEntry({ username: actingUser, action: "record_delete", target: String(rowId) });
+      await addAuditEntry({ username: actingUser, action: "record_delete", target: `${guestName || ""} (id:${rowId})` });
       return NextResponse.json({ success: true });
     }
 
