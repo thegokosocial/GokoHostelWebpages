@@ -12,8 +12,7 @@ export default {
       : controller.cron === "30 4,6,8,10,12,14,16 * * *" ? "reconciliation-reminder" : null;
     if (!path) return;
     if (!env.CRON_SECRET) {
-      console.error("Scheduled job skipped: CRON_SECRET is not configured");
-      return;
+      throw new Error("Scheduled job failed: CRON_SECRET is not configured");
     }
     const request = new Request(`https://goko.internal/api/cron/${path}`, {
       method: "POST",
@@ -21,7 +20,7 @@ export default {
     });
     const response = await openNextWorker.fetch(request, env, ctx);
     if (!response.ok) {
-      console.error(`Scheduled job ${path} failed: ${response.status} ${await response.text()}`);
+      throw new Error(`Scheduled job ${path} failed: HTTP ${response.status}`);
     }
   },
 };

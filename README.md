@@ -66,3 +66,16 @@ Use **either** GitHub Actions **or** Workers Builds for production deploys so yo
 ### Other hosts
 
 For **Vercel**, **Netlify**, or a **Node** server, use **`npm run build`** / **`npm run start`**, or the platform’s Next.js preset (no `cf:build` or Wrangler).
+
+## Cloudflare scheduled jobs
+
+Before deploying, configure `CRON_SECRET` with `npx wrangler secret put CRON_SECRET`
+and enter a securely generated random value. Keep it in Cloudflare secrets, never
+in source control. Both scheduled routes require this secret; without it, jobs fail.
+
+`wrangler.jsonc` schedules Aiosell mapping verification at 9:00 AM IST daily and
+reconciliation reminders at 10:00 AM through 10:00 PM IST every two hours.
+Deploy with `npx wrangler deploy` to publish `worker.ts` and both cron triggers.
+After deployment, verify Mapping health in Channel Manager → Sync & Logs and
+check Cloudflare scheduled-event logs for failures. A manual “Check again” verifies
+mappings but does not by itself verify that the cron trigger ran.

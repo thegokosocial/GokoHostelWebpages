@@ -21,6 +21,17 @@ describe("mapping-check schedule routing", () => {
     await worker.scheduled({ cron: "unknown" }, env, {});
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+  it("fails visibly for missing credentials and unsuccessful job responses", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("private error details", { status: 502 }));
+    const scope = { exports: {} as { default?: { scheduled: Function } }, openNextWorker: { fetch }, Request, console };
+    runInNewContext(compiled, scope);
+    const worker = scope.exports.default!;
+    await expect(worker.scheduled({ cron: "30 3 * * *" }, {}, {})).rejects.toThrow("CRON_SECRET is not configured");
+    expect(fetch).not.toHaveBeenCalled();
+    for (const cron of ["30 3 * * *", "30 4,6,8,10,12,14,16 * * *"]) {
+      await expect(worker.scheduled({ cron }, { CRON_SECRET: "test-secret" }, {})).rejects.toThrow("HTTP 502");
+    }
+  });
   it("keeps both schedules in deployment configuration and connects the dashboard destination", () => {
     const config = readFileSync("wrangler.jsonc", "utf8");
     expect(config).toContain('"30 3 * * *"');
