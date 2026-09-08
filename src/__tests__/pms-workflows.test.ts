@@ -1068,7 +1068,7 @@ describe("PMS inbound webhook workflows", () => {
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
-  it("modify leaves assignments in place when the new stay conflicts", async () => {
+  it("modify keeps new dates unassigned when the new stay conflicts and no replacement exists", async () => {
     vi.mocked(getBookingByRef).mockResolvedValue({
       id: 9,
       bookingRef: "BK-100",
@@ -1091,23 +1091,30 @@ describe("PMS inbound webhook workflows", () => {
       ratePlan: "",
       nightlyRate: 0,
     } as never);
-    queryMocks.getBookingDetail.mockResolvedValue({
-      assignments: [{
-        status: "assigned", bedId: 4, dormId: 2,
-        checkinDate: "2026-09-01", checkoutDate: "2026-09-03", inventoryPool: "online",
-      }],
-    } as never);
+    queryMocks.getBookingDetail
+      .mockResolvedValueOnce({
+        assignments: [{
+          status: "assigned", bedId: 4, dormId: 2,
+          checkinDate: "2026-09-01", checkoutDate: "2026-09-03", inventoryPool: "online",
+        }],
+      } as never)
+      .mockResolvedValueOnce({ assignments: [] } as never);
     queryMocks.checkBedAvailability.mockResolvedValue(false);
     const res = await reservationsPOST(req({
       ...bookPayload, action: "modify",
       checkin: "2026-09-02", checkout: "2026-09-05",
     }, { authorization: "whsec-test" }));
     expect(res.status).toBe(200);
-    expect(unassignBookingBeds).not.toHaveBeenCalled();
+    expect(unassignBookingBeds).toHaveBeenCalledWith(9);
     expect(queryMocks.assignBedToBooking).not.toHaveBeenCalled();
     const patch = vi.mocked(updateBookingFull).mock.calls[0][1];
-    expect(patch).not.toHaveProperty("checkinDate");
-    expect(patch).not.toHaveProperty("checkoutDate");
+    expect(patch.checkinDate).toBe("2026-09-02");
+    expect(patch.checkoutDate).toBe("2026-09-05");
+    expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 9,
+      action: "Unassigned",
+      performedBy: "channel_manager",
+    }));
   });
 
   it("modify does not re-occupy beds after calendar checkout", async () => {

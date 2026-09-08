@@ -530,7 +530,8 @@ async function realignAssignments(bookingId: number, newCheckin: string, newChec
 
   for (const a of assigned) {
     if (!(await checkBedAvailability(a.bedId, newCheckin, newCheckout, bookingId))) {
-      return false;
+      await unassignBookingBeds(bookingId);
+      return true;
     }
   }
   await unassignBookingBeds(bookingId);
@@ -546,7 +547,7 @@ async function realignAssignments(bookingId: number, newCheckin: string, newChec
     });
     if (!ok) {
       await unassignBookingBeds(bookingId);
-      return false;
+      return true;
     }
   }
   return true;

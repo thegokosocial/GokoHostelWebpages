@@ -574,6 +574,92 @@ describe("Webhook reservation combinations", () => {
     expect(q.unassignBookingBeds).not.toHaveBeenCalled();
   });
 
+  it("modify moves dates and reassigns when the old bed conflicts on the new stay", async () => {
+    q.getBookingByRef.mockResolvedValue({
+      id: 12,
+      status: "received",
+      guestName: "Ada",
+      checkinDate: "2026-09-05",
+      checkoutDate: "2026-09-08",
+      roomType: "executive",
+      persons: 1,
+    });
+    q.getBookingDetail
+      .mockResolvedValueOnce({
+        booking: { status: "received" },
+        assignments: [{
+          status: "assigned", bedId: 7, dormId: 8,
+          checkinDate: "2026-09-05", checkoutDate: "2026-09-08", inventoryPool: "online",
+        }],
+      })
+      .mockResolvedValueOnce({ booking: { status: "received" }, assignments: [] });
+    q.checkBedAvailability.mockResolvedValue(false);
+    q.getAvailableBedsForRange.mockResolvedValue([
+      { id: 8, bedId: "DOUBLE 2", dormId: 8, dormName: "Executive", pool: "online" },
+    ]);
+
+    const res = await reservationsPOST(jsonReq("http://localhost/api/aiosell/reservations", bookPayload({
+      action: "modify",
+      checkin: "2026-09-10",
+      checkout: "2026-09-12",
+    }), { authorization: "whsec-test" }));
+
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(12, expect.objectContaining({
+      checkinDate: "2026-09-10",
+      checkoutDate: "2026-09-12",
+    }));
+    expect(q.unassignBookingBeds).toHaveBeenCalledWith(12);
+    expect(q.assignBedToBooking).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 12,
+      bedId: 8,
+      checkinDate: "2026-09-10",
+      checkoutDate: "2026-09-12",
+    }));
+  });
+
+  it("modify keeps new dates unassigned when no replacement bed is available", async () => {
+    q.getBookingByRef.mockResolvedValue({
+      id: 12,
+      status: "received",
+      guestName: "Ada",
+      checkinDate: "2026-09-05",
+      checkoutDate: "2026-09-08",
+      roomType: "executive",
+      persons: 1,
+    });
+    q.getBookingDetail
+      .mockResolvedValueOnce({
+        booking: { status: "received" },
+        assignments: [{
+          status: "assigned", bedId: 7, dormId: 8,
+          checkinDate: "2026-09-05", checkoutDate: "2026-09-08", inventoryPool: "online",
+        }],
+      })
+      .mockResolvedValueOnce({ booking: { status: "received" }, assignments: [] });
+    q.checkBedAvailability.mockResolvedValue(false);
+    q.getAvailableBedsForRange.mockResolvedValue([]);
+
+    const res = await reservationsPOST(jsonReq("http://localhost/api/aiosell/reservations", bookPayload({
+      action: "modify",
+      checkin: "2026-09-10",
+      checkout: "2026-09-12",
+    }), { authorization: "whsec-test" }));
+
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(12, expect.objectContaining({
+      checkinDate: "2026-09-10",
+      checkoutDate: "2026-09-12",
+    }));
+    expect(q.unassignBookingBeds).toHaveBeenCalledWith(12);
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+    expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 12,
+      action: "Unassigned",
+      performedBy: "channel_manager",
+    }));
+  });
+
   it("modify of an unassigned stay with missing checkout coerces dates and does not assign beds", async () => {
     q.getBookingByRef.mockResolvedValue({
       id: 12,

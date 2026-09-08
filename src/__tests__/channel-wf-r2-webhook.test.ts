@@ -256,7 +256,7 @@ describe("Round 2 webhook book / modify / cancel / fetch", () => {
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
-  it("modify dates conflict keeps existing overflow-dorm assignment and does not push", async () => {
+  it("modify dates conflict releases the old assignment and reseats on the new stay", async () => {
     q.getBookingByRef.mockResolvedValue(existingRow({
       persons: 1,
       status: "confirmed",
@@ -264,13 +264,15 @@ describe("Round 2 webhook book / modify / cancel / fetch", () => {
       checkoutDate: "2026-09-08",
       roomType: "executive",
     }));
-    q.getBookingDetail.mockResolvedValue({
-      booking: { status: "confirmed" },
-      assignments: [{
-        bedId: 99, dormId: 9, status: "assigned",
-        checkinDate: "2026-09-05", checkoutDate: "2026-09-08", inventoryPool: "offline",
-      }],
-    });
+    q.getBookingDetail
+      .mockResolvedValueOnce({
+        booking: { status: "confirmed" },
+        assignments: [{
+          bedId: 99, dormId: 9, status: "assigned",
+          checkinDate: "2026-09-05", checkoutDate: "2026-09-08", inventoryPool: "offline",
+        }],
+      })
+      .mockResolvedValueOnce({ booking: { status: "confirmed" }, assignments: [] });
     q.checkBedAvailability.mockResolvedValue(false);
     q.getAvailableBedsForRange.mockResolvedValue(online(8, [7, 8], "Executive"));
     const res = await reservationsPOST(req(bookPayload({
@@ -285,11 +287,16 @@ describe("Round 2 webhook book / modify / cancel / fetch", () => {
     })));
     expect(res.status).toBe(200);
     expect(q.checkBedAvailability).toHaveBeenCalledWith(99, "2026-09-06", "2026-09-10", 9);
-    expect(q.unassignBookingBeds).not.toHaveBeenCalled();
-    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+    expect(q.unassignBookingBeds).toHaveBeenCalledWith(9);
+    expect(q.assignBedToBooking).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 9,
+      bedId: 7,
+      checkinDate: "2026-09-06",
+      checkoutDate: "2026-09-10",
+    }));
     const patch = q.updateBookingFull.mock.calls[0][1];
-    expect(patch).not.toHaveProperty("checkinDate");
-    expect(patch).not.toHaveProperty("checkoutDate");
+    expect(patch.checkinDate).toBe("2026-09-06");
+    expect(patch.checkoutDate).toBe("2026-09-10");
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 

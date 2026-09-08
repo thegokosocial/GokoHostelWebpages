@@ -574,7 +574,7 @@ describe("Round 3 edges: date realign fail + occupancy shrink", () => {
     triggerInventoryPush.mockResolvedValue(undefined);
   });
 
-  it("date conflict + occupancy 2→1 keeps booking dates and reseats 1 bed on the old stay", async () => {
+  it("date conflict + occupancy 2→1 moves booking dates and reseats 1 bed", async () => {
     q.getBookingByRef.mockResolvedValue(existingRow({
       status: "received",
       persons: 2,
@@ -599,23 +599,23 @@ describe("Round 3 edges: date realign fail + occupancy shrink", () => {
     expect(q.checkBedAvailability).toHaveBeenCalledWith(7, "2026-09-06", "2026-09-10", 9);
     const patch = q.updateBookingFull.mock.calls[0][1];
     expect(patch.persons).toBe(1);
-    expect(patch).not.toHaveProperty("checkinDate");
-    expect(patch).not.toHaveProperty("checkoutDate");
+    expect(patch.checkinDate).toBe("2026-09-06");
+    expect(patch.checkoutDate).toBe("2026-09-10");
     expect(q.unassignBookingBeds).toHaveBeenCalledWith(9);
     expect(q.assignBedToBooking).toHaveBeenCalledTimes(1);
     expect(q.assignBedToBooking).toHaveBeenCalledWith(expect.objectContaining({
       bookingId: 9,
       bedId: 7,
       dormId: 8,
-      checkinDate: "2026-09-05",
-      checkoutDate: "2026-09-08",
+      checkinDate: "2026-09-06",
+      checkoutDate: "2026-09-10",
       inventoryPool: "online",
       assignedBy: "channel_manager",
     }));
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
-  it("date conflict + occupancy 2→1 with overflow assignment still reseats on old dates and does not push", async () => {
+  it("date conflict + occupancy 2→1 with overflow assignment reseats on new dates and does not push", async () => {
     q.getBookingByRef.mockResolvedValue(existingRow({ persons: 2 }));
     q.getBookingDetail.mockResolvedValue({
       booking: { status: "received" },
@@ -636,13 +636,14 @@ describe("Round 3 edges: date realign fail + occupancy shrink", () => {
     expect(res.status).toBe(200);
     expect(q.checkBedAvailability).toHaveBeenCalledWith(99, "2026-09-06", "2026-09-10", 9);
     const patch = q.updateBookingFull.mock.calls[0][1];
-    expect(patch).not.toHaveProperty("checkinDate");
+    expect(patch.checkinDate).toBe("2026-09-06");
+    expect(patch.checkoutDate).toBe("2026-09-10");
     expect(q.unassignBookingBeds).toHaveBeenCalledWith(9);
     expect(q.assignBedToBooking).toHaveBeenCalledTimes(1);
     expect(q.assignBedToBooking).toHaveBeenCalledWith(expect.objectContaining({
       bedId: 7,
-      checkinDate: "2026-09-05",
-      checkoutDate: "2026-09-08",
+      checkinDate: "2026-09-06",
+      checkoutDate: "2026-09-10",
       inventoryPool: "online",
     }));
     expect(triggerInventoryPush).not.toHaveBeenCalled();

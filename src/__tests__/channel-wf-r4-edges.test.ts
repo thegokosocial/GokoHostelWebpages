@@ -374,14 +374,14 @@ describe("Round 4 edges: occupancy grow + date conflict", () => {
     expect(q.checkBedAvailability).toHaveBeenCalledWith(7, "2026-09-06", "2026-09-10", 9);
     const patch = q.updateBookingFull.mock.calls[0][1];
     expect(patch.persons).toBe(2);
-    expect(patch).not.toHaveProperty("checkinDate");
-    expect(patch).not.toHaveProperty("checkoutDate");
+    expect(patch.checkinDate).toBe("2026-09-06");
+    expect(patch.checkoutDate).toBe("2026-09-10");
     expect(q.unassignBookingBeds).toHaveBeenCalledWith(9);
     expect(q.assignBedToBooking).toHaveBeenCalledTimes(2);
     expect(q.assignBedToBooking.mock.calls.every((c) =>
       c[0].bookingId === 9
-      && c[0].checkinDate === "2026-09-05"
-      && c[0].checkoutDate === "2026-09-08"
+      && c[0].checkinDate === "2026-09-06"
+      && c[0].checkoutDate === "2026-09-10"
       && c[0].inventoryPool === "online",
     )).toBe(true);
     expect(triggerInventoryPush).not.toHaveBeenCalled();
