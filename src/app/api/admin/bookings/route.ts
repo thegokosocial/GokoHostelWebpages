@@ -281,10 +281,15 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
 };
 
 export async function POST(req: NextRequest) {
+  const requestId = req.headers.get("cf-ray") || crypto.randomUUID();
+  let action = "unknown";
+  let stage = "read request";
   try {
     const body = await req.json();
-    const { password, action, username } = body;
+    const { password, username } = body;
+    action = typeof body.action === "string" ? body.action : "unknown";
 
+    stage = "authenticate user";
     const authResult = await authenticateUser(password, username);
     if (!authResult) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -332,9 +337,13 @@ export async function POST(req: NextRequest) {
       const { startDate, endDate } = body;
       if (!startDate || !endDate) return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
 
+      stage = "load calendar bookings";
       const calendarData = await getBookingCalendarData(startDate, endDate);
+      stage = "load dorms";
       const allDorms = await getAllDorms();
+      stage = "load beds";
       const allBeds = await getAllBeds();
+      stage = "calculate nightly availability";
       const availability = await getCalendarAvailability(startDate, endDate);
       const units = sellableUnits(allBeds);
       const unitByBed = new Map(units.flatMap((u) => u.beds.map((b) => [b.id, u] as const)));
@@ -1624,10 +1633,20 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (e: any) {
-    console.error("Booking API error:", e);
+    console.error("Booking API error:", { requestId, action, stage, error: e });
     const raw = e?.message || "Internal server error";
     if (/Receiving bank|Selected receiving bank/.test(raw)) return NextResponse.json({ error: raw }, { status: 400 });
-    const msg = raw.includes("D1") ? "Database error. Please try again." : "Internal server error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const databaseError = /D1|Failed query|SQLITE_/i.test(raw);
+    const msg = databaseError ? "Database temporarily unavailable. Please try again." : "Internal server error";
+    return NextResponse.json({
+      error: msg,
+      debug: {
+        requestId,
+        action,
+        stage,
+        type: databaseError ? "database" : (e?.name || "server"),
+        serverTime: new Date().toISOString(),
+      },
+    }, { status: 500, headers: { "x-goko-request-id": requestId } });
   }
 }

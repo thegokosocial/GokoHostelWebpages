@@ -40,6 +40,15 @@ function useBookingApi(password: string, username?: string) {
   return { apiCall };
 }
 
+function apiErrorDetails(response: Response, data: Record<string, any>, action: string): string {
+  return JSON.stringify({
+    status: response.status,
+    action,
+    requestId: response.headers.get("x-goko-request-id") || data.debug?.requestId,
+    ...data.debug,
+  }, null, 2);
+}
+
 
 export function BookingDashboard({
   password,
@@ -140,7 +149,7 @@ export function BookingDashboard({
           );
         } else {
           const data = await calRes.json().catch(() => ({ error: "Failed to load data" }));
-          showError(data.error || "Failed to load booking data");
+          showError(data.error || "Failed to load booking data", apiErrorDetails(calRes, data, "getCalendarData"));
         }
       } else {
         showError("Network error loading booking data");
@@ -152,7 +161,7 @@ export function BookingDashboard({
           setUnassignedBookings(data.bookings || []);
         } else {
           const data = await unRes.json().catch(() => ({ error: "Failed to load unassigned bookings" }));
-          showError(data.error || "Failed to load unassigned bookings");
+          showError(data.error || "Failed to load unassigned bookings", apiErrorDetails(unRes, data, "getUnassigned"));
         }
       }
     } catch {

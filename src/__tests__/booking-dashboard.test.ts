@@ -348,6 +348,20 @@ describe("Booking Calendar: sticky dates and row colour", () => {
     expect(adminPage).not.toMatch(/framer-motion/);
   });
 
+  it("includes actionable diagnostics when the calendar API fails", () => {
+    const dashboard = readFile("src/components/admin/booking-dashboard/index.tsx");
+    const route = readFile("src/app/api/admin/bookings/route.ts");
+    const toast = readFile("src/components/admin/AdminToast.tsx");
+
+    expect(dashboard).toContain('apiErrorDetails(calRes, data, "getCalendarData")');
+    expect(route).toContain('stage = "calculate nightly availability"');
+    expect(route).toContain('"x-goko-request-id": requestId');
+    expect(route).toContain("serverTime: new Date().toISOString()");
+    expect(toast).toContain("Report ID:");
+    expect(toast).toContain("Network:");
+    expect(toast).toContain("Timezone:");
+  });
+
   it("does not force a 1-day tile when exclusive checkout equals check-in", () => {
     expect(utils).toContain("if (endIdx <= startIdx) continue");
     expect(utils).not.toContain("Math.max(1, endIdx - startIdx)");

@@ -160,16 +160,34 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 function buildDebugString(message: string, rawError?: string): string {
   const now = new Date();
   const ist = now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "medium" });
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  const win = typeof window !== "undefined" ? window : null;
+  const connection = nav && "connection" in nav
+    ? (nav.connection as { effectiveType?: string; downlink?: number; rtt?: number; saveData?: boolean })
+    : null;
   const lines = [
     `--- Goko Error Report ---`,
+    `Report ID: ${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : now.getTime()}`,
     `Time: ${ist}`,
+    `UTC: ${now.toISOString()}`,
     `Message: ${message}`,
   ];
   if (rawError) {
     lines.push(`Details: ${rawError}`);
   }
-  lines.push(`URL: ${typeof window !== "undefined" ? window.location.href : "unknown"}`);
-  lines.push(`UA: ${typeof navigator !== "undefined" ? navigator.userAgent : "unknown"}`);
+  lines.push(`URL: ${win?.location.href || "unknown"}`);
+  lines.push(`Section: ${win ? new URLSearchParams(win.location.search).get("section") || "none" : "unknown"}`);
+  lines.push(`Referrer: ${typeof document !== "undefined" ? document.referrer || "direct" : "unknown"}`);
+  lines.push(`Build: ${process.env.BUILD_VERSION || "unknown"}`);
+  lines.push(`Online: ${nav?.onLine ?? "unknown"}`);
+  lines.push(`Network: ${connection ? `${connection.effectiveType || "unknown"}, ${connection.downlink ?? "?"} Mbps, ${connection.rtt ?? "?"} ms RTT, save-data=${connection.saveData ?? false}` : "unavailable"}`);
+  lines.push(`Viewport: ${win ? `${win.innerWidth}x${win.innerHeight} @${win.devicePixelRatio}x` : "unknown"}`);
+  lines.push(`Screen: ${win ? `${win.screen.width}x${win.screen.height}, ${win.screen.orientation?.type || "unknown"}` : "unknown"}`);
+  lines.push(`Visibility: ${typeof document !== "undefined" ? document.visibilityState : "unknown"}`);
+  lines.push(`Language: ${nav?.language || "unknown"}`);
+  lines.push(`Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown"}`);
+  lines.push(`Platform: ${nav?.platform || "unknown"}; touch=${nav?.maxTouchPoints ?? "unknown"}`);
+  lines.push(`UA: ${nav?.userAgent || "unknown"}`);
   lines.push(`---`);
   return lines.join("\n");
 }
