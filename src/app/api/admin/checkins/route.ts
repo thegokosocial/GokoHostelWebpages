@@ -1,3 +1,4 @@
+import { parseRateResults } from "@/lib/rateScrapeResults";
 import { getMappingHealth } from "@/lib/aiosellMappingCheck";
 import { NextRequest, NextResponse } from "next/server";
 import { driveDeleteFile } from "@/lib/googleApiFetch";
@@ -1100,6 +1101,12 @@ export async function POST(req: NextRequest) {
     if (action === "updateRateScrapeResults") {
       const { scrapeId, results, status: scrapeStatus } = rest;
       if (!isValidId(scrapeId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      try {
+        parseRateResults(results);
+        if (scrapeStatus && !["done", "partial", "failed"].includes(scrapeStatus)) throw new Error("Invalid status");
+      } catch {
+        return NextResponse.json({ error: "Invalid scrape results" }, { status: 400 });
+      }
       await updateRateScrape(scrapeId, {
         results: typeof results === "string" ? results : JSON.stringify(results),
         status: scrapeStatus || "done",

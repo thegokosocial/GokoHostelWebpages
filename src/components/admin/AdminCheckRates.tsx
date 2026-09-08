@@ -11,11 +11,7 @@ import { cn, localDateStr, todayIST } from "@/lib/utils";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import type { Role } from "./types";
 
-type RateResult = {
-  property: string;
-  rating: number;
-  prices: Record<string, number | null>;
-};
+import { parseRateResults, rateScrapeDates, type RateResult } from "@/lib/rateScrapeResults";
 
 type ScrapeData = {
   id: number;
@@ -25,6 +21,8 @@ type ScrapeData = {
   propertyType: string;
   status: string;
   results: RateResult[];
+  failedDates?: string[];
+  legacy?: boolean;
   createdAt: string;
   completedAt: string;
 };
@@ -45,23 +43,34 @@ export function AdminCheckRates({ password, username, role }: { password: string
   const [proxyUrl, setProxyUrl] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  useEffect(() => { loadLatest(); }, [city]);
-
-  const loadLatest = async () => {
-    setLoading(true);
-    try {
-      const res = await apiCall({ action: "getLatestRateScrape", city });
-      if (res.ok) {
+  useEffect(() => {
+    let cancelled = false;
+    const loadLatest = async () => {
+      setLoading(true);
+      setScrapeData(null);
+      try {
+        const res = await apiCall({ action: "getLatestRateScrape", city });
+        if (!res.ok) throw new Error("Failed to load rates");
         const d = await res.json();
+        if (cancelled) return;
         if (d.scrape) {
+          const parsed = parseRateResults(d.scrape.results);
           setScrapeData({
             ...d.scrape,
-            results: d.scrape.results ? JSON.parse(d.scrape.results) : [],
+            results: parsed.properties,
+            failedDates: parsed.failedDates,
+            legacy: parsed.legacy,
           });
         }
-      }
-    } finally { setLoading(false); }
-  };
+      } catch {
+        if (!cancelled) showError("Failed to load rates");
+      } finally { if (!cancelled) setLoading(false); }
+    };
+    void loadLatest();
+    return () => { cancelled = true; };
+    // useAdminApi returns a new function each render; refetch only when its inputs or city change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city, password, username]);
 
   const startScrape = async () => {
     setScraping(true);
@@ -85,15 +94,18 @@ export function AdminCheckRates({ password, username, role }: { password: string
     if (res.ok) {
       const d = await res.json();
       if (d.scrape) {
+        const parsed = parseRateResults(d.scrape.results);
         setScrapeData({
           ...d.scrape,
-          results: d.scrape.results ? JSON.parse(d.scrape.results) : [],
+          results: parsed.properties,
+          failedDates: parsed.failedDates,
+          legacy: parsed.legacy,
         });
       }
     }
   };
 
-  const dates = scrapeData?.results?.length ? Object.keys(scrapeData.results[0]?.prices || {}).sort() : generateDateRange(startDate, endDate);
+  const dates = rateScrapeDates(scrapeData?.startDate || startDate, scrapeData?.endDate || endDate);
 
   if (loading) return <AdminLoading message="Loading rates..." />;
 
@@ -171,7 +183,7 @@ export function AdminCheckRates({ password, username, role }: { password: string
         <div className={cn("rounded-xl p-4 text-sm",
           scrapeData.status === "pending" && "bg-yellow-50 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400",
           scrapeData.status === "in_progress" && "bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400",
-          scrapeData.status === "done" && "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400",
+          (scrapeData.status === "done" || scrapeData.status === "partial") && "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400",
           scrapeData.status === "failed" && "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400",
         )}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -179,6 +191,8 @@ export function AdminCheckRates({ password, username, role }: { password: string
               {scrapeData.status === "pending" && <p>Scrape queued. The GitHub Action will process it shortly. Check back in ~3 minutes.</p>}
               {scrapeData.status === "in_progress" && <p>Scrape in progress... fetching rates from Booking.com.</p>}
               {scrapeData.status === "done" && <p>Scrape completed at {new Date(scrapeData.completedAt).toLocaleString()} — showing {scrapeData.results.length} properties.</p>}
+              {scrapeData.status === "partial" && <p>Scrape partially completed. Some prices could not be verified.</p>}
+              {!!scrapeData.failedDates?.length && <p>Incomplete dates: {scrapeData.failedDates.join(", ")}</p>}
               {scrapeData.status === "failed" && <p>Scrape failed. Try again or check logs.</p>}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -192,7 +206,7 @@ export function AdminCheckRates({ password, username, role }: { password: string
                   {scraping ? "Retrying..." : "Retry Scrape"}
                 </Button>
               )}
-              {scrapeData.status === "done" && (
+              {(scrapeData.status === "done" || scrapeData.status === "partial") && (
                 <Button type="button" variant="ctaOutline" onClick={startScrape} disabled={scraping}>
                   {scraping ? "Starting..." : "New Scrape"}
                 </Button>
@@ -203,15 +217,20 @@ export function AdminCheckRates({ password, username, role }: { password: string
       )}
 
       {/* Results Grid */}
-      {scrapeData?.status === "done" && scrapeData.results.length > 0 && (
+      {scrapeData && ["done", "partial", "failed"].includes(scrapeData.status) && scrapeData.results.length > 0 && (
         <div className="overflow-x-auto rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-sm dark:shadow-none">
+          <p className="px-4 py-3 text-xs text-brand-green-dark/70">
+            {scrapeData.startDate} to {scrapeData.endDate} (checkout exclusive). INR · 1 adult · 0 children · 1 room · 1 night.
+            {scrapeData.legacy ? " Historical scrape: verification evidence unavailable." : " Signed-out desktop Booking.com prices; separately listed taxes excluded. Hover over a price for captured card details."}
+            {" — means no verified observation, not necessarily sold out. First 20 search results per date."}
+          </p>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-brand-mist bg-brand-sand/50">
                 <th className="sticky left-0 z-10 bg-brand-sand/50 px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Property</th>
                 {dates.map((d) => (
                   <th key={d} className="px-3 py-3 text-center text-[10px] font-bold text-brand-green-dark/70">
-                    {new Date(d).toLocaleDateString("en", { day: "numeric", month: "short" })}
+                    {new Date(d).toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" })}
                   </th>
                 ))}
               </tr>
@@ -229,11 +248,11 @@ export function AdminCheckRates({ password, username, role }: { password: string
                     const price = r.prices[d];
                     return (
                       <td key={d} className="px-3 py-3 text-center text-xs">
-                        {price ? (
-                          <span className={cn("rounded px-1.5 py-0.5 font-medium",
+                        {price != null ? (
+                          <span title={r.evidence?.[d] ? `${r.evidence[d].capturedAt}\n${r.evidence[d].cardText}` : "Historical price: no evidence captured"} className={cn("rounded px-1.5 py-0.5 font-medium",
                             r.property.toLowerCase().includes("goko") ? "bg-brand-green/10 text-brand-green" : "text-brand-green-dark/70"
                           )}>
-                            ₹{price}
+                            ₹{price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </span>
                         ) : <span className="text-brand-green-dark/30">—</span>}
                       </td>
@@ -254,15 +273,4 @@ export function AdminCheckRates({ password, username, role }: { password: string
       )}
     </div>
   );
-}
-
-function generateDateRange(start: string, end: string): string[] {
-  const dates: string[] = [];
-  const current = new Date(start + "T00:00:00");
-  const endDate = new Date(end + "T00:00:00");
-  while (current < endDate) {
-    dates.push(localDateStr(current));
-    current.setDate(current.getDate() + 1);
-  }
-  return dates;
 }

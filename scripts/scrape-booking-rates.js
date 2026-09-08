@@ -9,6 +9,8 @@
  */
 
 const puppeteer = require("puppeteer");
+const { extractBookingCards } = require("./booking-rate-parser");
+const { writeFile } = require("node:fs/promises");
 
 const SCRAPE_ID = process.env.SCRAPE_ID;
 const CITY = process.env.CITY || "Gokarna";
@@ -32,14 +34,14 @@ function generateDates(start, end) {
   const endDate = new Date(end);
   while (current < endDate) {
     dates.push(current.toISOString().split("T")[0]);
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
   return dates;
 }
 
 function buildUrl(city, checkin, checkout, propertyType) {
   const filter = PROPERTY_TYPE_IDS[propertyType] || PROPERTY_TYPE_IDS.hostels;
-  return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}&group_adults=1&no_rooms=1&nflt=${filter}&selected_currency=INR&lang=en`;
+  return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}&group_adults=1&group_children=0&no_rooms=1&nflt=${filter}&selected_currency=INR&lang=en`;
 }
 
 async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
@@ -64,57 +66,15 @@ async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
     await page.waitForSelector('[data-testid="property-card"]', { timeout: 15000 });
 
-    // Debug: log first card's text to see what the scraper sees
-    const debugText = await page.evaluate(() => {
-      const card = document.querySelector('[data-testid="property-card"]');
-      return card ? card.innerText?.substring(0, 300) : "NO CARDS FOUND";
-    });
-    console.log(`  DEBUG card text: ${debugText.replace(/\n/g, " | ")}`);
-
-    const properties = await page.evaluate(() => {
-      const cards = document.querySelectorAll('[data-testid="property-card"]');
-      return Array.from(cards).slice(0, 20).map((card) => {
-        const nameEl = card.querySelector('[data-testid="title"]');
-        
-        // Strategy: find ALL price-like numbers, pick the right one
-        // Booking.com structure: strikethrough price (original) + actual price (discounted)
-        // We want the LAST/LOWEST visible price that's not taxes
-        let price = null;
-
-        // Method 1: data-testid="price-and-discounted-price" contains the final price
-        // Extract price using multiple currency symbol patterns
-        const cardText = (card.innerText || card.textContent || "").replace(/\u00a0/g, " ");
-        
-        // Try ₹, Rs, Rs., INR, or just the Unicode rupee sign variants
-        const priceRegex = /(?:₹|Rs\.?|INR|&#8377;|\u20B9)\s?([\d,]+)/gi;
-        const priceMatches = [...cardText.matchAll(priceRegex)];
-        let parsedPrices = priceMatches
-          .map((m) => parseInt(m[1].replace(/,/g, ""), 10))
-          .filter((n) => n >= 100 && n <= 15000);
-        
-        // Fallback: if no currency-anchored prices found, look for data-testid element
-        if (parsedPrices.length === 0) {
-          const priceEl = card.querySelector('[data-testid="price-and-discounted-price"]');
-          if (priceEl) {
-            const priceText = (priceEl.innerText || priceEl.textContent || "").replace(/\u00a0/g, " ");
-            const nums = [...priceText.matchAll(/([\d,]+)/g)];
-            parsedPrices = nums.map((m) => parseInt(m[1].replace(/,/g, ""), 10)).filter((n) => n >= 100 && n <= 15000);
-          }
-        }
-
-        if (parsedPrices.length > 0) {
-          // Take the LAST price (Booking.com: strikethrough first, discounted last)
-          price = parsedPrices[parsedPrices.length - 1];
-          
-          // Edge case: if exactly 2 and second > first, take first
-          if (parsedPrices.length === 2 && parsedPrices[1] > parsedPrices[0]) {
-            price = parsedPrices[0];
-          }
-        }
-
-        return { name: nameEl?.textContent?.trim() || "Unknown", price, rating: null };
-      });
-    });
+    await page.waitForFunction(() => {
+      const cards = [...document.querySelectorAll('[data-testid="property-card"]')].slice(0, 20);
+      return cards.length > 0 && cards.every(card => card.querySelector('[data-testid="price-and-discounted-price"]')?.textContent?.match(/\d/));
+    }, { timeout: 15000 }).catch(() => {});
+    const properties = await page.evaluate(extractBookingCards);
+    await writeFile(`/tmp/scrape-evidence-${checkin}.json`, JSON.stringify(properties, null, 2));
+    if (properties.some(r => r.price === null)) {
+      await page.screenshot({ path: `/tmp/scrape-error-${checkin}.png`, fullPage: true }).catch(() => {});
+    }
 
     await page.close();
     return properties;
@@ -149,27 +109,30 @@ async function main() {
     args: launchArgs,
   });
 
+  const failedDates = [];
   const allProperties = new Map(); // property name → { rating, prices: { date: price } }
 
   for (const date of dates) {
     const checkout = new Date(date);
-    checkout.setDate(checkout.getDate() + 1);
+    checkout.setUTCDate(checkout.getUTCDate() + 1);
     const checkoutStr = checkout.toISOString().split("T")[0];
 
     let results = [];
     for (let attempt = 0; attempt < 2; attempt++) {
       results = await scrapeOnePage(browser, CITY, date, checkoutStr, PROPERTY_TYPE);
-      if (results.length > 0) break;
+      if (results.some(r => r.price !== null)) break;
       console.log(`  Retry ${attempt + 1} for ${date}...`);
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
+    if (!results.length || results.some(r => r.price === null)) failedDates.push(date);
     for (const r of results) {
       if (!allProperties.has(r.name)) {
-        allProperties.set(r.name, { property: r.name, rating: r.rating, prices: {} });
+        allProperties.set(r.name, { property: r.name, rating: r.rating, prices: {}, evidence: {} });
       }
       const entry = allProperties.get(r.name);
-      if (r.price) entry.prices[date] = r.price;
+      entry.prices[date] = r.price;
+      entry.evidence[date] = r.evidence;
       if (r.rating && !entry.rating) entry.rating = r.rating;
     }
 
@@ -182,6 +145,10 @@ async function main() {
   const resultsArray = Array.from(allProperties.values());
   console.log(`\nScraped ${resultsArray.length} properties across ${dates.length} dates.`);
 
+  const hasPrices = resultsArray.some(r => Object.values(r.prices).some(price => price !== null));
+  const status = !hasPrices ? "failed" : failedDates.length ? "partial" : "done";
+  const payload = { version: 2, properties: resultsArray, failedDates };
+
   // Post results back to API
   if (API_URL && API_PASSWORD) {
     console.log("Posting results to API...");
@@ -193,21 +160,22 @@ async function main() {
           password: API_PASSWORD,
           action: "updateRateScrapeResults",
           scrapeId: parseInt(SCRAPE_ID),
-          results: JSON.stringify(resultsArray),
-          status: "done",
+          results: JSON.stringify(payload),
+          status,
         }),
       });
       if (res.ok) {
         console.log("✓ Results posted successfully.");
       } else {
-        console.error("Failed to post results:", await res.text());
+        throw new Error(`Failed to post results: ${res.status}`);
       }
     } catch (err) {
       console.error("Error posting results:", err.message);
+      process.exitCode = 1;
     }
   } else {
     console.log("\nNo API_URL set. Results (paste into D1 manually):");
-    console.log(JSON.stringify(resultsArray, null, 2));
+    console.log(JSON.stringify(payload, null, 2));
   }
 }
 

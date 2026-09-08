@@ -38,6 +38,11 @@ jobs:
       - name: Install Puppeteer
         run: npm install puppeteer
 
+      - name: Test price extraction and result handling
+        run: |
+          node scripts/test-booking-rate-parser.js
+          node scripts/test-rate-scrape-flow.js
+
       - name: Run scraper
         env:
           SCRAPE_ID: ${{ github.event.inputs.scrapeId }}
@@ -50,9 +55,10 @@ jobs:
           PROXY_URL: ${{ github.event.inputs.proxyUrl || secrets.PROXY_URL }}
         run: node scripts/scrape-booking-rates.js
 
-      - name: Upload results on failure
-        if: failure()
+      - name: Upload scrape evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: scrape-debug
-          path: /tmp/scrape-*.png
+          path: /tmp/scrape-*
+          retention-days: 7

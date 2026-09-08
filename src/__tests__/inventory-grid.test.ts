@@ -1,3 +1,4 @@
+import { rateScrapeDates } from "@/lib/rateScrapeResults";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { cn, localDateStr } from "@/lib/utils";
@@ -346,9 +347,9 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
 describe("Check Rates scrape dates are exclusive", () => {
   const checkRates = readFileSync("src/components/admin/AdminCheckRates.tsx", "utf8");
 
-  it("greys past From dates and requires To after From (loop is current < end)", () => {
+  it("greys past From dates and excludes checkout from scraped nights", () => {
     expect(checkRates).toContain("min={todayIST()}");
     expect(checkRates).toContain("min={startDate ? addCalendarDays(startDate, 1) : todayIST()}");
-    expect(checkRates).toContain("while (current < endDate)");
+    expect(rateScrapeDates("2026-09-16", "2026-09-18")).toEqual(["2026-09-16", "2026-09-17"]);
   });
 });
