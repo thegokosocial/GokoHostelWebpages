@@ -186,6 +186,76 @@ function online(dormId: number, ids: number[], dormName: string) {
   }));
 }
 
+describe("Booking detail sellable-unit parity", () => {
+  beforeEach(() => {
+    for (const fn of Object.values(q)) fn.mockReset();
+    q.authenticateUser.mockResolvedValue(admin);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 9, guestName: "Donald", checkinDate: "2026-09-18", checkoutDate: "2026-09-20",
+        amountTotal: 420, amountPaid: 0,
+      },
+      assignments: [
+        { id: 1, bookingId: 9, bedId: 3, dormId: 7, status: "assigned", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+        { id: 2, bookingId: 9, bedId: 17, dormId: 9, status: "assigned", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+        { id: 3, bookingId: 9, bedId: 18, dormId: 9, status: "assigned", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+      ],
+      history: [],
+      linkedBookings: [],
+    });
+    q.getAllBeds.mockResolvedValue([
+      { id: 3, bedId: "FEM-3", dormId: 7, dormName: "Female dorm", type: "Single" },
+      { id: 17, bedId: "DOR-7", dormId: 9, dormName: "Dorm 1 - double bed", type: "Double" },
+      { id: 18, bedId: "DOR-8", dormId: 9, dormName: "Dorm 1 - double bed", type: "Double" },
+      { id: 19, bedId: "DOR-9", dormId: 9, dormName: "Dorm 1 - double bed", type: "Double" },
+      { id: 20, bedId: "DOR-10", dormId: 9, dormName: "Dorm 1 - double bed", type: "Double" },
+    ]);
+  });
+
+  it("getDetail shows a double-bed pair as one assignment, matching the calendar", async () => {
+    const res = await bookingsPOST(adminReq({ password: "x", action: "getDetail", bookingId: 9 }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.assignments).toHaveLength(2);
+    expect(body.assignments.map((a: { bedLabel: string }) => a.bedLabel)).toEqual(["FEM-3", "DOUBLE 1"]);
+  });
+
+  it("shows only the new active unit after dates and beds change", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 9, checkinDate: "2026-09-20", checkoutDate: "2026-09-22", amountTotal: 420, amountPaid: 0 },
+      assignments: [
+        { id: 1, bookingId: 9, bedId: 17, dormId: 9, status: "unassigned", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+        { id: 2, bookingId: 9, bedId: 18, dormId: 9, status: "unassigned", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+        { id: 3, bookingId: 9, bedId: 19, dormId: 9, status: "assigned", checkinDate: "2026-09-20", checkoutDate: "2026-09-22" },
+        { id: 4, bookingId: 9, bedId: 20, dormId: 9, status: "assigned", checkinDate: "2026-09-20", checkoutDate: "2026-09-22" },
+      ],
+      history: [], linkedBookings: [],
+    });
+
+    const res = await bookingsPOST(adminReq({ password: "x", action: "getDetail", bookingId: 9 }));
+    const body = await res.json();
+    expect(body.assignments).toHaveLength(1);
+    expect(body.assignments[0]).toMatchObject({ bedLabel: "DOUBLE 2", checkinDate: "2026-09-20", checkoutDate: "2026-09-22", status: "assigned" });
+  });
+
+  it("does not show cancelled beds alongside remaining active beds", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 9, checkinDate: "2026-09-18", checkoutDate: "2026-09-20", amountTotal: 420, amountPaid: 0 },
+      assignments: [
+        { id: 1, bookingId: 9, bedId: 3, dormId: 7, status: "assigned", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+        { id: 2, bookingId: 9, bedId: 17, dormId: 9, status: "cancelled", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+        { id: 3, bookingId: 9, bedId: 18, dormId: 9, status: "cancelled", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+      ],
+      history: [], linkedBookings: [],
+    });
+
+    const res = await bookingsPOST(adminReq({ password: "x", action: "getDetail", bookingId: 9 }));
+    const body = await res.json();
+    expect(body.assignments).toHaveLength(1);
+    expect(body.assignments[0]).toMatchObject({ bedLabel: "FEM-3", status: "assigned" });
+  });
+});
+
 describe("Round 3 edges: closed-stay modify / duplicate book / cancelled rebook", () => {
   beforeEach(() => {
     for (const fn of Object.values(q)) fn.mockReset();
