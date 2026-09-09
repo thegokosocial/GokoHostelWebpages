@@ -152,7 +152,7 @@ describe("Inventory grid: sticky + colour structure", () => {
     expect(ui).toContain('isStopped && "bg-gray-100');
     expect(ui).toContain("stats.occupancy >= 90");
     expect(ui).toContain("decoration-dotted");
-    expect(ui).toContain("BanIcon");
+    expect(ui).not.toContain("BanIcon");
     expect(ui).toContain("dateTint(isWeekend, isToday)");
     expect(ui).toContain("bg-emerald-50");
     expect(ui).toContain("bg-sky-50");
@@ -218,6 +218,9 @@ describe("Inventory grid: availability and occupancy workflows", () => {
     expect(ui).toContain("unassignedOtaOnNight");
     expect(ui).toContain("OTA");
     expect(ui).toContain("walk-in");
+    expect(ui).toContain("blocked</span>");
+    expect(ui).toContain("{blocked}");
+    expect(ui).toContain("${blocked} blocked");
     expect(ui).toContain("Unassigned OTA");
     expect(ui).toContain("channel bookings with no bed yet");
     expect(ui).toContain("unblock returns them here");

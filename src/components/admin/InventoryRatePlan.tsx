@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn, todayIST } from "@/lib/utils";
 import {
   RefreshCwIcon, Loader2Icon, ChevronLeftIcon, ChevronRightIcon,
-  PackageIcon, BanIcon, EditIcon,
+  PackageIcon, EditIcon,
 } from "lucide-react";
 import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, civilWeekday, unassignedOtaOnNight, type NightAvailability } from "@/lib/inventoryAvailability";
 import type { Role } from "./types";
@@ -186,7 +186,8 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           Cells: <span className="font-medium text-sky-700 dark:text-sky-400">OTA</span>
           <span className="mx-0.5">/</span>
           <span className="font-medium text-emerald-700 dark:text-emerald-400">walk-in</span>
-          {" "}when split
+          <span className="mx-0.5">/</span>
+          <span className="font-medium text-orange-700 dark:text-orange-400">blocked</span>
         </span>
       </div>
 
@@ -261,7 +262,6 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                   {dates.map((date) => {
                     const { available, blocked, overridden, online, offline, unassignedOta } = computeAvailability(dorm.id, date);
                     const { isToday, isWeekend } = formatDateShort(date);
-                    const split = overridden || offline > 0;
                     return (
                       <button
                         key={date}
@@ -271,24 +271,18 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                           "shrink-0 cursor-pointer border-r border-brand-mist/50 px-1 py-2 text-center text-xs font-medium transition-colors hover:bg-brand-green/[0.08]",
                           dateTint(isWeekend, isToday),
                           available === 0 && "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
-                          available > 0 && !split && "text-brand-green-dark dark:text-zinc-200",
                           overridden && "underline decoration-dotted decoration-blue-400",
                         )}
                         style={{ width: colWidth }}
-                        title={
-                          split
-                            ? `${online} online (OTA) · ${offline} walk-in${unassignedOta > 0 ? ` · ${unassignedOta} unassigned OTA` : ""}`
-                            : overridden ? "Override active" : undefined
-                        }
+                        title={`${online} online (OTA) · ${offline} walk-in · ${blocked} blocked${unassignedOta > 0 ? ` · ${unassignedOta} unassigned OTA` : ""}${overridden ? " · Override active" : ""}`}
                       >
-                        {split ? (
-                          <span className="tabular-nums">
-                            <span className="text-sky-700 dark:text-sky-400">{online}</span>
-                            <span className="text-muted-foreground/40">/</span>
-                            <span className="text-emerald-700 dark:text-emerald-400">{offline}</span>
-                          </span>
-                        ) : available}
-                        {blocked > 0 && <BanIcon className="ml-0.5 inline h-2.5 w-2.5 text-orange-400" />}
+                        <span className="tabular-nums">
+                          <span className="text-sky-700 dark:text-sky-400">{online}</span>
+                          <span className="text-muted-foreground/40">/</span>
+                          <span className="text-emerald-700 dark:text-emerald-400">{offline}</span>
+                          <span className="text-muted-foreground/40">/</span>
+                          <span className="text-orange-700 dark:text-orange-400">{blocked}</span>
+                        </span>
                         {overridden && <EditIcon className="ml-0.5 inline h-2.5 w-2.5 text-blue-400" />}
                       </button>
                     );
