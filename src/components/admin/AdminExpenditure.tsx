@@ -1,18 +1,21 @@
 "use client";
 
 import { motion } from "framer-motion";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { PlusCircleIcon, FileTextIcon, IndianRupeeIcon, BedDoubleIcon, BookOpenIcon, ScaleIcon, HandCoinsIcon } from "lucide-react";
-import { AdminAddExpense } from "./AdminAddExpense";
-import { AdminAddIncome } from "./AdminAddIncome";
-import { AdminIncomeRecords } from "./AdminIncomeRecords";
-import { AdminBillRecords } from "./AdminBillRecords";
-import { AdminFoodBill } from "./AdminFoodBill";
-import { AdminRoomRevenue } from "./AdminRoomRevenue";
-import { DailyLedger } from "./DailyLedger";
-import { DailyReconcile } from "./DailyReconcile";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import type { Role } from "./types";
+
+const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
+const AdminAddExpense = dynamic(() => import("./AdminAddExpense").then((m) => m.AdminAddExpense), { loading: tabLoader, ssr: false });
+const AdminAddIncome = dynamic(() => import("./AdminAddIncome").then((m) => m.AdminAddIncome), { loading: tabLoader, ssr: false });
+const AdminIncomeRecords = dynamic(() => import("./AdminIncomeRecords").then((m) => m.AdminIncomeRecords), { loading: tabLoader, ssr: false });
+const AdminBillRecords = dynamic(() => import("./AdminBillRecords").then((m) => m.AdminBillRecords), { loading: tabLoader, ssr: false });
+const AdminFoodBill = dynamic(() => import("./AdminFoodBill").then((m) => m.AdminFoodBill), { loading: tabLoader, ssr: false });
+const AdminRoomRevenue = dynamic(() => import("./AdminRoomRevenue").then((m) => m.AdminRoomRevenue), { loading: tabLoader, ssr: false });
+const DailyLedger = dynamic(() => import("./DailyLedger").then((m) => m.DailyLedger), { loading: tabLoader, ssr: false });
+const DailyReconcile = dynamic(() => import("./DailyReconcile").then((m) => m.DailyReconcile), { loading: tabLoader, ssr: false });
 
 type AccountsTab = "addExpense" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile";
 

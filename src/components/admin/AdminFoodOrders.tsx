@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn, localDateStr } from "@/lib/utils";
 import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, TagIcon } from "lucide-react";
 import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicket, type BillItem } from "@/lib/thermalPrint";
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
-import { KitchenDashboard } from "@/components/kitchen/KitchenDashboard";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
@@ -16,6 +16,11 @@ import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/Recor
 import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 
 type FoodTab = "summary" | "place" | "combined" | "payment" | "active";
+
+const KitchenDashboard = dynamic(() => import("@/components/kitchen/KitchenDashboard").then((m) => m.KitchenDashboard), {
+  loading: () => <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>,
+  ssr: false,
+});
 
 export interface OrderItem {
   id: number;

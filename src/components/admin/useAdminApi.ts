@@ -1,3 +1,5 @@
+import { useCallback } from "react";
+
 export type FetchRetryOptions = {
   retries?: number;
   /**
@@ -55,7 +57,7 @@ export async function fetchWithRetry(
 }
 
 export function useAdminApi(password: string, username?: string) {
-  const apiCall = async (body: Record<string, any>) => {
+  const apiCall = useCallback(async (body: Record<string, any>) => {
     const payload: Record<string, any> = { password, ...body };
     if (username) payload.username = username;
     const res = await fetchWithRetry("/api/admin/checkins", {
@@ -64,7 +66,7 @@ export function useAdminApi(password: string, username?: string) {
       body: JSON.stringify(payload),
     });
     return res;
-  };
+  }, [password, username]);
 
   return { apiCall };
 }

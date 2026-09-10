@@ -1,12 +1,15 @@
 "use client";
 
 import { motion } from "framer-motion";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import type { Role } from "./types";
-import { ReviewAskTab } from "./ReviewAskTab";
-import { ReviewResponsesTab } from "./ReviewResponsesTab";
-import { ReviewAnalyticsTab } from "./ReviewAnalyticsTab";
+
+const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
+const ReviewAskTab = dynamic(() => import("./ReviewAskTab").then((m) => m.ReviewAskTab), { loading: tabLoader, ssr: false });
+const ReviewResponsesTab = dynamic(() => import("./ReviewResponsesTab").then((m) => m.ReviewResponsesTab), { loading: tabLoader, ssr: false });
+const ReviewAnalyticsTab = dynamic(() => import("./ReviewAnalyticsTab").then((m) => m.ReviewAnalyticsTab), { loading: tabLoader, ssr: false });
 
 type ReviewTab = "askReview" | "responses" | "analytics";
 
