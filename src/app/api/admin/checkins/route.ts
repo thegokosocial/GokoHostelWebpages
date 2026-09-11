@@ -30,8 +30,8 @@ import {
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
-import { beds, checkins, foodOrders, bookings, bookingHistory } from "@/db/schema";
-import { eq, and, sql, inArray, or, desc } from "drizzle-orm";
+import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
+import { eq, and, sql, inArray, or, desc, lte, gte } from "drizzle-orm";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
   const token = process.env.GITHUB_TOKEN;
@@ -60,6 +60,15 @@ function isValidId(val: any): val is number {
 
 function checkinIdentity(name: string | null | undefined, contact: string | null | undefined): string {
   return `${String(contact || "").trim().toLowerCase()}::${String(name || "").trim().toLowerCase()}`;
+}
+
+function normalizedPhone(value: string | null | undefined): string {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+function normalizedName(value: string | null | undefined): string {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function generateBookingId(): string {
@@ -532,6 +541,17 @@ export async function POST(req: NextRequest) {
 
       const allBeds = await getAllBeds();
       const allBookings = await getAllBookings();
+      const dashboardDb = getDb();
+      const currentAssignments = await dashboardDb.select({
+        bedId: bookingBedAssignments.bedId,
+        bookingId: bookingBedAssignments.bookingId,
+        checkinDate: bookingBedAssignments.checkinDate,
+        checkoutDate: bookingBedAssignments.checkoutDate,
+      }).from(bookingBedAssignments).where(and(
+        eq(bookingBedAssignments.status, "assigned"),
+        lte(bookingBedAssignments.checkinDate, today),
+        gte(bookingBedAssignments.checkoutDate, today),
+      ));
       const bookingByReference = new Map<string, number>();
       for (const booking of allBookings) {
         for (const reference of [booking.bookingRef, booking.gokoBookingId, booking.cmBookingId]) {
@@ -558,8 +578,7 @@ export async function POST(req: NextRequest) {
       )];
       const tabByCheckin = new Map<number, { pendingTab: number; paidTotal: number; totalOrders: number; pendingOrders: number }>();
       if (uniqueCheckinIds.length > 0) {
-        const db = getDb();
-        const tabRows = await db.select({
+        const tabRows = await dashboardDb.select({
           checkinId: foodOrders.checkinId,
           paymentStatus: foodOrders.paymentStatus,
           total: sql<number>`COALESCE(SUM(${foodOrders.total}), 0)`,
@@ -598,7 +617,24 @@ export async function POST(req: NextRequest) {
           tab.pendingOrders += part.pendingOrders;
         }
         const checkinId = matchedIds[matchedIds.length - 1];
-        const linkedBooking = [...matchedIds].reverse().map((id) => bookingByCheckinId.get(id)).find(Boolean);
+        const assignedBookings = currentAssignments
+          .filter((assignment) => assignment.bedId === b.id && assignment.checkoutDate === b.expectedCheckout)
+          .map((assignment) => bookingById.get(assignment.bookingId))
+          .filter((booking): booking is (typeof allBookings)[number] => {
+            if (!booking) return false;
+            return !["cancelled", "no_show"].includes(booking.status);
+          });
+        const activeAssignedBooking = assignedBookings.find((booking) => booking.status === "checked_in") || assignedBookings[0];
+        const linkedByCheckin = [...matchedIds].reverse().map((id) => bookingByCheckinId.get(id)).find(Boolean);
+        const phone = normalizedPhone(b.guestContact);
+        const phoneMatches = phone
+          ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedPhone(booking.contact) === phone)
+          : [];
+        const name = normalizedName(b.guestName);
+        const nameMatches = name
+          ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedName(booking.guestName) === name)
+          : [];
+        const linkedBooking = activeAssignedBooking || linkedByCheckin || (phoneMatches.length === 1 ? phoneMatches[0] : null) || (nameMatches.length === 1 ? nameMatches[0] : null);
         const roomDue = linkedBooking ? stayDueAtHotel(linkedBooking.paymentStatus, linkedBooking.amountTotal, linkedBooking.amountPaid) : null;
         return {
           name: b.guestName || "",

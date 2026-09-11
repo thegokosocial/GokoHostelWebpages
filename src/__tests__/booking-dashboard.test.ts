@@ -283,6 +283,12 @@ describe("Dashboard booking activity", () => {
     expect(dashboardRoute).toContain("roomStatus: linkedBooking ? (roomDue != null && roomDue > 0 ? \"pending\" : \"clear\") : \"not_linked\"");
     expect(dashboardRoute).toContain("roomDue");
     expect(dashboardRoute).toContain("b.checkinId ? [b.checkinId]");
+    expect(dashboardRoute).toContain('eq(bookingBedAssignments.status, "assigned")');
+    expect(dashboardRoute).toContain("assignment.bedId === b.id");
+    expect(dashboardRoute).toContain("normalizedPhone(booking.contact) === phone");
+    expect(dashboardRoute).toContain("normalizedName(booking.guestName) === name");
+    expect(dashboardRoute).toContain("phoneMatches.length === 1");
+    expect(dashboardRoute).toContain("nameMatches.length === 1");
     expect(dashboard).toContain("Room: Not linked");
     expect(dashboard).toContain("Room: All clear");
     expect(dashboard).toContain("Food: All clear");

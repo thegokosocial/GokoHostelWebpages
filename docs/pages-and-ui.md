@@ -47,7 +47,7 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 
 | `section` | Component | API | Perm (non-admin) |
 |-----------|-----------|-----|------------------|
-| `dashboard` | `AdminDashboard` | checkins `getDashboard`; checkout rows show separate room/food status and use `getPendingFoodTab` for live food checks; check-ins, checkouts, unpaid stays, and bookings use bounded scrollable lists | `canViewDashboard` |
+| `dashboard` | `AdminDashboard` | checkins `getDashboard`; checkout rows show separate room/food status and use active bed-booking assignments, booking references, then unique phone/name matches for room status; check-ins, checkouts, unpaid stays, and bookings use bounded scrollable lists | `canViewDashboard` |
 | `bookings` | `booking-dashboard/` | `/api/admin/bookings` | `canViewBookings` |
 | `beds` | `AdminBeds` | checkins beds | `canViewBeds` |
 | `timeline` | `AdminTimeline` | checkins `getBeds` | `canViewTimeline` |
