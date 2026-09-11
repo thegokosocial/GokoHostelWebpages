@@ -1944,14 +1944,22 @@ async function loadBedsAvailabilityForRange(checkinDate: string, checkoutDate: s
     : [];
 
   const occupiedBedIds = new Set(assignments.map((r) => r.bedId));
+  const physicalOccupiedBedIds = new Set(allBeds.filter((b) =>
+    b.status === "occupied"
+    && b.checkinDate
+    && b.expectedCheckout
+    && b.checkinDate < checkoutDate
+    && b.expectedCheckout > checkinDate
+  ).map((b) => b.id));
   const blockedBedIds = new Set(blocks.map((r) => r.bedId));
-  // A double is one sellable unit: either physical slot being held removes the pair.
+  // A booking assignment or block reserves a complete double unit. Legacy physical
+  // occupancy removes only the occupied slot so a one-person booking can use the other.
   for (const unit of sellableUnits(allBeds)) {
     if (unit.type !== "Double") continue;
     if (unit.beds.some((b) => occupiedBedIds.has(b.id))) unit.beds.forEach((b) => occupiedBedIds.add(b.id));
     if (unit.beds.some((b) => blockedBedIds.has(b.id))) unit.beds.forEach((b) => blockedBedIds.add(b.id));
   }
-  const physical = allBeds.filter((b) => !occupiedBedIds.has(b.id) && !blockedBedIds.has(b.id));
+  const physical = allBeds.filter((b) => !occupiedBedIds.has(b.id) && !physicalOccupiedBedIds.has(b.id) && !blockedBedIds.has(b.id));
   const blockedOnly = allBeds.filter((b) => !occupiedBedIds.has(b.id) && blockedBedIds.has(b.id));
   return { allBeds, assignments, blocks, overrides, nights, physical, blockedOnly };
 }
@@ -2017,6 +2025,12 @@ export async function assignBedToBooking(data: {
   if (!data.checkinDate || !data.checkoutDate || data.checkinDate >= data.checkoutDate) return false;
   return dbWrite(async () => {
     const db = getDb();
+    const physicalBed = await db.select({ status: beds.status, checkinDate: beds.checkinDate, expectedCheckout: beds.expectedCheckout })
+      .from(beds).where(eq(beds.id, data.bedId)).limit(1);
+    const existing = physicalBed[0];
+    if (!existing) return false;
+    if (existing.status === "occupied" && existing.checkinDate && existing.expectedCheckout
+      && existing.checkinDate < data.checkoutDate && existing.expectedCheckout > data.checkinDate) return false;
     const now = new Date().toISOString();
     const pool = data.inventoryPool || "online";
 

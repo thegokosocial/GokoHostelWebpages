@@ -25,6 +25,7 @@ describe("double bed support", () => {
     expect(route).toContain("function checkinIdentity");
     expect(route).toContain("bookingAssignedBeds");
     expect(route).toContain("bookingBedAssignments.status");
+    expect(readFileSync("src/db/queries.ts", "utf8")).toContain("physicalOccupiedBedIds");
     expect(route).not.toContain("This double room is reserved for a different booking");
     expect(bookingRoute).toContain('const slots = available.map');
     expect(bookingRoute).toContain('allowPartialDouble = detail.booking.persons === 1');
