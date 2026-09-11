@@ -325,7 +325,15 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(ui).toContain('action: "unblockBeds"');
     expect(ui).toContain('action: "bulkSetAvailability"');
     expect(ui).toContain("AvailabilityPreviewPanel");
-    expect(ui).toContain("Counts are summed across the selected room-nights");
+    expect(ui).toContain("Selected availability by room");
+    expect(ui).toContain("Each room is shown separately because room capacities can differ");
+    expect(ui).toContain("units/night");
+    expect(ui).toContain("Combined selection · overall totals");
+    expect(route).toContain("byRoom");
+    expect(ui).toContain("Select at least one room/dorm and both dates");
+    expect(ui).toContain("availabilityActionValid");
+    expect(ui).toContain('variant={availabilityActionValid ? "cta" : "secondary"}');
+    expect(ui).toContain("grid-cols-1 gap-2 sm:grid-cols-2");
     expect(route).toContain("preview === true");
     expect(route).toContain("summarizeAvailability");
     expect(ui).toContain('action: "bulkSetRates"');

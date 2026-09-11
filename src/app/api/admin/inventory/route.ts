@@ -209,10 +209,12 @@ export async function POST(req: NextRequest) {
       if (dormIds.length * filteredDates.length > 10000) {
         return NextResponse.json({ error: "Availability updates are limited to 10,000 room-night cells" }, { status: 400 });
       }
-      const knownDormIds = new Set((await getAllDorms()).map((d) => d.id));
+      const allDorms = await getAllDorms();
+      const knownDormIds = new Set(allDorms.map((d) => d.id));
       if (dormIds.some((id) => !knownDormIds.has(id))) {
         return NextResponse.json({ error: "One or more dorms do not exist" }, { status: 400 });
       }
+      const dormNameById = new Map(allDorms.map((d) => [d.id, d.name]));
 
       const mappings = (await getRoomTypeMappings()).filter((mapping) => mapping.isActive);
       const mappedDormIds = new Set(mappings.map((mapping) => mapping.dormId));
@@ -252,12 +254,29 @@ export async function POST(req: NextRequest) {
           : hasValidRequestedValue
             ? cellStats.map((cell) => ({ ...cell.stats, ...overridePreview(cell.stats, requestedValue) }))
             : cellStats.map((cell) => cell.stats);
+        const currentByDorm = new Map<number, typeof cellStats[number]["stats"][]>();
+        const afterByDorm = new Map<number, typeof afterStats[number][]>();
+        cellStats.forEach((cell, index) => {
+          const currentCells = currentByDorm.get(cell.dormId) ?? [];
+          currentCells.push(cell.stats);
+          currentByDorm.set(cell.dormId, currentCells);
+          const afterCells = afterByDorm.get(cell.dormId) ?? [];
+          afterCells.push(afterStats[index]);
+          afterByDorm.set(cell.dormId, afterCells);
+        });
+        const byRoom = dormIds.map((dormId) => ({
+          dormId,
+          name: dormNameById.get(dormId) ?? `Room ${dormId}`,
+          current: summarizeAvailability(currentByDorm.get(dormId) ?? []),
+          after: summarizeAvailability(afterByDorm.get(dormId) ?? []),
+        }));
         return NextResponse.json({
           success: true,
           preview: true,
           selected: { rooms: dormIds.length, nights: filteredDates.length, roomNights: cellStats.length },
           current,
           after: summarizeAvailability(afterStats),
+          byRoom,
           capped: mode === "set" && hasValidRequestedValue
             ? cellStats.filter((cell) => requestedValue > cell.stats.available).length
             : 0,

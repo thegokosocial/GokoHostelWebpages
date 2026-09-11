@@ -1860,6 +1860,49 @@ describe("Bulk availability workflows", () => {
     expect(queryMocks.addAuditEntry).not.toHaveBeenCalled();
   });
 
+  it("returns separate preview rows for rooms with different capacities", async () => {
+    queryMocks.getAllDorms.mockResolvedValue([
+      { id: 8, name: "Dorm 1 - single bed" },
+      { id: 9, name: "Female dorm" },
+    ]);
+    queryMocks.getRoomTypeMappings.mockResolvedValue([
+      { dormId: 8, isActive: 1 },
+      { dormId: 9, isActive: 1 },
+    ]);
+    queryMocks.getAvailabilitySnapshot.mockResolvedValue([
+      [
+        ...Array.from({ length: 4 }, (_, index) => ({ id: index + 1, dormId: 8, bedId: `D1-${index + 1}`, type: "Bunk" })),
+        ...Array.from({ length: 8 }, (_, index) => ({ id: index + 5, dormId: 9, bedId: `F-${index + 1}`, type: "Bunk" })),
+      ],
+      [],
+      [],
+      [],
+    ] as never);
+    const res = await post({
+      password: "x", action: "bulkSetAvailability", preview: true, dormIds: [8, 9],
+      startDate: "2026-09-12", endDate: "2026-09-13", mode: "set", onlineRemaining: 4,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.selected).toEqual({ rooms: 2, nights: 2, roomNights: 4 });
+    expect(body.byRoom).toHaveLength(2);
+    expect(body.byRoom[0]).toEqual(expect.objectContaining({
+      dormId: 8,
+      name: "Dorm 1 - single bed",
+      current: expect.objectContaining({ total: 8, online: 8, offline: 0, roomNights: 2 }),
+      after: expect.objectContaining({ online: 8, offline: 0, roomNights: 2 }),
+    }));
+    expect(body.byRoom[1]).toEqual(expect.objectContaining({
+      dormId: 9,
+      name: "Female dorm",
+      current: expect.objectContaining({ total: 16, online: 16, offline: 0, roomNights: 2 }),
+      after: expect.objectContaining({ online: 8, offline: 8, roomNights: 2 }),
+    }));
+    expect(body.after).toEqual(expect.objectContaining({ online: 16, offline: 8, total: 24 }));
+    expect(queryMocks.upsertInventoryOverride).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).not.toHaveBeenCalled();
+  });
+
   it("sets absolute remaining OTA availability while preserving held online inventory", async () => {
     queryMocks.getAvailabilitySnapshot.mockResolvedValue([
       [

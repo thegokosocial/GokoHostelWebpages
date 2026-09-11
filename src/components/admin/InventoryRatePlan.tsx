@@ -39,6 +39,12 @@ type BulkAvailabilityPreview = {
   selected: { rooms: number; nights: number; roomNights: number };
   current: AvailabilitySummary;
   after: AvailabilitySummary;
+  byRoom?: Array<{
+    dormId: number;
+    name: string;
+    current: AvailabilitySummary;
+    after: AvailabilitySummary;
+  }>;
   capped: number;
   requestedOnline: number | null;
 };
@@ -702,7 +708,10 @@ function DormAvailabilityPicker({
   );
 }
 
-function AvailabilityPreviewPanel({ preview, loading, mode }: { preview: BulkAvailabilityPreview | null; loading: boolean; mode: "set" | "clear" }) {
+function AvailabilityPreviewPanel({ preview, loading, mode, scopeReady }: { preview: BulkAvailabilityPreview | null; loading: boolean; mode: "set" | "clear"; scopeReady: boolean }) {
+  if (!scopeReady) {
+    return <div className="rounded-lg border border-dashed border-brand-mist bg-brand-sand/30 px-3 py-2 text-[10px] text-brand-green-dark/60">Select at least one room/dorm and both dates to preview online, offline, blocked, and booked/held counts.</div>;
+  }
   if (!preview && !loading) return null;
   if (loading) return (
     <div className="rounded-lg border border-brand-mist bg-brand-sand/40 px-3 py-2 text-xs text-brand-green-dark/60">
@@ -711,11 +720,15 @@ function AvailabilityPreviewPanel({ preview, loading, mode }: { preview: BulkAva
   );
   if (!preview) return null;
 
-  const rows = [
-    ["Online", preview.current.online, preview.after.online, "text-sky-700"],
-    ["Offline", preview.current.offline, preview.after.offline, "text-emerald-700"],
-    ["Blocked", preview.current.blocked, preview.after.blocked, "text-orange-700"],
-    ["Booked / held", preview.current.assigned + preview.current.unassignedOta, preview.after.assigned + preview.after.unassignedOta, "text-brand-green-dark"],
+  const formatAverage = (value: number, roomNights: number) => {
+    const average = value / Math.max(1, roomNights);
+    return Number.isInteger(average) ? String(average) : average.toFixed(1);
+  };
+  const rowsFor = (summary: AvailabilitySummary, after: AvailabilitySummary) => [
+    ["Online", summary.online, after.online, "text-sky-700"],
+    ["Offline", summary.offline, after.offline, "text-emerald-700"],
+    ["Blocked", summary.blocked, after.blocked, "text-orange-700"],
+    ["Booked / held", summary.assigned + summary.unassignedOta, after.assigned + after.unassignedOta, "text-brand-green-dark"],
   ] as const;
   const afterLabel = mode === "clear"
     ? "after clear"
@@ -726,20 +739,38 @@ function AvailabilityPreviewPanel({ preview, loading, mode }: { preview: BulkAva
   return (
     <div className="rounded-lg border border-brand-mist bg-brand-sand/40 px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[10px] text-brand-green-dark/60">
-        <span className="font-medium text-brand-green-dark">Selected availability</span>
+        <span className="font-medium text-brand-green-dark">Selected availability by room</span>
         <span>{preview.selected.rooms} room{preview.selected.rooms === 1 ? "" : "s"} × {preview.selected.nights} night{preview.selected.nights === 1 ? "" : "s"} · {preview.selected.roomNights} room-nights</span>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-        {rows.map(([label, current, after, color]) => (
-          <div key={label} className="rounded-md border border-brand-mist/70 bg-white/70 px-2 py-1.5">
-            <div className={cn("text-[10px] font-medium", color)}>{label}</div>
-            <div className="mt-0.5 text-sm font-bold text-brand-green-dark">
-              {current} <span className="text-[10px] font-normal text-brand-green-dark/40">→ {after}</span>
+      <p className="mt-1 text-[10px] text-brand-green-dark/50">Each room is shown separately because room capacities can differ. Values are average units per room-night; totals cover every selected night.</p>
+      <div className="mt-2 space-y-1.5">
+        {(preview.byRoom ?? []).map((room) => (
+          <div key={room.dormId} className="rounded-md border border-brand-mist/70 bg-white/70 px-2.5 py-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[10px]">
+              <span className="font-semibold text-brand-green-dark">{room.name}</span>
+              <span className="text-brand-green-dark/50">{formatAverage(room.current.total, room.current.roomNights)} units/night · {room.current.roomNights} room-night{room.current.roomNights === 1 ? "" : "s"}</span>
+            </div>
+            <div className="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {rowsFor(room.current, room.after).map(([label, current, after, color]) => (
+                <div key={label}>
+                  <div className={cn("text-[10px] font-medium", color)}>{label}</div>
+                  <div className="mt-0.5 text-sm font-bold text-brand-green-dark">
+                    {formatAverage(current, room.current.roomNights)} <span className="text-[10px] font-normal text-brand-green-dark/40">→ {formatAverage(after, room.after.roomNights)}</span>
+                  </div>
+                  <div className="text-[10px] text-brand-green-dark/45">Total {current} → {after}</div>
+                </div>
+              ))}
             </div>
           </div>
         ))}
       </div>
-      <p className="mt-1.5 text-[10px] text-brand-green-dark/50">Counts are summed across the selected room-nights. Left = current, right = {afterLabel}. Blocked and booked/held counts are preserved.</p>
+      <div className="mt-2 border-t border-brand-mist/70 pt-2">
+        <div className="text-[10px] font-medium text-brand-green-dark">Combined selection · overall totals</div>
+        <div className="mt-0.5 text-[10px] text-brand-green-dark/60">
+          Online {preview.current.online} → {preview.after.online} · Offline {preview.current.offline} → {preview.after.offline} · Blocked {preview.current.blocked} → {preview.after.blocked} · Booked / held {preview.current.assigned + preview.current.unassignedOta} → {preview.after.assigned + preview.after.unassignedOta}
+        </div>
+      </div>
+      <p className="mt-1.5 text-[10px] text-brand-green-dark/50">Left = current, right = {afterLabel}. Blocked and booked/held counts are preserved.</p>
       {preview.capped > 0 && <p className="mt-0.5 text-[10px] text-amber-700">{preview.capped} selected cell{preview.capped === 1 ? " is" : "s are"} above physical availability and will be capped.</p>}
     </div>
   );
@@ -803,6 +834,20 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
 
   const today = todayIST();
   const blockExclusiveEnd = exclusiveEndFromInclusive(blockStart, blockEnd);
+  const availabilityDateRangeValid = Boolean(
+    availabilityStart && availabilityEnd && availabilityStart >= today && availabilityEnd >= availabilityStart,
+  );
+  const availabilityAffectedNights = availabilityDateRangeValid
+    ? inclusiveNights(availabilityStart, availabilityEnd).filter((date) => availabilityDays.length === 0 || availabilityDays.includes(civilWeekday(date))).length
+    : 0;
+  const availabilityNumber = Number(availabilityValue);
+  const availabilityValueValid = availabilityValue.trim() !== ""
+    && Number.isInteger(availabilityNumber)
+    && availabilityNumber >= 0;
+  const availabilityActionValid = !saving
+    && availabilityDormIds.length > 0
+    && availabilityAffectedNights > 0
+    && (availabilityMode === "clear" || availabilityValueValid);
 
   useEffect(() => {
     if (!availabilityDormIds.length || !availabilityStart || !availabilityEnd) {
@@ -967,7 +1012,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
     if (!availabilityDormIds.length || !availabilityStart || !availabilityEnd) return;
     const value = Number(availabilityValue);
     if (availabilityMode === "set" && (!Number.isInteger(value) || value < 0)) return;
-    const affectedNights = inclusiveNights(availabilityStart, availabilityEnd).filter((date) => availabilityDays.length === 0 || availabilityDays.includes(civilWeekday(date))).length;
+    const affectedNights = availabilityAffectedNights;
+    if (!availabilityActionValid) return;
     const confirmed = window.confirm(
       `${availabilityMode === "set" ? "Set" : "Clear"} availability for ${availabilityDormIds.length} room${availabilityDormIds.length === 1 ? "" : "s"} across ${affectedNights} night${affectedNights === 1 ? "" : "s"}?${availabilityMode === "set" ? `\n\nOTA/PMS slots remaining: ${value}.` : "\n\nThis removes the default override and restores calculated availability."}`,
     );
@@ -1061,16 +1107,16 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-2 sm:items-center sm:p-4" onClick={onClose}>
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative z-10 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border border-brand-mist bg-white dark:bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="relative z-10 my-2 w-full max-w-lg max-h-[calc(100dvh-1rem)] overflow-x-hidden overflow-y-auto rounded-xl border border-brand-mist bg-white p-3 shadow-xl dark:bg-card sm:my-0 sm:max-h-[85vh] sm:rounded-2xl sm:p-5" onClick={(e) => e.stopPropagation()}>
         <h3 className="font-display text-lg font-bold text-brand-green-dark dark:text-zinc-100">Bulk Update</h3>
 
         {/* Tabs */}
-        <div className="mt-3 flex gap-1 flex-wrap">
+        <div className="mt-3 flex flex-wrap gap-1">
           {([["blockBeds", "Block Beds"], ["unblockBeds", "Unblock"], ["availability", "Availability"], ["setRates", "Set Rates"], ["adjustRates", "Adjust Rates"], ["restrictions", "Restrictions"]] as const).map(([id, label]) => (
             <button key={id} type="button" onClick={() => { setTab(id); setResult(""); }}
-              className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-colors", tab === id ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark/70 hover:bg-brand-mist")}
+              className={cn("min-w-0 flex-1 basis-[calc(50%-0.25rem)] px-2 py-1.5 text-center rounded-lg text-xs font-medium transition-colors sm:flex-none sm:basis-auto sm:px-3", tab === id ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark/70 hover:bg-brand-mist")}
             >{label}</button>
           ))}
         </div>
@@ -1085,7 +1131,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   {data?.dorms.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-medium">Start Date</label>
                   <input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={blockStart} onChange={(e) => setStartAndNextEnd(e.target.value, setBlockStart, setBlockEnd)} />
@@ -1168,13 +1214,13 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div><label className="text-xs font-medium">Start Date</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={availabilityStart} onChange={(e) => setStartAndNextEnd(e.target.value, setAvailabilityStart, setAvailabilityEnd)} /></div>
                 <div><label className="text-xs font-medium">End Date</label><input type="date" min={availabilityStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={availabilityEnd} onChange={(e) => setAvailabilityEnd(e.target.value)} /></div>
               </div>
               <p className="text-[10px] text-brand-green-dark/50">Both dates are nights included. Availability means OTA/PMS slots remaining; walk-in availability is calculated automatically. Past dates are disabled.</p>
               <div><label className="text-xs font-medium">Days</label><div className="mt-1"><DaySelector days={availabilityDays} setDays={setAvailabilityDays} /></div></div>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <button type="button" onClick={() => setAvailabilityMode("set")} className={cn("flex-1 py-1.5 rounded text-xs font-medium border", availabilityMode === "set" ? "bg-brand-green text-white border-brand-green" : "border-input")}>Set Availability</button>
                 <button type="button" onClick={() => setAvailabilityMode("clear")} className={cn("flex-1 py-1.5 rounded text-xs font-medium border", availabilityMode === "clear" ? "bg-amber-600 text-white border-amber-600" : "border-input")}>Clear Override</button>
               </div>
@@ -1185,8 +1231,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   <p className="mt-0.5 text-[10px] text-brand-green-dark/50">The value is applied per selected room/date. Existing bookings, holds, and blocks are preserved; values above available inventory are capped.</p>
                 </div>
               )}
-              <AvailabilityPreviewPanel preview={availabilityPreview} loading={loadingAvailabilityPreview} mode={availabilityMode} />
-              <Button variant="cta" size="sm" className="w-full" onClick={handleBulkAvailability} disabled={saving || !availabilityDormIds.length || !availabilityStart || !availabilityEnd || (availabilityMode === "set" && (!availabilityValue || !Number.isInteger(Number(availabilityValue)) || Number(availabilityValue) < 0))}>
+              <AvailabilityPreviewPanel preview={availabilityPreview} loading={loadingAvailabilityPreview} mode={availabilityMode} scopeReady={Boolean(availabilityDormIds.length && availabilityStart && availabilityEnd)} />
+              <Button variant={availabilityActionValid ? "cta" : "secondary"} size="sm" className={cn("w-full", !availabilityActionValid && "cursor-not-allowed text-muted-foreground")} onClick={handleBulkAvailability} disabled={!availabilityActionValid}>
                 {saving ? "Updating..." : availabilityMode === "set" ? `Set ${availabilityValue || "…"} OTA slot${availabilityValue === "1" ? "" : "s"}` : "Clear Availability Overrides"}
               </Button>
             </>
@@ -1205,7 +1251,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div><label className="text-xs font-medium">Start Date</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={rateStart} onChange={(e) => setStartAndNextEnd(e.target.value, setRateStart, setRateEnd)} /></div>
                 <div><label className="text-xs font-medium">End Date</label><input type="date" min={rateStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={rateEnd} onChange={(e) => setRateEnd(e.target.value)} /></div>
               </div>
@@ -1233,7 +1279,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div><label className="text-xs font-medium">Start</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={adjustStart} onChange={(e) => setStartAndNextEnd(e.target.value, setAdjustStart, setAdjustEnd)} /></div>
                 <div><label className="text-xs font-medium">End</label><input type="date" min={adjustStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={adjustEnd} onChange={(e) => setAdjustEnd(e.target.value)} /></div>
               </div>
@@ -1268,7 +1314,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div><label className="text-xs font-medium">Start</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={restrictStart} onChange={(e) => setStartAndNextEnd(e.target.value, setRestrictStart, setRestrictEnd)} /></div>
                 <div><label className="text-xs font-medium">End</label><input type="date" min={restrictStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={restrictEnd} onChange={(e) => setRestrictEnd(e.target.value)} /></div>
               </div>
