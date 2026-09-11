@@ -76,7 +76,7 @@ sequenceDiagram
   Note over DB: Does NOT occupy beds or create bookings
 ```
 
-Staff then assign a physical bed (`assignBed` on `/api/admin/checkins`) and/or a calendar booking (`assignBeds` on `/api/admin/bookings`).
+Staff then assign a physical bed (`assignBed` on `/api/admin/checkins`) and/or a calendar booking (`assignBeds` on `/api/admin/bookings`). These are separate ledgers: a booking bed is reservation/inventory context, while `beds` is the actual post-check-in occupancy. Either ledger may contain the same physical slot without changing the other; cancellation releases only the booking ledger and checkout releases only physical occupancy.
 
 ---
 

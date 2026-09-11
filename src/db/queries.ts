@@ -134,6 +134,7 @@ export async function getAllBeds() {
       checkinDate: beds.checkinDate,
       expectedCheckout: beds.expectedCheckout,
       stayingDays: beds.stayingDays,
+      checkinId: beds.checkinId,
       dormName: dorms.name,
     }).from(beds).innerJoin(dorms, eq(beds.dormId, dorms.id));
   });
@@ -153,6 +154,7 @@ export async function getBedById(bedId: number) {
     checkinDate: beds.checkinDate,
     expectedCheckout: beds.expectedCheckout,
     stayingDays: beds.stayingDays,
+    checkinId: beds.checkinId,
     dormName: dorms.name,
   }).from(beds).innerJoin(dorms, eq(beds.dormId, dorms.id)).where(eq(beds.id, bedId));
   return rows[0] || null;
@@ -165,10 +167,22 @@ export async function updateBedStatus(bedId: number, data: {
   checkinDate?: string;
   expectedCheckout?: string;
   stayingDays?: string;
+  checkinId?: number | null;
 }) {
   return dbWrite(() => {
     const db = getDb();
     return db.update(beds).set(syncUpdate(data)).where(eq(beds.id, bedId));
+  }, { idempotentWrite: true });
+}
+
+export async function assignPhysicalBed(bedId: number, data: {
+  guestName: string; guestContact: string; checkinDate: string; expectedCheckout: string; stayingDays: string; checkinId?: number;
+}) {
+  return dbWrite(async () => {
+    const result = await getDb().update(beds).set(syncUpdate({
+      status: "occupied", ...data,
+    })).where(and(eq(beds.id, bedId), eq(beds.status, "available")));
+    return sqliteWriteCount(result) > 0;
   }, { idempotentWrite: true });
 }
 
@@ -1915,7 +1929,7 @@ export async function checkBedAvailability(bedId: number, checkinDate: string, c
   return (blocked[0]?.count ?? 0) === 0;
 }
 
-async function loadBedsAvailabilityForRange(checkinDate: string, checkoutDate: string, dormId?: number) {
+async function loadBedsAvailabilityForRange(checkinDate: string, checkoutDate: string, dormId?: number, excludePhysicalOccupancy = false) {
   const db = getDb();
   const allBeds = dormId
     ? await db.select().from(beds).where(eq(beds.dormId, dormId))
@@ -1948,19 +1962,15 @@ async function loadBedsAvailabilityForRange(checkinDate: string, checkoutDate: s
     : [];
 
   const occupiedBedIds = new Set(assignments.map((r) => r.bedId));
-  const physicalOccupiedBedIds = new Set(allBeds.filter((b) =>
-    b.status === "occupied"
-    && b.checkinDate
-    && b.expectedCheckout
-    && b.checkinDate < checkoutDate
-    && b.expectedCheckout > checkinDate
-  ).map((b) => b.id));
+  const physicalOccupiedBedIds = excludePhysicalOccupancy
+    ? new Set(allBeds.filter((b) => b.status === "occupied" && b.checkinDate && b.expectedCheckout
+      && b.checkinDate < checkoutDate && b.expectedCheckout > checkinDate).map((b) => b.id))
+    : new Set<number>();
   const blockedBedIds = new Set(blocks.map((r) => r.bedId));
-  // A booking assignment or block reserves a complete double unit. Legacy physical
-  // occupancy removes only the occupied slot so a one-person booking can use the other.
+  // Online booking inventory and physical occupancy are separate ledgers. A physical
+  // assignment must not make an online planned bed unavailable here.
   for (const unit of sellableUnits(allBeds)) {
     if (unit.type !== "Double") continue;
-    if (unit.beds.some((b) => occupiedBedIds.has(b.id))) unit.beds.forEach((b) => occupiedBedIds.add(b.id));
     if (unit.beds.some((b) => blockedBedIds.has(b.id))) unit.beds.forEach((b) => blockedBedIds.add(b.id));
   }
   const physical = allBeds.filter((b) => !occupiedBedIds.has(b.id) && !physicalOccupiedBedIds.has(b.id) && !blockedBedIds.has(b.id));
@@ -1994,7 +2004,7 @@ export async function getAvailableBedsForRange(
 /** Physical beds with no assignment and no block overlapping [startDate, endDate). */
 export async function getBedsFreeToBlock(startDate: string, endDate: string, dormId?: number) {
   if (!startDate || !endDate || startDate >= endDate) return [];
-  const { physical } = await loadBedsAvailabilityForRange(startDate, endDate, dormId);
+  const { physical } = await loadBedsAvailabilityForRange(startDate, endDate, dormId, true);
   return physical;
 }
 
@@ -2029,12 +2039,6 @@ export async function assignBedToBooking(data: {
   if (!data.checkinDate || !data.checkoutDate || data.checkinDate >= data.checkoutDate) return false;
   return dbWrite(async () => {
     const db = getDb();
-    const physicalBed = await db.select({ status: beds.status, checkinDate: beds.checkinDate, expectedCheckout: beds.expectedCheckout })
-      .from(beds).where(eq(beds.id, data.bedId)).limit(1);
-    const existing = physicalBed[0];
-    if (!existing) return false;
-    if (existing.status === "occupied" && existing.checkinDate && existing.expectedCheckout
-      && existing.checkinDate < data.checkoutDate && existing.expectedCheckout > data.checkinDate) return false;
     const now = new Date().toISOString();
     const pool = data.inventoryPool || "online";
 

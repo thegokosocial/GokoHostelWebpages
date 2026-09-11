@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts` — **52** `sqliteTable`s. Applied SQL: `migrations/0001_initial.sql` … `0042_booking_stay_payments.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies `0042` (it skips only `0035` CMS and `0041` splits).
+**Git-safe.** Schema: `src/db/schema.ts` — **52** `sqliteTable`s. Applied SQL: `migrations/0001_initial.sql` … `0050_bed_checkin_identity.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 
@@ -30,7 +30,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 |-------|------|
 | `checkins` | Guest register. `status` active / checked_out. `verified` yes/pending/no/spoof_warning. Drive URLs in `id_card_link`, `visa_link`. |
 | `dorms` | Named rooms. Unique `name`. |
-| `beds` | Physical bed. `status` available / occupied / cleanup. Denormalized guest fields when occupied. `is_blocked`. |
+| `beds` | Physical bed. `status` available / occupied / cleanup. Denormalized guest fields and `checkin_id` when occupied. `is_blocked`. `checkin_id` is independent from booking-bed assignments. |
 | `bed_history` | Append-only assign/checkout/clean/swap. |
 | `bookings` | OTA + manual + Aiosell. Amounts in **rupees** (food is paise). `goko_booking_id`, `cm_booking_id`. Desk collect: `payment_method` cash/online/split, `cash_received`, `change_given`. Prepaid check-in copies `amount_paid` = total as online. Cancel-after-check-in refund: `amount_refunded` (does **not** reduce `amount_paid`), `refund_method`, `refund_cash`. |
 | `booking_bed_assignments` | Date-range bed hold. `inventory_pool` online/offline/block. |

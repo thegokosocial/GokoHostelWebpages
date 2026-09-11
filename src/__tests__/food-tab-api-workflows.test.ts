@@ -455,7 +455,7 @@ describe("Food tab API workflows", () => {
       expect(await res.json()).toEqual({ success: true });
       expect(food.activeCheckinIdsForContact).toHaveBeenCalledWith("+91 98765 43210");
       expect(food.getPendingFoodTab).not.toHaveBeenCalled();
-      expect(q.updateBedStatus).toHaveBeenCalledWith(7, { status: "cleanup" });
+      expect(q.updateBedStatus).toHaveBeenCalledWith(7, { status: "cleanup", checkinId: null });
       expect(where).toHaveBeenCalled();
     });
   });

@@ -144,12 +144,12 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeB
   );
 }
 
-export function AdminBeds({ password, username, role, permissions = {}, pendingAssignGuest, onPendingAssignConsumed, onNavigateToBooking }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; pendingAssignGuest?: string | null; onPendingAssignConsumed?: () => void; onNavigateToBooking?: (bookingId: number) => void }) {
+export function AdminBeds({ password, username, role, permissions = {}, pendingAssignCheckinId, onPendingAssignConsumed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; pendingAssignCheckinId?: number | null; onPendingAssignConsumed?: () => void }) {
   const { apiCall } = useAdminApi(password, username);
   const { showError } = useAdminToast();
   const [beds, setBeds] = useState<BedRow[]>([]);
   const [unassigned, setUnassigned] = useState<string[][]>([]);
-  const [linkedBookingIds, setLinkedBookingIds] = useState<Record<string, number>>({});
+  const [linkedBookingDetails, setLinkedBookingDetails] = useState<Record<string, { id: number; persons: number; roomType: string; reference: string }>>({});
   const [loading, setLoading] = useState(true);
   const [loadingBedIdx, setLoadingBedIdx] = useState<number | null>(null);
   const [selectedDorm, setSelectedDorm] = useState<string | null>(null);
@@ -166,16 +166,14 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
   useEffect(() => { loadBeds(); }, []);
 
   useEffect(() => {
-    if (!pendingAssignGuest || loading || unassigned.length === 0) return;
-    const guest = unassigned.find((g) => g[5] === pendingAssignGuest);
+    if (!pendingAssignCheckinId || loading || unassigned.length === 0) return;
+    const guest = unassigned.find((g) => Number(g[15]) === pendingAssignCheckinId);
     if (guest) {
       setChangingBed(null);
-      const bookingId = linkedBookingIds[guest[15]];
-      if (bookingId && onNavigateToBooking) onNavigateToBooking(bookingId);
-      else setAssigningGuest(guest);
+      setAssigningGuest(guest);
     }
     onPendingAssignConsumed?.();
-  }, [pendingAssignGuest, loading, unassigned, linkedBookingIds, onNavigateToBooking, onPendingAssignConsumed]);
+  }, [pendingAssignCheckinId, loading, unassigned, onPendingAssignConsumed]);
 
   const loadBeds = async () => {
     setLoading(true);
@@ -186,7 +184,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         const data = await res.json();
         setBeds((data.beds || []).map(parseBedRow));
         setUnassigned(data.unassigned || []);
-        setLinkedBookingIds(data.linkedBookingIds || {});
+        setLinkedBookingDetails(data.linkedBookingDetails || {});
       }
     } finally { setLoading(false); }
   };
@@ -237,7 +235,6 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         checkinDate: guest[1],
         stayingDays: guest[6],
         checkinId: guest[15],
-        guestBookingId: guest[16],
       });
       if (res.ok) { setAssigningGuest(null); await loadBeds(); }
       else { const d = await res.json().catch(() => ({})); showError(d.error || "Could not assign this bed"); }
@@ -378,6 +375,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
                 <div>
                   <span className="font-medium text-brand-green-dark">{guest[3]}</span>
                   <span className="ml-2 text-xs text-brand-green-dark/50">{guest[6]} days · {guest[7]}</span>
+                  {linkedBookingDetails[guest[15]] && <span className="ml-2 text-xs text-blue-700 dark:text-blue-400">Online booking · {linkedBookingDetails[guest[15]].roomType || "room type not specified"} · {linkedBookingDetails[guest[15]].persons} person{linkedBookingDetails[guest[15]].persons === 1 ? "" : "s"}</span>}
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => void openGuestCheckout(guest)}
@@ -386,12 +384,10 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
                   </button>
                   <button type="button" onClick={() => {
                     setChangingBed(null);
-                    const bookingId = linkedBookingIds[guest[15]];
-                    if (bookingId && onNavigateToBooking) onNavigateToBooking(bookingId);
-                    else setAssigningGuest(guest);
+                    setAssigningGuest(guest);
                   }}
                     className="rounded-md bg-brand-green px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-green-dark">
-                    {linkedBookingIds[guest[15]] ? "Open booking" : "Assign bed"}
+                    Assign bed
                   </button>
                 </div>
               </motion.div>
@@ -443,7 +439,9 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
       {assigningGuest && (
         <div className="mt-4 rounded-xl border-2 border-brand-green bg-brand-green/[0.04] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="min-w-0 truncate font-medium text-brand-green">Assigning bed to: <strong>{assigningGuest[3]}</strong> ({assigningGuest[6]} days)</p>
+            <div className="min-w-0 truncate font-medium text-brand-green">Assigning bed to: <strong>{assigningGuest[3]}</strong> ({assigningGuest[6]} days)
+              {linkedBookingDetails[assigningGuest[15]] && <span className="ml-2 text-xs font-normal text-blue-700 dark:text-blue-400">Online booking: {linkedBookingDetails[assigningGuest[15]].roomType || "room type not specified"} · booking bed is informational only</span>}
+            </div>
             <button type="button" onClick={() => setAssigningGuest(null)} className="text-sm text-brand-green-dark/60 hover:text-brand-red">Cancel</button>
           </div>
           <p className="mt-1 text-xs text-brand-green-dark/60">Click on any available (green) bed below to assign</p>

@@ -19,6 +19,7 @@ export type BedRow = {
   checkinDate: string;
   expectedCheckout: string;
   stayingDays: string;
+  checkinId?: number;
 };
 
 export function parseBedRow(row: string[]): BedRow {
@@ -34,6 +35,7 @@ export function parseBedRow(row: string[]): BedRow {
     checkinDate: row[7] || "",
     expectedCheckout: row[8] || "",
     stayingDays: row[9] || "",
+    checkinId: row[11] ? parseInt(row[11], 10) : undefined,
   };
 }
 

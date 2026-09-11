@@ -19,7 +19,7 @@ import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
   getCheckinsByMonth, getActiveCheckins, addCheckin, updateCheckin, deleteCheckin, getCheckinMonths, markVibeMatched,
-  getAllBeds, getBedById, updateBedStatus, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
+  getAllBeds, getBedById, updateBedStatus, assignPhysicalBed, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
   getAllStats, incrementStat, getMonthKey,
@@ -30,7 +30,7 @@ import {
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
-import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
+import { beds, checkins, foodOrders, bookings, bookingHistory } from "@/db/schema";
 import { eq, and, sql, inArray, or, desc } from "drizzle-orm";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
@@ -276,14 +276,15 @@ export async function POST(req: NextRequest) {
       // Sync bed if stayingDays or arrivalDate changed
       if (newStayingDays && guestContact) {
         const allBeds = await getAllBeds();
-        const guestBed = allBeds.find((b) => b.status === "occupied" && b.guestContact === guestContact);
+        const guestBed = allBeds.find((b) => b.status === "occupied" && b.checkinId === rowId)
+          || allBeds.find((b) => b.status === "occupied" && !b.checkinId && b.guestContact === guestContact);
         if (guestBed) {
           const days = parseInt(newStayingDays) || 1;
           const checkin = newArrivalDate || guestBed.checkinDate || todayIST();
           const coDate = new Date(checkin + "T12:00:00Z");
           coDate.setUTCDate(coDate.getUTCDate() + days);
           const checkoutDate = coDate.toISOString().split("T")[0];
-          await updateBedStatus(allBeds.indexOf(guestBed), {
+          await updateBedStatus(guestBed.id, {
             status: "occupied",
             guestName: guestName || guestBed.guestName || "",
             guestContact,
@@ -577,7 +578,9 @@ export async function POST(req: NextRequest) {
       }
 
       const todayCheckoutBeds = checkoutBeds.map((b) => {
-        const matchedIds = checkinIdsMatchingContact(activeCheckins, b.guestContact || "");
+        const matchedIds = b.checkinId
+          ? [b.checkinId]
+          : checkinIdsMatchingContact(activeCheckins, b.guestContact || "");
         const tab = { pendingTab: 0, paidTotal: 0, totalOrders: 0, pendingOrders: 0 };
         for (const id of matchedIds) {
           const part = tabByCheckin.get(id);
@@ -603,30 +606,23 @@ export async function POST(req: NextRequest) {
         };
       });
 
-      const assignedGuests = new Map<string, string>();
+      const assignedGuests = new Map<number, string>();
+      const legacyAssignedGuests = new Map<string, string[]>();
       for (const b of allBeds) {
-        if (b.status === "occupied" && b.guestContact) assignedGuests.set(checkinIdentity(b.guestName || "", b.guestContact), `${b.dormName} / ${b.bedId}`);
-      }
-
-      const bookingAssignedBeds = new Map<number, string[]>();
-      const bookingAssignments = await getDb().select({
-        bookingId: bookingBedAssignments.bookingId,
-        bedId: bookingBedAssignments.bedId,
-      }).from(bookingBedAssignments).where(eq(bookingBedAssignments.status, "assigned"));
-      const bedsById = new Map(allBeds.map((b) => [b.id, `${b.dormName} / ${b.bedId}`]));
-      for (const assignment of bookingAssignments) {
-        const label = bedsById.get(assignment.bedId);
-        if (!label) continue;
-        const labels = bookingAssignedBeds.get(assignment.bookingId) || [];
-        labels.push(label);
-        bookingAssignedBeds.set(assignment.bookingId, labels);
+        if (b.status !== "occupied") continue;
+        const label = `${b.dormName} / ${b.bedId}`;
+        if (b.checkinId) assignedGuests.set(b.checkinId, label);
+        else if (b.guestContact) {
+          const key = checkinIdentity(b.guestName || "", b.guestContact);
+          legacyAssignedGuests.set(key, [...(legacyAssignedGuests.get(key) || []), label]);
+        }
       }
 
       const todayCheckinsWithBed = todayCheckins.map((r) => {
         const linkedBookingId = r.bookingId ? bookingByReference.get(String(r.bookingId).trim()) || null : null;
         return {
         row: [r.submittedAt, r.arrivalDate, r.arrivalTime, r.name, r.persons, r.contact, r.stayingDays, r.comingFrom, r.nationality, r.emergencyName, r.emergencyPhone, r.idType, r.idCardLink, r.visaLink, r.verified, String(r.id)],
-        assignedBed: assignedGuests.get(checkinIdentity(r.name, r.contact)) || (linkedBookingId ? bookingAssignedBeds.get(linkedBookingId)?.join(", ") || null : null),
+        assignedBed: assignedGuests.get(r.id) || legacyAssignedGuests.get(checkinIdentity(r.name, r.contact))?.[0] || null,
         linkedBookingId,
         dob: (r as any).dob || "",
         dobFromId: (r as any).dobFromId || "",
@@ -723,13 +719,26 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const assignedGuests = new Set(allBeds.filter((b) => b.status === "occupied" && b.guestContact).map((b) => checkinIdentity(b.guestName || "", b.guestContact)));
-      const unassignedCheckins = monthCheckins.filter((r) => r.contact && r.status === "active" && !assignedGuests.has(checkinIdentity(r.name, r.contact)));
+      const assignedCheckinIds = new Set(allBeds.filter((b) => b.status === "occupied" && b.checkinId).map((b) => b.checkinId));
+      const legacyAssignedCounts = new Map<string, number>();
+      for (const bed of allBeds) {
+        if (bed.status === "occupied" && !bed.checkinId && bed.guestContact) {
+          const key = checkinIdentity(bed.guestName || "", bed.guestContact);
+          legacyAssignedCounts.set(key, (legacyAssignedCounts.get(key) || 0) + 1);
+        }
+      }
+      const unassignedCheckins = monthCheckins.filter((r) => {
+        if (!r.contact || r.status !== "active" || assignedCheckinIds.has(r.id)) return false;
+        const key = checkinIdentity(r.name, r.contact);
+        const legacyCount = legacyAssignedCounts.get(key) || 0;
+        if (legacyCount > 0) { legacyAssignedCounts.set(key, legacyCount - 1); return false; }
+        return true;
+      });
 
       const bedsArr = allBeds.map((b) => [
         b.dormName, b.bedId, b.position, b.type, b.status,
         b.guestName, b.guestContact, b.checkinDate, b.expectedCheckout, b.stayingDays,
-        String(b.id),
+        String(b.id), String(b.checkinId || ""),
       ]);
       const unassignedArr = unassignedCheckins.map((r) => [
         r.submittedAt, r.arrivalDate, r.arrivalTime, r.name, r.persons,
@@ -738,33 +747,33 @@ export async function POST(req: NextRequest) {
         String(r.id), r.bookingId || "",
       ]);
 
-      const linkedBookingIds: Record<string, number> = {};
+      const linkedBookingDetails: Record<string, { id: number; persons: number; roomType: string; reference: string }> = {};
       for (const checkin of unassignedCheckins) {
-        const bookingId = checkin.bookingId ? bookingByReference.get(String(checkin.bookingId).trim()) : undefined;
-        if (bookingId) linkedBookingIds[String(checkin.id)] = bookingId;
+        const reference = String(checkin.bookingId || "").trim();
+        const bookingId = reference ? bookingByReference.get(reference) : undefined;
+        const booking = bookingId ? allBookings.find((item) => item.id === bookingId) : undefined;
+        if (booking) linkedBookingDetails[String(checkin.id)] = {
+          id: booking.id,
+          persons: booking.persons,
+          roomType: booking.roomType || "",
+          reference,
+        };
       }
-      return NextResponse.json({ beds: bedsArr, unassigned: unassignedArr, linkedBookingIds, role });
+      return NextResponse.json({ beds: bedsArr, unassigned: unassignedArr, linkedBookingDetails, role });
     }
 
     if (action === "assignBed") {
-      const { bedId, guestName, guestContact, checkinDate, stayingDays, checkinId, guestBookingId } = rest;
+      const { bedId, guestName, guestContact, checkinDate, stayingDays, checkinId } = rest;
       if (!isValidId(bedId) || !guestName) return NextResponse.json({ error: "Missing data" }, { status: 400 });
 
       const bed = await getBedById(bedId);
       if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
       if (bed.status !== "available") return NextResponse.json({ error: "Bed is not available" }, { status: 400 });
 
-      const guestRows = isValidId(checkinId) ? await getDb().select().from(checkins).where(eq(checkins.id, Number(checkinId))).limit(1) : [];
-      const linkedReference = String(guestRows[0]?.bookingId || guestBookingId || "").trim();
-      if (linkedReference) {
-        const linkedBooking = await getDb().select({ id: bookings.id }).from(bookings).where(or(
-          eq(bookings.bookingRef, linkedReference),
-          eq(bookings.gokoBookingId, linkedReference),
-          eq(bookings.cmBookingId, linkedReference),
-        )).limit(1);
-        if (linkedBooking.length > 0) {
-          return NextResponse.json({ error: "This guest has a booking. Open the booking assignment screen to assign the room.", bookingId: linkedBooking[0].id }, { status: 409 });
-        }
+      if (isValidId(checkinId)) {
+        const guest = await getDb().select({ id: checkins.id, status: checkins.status }).from(checkins)
+          .where(and(eq(checkins.id, Number(checkinId)), eq(checkins.status, "active"))).limit(1);
+        if (guest.length === 0) return NextResponse.json({ error: "Active check-in not found" }, { status: 404 });
       }
 
       const days = parseInt(stayingDays) || 1;
@@ -773,7 +782,8 @@ export async function POST(req: NextRequest) {
       coDate.setUTCDate(coDate.getUTCDate() + days);
       const checkoutDate = coDate.toISOString().split("T")[0];
 
-      await updateBedStatus(bedId, { status: "occupied", guestName, guestContact: guestContact || "", checkinDate: checkin, expectedCheckout: checkoutDate, stayingDays: String(days) });
+      const assigned = await assignPhysicalBed(bedId, { guestName, guestContact: guestContact || "", checkinDate: checkin, expectedCheckout: checkoutDate, stayingDays: String(days), checkinId: isValidId(checkinId) ? Number(checkinId) : undefined });
+      if (!assigned) return NextResponse.json({ error: "Bed was just assigned to another guest. Refresh and choose another available bed." }, { status: 409 });
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "assign", guestName, guestContact: guestContact || "" });
       await addAuditEntry({ username: actingUser, action: "bed_assign", target: `${bed.bedId} ${guestName}` });
       addSystemLog({ level: "info", source: "admin-api", message: `Bed assigned: ${bed.bedId} → ${guestName} by ${actingUser}` }).catch(() => {});
@@ -789,17 +799,21 @@ export async function POST(req: NextRequest) {
       if (bed.status !== "occupied") return NextResponse.json({ error: "Bed is not occupied" }, { status: 400 });
 
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "checkout", guestName: bed.guestName || "", guestContact: bed.guestContact || "" });
-      await updateBedStatus(bedId, { status: "cleanup" });
+      await updateBedStatus(bedId, { status: "cleanup", checkinId: null });
 
-      if (bed.guestContact) {
+      if (bed.checkinId || bed.guestContact) {
         try {
           const db = getDb();
-          const contactIds = await activeCheckinIdsForContact(bed.guestContact);
-          const ids = (await db.select({ id: checkins.id }).from(checkins).where(and(
-            inArray(checkins.id, contactIds),
-            eq(checkins.name, bed.guestName || ""),
-            eq(checkins.status, "active"),
-          )).limit(1000)).map((row) => row.id);
+          const ids = bed.checkinId
+            ? (await db.select({ id: checkins.id }).from(checkins).where(and(
+              eq(checkins.id, bed.checkinId),
+              eq(checkins.status, "active"),
+            )).limit(1)).map((row) => row.id)
+            : (await db.select({ id: checkins.id }).from(checkins).where(and(
+              inArray(checkins.id, await activeCheckinIdsForContact(bed.guestContact || "")),
+              eq(checkins.name, bed.guestName || ""),
+              eq(checkins.status, "active"),
+            )).limit(1000)).map((row) => row.id);
           if (ids.length > 0) {
             await db.update(checkins).set({ status: "checked_out", checkedOutAt: new Date().toISOString() }).where(
               and(inArray(checkins.id, ids), eq(checkins.status, "active"))
@@ -882,7 +896,7 @@ export async function POST(req: NextRequest) {
       if (bed.status !== "cleanup") return NextResponse.json({ error: "Bed is not in cleanup status" }, { status: 400 });
 
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "markClean", guestName: "", guestContact: "" });
-      await updateBedStatus(bedId, { status: "available" });
+      await updateBedStatus(bedId, { status: "available", checkinId: null });
       await addAuditEntry({ username: actingUser, action: "bed_clean", target: bed.bedId });
       return NextResponse.json({ success: true });
     }
@@ -896,7 +910,7 @@ export async function POST(req: NextRequest) {
       if (bed.status !== "occupied") return NextResponse.json({ error: "Bed is not occupied" }, { status: 400 });
 
       await logBedHistoryEntry({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "unassign", guestName: bed.guestName || "", guestContact: bed.guestContact || "" });
-      await updateBedStatus(bedId, { status: "available" });
+      await updateBedStatus(bedId, { status: "available", checkinId: null });
       await addAuditEntry({ username: actingUser, action: "bed_unassign", target: `${bed.bedId} ${bed.guestName || ""}` });
       return NextResponse.json({ success: true });
     }
@@ -911,9 +925,9 @@ export async function POST(req: NextRequest) {
       if (fromBed.status !== "occupied") return NextResponse.json({ error: "Source bed is not occupied" }, { status: 400 });
       if (toBed.status !== "available") return NextResponse.json({ error: "Target bed is not available" }, { status: 400 });
 
-      const { guestName, guestContact, checkinDate, expectedCheckout, stayingDays } = fromBed;
-      await updateBedStatus(fromBedId, { status: "cleanup" });
-      await updateBedStatus(toBedId, { status: "occupied", guestName: guestName || "", guestContact: guestContact || "", checkinDate: checkinDate || "", expectedCheckout: expectedCheckout || "", stayingDays: stayingDays || "" });
+      const { guestName, guestContact, checkinDate, expectedCheckout, stayingDays, checkinId } = fromBed;
+      await updateBedStatus(fromBedId, { status: "cleanup", checkinId: null });
+      await updateBedStatus(toBedId, { status: "occupied", guestName: guestName || "", guestContact: guestContact || "", checkinDate: checkinDate || "", expectedCheckout: expectedCheckout || "", stayingDays: stayingDays || "", checkinId: checkinId || null });
       await logBedHistoryEntry({ bedIdLabel: fromBed.bedId, dormName: fromBed.dormName, action: "change-out", guestName: guestName || "", guestContact: guestContact || "" });
       await logBedHistoryEntry({ bedIdLabel: toBed.bedId, dormName: toBed.dormName, action: "change-in", guestName: guestName || "", guestContact: guestContact || "" });
       await addAuditEntry({ username: actingUser, action: "bed_change", target: `${fromBed.bedId} → ${toBed.bedId}` });

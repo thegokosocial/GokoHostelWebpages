@@ -9,6 +9,19 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Keep fixed controls clear of iOS/Android gesture areas. */
+.goko-floating-bottom {
+  bottom: calc(1.5rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 768px) {
+  .goko-floating-bottom {
+    bottom: calc(2rem + env(safe-area-inset-bottom));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

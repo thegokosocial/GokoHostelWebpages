@@ -6,6 +6,7 @@ import { XIcon, Loader2Icon } from "lucide-react";
 import type { DashboardBooking, BedAssignment } from "./types";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { getNights } from "./utils";
+import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
 
 type Unit = { key: string; label: string; dormId: number; dormName: string; type: string; capacity: number; bedIds: number[]; pool: string };
 
@@ -24,6 +25,8 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const [checkoutDate, setCheckoutDate] = useState(booking.checkoutDate || addCalendarDays(booking.checkinDate, 1));
   const [persons, setPersons] = useState(String(booking.persons || 1));
   const [nightlyRate, setNightlyRate] = useState(String(booking.nightlyRate || 0));
+  const [amountPaid, setAmountPaid] = useState(String(booking.amountPaid || 0));
+  const [lowerPaymentMode, setLowerPaymentMode] = useState<"correction" | "refund">("correction");
   const [specialRequests, setSpecialRequests] = useState(booking.specialRequests || "");
   const [availableUnits, setAvailableUnits] = useState<Unit[]>([]);
   const [addUnitKeys, setAddUnitKeys] = useState<string[]>([]);
@@ -31,11 +34,15 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const [loadingUnits, setLoadingUnits] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [paymentAdjustment, setPaymentAdjustment] = useState<{ mode: "collect" | "refund"; amount: number } | null>(null);
 
   const originalCheckout = booking.checkoutDate || booking.checkinDate;
   const datesChanged = checkinDate !== booking.checkinDate || checkoutDate !== originalCheckout;
   const validDates = Boolean(checkinDate && checkoutDate && checkoutDate > checkinDate);
-  const validForm = Boolean(guestName.trim() && validDates && Number.isInteger(Number(persons)) && Number(persons) > 0 && Number.isInteger(Number(nightlyRate)) && Number(nightlyRate) >= 0);
+  const parsedAmountPaid = amountPaid === "" ? NaN : Number(amountPaid);
+  const validAmountPaid = Number.isInteger(parsedAmountPaid) && parsedAmountPaid >= 0 && parsedAmountPaid <= (booking.amountTotal || 0);
+  const validForm = Boolean(guestName.trim() && validDates && Number.isInteger(Number(persons)) && Number(persons) > 0 && Number.isInteger(Number(nightlyRate)) && Number(nightlyRate) >= 0 && validAmountPaid);
+  const paymentChanged = validAmountPaid && parsedAmountPaid !== Number(booking.amountPaid || 0);
   const selectedAddUnits = useMemo(() => availableUnits.filter((unit) => addUnitKeys.includes(unit.key)), [availableUnits, addUnitKeys]);
   const closed = ["checked_out", "cancelled", "no_show"].includes(booking.status);
 
@@ -56,7 +63,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     return () => { cancelled = true; };
   }, [booking.id, checkinDate, checkoutDate, closed, password, username, validDates]);
 
-  const submit = async () => {
+  const save = async (paymentFields: Record<string, unknown> = {}) => {
     setError("");
     if (!validForm) { setError("Enter a guest name, valid dates, guest count, and nightly rate."); return; }
     if (datesChanged && (addUnitKeys.length > 0 || removeBedIds.length > 0)) {
@@ -68,13 +75,26 @@ export function EditBookingModal({ booking, assignments, password, username, onA
       guestName: guestName.trim(), contact: contact.trim(), email: email.trim(), specialRequests: specialRequests.trim(),
       persons: Number(persons), checkinDate, checkoutDate, nightlyRate: Number(nightlyRate),
       addBedIds: selectedAddUnits.flatMap((unit) => unit.bedIds), removeBedIds,
+      ...(paymentChanged ? { amountPaid: parsedAmountPaid, ...paymentFields } : {}),
     });
     setSaving(false);
     if (ok) onClose();
   };
 
+  const submit = async () => {
+    if (!validForm) {
+      setError("Enter a guest name, valid dates, guest count, nightly rate, and a valid amount received.");
+      return;
+    }
+    const currentPaid = Number(booking.amountPaid || 0);
+    if (!paymentChanged) await save();
+    else if (parsedAmountPaid > currentPaid) setPaymentAdjustment({ mode: "collect", amount: parsedAmountPaid - currentPaid });
+    else if (lowerPaymentMode === "refund") setPaymentAdjustment({ mode: "refund", amount: currentPaid - parsedAmountPaid });
+    else await save({ paymentAdjustment: "correction" });
+  };
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/30 p-2 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/30 p-2 backdrop-blur-sm sm:items-center sm:p-4" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="my-2 w-full max-w-lg overflow-hidden rounded-xl border border-border bg-popover shadow-xl sm:my-0 sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-border p-4">
           <div><h3 className="font-display text-lg font-bold text-foreground">Edit Booking</h3><p className="text-xs text-muted-foreground">Manual offline / walk-in booking · status stays {booking.status.replaceAll("_", " ")}</p></div>
@@ -90,7 +110,16 @@ export function EditBookingModal({ booking, assignments, password, username, onA
             <p className="text-xs text-muted-foreground sm:col-span-2">{validDates ? `${getNights(checkinDate, checkoutDate)} night${getNights(checkinDate, checkoutDate) === 1 ? "" : "s"}` : "Enter a check-out date after check-in."}</p>
             <label className="text-xs font-medium">Persons<input type="number" min={1} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={persons} onChange={(e) => setPersons(e.target.value)} /></label>
             <label className="text-xs font-medium">Nightly rate (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={nightlyRate} onChange={(e) => setNightlyRate(e.target.value)} /></label>
+            <label className="text-xs font-medium sm:col-span-2">Amount received (₹)<input type="number" min={0} max={booking.amountTotal || 0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} /><span className="mt-1 block text-[11px] font-normal text-muted-foreground">Current balance after this edit: ₹{validAmountPaid ? Math.max(0, (booking.amountTotal || 0) - parsedAmountPaid).toLocaleString("en-IN") : "—"}</span></label>
           </div>
+
+          {paymentChanged && parsedAmountPaid < Number(booking.amountPaid || 0) && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs dark:border-amber-900 dark:bg-amber-950/20">
+              <div className="font-semibold text-amber-900 dark:text-amber-100">Amount is lower than the saved payment</div>
+              <label className="flex items-start gap-2"><input type="radio" name="lower-payment-mode" checked={lowerPaymentMode === "correction"} onChange={() => setLowerPaymentMode("correction")} /><span><span className="font-medium">Correct the saved amount</span><span className="block text-muted-foreground">Use this when the original advance was entered incorrectly. No money is refunded.</span></span></label>
+              <label className="flex items-start gap-2"><input type="radio" name="lower-payment-mode" checked={lowerPaymentMode === "refund"} onChange={() => setLowerPaymentMode("refund")} /><span><span className="font-medium">Refund the difference</span><span className="block text-muted-foreground">Record how the difference is returned using the payment dialog.</span></span></label>
+            </div>
+          )}
 
           <div>
             <div className="text-xs font-semibold text-foreground">Assigned rooms / beds</div>
@@ -108,6 +137,26 @@ export function EditBookingModal({ booking, assignments, password, username, onA
         </div>
         <div className="flex flex-col-reverse gap-2 border-t border-border p-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={() => void submit()} disabled={saving || !validForm}>{saving ? "Saving..." : "Save changes"}</Button></div>
       </div>
+      {paymentAdjustment && (
+        <RecordPaymentModal
+          totalAmount={paymentAdjustment.amount}
+          guestName={booking.guestName}
+          mode={paymentAdjustment.mode === "refund" ? "refund" : "collect"}
+          amountUnit="rupees"
+          zClass="z-[80]"
+          password={password}
+          username={username}
+          receiptKind="room"
+          onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
+            const adjustment = paymentAdjustment;
+            setPaymentAdjustment(null);
+            await save(adjustment.mode === "refund"
+              ? { paymentAdjustment: "refund", refundMethod: method, refundCash: method === "cash" ? adjustment.amount : cashReceived, onlineAccountId, receiptId }
+              : { paymentAdjustment: "payment", paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId });
+          }}
+          onClose={() => !saving && setPaymentAdjustment(null)}
+        />
+      )}
     </div>
   );
 }

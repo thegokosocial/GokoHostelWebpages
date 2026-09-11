@@ -25,7 +25,7 @@ export function AdminDashboard({
   password: string;
   username?: string;
   role: Role;
-  onNavigate: (section: AdminSection, opts?: { assignGuestContact?: string; bookingId?: number; managementTab?: ManagementTab; channelManagerTab?: "sync" }) => void;
+  onNavigate: (section: AdminSection, opts?: { assignGuestCheckinId?: number; bookingId?: number; managementTab?: ManagementTab; channelManagerTab?: "sync" }) => void;
   permissions?: Record<string, boolean>;
 }) {
   const { apiCall } = useAdminApi(password, username);
@@ -366,7 +366,7 @@ export function AdminDashboard({
             <BanknoteIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
             <span className="font-medium text-red-800 dark:text-red-200">{unpaidStays.length} unpaid stay{unpaidStays.length !== 1 ? "s" : ""}</span>
           </div>
-          <motion.div className="mt-3 space-y-2.5" variants={staggerContainer} initial="hidden" animate="visible">
+          <motion.div className="mt-3 max-h-80 space-y-2.5 overflow-y-auto pr-1" variants={staggerContainer} initial="hidden" animate="visible">
             {unpaidStays.map((s) => (
               <motion.div key={s.id} variants={staggerItem} className="rounded-xl border border-gray-100 dark:border-zinc-700/50 bg-white dark:bg-zinc-900 p-3 shadow-sm dark:shadow-none">
                 <div className="flex items-start justify-between gap-2">
@@ -477,11 +477,9 @@ export function AdminDashboard({
                         {item.assignedBed}
                       </span>
                     ) : (
-                      <button type="button" onClick={() => item.linkedBookingId
-                        ? onNavigate("bookings", { bookingId: item.linkedBookingId })
-                        : onNavigate("beds", { assignGuestContact: item.row[5] })}
+                      <button type="button" onClick={() => onNavigate("beds", { assignGuestCheckinId: checkinId })}
                         className="rounded-lg bg-blue-50 dark:bg-blue-950 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-400 transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/50 active:bg-blue-200">
-                        {item.linkedBookingId ? "Open booking" : "Assign bed"}
+                        Assign bed
                       </button>
                     )}
                     <span className="text-[11px] text-brand-green-dark/40 dark:text-zinc-600">{item.row[2]}</span>

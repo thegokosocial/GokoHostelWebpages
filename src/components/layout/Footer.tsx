@@ -87,14 +87,14 @@ export function Footer() {
                               href={href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-sm text-white/90 underline-offset-4 hover:underline"
+                              className="inline-flex min-h-11 items-center text-sm text-white/90 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
                             >
                               {label}
                             </a>
                           ) : (
                             <Link
                               href={href}
-                              className="text-sm text-white/90 underline-offset-4 hover:underline"
+                              className="inline-flex min-h-11 items-center text-sm text-white/90 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
                             >
                               {label}
                             </Link>
@@ -115,7 +115,7 @@ export function Footer() {
               href={social.instagram}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              className="inline-flex min-h-11 items-center rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             >
               Instagram
             </a>
@@ -123,7 +123,7 @@ export function Footer() {
               href={social.facebook}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              className="inline-flex min-h-11 items-center rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             >
               Facebook
             </a>
@@ -131,13 +131,13 @@ export function Footer() {
               href={site.googleBusinessUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              className="inline-flex min-h-11 items-center rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             >
               Google Maps
             </a>
             <a
               href={`mailto:${site.contactEmail}?subject=${encodeURIComponent("Goko Hostel")}`}
-              className="rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              className="inline-flex min-h-11 items-center rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             >
               Email
             </a>
@@ -145,7 +145,7 @@ export function Footer() {
               href={site.whatsAppUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              className="inline-flex min-h-11 items-center rounded-full border border-white/25 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             >
               WhatsApp
             </a>
@@ -155,7 +155,7 @@ export function Footer() {
       </div>
 
       <div className="border-t border-white/10 bg-brand-green-dark/40">
-        <div className="mx-auto flex max-w-6xl justify-center px-4 py-4 md:px-6">
+        <div className="mx-auto flex max-w-6xl justify-center px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 md:px-6">
           <BookNowBare className="goko-gradient-cta inline-flex min-h-11 items-center justify-center rounded-full px-8 py-2.5 font-display text-sm font-semibold uppercase tracking-wide text-white shadow-md">
             Book now
           </BookNowBare>

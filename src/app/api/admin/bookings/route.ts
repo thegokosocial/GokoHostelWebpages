@@ -1533,7 +1533,7 @@ export async function POST(req: NextRequest) {
     // --- Edit Reservation (prices / add-remove beds) ---
 
     if (action === "editReservation") {
-      const { bookingId, guestName, contact, email, specialRequests, persons, checkinDate: requestedCheckin, checkoutDate: requestedCheckout, nightlyRate, amountBeforeTax, amountTax, amountTotal, amountPaid, addBedIds, removeBedIds, taxMode } = body;
+      const { bookingId, guestName, contact, email, specialRequests, persons, checkinDate: requestedCheckin, checkoutDate: requestedCheckout, nightlyRate, amountBeforeTax, amountTax, amountTotal, amountPaid, paymentAdjustment, paymentMethod, cashReceived, changeGiven, refundMethod, refundCash, onlineAccountId, receiptId, addBedIds, removeBedIds, taxMode } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
 
       const detail = await getBookingDetail(bookingId);
@@ -1626,12 +1626,6 @@ export async function POST(req: NextRequest) {
           if (cleared) updates.rawData = cleared;
         }
       }
-      if (amountPaid !== undefined) {
-        if (!Number.isInteger(Number(amountPaid)) || Number(amountPaid) !== Number(detail.booking.amountPaid || 0)) {
-          return NextResponse.json({ error: "Collected payment cannot be changed from reservation edit" }, { status: 400 });
-        }
-      }
-
       if (Object.keys(updates).length > 0 && nightlyRate !== undefined && amountBeforeTax === undefined && amountTotal === undefined) {
         const nights = diffDays(checkinDate, checkoutDate);
         const bedsCount = parseGokoWalkin(detail.booking.rawData)?.unitPricing ? 1 : Math.max(1, detail.assignments.filter((a) => a.status === "assigned").length);
@@ -1641,7 +1635,74 @@ export async function POST(req: NextRequest) {
         updates.amountTax = priced.tax;
         updates.amountTotal = priced.totalBeforeTax + priced.tax;
       }
-      if (Number(updates.amountTotal ?? detail.booking.amountTotal ?? 0) < Number(detail.booking.amountPaid || 0)) {
+      let paymentReceipt: { receiptId: string; accountId: number; amount: number; kind: "stay" | "refund" } | null = null;
+      if (amountPaid !== undefined) {
+        if (detail.booking.source !== "manual") return NextResponse.json({ error: "Collected payment can only be edited for manual bookings" }, { status: 400 });
+        const nextPaid = Number(amountPaid);
+        const oldPaid = Number(detail.booking.amountPaid || 0);
+        const total = Number(updates.amountTotal ?? detail.booking.amountTotal ?? 0);
+        if (!Number.isInteger(nextPaid) || nextPaid < 0 || nextPaid > total) {
+          return NextResponse.json({ error: "Amount received must be a whole amount between ₹0 and the booking total" }, { status: 400 });
+        }
+        if (nextPaid === oldPaid) return NextResponse.json({ error: "No payment amount change" }, { status: 400 });
+        if (nextPaid > oldPaid) {
+          if (paymentAdjustment !== "payment" || !isStayPayMethod(paymentMethod)) {
+            return NextResponse.json({ error: "Payment details are required for an increased amount received" }, { status: 400 });
+          }
+          const merged = mergeStayCollect({
+            existingMethod: detail.booking.paymentMethod,
+            existingCashReceived: detail.booking.cashReceived,
+            existingPaid: oldPaid,
+            existingChangeGiven: detail.booking.changeGiven,
+            amountTotal: nextPaid,
+            newMethod: paymentMethod,
+            newCashReceived: Number(cashReceived) || 0,
+            newChangeGiven: Number(changeGiven) || 0,
+          });
+          Object.assign(updates, merged);
+          const delta = nextPaid - oldPaid;
+          const onlineAmount = paymentMethod === "online" ? delta : paymentMethod === "split" ? Math.max(0, delta - (Number(cashReceived) || 0)) : 0;
+          if (onlineAmount > 0) paymentReceipt = { receiptId: receiptId || crypto.randomUUID(), accountId: await resolveReceiptAccount("room", onlineAccountId), amount: onlineAmount, kind: "stay" };
+          changes.push(`Amount received → ₹${nextPaid}`);
+        } else {
+          const difference = oldPaid - nextPaid;
+          if (paymentAdjustment !== "correction" && paymentAdjustment !== "refund") {
+            return NextResponse.json({ error: "Choose whether to correct the amount or refund the difference" }, { status: 400 });
+          }
+          if (paymentAdjustment === "refund") {
+            if (!isStayPayMethod(refundMethod)) return NextResponse.json({ error: "Refund method required (cash, online, or split)" }, { status: 400 });
+            const written = stayRefundWrite(refundMethod, difference, Number(refundCash) || 0);
+            updates.amountRefunded = Number(detail.booking.amountRefunded || 0) + difference;
+            updates.refundMethod = written.refundMethod;
+            updates.refundCash = written.refundCash;
+            updates.refundedAt = new Date().toISOString();
+            updates.refundedBy = actingUser;
+            const onlineAmount = written.refundMethod === "online" ? difference : written.refundMethod === "split" ? Math.max(0, difference - written.refundCash) : 0;
+            if (onlineAmount > 0) paymentReceipt = { receiptId: receiptId || crypto.randomUUID(), accountId: await resolveReceiptAccount("room", onlineAccountId), amount: -onlineAmount, kind: "refund" };
+            changes.push(`Refunded ₹${difference} (${written.refundMethod}); amount received → ₹${nextPaid}`);
+          } else {
+            changes.push(`Corrected amount received → ₹${nextPaid}`);
+          }
+          updates.amountPaid = nextPaid;
+          updates.paymentStatus = nextPaid > 0 ? "paid" : "unknown";
+          if (nextPaid === 0) {
+            updates.paymentMethod = "";
+            updates.cashReceived = 0;
+            updates.changeGiven = 0;
+          } else if (detail.booking.paymentMethod === "cash") {
+            updates.cashReceived = nextPaid;
+            updates.changeGiven = 0;
+          } else if (detail.booking.paymentMethod === "online") {
+            updates.cashReceived = 0;
+            updates.changeGiven = 0;
+          } else {
+            updates.cashReceived = Math.min(Number(detail.booking.cashReceived || 0), nextPaid);
+            updates.changeGiven = 0;
+          }
+        }
+      }
+      const finalAmountPaid = amountPaid !== undefined ? Number(amountPaid) : Number(detail.booking.amountPaid || 0);
+      if (Number(updates.amountTotal ?? detail.booking.amountTotal ?? 0) < finalAmountPaid) {
         return NextResponse.json({ error: "Booking total cannot be less than the amount already collected" }, { status: 400 });
       }
 
@@ -1702,6 +1763,17 @@ export async function POST(req: NextRequest) {
       if (Object.keys(updates).length > 0) {
         await updateBookingFull(bookingId, updates);
       }
+
+      if (paymentReceipt) await createGuestReceipt({
+        receiptId: paymentReceipt.receiptId,
+        sourceType: "booking",
+        sourceId: bookingId,
+        kind: paymentReceipt.kind,
+        accountId: paymentReceipt.accountId,
+        amount: paymentReceipt.amount,
+        createdBy: actingUser,
+        notes: paymentReceipt.kind === "refund" ? `Booking payment refund for ${detail.booking.guestName}` : `Booking payment adjustment for ${detail.booking.guestName}`,
+      });
 
       if (changes.length > 0) {
         await addBookingHistoryEntry({

@@ -429,12 +429,17 @@ export function tagBedsForPicker<T extends { id: number; dormId: number; bedId: 
     const freeIds = new Set((freeByDorm.get(dormId) ?? []).map((b) => b.id));
     const blockedIds = new Set((blockedByDorm.get(dormId) ?? []).map((b) => b.id));
     const units = sellableUnits((allBeds as T[]).filter((b) => b.dormId === dormId));
-    const freeUnits = units.filter((u) => u.beds.every((b) => freeIds.has(b.id)));
     const blockedUnits = units.filter((u) => u.beds.some((b) => blockedIds.has(b.id)));
-    // Pools are counted in sellable rooms. Every internal slot inherits its unit's pool.
-    freeUnits.forEach((unit, i) => {
+    // Complete units remain available for multi-person bookings. A partially free
+    // double unit also exposes its remaining slots for one-person bookings.
+    units.forEach((unit, i) => {
       const pool = i < slots.online ? "online" : i < slots.online + slots.offline ? "offline" : null;
-      if (pool) unit.beds.forEach((bed) => out.push({ ...bed, pool }));
+      if (!pool) return;
+      if (unit.beds.some((bed) => blockedIds.has(bed.id))) return;
+      const freeBeds = unit.beds.filter((bed) => freeIds.has(bed.id));
+      if (freeBeds.length === unit.beds.length || (unit.type === "Double" && freeBeds.length > 0)) {
+        freeBeds.forEach((bed) => out.push({ ...bed, pool }));
+      }
     });
     blockedUnits.forEach((unit) => unit.beds.forEach((bed) => out.push({ ...bed, pool: "block" })));
   }

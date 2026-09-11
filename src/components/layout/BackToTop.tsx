@@ -19,7 +19,7 @@ export function BackToTop() {
       aria-label="Back to top"
       onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
       className={cn(
-        "fixed bottom-6 left-6 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-brand-mist bg-white/90 text-brand-green shadow-card backdrop-blur-sm transition-all duration-300 hover:bg-brand-green hover:text-white hover:shadow-lift active:scale-95 md:bottom-8 md:left-8",
+        "goko-floating-bottom fixed left-6 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-brand-mist bg-white/90 text-brand-green shadow-card backdrop-blur-sm transition-all duration-300 hover:bg-brand-green hover:text-white hover:shadow-lift focus-visible:goko-focus active:scale-95 md:left-8",
         visible
           ? "translate-y-0 opacity-100"
           : "pointer-events-none translate-y-4 opacity-0"
@@ -30,6 +30,7 @@ export function BackToTop() {
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
+        aria-hidden="true"
         strokeWidth={2.5}
         strokeLinecap="round"
         strokeLinejoin="round"

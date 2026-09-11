@@ -798,6 +798,51 @@ describe("walk-in advance payment", () => {
     expect(q.updateBookingFull).not.toHaveBeenCalled();
   });
 
+  it("allows a manual booking payment correction down to zero without a refund", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500, paymentMethod: "cash", cashReceived: 500 },
+      assignments: [],
+    });
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountPaid: 0, paymentAdjustment: "correction" }));
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountPaid: 0, paymentStatus: "unknown", paymentMethod: "" }));
+    expect(q.createGuestReceipt).not.toHaveBeenCalled();
+  });
+
+  it("records an online payment adjustment and receipt when editing amount received upward", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 400, paymentMethod: "cash", cashReceived: 400 },
+      assignments: [],
+    });
+    q.resolveReceiptAccount.mockResolvedValue(22);
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountPaid: 600, paymentAdjustment: "payment", paymentMethod: "online", onlineAccountId: 22, receiptId: "receipt-1" }));
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountPaid: 600, paymentMethod: "split" }));
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "stay", accountId: 22, amount: 200, receiptId: "receipt-1" }));
+  });
+
+  it("records a refund adjustment and negative online receipt when editing amount received downward", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500, paymentMethod: "online", cashReceived: 0 },
+      assignments: [],
+    });
+    q.resolveReceiptAccount.mockResolvedValue(22);
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountPaid: 300, paymentAdjustment: "refund", refundMethod: "online", onlineAccountId: 22, receiptId: "refund-1" }));
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountPaid: 300, amountRefunded: 200, refundMethod: "online" }));
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "refund", accountId: 22, amount: -200, receiptId: "refund-1" }));
+  });
+
+  it("validates a changed booking total against the edited final amount received", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500, paymentMethod: "cash", cashReceived: 500 },
+      assignments: [],
+    });
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountTotal: 400, amountPaid: 300, paymentAdjustment: "correction" }));
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountTotal: 400, amountPaid: 300 }));
+  });
+
   it("rejects an invalid total before changing beds", async () => {
     q.getBookingDetail.mockResolvedValue({
       booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500 },

@@ -220,7 +220,7 @@ export function AdminTimeline({ password, username, role, permissions }: { passw
                                   <p className="mb-1 text-[9px] font-bold uppercase tracking-wide text-brand-green-dark/40">Assign</p>
                                   {unassigned.slice(0, 5).map((g, gi) => (
                                     <button key={gi} type="button"
-                                      onClick={() => act("assignBed", idx, { guestName: g[3], guestContact: g[5], checkinDate: c.day, stayingDays: g[6], checkinId: g[15], guestBookingId: g[16] })}
+                                      onClick={() => act("assignBed", idx, { guestName: g[3], guestContact: g[5], checkinDate: c.day, stayingDays: g[6], checkinId: g[15] })}
                                       className="block w-full rounded-md px-2 py-1 text-left text-[11px] transition-colors hover:bg-brand-sand">
                                       {g[3]} <span className="text-brand-green-dark/40">{g[6]}d</span>
                                     </button>

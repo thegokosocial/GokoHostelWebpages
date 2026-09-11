@@ -39,7 +39,10 @@ export function BookNowBare({ className, children }: BookNowBareProps) {
   return (
     <button
       type="button"
-      className={cn("cursor-pointer border-0", className)}
+      className={cn(
+        "inline-flex min-h-11 items-center cursor-pointer border-0 focus-visible:goko-focus",
+        className,
+      )}
       onClick={openBookingGate}
     >
       {children}

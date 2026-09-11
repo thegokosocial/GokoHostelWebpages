@@ -67,6 +67,7 @@ export const beds = sqliteTable("beds", {
   checkinDate: text("checkin_date").default(""),
   expectedCheckout: text("expected_checkout").default(""),
   stayingDays: text("staying_days").default(""),
+  checkinId: integer("checkin_id").references(() => checkins.id),
   isBlocked: integer("is_blocked").notNull().default(0),
   ...syncColumnsWithDelete,
 }, (table) => [
