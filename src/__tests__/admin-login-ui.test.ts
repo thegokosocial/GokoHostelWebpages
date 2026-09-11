@@ -19,4 +19,8 @@ describe("admin login UI", () => {
     expect(adminPage).toContain("Keep me signed in");
     expect(adminPage).toContain('localStorage.setItem("gokoAdminSession"');
   });
+
+  it("does not offer self-service password change to admin accounts", () => {
+    expect(adminPage).toContain('username && role !== "admin"');
+  });
 });

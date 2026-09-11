@@ -325,7 +325,7 @@ function AdminPageInner() {
             <span className="hidden text-xs font-medium uppercase tracking-wide text-brand-green-dark/50 dark:text-zinc-500 sm:inline">
               {username ? `${username} · ${role}` : role}
             </span>
-            {username && (
+            {username && role !== "admin" && (
               <Button
                 type="button"
                 variant="ghost"
