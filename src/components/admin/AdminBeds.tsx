@@ -144,11 +144,12 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeB
   );
 }
 
-export function AdminBeds({ password, username, role, permissions = {}, pendingAssignGuest, onPendingAssignConsumed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; pendingAssignGuest?: string | null; onPendingAssignConsumed?: () => void }) {
+export function AdminBeds({ password, username, role, permissions = {}, pendingAssignGuest, onPendingAssignConsumed, onNavigateToBooking }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; pendingAssignGuest?: string | null; onPendingAssignConsumed?: () => void; onNavigateToBooking?: (bookingId: number) => void }) {
   const { apiCall } = useAdminApi(password, username);
   const { showError } = useAdminToast();
   const [beds, setBeds] = useState<BedRow[]>([]);
   const [unassigned, setUnassigned] = useState<string[][]>([]);
+  const [linkedBookingIds, setLinkedBookingIds] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [loadingBedIdx, setLoadingBedIdx] = useState<number | null>(null);
   const [selectedDorm, setSelectedDorm] = useState<string | null>(null);
@@ -169,10 +170,12 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     const guest = unassigned.find((g) => g[5] === pendingAssignGuest);
     if (guest) {
       setChangingBed(null);
-      setAssigningGuest(guest);
+      const bookingId = linkedBookingIds[guest[15]];
+      if (bookingId && onNavigateToBooking) onNavigateToBooking(bookingId);
+      else setAssigningGuest(guest);
     }
     onPendingAssignConsumed?.();
-  }, [pendingAssignGuest, loading, unassigned]);
+  }, [pendingAssignGuest, loading, unassigned, linkedBookingIds, onNavigateToBooking, onPendingAssignConsumed]);
 
   const loadBeds = async () => {
     setLoading(true);
@@ -183,6 +186,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         const data = await res.json();
         setBeds((data.beds || []).map(parseBedRow));
         setUnassigned(data.unassigned || []);
+        setLinkedBookingIds(data.linkedBookingIds || {});
       }
     } finally { setLoading(false); }
   };
@@ -236,6 +240,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         guestBookingId: guest[16],
       });
       if (res.ok) { setAssigningGuest(null); await loadBeds(); }
+      else { const d = await res.json().catch(() => ({})); showError("Bed assignment failed", d.error || "Could not assign this bed"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -265,6 +270,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     try {
       const res = await apiCall({ action: "checkoutBed", bedId: bedIdx });
       if (res.ok) await loadBeds();
+      else { const d = await res.json().catch(() => ({})); showError("Checkout failed", d.error || "Could not check out this bed"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -273,6 +279,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     try {
       const res = await apiCall({ action: "markClean", bedId: bedIdx });
       if (res.ok) await loadBeds();
+      else { const d = await res.json().catch(() => ({})); showError("Cleaning failed", d.error || "Could not mark this bed clean"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -282,6 +289,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     try {
       const res = await apiCall({ action: "unassignBed", bedId: bedIdx });
       if (res.ok) await loadBeds();
+      else { const d = await res.json().catch(() => ({})); showError("Unassign failed", d.error || "Could not unassign this bed"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -376,9 +384,14 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
                     className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-400 transition-colors hover:bg-amber-100 dark:hover:bg-amber-900/50">
                     Checkout
                   </button>
-                  <button type="button" onClick={() => { setChangingBed(null); setAssigningGuest(guest); }}
+                  <button type="button" onClick={() => {
+                    setChangingBed(null);
+                    const bookingId = linkedBookingIds[guest[15]];
+                    if (bookingId && onNavigateToBooking) onNavigateToBooking(bookingId);
+                    else setAssigningGuest(guest);
+                  }}
                     className="rounded-md bg-brand-green px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-green-dark">
-                    Assign bed
+                    {linkedBookingIds[guest[15]] ? "Open booking" : "Assign bed"}
                   </button>
                 </div>
               </motion.div>

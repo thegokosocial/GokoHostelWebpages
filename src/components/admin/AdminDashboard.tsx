@@ -31,7 +31,7 @@ export function AdminDashboard({
   const { apiCall } = useAdminApi(password, username);
   const router = useRouter();
   const { showError } = useAdminToast();
-  const [todayCheckins, setTodayCheckins] = useState<{ row: string[]; assignedBed: string | null; dob: string; dobFromId: string; vibeMatched: number }[]>([]);
+  const [todayCheckins, setTodayCheckins] = useState<{ row: string[]; assignedBed: string | null; linkedBookingId: number | null; dob: string; dobFromId: string; vibeMatched: number }[]>([]);
   const [todayCompletedCheckinCount, setTodayCompletedCheckinCount] = useState(0);
   const [todayExpectedCheckinCount, setTodayExpectedCheckinCount] = useState(0);
   const [todayCheckouts, setTodayCheckouts] = useState<{
@@ -477,9 +477,11 @@ export function AdminDashboard({
                         {item.assignedBed}
                       </span>
                     ) : (
-                      <button type="button" onClick={() => onNavigate("beds", { assignGuestContact: item.row[5] })}
+                      <button type="button" onClick={() => item.linkedBookingId
+                        ? onNavigate("bookings", { bookingId: item.linkedBookingId })
+                        : onNavigate("beds", { assignGuestContact: item.row[5] })}
                         className="rounded-lg bg-blue-50 dark:bg-blue-950 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-400 transition-colors hover:bg-blue-100 dark:hover:bg-blue-900/50 active:bg-blue-200">
-                        Assign bed
+                        {item.linkedBookingId ? "Open booking" : "Assign bed"}
                       </button>
                     )}
                     <span className="text-[11px] text-brand-green-dark/40 dark:text-zinc-600">{item.row[2]}</span>

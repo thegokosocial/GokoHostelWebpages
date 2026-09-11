@@ -72,6 +72,8 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 
 ## Other action lists (exact)
 
+Booking-linked dashboard check-ins route their bed assignment to booking `assignBeds`, which is the source of truth for complete double units, multi-person capacity, date overlap, and booking assignment records. Legacy checkins `assignBed` refuses linked bookings before changing physical bed state; unlinked walk-ins continue to use the legacy Beds flow.
+
 The bookings dashboard also uses `getAllBookings` (`canViewBookings`) for its date-scoped All Bookings table. It returns paginated rows across all booking statuses, supports guest/reference/contact search, and refreshes independently; `getCalendarData` continues to exclude cancelled rows for the calendar.
 
 Manual/offline/walk-in bookings can use `editReservation` to update guest name, contact, email, dates, persons, nightly rate, special requests, and room/bed assignments. Date and bed changes are intentionally separate saves so each availability check and assignment mutation is atomic. Active date/bed changes refresh PMS occupancy for the old and new nights; guest-detail and local pricing changes do not require an occupancy push. Existing status, discounts, and tax rules are preserved or recalculated by the server.

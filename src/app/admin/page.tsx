@@ -417,7 +417,7 @@ function AdminPageInner() {
         <div className={cn(fillViewport && "flex h-full min-h-0 flex-1 flex-col")}>
             {section === "dashboard" && <AdminDashboard password={password} username={username} role={role} onNavigate={(s, opts) => { if (opts?.assignGuestContact) setPendingAssignGuest(opts.assignGuestContact); if (opts?.bookingId) setPendingBookingId(opts.bookingId); if (opts?.managementTab) setManagementTab(opts.managementTab); setChannelManagerTab(opts?.channelManagerTab); setSection(s); }} permissions={permissions} />}
             {section === "bookings" && <BookingDashboard password={password} username={username} role={role} permissions={permissions} initialBookingId={pendingBookingId} onInitialBookingConsumed={() => setPendingBookingId(null)} />}
-            {section === "beds" && <AdminBeds password={password} username={username} role={role} permissions={permissions} pendingAssignGuest={pendingAssignGuest} onPendingAssignConsumed={() => setPendingAssignGuest(null)} />}
+            {section === "beds" && <AdminBeds password={password} username={username} role={role} permissions={permissions} pendingAssignGuest={pendingAssignGuest} onPendingAssignConsumed={() => setPendingAssignGuest(null)} onNavigateToBooking={(bookingId) => { setPendingBookingId(bookingId); setSection("bookings"); }} />}
             {section === "timeline" && <AdminTimeline password={password} username={username} role={role} permissions={permissions} />}
             {section === "inventory" && <InventoryRatePlan password={password} username={username} role={role} permissions={permissions} />}
             {section === "records" && <AdminRecords password={password} username={username} role={role} permissions={permissions} />}

@@ -129,7 +129,7 @@ Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), M
 | checkoutBed, checkoutGuest, undoCheckout, getPendingFoodTab | `canCheckout` **or** `canViewDashboard` |
 | getBeds | `canViewBeds` **or** `canViewTimeline` |
 | getBedHistory | `canViewBeds` |
-| assignBed, unassignBed, changeBed | `canAssignBed` **or** `canViewBeds` |
+| assignBed, unassignBed, changeBed | `canAssignBed` **or** `canViewBeds`; `assignBed` rejects booking-linked guests and directs them to booking `assignBeds` |
 | markClean | `canMarkClean` |
 | getBookings, getUpcomingBookings, updateBookingStatus | `canViewBookings` |
 | addBooking | `canAddBooking` |

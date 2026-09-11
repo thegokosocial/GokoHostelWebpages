@@ -526,6 +526,13 @@ export async function POST(req: NextRequest) {
       const todayCompletedCheckinCount = allCheckins.filter((r) => r.arrivalDate === today && (r.status === "active" || r.status === "checked_out")).length;
 
       const allBeds = await getAllBeds();
+      const allBookings = await getAllBookings();
+      const bookingByReference = new Map<string, number>();
+      for (const booking of allBookings) {
+        for (const reference of [booking.bookingRef, booking.gokoBookingId, booking.cmBookingId]) {
+          if (reference) bookingByReference.set(String(reference).trim(), booking.id);
+        }
+      }
       const total = allBeds.length;
       const occupied = allBeds.filter((b) => b.status === "occupied").length;
       const available = allBeds.filter((b) => b.status === "available").length;
@@ -600,6 +607,7 @@ export async function POST(req: NextRequest) {
       const todayCheckinsWithBed = todayCheckins.map((r) => ({
         row: [r.submittedAt, r.arrivalDate, r.arrivalTime, r.name, r.persons, r.contact, r.stayingDays, r.comingFrom, r.nationality, r.emergencyName, r.emergencyPhone, r.idType, r.idCardLink, r.visaLink, r.verified, String(r.id)],
         assignedBed: assignedContacts.get(r.contact) || null,
+        linkedBookingId: r.bookingId ? bookingByReference.get(String(r.bookingId).trim()) || null : null,
         dob: (r as any).dob || "",
         dobFromId: (r as any).dobFromId || "",
         vibeMatched: (r as any).vibeMatched || 0,
@@ -686,6 +694,13 @@ export async function POST(req: NextRequest) {
       const allBeds = await getAllBeds();
       const monthKey = getMonthKey();
       const monthCheckins = await getCheckinsByMonth(monthKey);
+      const allBookings = await getAllBookings();
+      const bookingByReference = new Map<string, number>();
+      for (const booking of allBookings) {
+        for (const reference of [booking.bookingRef, booking.gokoBookingId, booking.cmBookingId]) {
+          if (reference) bookingByReference.set(String(reference).trim(), booking.id);
+        }
+      }
 
       const assignedContacts = new Set(allBeds.filter((b) => b.status === "occupied" && b.guestContact).map((b) => b.guestContact));
       const unassignedCheckins = monthCheckins.filter((r) => r.contact && r.status === "active" && !assignedContacts.has(r.contact));
@@ -702,7 +717,12 @@ export async function POST(req: NextRequest) {
         String(r.id), r.bookingId || "",
       ]);
 
-      return NextResponse.json({ beds: bedsArr, unassigned: unassignedArr, role });
+      const linkedBookingIds: Record<string, number> = {};
+      for (const checkin of unassignedCheckins) {
+        const bookingId = checkin.bookingId ? bookingByReference.get(String(checkin.bookingId).trim()) : undefined;
+        if (bookingId) linkedBookingIds[String(checkin.id)] = bookingId;
+      }
+      return NextResponse.json({ beds: bedsArr, unassigned: unassignedArr, linkedBookingIds, role });
     }
 
     if (action === "assignBed") {
@@ -713,6 +733,19 @@ export async function POST(req: NextRequest) {
       if (!bed) return NextResponse.json({ error: "Bed not found" }, { status: 404 });
       if (bed.status !== "available") return NextResponse.json({ error: "Bed is not available" }, { status: 400 });
 
+      const guestRows = isValidId(checkinId) ? await getDb().select().from(checkins).where(eq(checkins.id, Number(checkinId))).limit(1) : [];
+      const linkedReference = String(guestRows[0]?.bookingId || guestBookingId || "").trim();
+      if (linkedReference) {
+        const linkedBooking = await getDb().select({ id: bookings.id }).from(bookings).where(or(
+          eq(bookings.bookingRef, linkedReference),
+          eq(bookings.gokoBookingId, linkedReference),
+          eq(bookings.cmBookingId, linkedReference),
+        )).limit(1);
+        if (linkedBooking.length > 0) {
+          return NextResponse.json({ error: "This guest has a booking. Open the booking assignment screen to assign the room.", bookingId: linkedBooking[0].id }, { status: 409 });
+        }
+      }
+
       const days = parseInt(stayingDays) || 1;
       const checkin = checkinDate || todayIST();
       const coDate = new Date(checkin + "T12:00:00Z");
@@ -721,7 +754,6 @@ export async function POST(req: NextRequest) {
 
       if (bed.type === "Double") {
         const unit = sellableUnits(await getAllBeds()).find((u) => u.beds.some((b) => b.id === bed.id));
-        const guestRows = isValidId(checkinId) ? await getDb().select().from(checkins).where(eq(checkins.id, Number(checkinId))).limit(1) : [];
         const ref = String(guestRows[0]?.bookingId || guestBookingId || "").trim();
         const contact = String(guestRows[0]?.contact || guestContact || "").trim();
         const identity = [
