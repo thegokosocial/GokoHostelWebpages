@@ -46,6 +46,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | `/api/admin/channel-manager` | **admin role** | Aiosell config, room/rate maps, daily rates, sync logs |
 | `/api/admin/reviews` | admin or `canViewReviews` | Ask-review list, WhatsApp, analytics, settings |
 | `/api/admin/qr-history` | user auth | `list` / `save` / `delete` |
+| `/api/admin/quick-links` | `canViewQuickLinks`; mutations admin-only | Sections and link/QR cards: `list`, `saveSection`, `deleteSection`, `saveItem`, `deleteItem`, `reorder` |
 | `/api/admin/upload` | **env** admin or manager only | Drive upload for records |
 | `/api/admin/import` | **env** admin or manager only | Check-in XLSX |
 | `/api/admin/bulk-import-accounts` | `authenticateUser` | Expense/income XLSX |

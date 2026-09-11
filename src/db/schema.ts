@@ -864,6 +864,30 @@ export const sitePageCopy = sqliteTable("site_page_copy", {
   updatedAt: text("updated_at").notNull().default(""),
 });
 
+export const quickLinkSections = sqliteTable("quick_link_sections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("idx_quick_link_sections_order").on(table.displayOrder)]);
+
+export const quickLinks = sqliteTable("quick_links", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sectionId: integer("section_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  url: text("url").notNull().default(""),
+  imageUrl: text("image_url").notNull().default(""),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: integer("is_active").notNull().default(1),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("idx_quick_links_section_order").on(table.sectionId, table.displayOrder),
+]);
+
 // Staff/volunteer Splitwise (Cloudflare-only; not synced to Pi)
 export const splitMembers = sqliteTable("split_members", {
   id: integer("id").primaryKey({ autoIncrement: true }),

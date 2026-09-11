@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role, type ManagementTab } from "./types";
 
@@ -28,6 +28,7 @@ const ServerSync = dynamic(() => import("./ServerSync").then((m) => m.ServerSync
 const ChannelManager = dynamic(() => import("./ChannelManager").then((m) => m.ChannelManager), { loading: tabLoader, ssr: false });
 const AdminWebsite = dynamic(() => import("./AdminWebsite").then((m) => m.AdminWebsite), { loading: tabLoader, ssr: false });
 const AdminAnalytics = dynamic(() => import("./AdminAnalytics").then((m) => m.AdminAnalytics), { loading: tabLoader, ssr: false });
+const QuickLinks = dynamic(() => import("./QuickLinks").then((m) => m.QuickLinks), { loading: tabLoader, ssr: false });
 
 const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly?: boolean; permission?: string }[] = [
   { id: "dorms", label: "Dorms", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, adminOnly: true },
@@ -48,6 +49,7 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "serverSync", label: "Server Sync", icon: <ServerIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "channelManager", label: "Channel Manager", icon: <WifiIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "analytics", label: "Analytics", icon: <BarChart3Icon className="h-3.5 w-3.5" />, permission: "canViewAnalytics" },
+  { id: "quickLinks", label: "Links & QRs", icon: <LinkIcon className="h-3.5 w-3.5" />, permission: "canViewQuickLinks" },
 ];
 
 export function AdminManagement({ password, username, role, permissions = {}, initialTab, initialChannelTab, onTabUsed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; initialTab?: ManagementTab; initialChannelTab?: "sync"; onTabUsed?: () => void }) {
@@ -168,6 +170,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         {tab === "serverSync" && <ServerSync password={password} username={username} role={role} />}
         {tab === "channelManager" && <ChannelManager password={password} username={username} role={role} initialTab={initialChannelTab} />}
         {tab === "analytics" && <AdminAnalytics password={password} username={username} role={role} permissions={permissions} />}
+        {tab === "quickLinks" && <QuickLinks password={password} username={username} role={role} />}
       </div>
     </div>
   );

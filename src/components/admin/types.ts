@@ -3,7 +3,7 @@ import { permissionEnabled } from "@/lib/actionPermissions";
 
 export type AdminSection = "dashboard" | "bookings" | "beds" | "timeline" | "inventory" | "records" | "foodOrders" | "expenditure" | "splits" | "reviews" | "management";
 
-export type ManagementTab = "dorms" | "users" | "backup" | "audit" | "logs" | "health" | "history" | "rates" | "menu" | "foodSettings" | "bulkUpload" | "qrGenerator" | "accountSettings" | "attendance" | "serverSync" | "channelManager" | "website" | "analytics";
+export type ManagementTab = "dorms" | "users" | "backup" | "audit" | "logs" | "health" | "history" | "rates" | "menu" | "foodSettings" | "bulkUpload" | "qrGenerator" | "accountSettings" | "attendance" | "serverSync" | "channelManager" | "website" | "analytics" | "quickLinks";
 
 export type BedStatus = "available" | "occupied" | "cleanup";
 

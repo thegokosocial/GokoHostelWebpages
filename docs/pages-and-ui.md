@@ -87,6 +87,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |
+| `quickLinks` | `QuickLinks` | `canViewQuickLinks` | mobile-friendly sections of links and QR/image cards; admins edit |
 
 ---
 

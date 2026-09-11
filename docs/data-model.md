@@ -106,6 +106,8 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `qr_history` | Saved QR configs. |
 | `push_subscriptions` | Web push. |
 | `review_requests` / `review_feedback` | Review funnel. |
+| `quick_link_sections` | Custom admin sections for reusable links and QR/image cards. |
+| `quick_links` | Ordered link/QR cards; `is_active` hides a card from non-admin viewers. |
 | `sync_log` / `sync_conflicts` / `sync_id_map` | Pi ↔ CF. |
 
 ---

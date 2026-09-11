@@ -86,7 +86,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Analytics:** `canViewAnalytics`
 
-**Tools:** `canUseQRGenerator`, `canManageAttendance`
+**Tools:** `canUseQRGenerator`, `canManageAttendance`, `canViewQuickLinks`
 
 `canManageInventory` gates the **Inventory** admin tab and `/api/admin/inventory`, plus stock controls inside Menu. Menu viewing and administration use the dedicated menu permissions above.
 `canCheckIn` / `canCheckOut` are grantable calendar controls. The booking API remains backward-compatible with `canAddBooking`.
@@ -110,7 +110,7 @@ Obsolete keys and their planned cleanup are tracked in [permission-debt.md](perm
 
 Admin always sees all. Staff see first allowed section (`firstVisibleAdminSection`).
 
-Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access). Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access), and Links & QRs (`canViewQuickLinks`). Links & QRs mutations are admin-only; non-admin users are read-only. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 ---
 
