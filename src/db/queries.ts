@@ -929,7 +929,8 @@ export async function getGuestFoodTab(checkinId: number) {
   return db.select().from(foodOrders)
     .where(and(
       eq(foodOrders.checkinId, checkinId),
-      eq(foodOrders.paymentStatus, "on_tab"),
+      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+      sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt);
 }
@@ -999,7 +1000,8 @@ export async function getGuestTabTotal(checkinId: number): Promise<number> {
   }).from(foodOrders)
     .where(and(
       eq(foodOrders.checkinId, checkinId),
-      eq(foodOrders.paymentStatus, "on_tab"),
+      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+      sql`${foodOrders.status} != 'cancelled'`,
     ));
   return rows[0]?.total || 0;
 }
@@ -1010,7 +1012,8 @@ export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
   return db.select().from(foodOrders)
     .where(and(
       inArray(foodOrders.checkinId, checkinIds),
-      eq(foodOrders.paymentStatus, "on_tab"),
+      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+      sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt);
 }

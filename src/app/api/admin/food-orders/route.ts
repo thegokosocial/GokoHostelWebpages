@@ -612,7 +612,10 @@ export async function POST(req: NextRequest) {
           orderCount: sql<number>`COUNT(*)`,
           latestOrderTime: sql<string>`MAX(${foodOrders.createdAt})`,
         }).from(foodOrders)
-          .where(eq(foodOrders.paymentStatus, "on_tab"))
+          .where(and(
+            inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+            sql`${foodOrders.status} != 'cancelled'`,
+          ))
           .groupBy(foodOrders.checkinId);
 
         const checkinIds = tabOrders.map((r) => r.checkinId).filter((id): id is number => id != null);
@@ -624,7 +627,11 @@ export async function POST(req: NextRequest) {
           checkinIds.length > 0
             ? db.select({ id: foodOrders.id, checkinId: foodOrders.checkinId })
                 .from(foodOrders)
-                .where(and(inArray(foodOrders.checkinId, checkinIds), eq(foodOrders.paymentStatus, "on_tab")))
+                .where(and(
+                  inArray(foodOrders.checkinId, checkinIds),
+                  inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+                  sql`${foodOrders.status} != 'cancelled'`,
+                ))
             : Promise.resolve([]),
         ]);
         const checkinMap = new Map(checkinRows.map((c) => [c.id, c]));
@@ -716,7 +723,8 @@ export async function POST(req: NextRequest) {
           .where(
             and(
               eq(foodOrders.guestType, "walkin"),
-              sql`${foodOrders.paymentStatus} != 'paid'`
+              inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+              sql`${foodOrders.status} != 'cancelled'`,
             )
           )
           .orderBy(desc(foodOrders.createdAt));
