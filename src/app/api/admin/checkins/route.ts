@@ -546,8 +546,15 @@ export async function POST(req: NextRequest) {
       const checkoutBeds = allBeds.filter((b) => b.status === "occupied" && b.expectedCheckout && b.expectedCheckout <= today);
 
       const activeCheckins = await getActiveCheckins();
+      const bookingById = new Map(allBookings.map((booking) => [booking.id, booking]));
+      const bookingByCheckinId = new Map<number, (typeof allBookings)[number]>();
+      for (const checkin of activeCheckins) {
+        const bookingId = checkin.bookingId ? bookingByReference.get(String(checkin.bookingId).trim()) : undefined;
+        const booking = bookingId ? bookingById.get(bookingId) : undefined;
+        if (booking) bookingByCheckinId.set(checkin.id, booking);
+      }
       const uniqueCheckinIds = [...new Set(
-        checkoutBeds.flatMap((b) => checkinIdsMatchingContact(activeCheckins, b.guestContact || ""))
+        checkoutBeds.flatMap((b) => b.checkinId ? [b.checkinId] : checkinIdsMatchingContact(activeCheckins, b.guestContact || ""))
       )];
       const tabByCheckin = new Map<number, { pendingTab: number; paidTotal: number; totalOrders: number; pendingOrders: number }>();
       if (uniqueCheckinIds.length > 0) {
@@ -591,6 +598,8 @@ export async function POST(req: NextRequest) {
           tab.pendingOrders += part.pendingOrders;
         }
         const checkinId = matchedIds[matchedIds.length - 1];
+        const linkedBooking = [...matchedIds].reverse().map((id) => bookingByCheckinId.get(id)).find(Boolean);
+        const roomDue = linkedBooking ? stayDueAtHotel(linkedBooking.paymentStatus, linkedBooking.amountTotal, linkedBooking.amountPaid) : null;
         return {
           name: b.guestName || "",
           contact: b.guestContact || "",
@@ -603,6 +612,8 @@ export async function POST(req: NextRequest) {
           totalOrders: tab.totalOrders,
           pendingOrders: tab.pendingOrders,
           checkinId: checkinId || null,
+          roomStatus: linkedBooking ? (roomDue != null && roomDue > 0 ? "pending" : "clear") : "not_linked",
+          roomDue,
         };
       });
 

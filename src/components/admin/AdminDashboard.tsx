@@ -37,6 +37,7 @@ export function AdminDashboard({
   const [todayCheckouts, setTodayCheckouts] = useState<{
     name: string; contact: string; bedId: string; dorm: string; bedIdx: number; expectedCheckout: string;
     pendingTab: number; paidTotal: number; totalOrders: number; pendingOrders: number; checkinId: number | null;
+    roomStatus: "pending" | "clear" | "not_linked"; roomDue: number | null;
   }[]>([]);
   const [todayBookings, setTodayBookings] = useState<{
     id: number; guestName: string; platform: string; bookingRef: string; checkinDate: string; checkoutDate: string;
@@ -426,21 +427,21 @@ export function AdminDashboard({
                     Checkout
                   </button>
                 </div>
-                {co.totalOrders > 0 && (
-                  <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-gray-100 dark:border-zinc-800 pt-2.5">
-                    <div className="flex items-center gap-2">
-                      {co.pendingTab > 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950 px-2 py-1 text-xs font-semibold text-red-700 dark:text-red-400">
-                          <BanknoteIcon className="h-3 w-3" />
-                          ₹{(co.pendingTab / 100).toFixed(0)}
-                          <span className="font-normal text-red-500">({co.pendingOrders})</span>
-                        </span>
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 dark:border-zinc-800 pt-2.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {co.roomStatus === "not_linked" ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-zinc-800 px-2 py-1 text-xs font-semibold text-gray-600 dark:text-zinc-400">Room: Not linked</span>
+                      ) : co.roomStatus === "pending" ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950 px-2 py-1 text-xs font-semibold text-red-700 dark:text-red-400"><BanknoteIcon className="h-3 w-3" />Room: ₹{(co.roomDue || 0).toLocaleString("en-IN")} pending</span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-green-50 dark:bg-green-950 px-2 py-1 text-xs font-semibold text-green-700 dark:text-green-400">
-                          <CheckCircleIcon className="h-3 w-3" />
-                          All paid
-                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-md bg-green-50 dark:bg-green-950 px-2 py-1 text-xs font-semibold text-green-700 dark:text-green-400"><CheckCircleIcon className="h-3 w-3" />Room: All clear</span>
                       )}
+                      {co.pendingTab > 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950 px-2 py-1 text-xs font-semibold text-red-700 dark:text-red-400"><BanknoteIcon className="h-3 w-3" />Food: ₹{(co.pendingTab / 100).toFixed(0)} pending <span className="font-normal text-red-500">({co.pendingOrders})</span></span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-green-50 dark:bg-green-950 px-2 py-1 text-xs font-semibold text-green-700 dark:text-green-400"><CheckCircleIcon className="h-3 w-3" />Food: All clear</span>
+                      )}
+                      {co.roomStatus === "clear" && co.pendingTab <= 0 && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950 px-2 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400"><CheckCircleIcon className="h-3 w-3" />All clear</span>}
                     </div>
                     {co.contact && (
                       <a
@@ -453,7 +454,6 @@ export function AdminDashboard({
                       </a>
                     )}
                   </div>
-                )}
               </motion.div>
             ))}
           </motion.div>

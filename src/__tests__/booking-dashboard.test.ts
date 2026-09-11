@@ -279,6 +279,16 @@ describe("Dashboard booking activity", () => {
     expect(dashboardRoute).not.toMatch(/inArray\(bookingHistory\.action,[\s\S]{0,120}"Beds Unassigned"/);
   });
 
+  it("exposes separate room and food checkout status and marks fully clear linked guests", () => {
+    expect(dashboardRoute).toContain("roomStatus: linkedBooking ? (roomDue != null && roomDue > 0 ? \"pending\" : \"clear\") : \"not_linked\"");
+    expect(dashboardRoute).toContain("roomDue");
+    expect(dashboardRoute).toContain("b.checkinId ? [b.checkinId]");
+    expect(dashboard).toContain("Room: Not linked");
+    expect(dashboard).toContain("Room: All clear");
+    expect(dashboard).toContain("Food: All clear");
+    expect(dashboard).toContain("co.roomStatus === \"clear\" && co.pendingTab <= 0");
+  });
+
   it("links dashboard rows to direct booking details outside the calendar range", () => {
     expect(dashboard).toContain('onNavigate("bookings", { bookingId: booking.id })');
     expect(bookingDashboard).toContain('action: "getDetail", bookingId');
