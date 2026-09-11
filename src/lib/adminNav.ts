@@ -5,14 +5,14 @@ export function isSplitsSectionEnabled(): boolean {
 }
 
 export const ADMIN_NAV: AdminSection[] = [
-  "dashboard", "bookings", "beds", "timeline", "analytics", "inventory", "records", "foodOrders", "expenditure",
+  "dashboard", "bookings", "beds", "timeline", "inventory", "records", "foodOrders", "expenditure",
   ...(isSplitsSectionEnabled() ? ["splits" as const] : []),
   "reviews", "management",
 ];
 
 export const ADMIN_NAV_PERMS: Record<AdminSection, string> = {
   dashboard: "canViewDashboard", bookings: "canViewBookings", beds: "canViewBeds",
-  timeline: "canViewTimeline", analytics: "canViewAnalytics", inventory: "canManageInventory", records: "canViewRecords", foodOrders: "canViewFoodOrders",
+  timeline: "canViewTimeline", inventory: "canManageInventory", records: "canViewRecords", foodOrders: "canViewFoodOrders",
   expenditure: "canViewAccounts", splits: "canViewSplits", reviews: "canViewReviews", management: "canViewManagement",
 };
 
@@ -24,7 +24,7 @@ export function firstVisibleAdminSection(
   if (role === "admin") {
     return ADMIN_NAV.includes(current) ? current : (ADMIN_NAV[0] ?? null);
   }
-  const isVisible = (id: AdminSection) => Boolean(permissions[ADMIN_NAV_PERMS[id]]);
+  const isVisible = (id: AdminSection) => id === "management" && role === "manager" && Object.keys(permissions).length > 0 ? true : Boolean(permissions[ADMIN_NAV_PERMS[id]]);
   if (ADMIN_NAV.includes(current) && isVisible(current)) return current;
   return ADMIN_NAV.find(isVisible) ?? null;
 }

@@ -25,7 +25,6 @@ const NAV_PERMISSION_OPTIONS = [
   { key: "canViewBookings", label: "View Bookings" },
   { key: "canViewBeds", label: "View Beds" },
   { key: "canViewTimeline", label: "View Timeline" },
-  { key: "canViewAnalytics", label: "View Analytics" },
   { key: "canViewRecords", label: "View Records" },
   { key: "canViewFoodOrders", label: "View Food Orders" },
   { key: "canViewAccounts", label: "View Accounts" },

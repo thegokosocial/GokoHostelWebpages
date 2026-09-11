@@ -45,11 +45,13 @@ Do **not** run `drizzle-kit generate` expecting production SQL. Write `migration
 
 ### Analytics
 
-Admin Analytics is a lazy-loaded top-level section at `/admin?section=analytics`. It uses the read-only `POST /api/admin/analytics` endpoint and the `canViewAnalytics` permission. Beds and Timeline remain separate sections; their assignment and redirect flows are not part of Analytics.
+Analytics is a lazy-loaded Management sub-tab at `/admin?section=management&tab=analytics`. It uses the read-only `POST /api/admin/analytics` endpoint. Admins and all authenticated managers can open it; Beds and Timeline remain separate sections, so their assignment and redirect flows are not part of Analytics.
 
-The current dashboard reports booking timing/channel mix, planned stays, actual recorded check-ins/checkouts, food order timing/items, recorded expenses, and a clearly labelled activity balance. It is intentionally combined across properties because food orders and expenses are not property-tagged. “Booked stay value” is prorated by overlapping nights; “Activity balance” is not cash flow, profit, or accrual revenue.
+The dashboard has a switchable unified daily trend for bookings, arrivals, booked stay value, food sales, expenses, and occupancy, followed by booking creation weekday/hour heatmaps, actual check-in/checkout hours, booking window, channel/end-point mix, prepaid/postpaid/partial/unknown mix, stay and room-type mix, assigned bed occupancy/availability, food timing/items/categories/guest type/payment method, and expense categories/months. It is intentionally combined across properties because food orders and expenses are not property-tagged.
 
-Analytics uses IST boundaries, server-side SQL aggregation, a dependency-free chart UI, and CSV export. Keep the timestamp indexes in `schema.ts` and `migrations/0048_analytics_indexes.sql` aligned. Do not add property filters until food orders and expenses have a trustworthy property dimension.
+Analytics uses IST boundaries, separate received-date and stay-date lenses, server-side SQL aggregation, a dependency-free SVG chart UI, bounded 366-day ranges, and CSV export. “Booked stay value” is prorated by overlapping nights; ADR is booked value per occupied bed-night; RevPAR is booked value per available bed-night; “Activity balance” is not cash flow, profit, or accrual revenue. Occupancy is based on current bed inventory plus assigned bed history; date-specific bed blocks are included when the table exists.
+
+The dashboard follows common hotel/hostel PMS reporting patterns: occupancy, ADR, RevPAR, booking window, daily demand trends, channel performance, and separate accommodation/F&B revenue. Keep the timestamp indexes in `schema.ts` and `migrations/0048_analytics_indexes.sql` aligned. Do not add property filters until food orders and expenses have a trustworthy property dimension.
 
 ---
 

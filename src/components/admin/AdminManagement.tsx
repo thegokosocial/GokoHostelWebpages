@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import type { Role, ManagementTab } from "./types";
 
@@ -27,6 +27,7 @@ const ManagementAttendance = dynamic(() => import("./ManagementAttendance").then
 const ServerSync = dynamic(() => import("./ServerSync").then((m) => m.ServerSync), { loading: tabLoader, ssr: false });
 const ChannelManager = dynamic(() => import("./ChannelManager").then((m) => m.ChannelManager), { loading: tabLoader, ssr: false });
 const AdminWebsite = dynamic(() => import("./AdminWebsite").then((m) => m.AdminWebsite), { loading: tabLoader, ssr: false });
+const AdminAnalytics = dynamic(() => import("./AdminAnalytics").then((m) => m.AdminAnalytics), { loading: tabLoader, ssr: false });
 
 const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly?: boolean; permission?: string }[] = [
   { id: "dorms", label: "Dorms", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, adminOnly: true },
@@ -46,6 +47,7 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "attendance", label: "Attendance", icon: <UserRoundCheckIcon className="h-3.5 w-3.5" />, permission: "canManageAttendance" },
   { id: "serverSync", label: "Server Sync", icon: <ServerIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "channelManager", label: "Channel Manager", icon: <WifiIcon className="h-3.5 w-3.5" />, adminOnly: true },
+  { id: "analytics", label: "Analytics", icon: <BarChart3Icon className="h-3.5 w-3.5" /> },
 ];
 
 export function AdminManagement({ password, username, role, permissions = {}, initialTab, initialChannelTab, onTabUsed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; initialTab?: ManagementTab; initialChannelTab?: "sync"; onTabUsed?: () => void }) {
@@ -164,6 +166,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         {tab === "attendance" && <ManagementAttendance password={password} username={username} role={role} />}
         {tab === "serverSync" && <ServerSync password={password} username={username} role={role} />}
         {tab === "channelManager" && <ChannelManager password={password} username={username} role={role} initialTab={initialChannelTab} />}
+        {tab === "analytics" && <AdminAnalytics password={password} username={username} role={role} permissions={permissions} />}
       </div>
     </div>
   );

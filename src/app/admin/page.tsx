@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, CalendarDaysIcon, WrenchIcon, BookOpenIcon, KeyIcon, XIcon, WalletIcon, MenuIcon, StarIcon, WarehouseIcon, UtensilsIcon, SplitIcon, BarChart3Icon } from "lucide-react";
+import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, CalendarDaysIcon, WrenchIcon, BookOpenIcon, KeyIcon, XIcon, WalletIcon, MenuIcon, StarIcon, WarehouseIcon, UtensilsIcon, SplitIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 // import { DarkModeToggle } from "@/components/DarkModeToggle";
@@ -23,7 +23,6 @@ const AdminBeds = dynamic(() => import("@/components/admin/AdminBeds").then((m) 
 const BookingDashboard = dynamic(() => import("@/components/admin/booking-dashboard").then((m) => ({ default: m.BookingDashboard })), { loading: tabLoader, ssr: false });
 const AdminManagement = dynamic(() => import("@/components/admin/AdminManagement").then((m) => m.AdminManagement), { loading: tabLoader, ssr: false });
 const AdminTimeline = dynamic(() => import("@/components/admin/AdminTimeline").then((m) => m.AdminTimeline), { loading: tabLoader, ssr: false });
-const AdminAnalytics = dynamic(() => import("@/components/admin/AdminAnalytics").then((m) => m.AdminAnalytics), { loading: tabLoader, ssr: false });
 const AdminFoodOrders = dynamic(() => import("@/components/admin/AdminFoodOrders").then((m) => m.AdminFoodOrders), { loading: tabLoader, ssr: false });
 const AdminExpenditure = dynamic(() => import("@/components/admin/AdminExpenditure").then((m) => m.AdminExpenditure), { loading: tabLoader, ssr: false });
 const AdminReviews = dynamic(() => import("@/components/admin/AdminReviews").then((m) => m.AdminReviews), { loading: tabLoader, ssr: false });
@@ -52,7 +51,7 @@ function AdminPageInner() {
   const [error, setError] = useState("");
   const [section, setSection] = useTabWithHistory<AdminSection>("section", "dashboard", {
     clearParams: ["tab"],
-    validValues: ["dashboard", "bookings", "beds", "timeline", "analytics", "inventory", "records", "foodOrders", "expenditure", "splits", "reviews", "management"],
+    validValues: ["dashboard", "bookings", "beds", "timeline", "inventory", "records", "foodOrders", "expenditure", "splits", "reviews", "management"],
   });
   const [channelManagerTab, setChannelManagerTab] = useState<"sync" | undefined>();
   const [managementTab, setManagementTab] = useState<ManagementTab | undefined>();
@@ -284,7 +283,6 @@ function AdminPageInner() {
     { id: "bookings", label: "Bookings", icon: <BookOpenIcon className="h-4 w-4" />, permission: "canViewBookings" },
     { id: "beds", label: "Beds", icon: <BedDoubleIcon className="h-4 w-4" />, permission: "canViewBeds" },
     { id: "timeline", label: "Timeline", icon: <CalendarDaysIcon className="h-4 w-4" />, permission: "canViewTimeline" },
-    { id: "analytics", label: "Analytics", icon: <BarChart3Icon className="h-4 w-4" />, permission: "canViewAnalytics" },
     { id: "inventory", label: "Inventory", icon: <WarehouseIcon className="h-4 w-4" />, permission: "canManageInventory" },
     { id: "records", label: "Records", icon: <TableIcon className="h-4 w-4" />, permission: "canViewRecords" },
     { id: "foodOrders", label: "Food Orders", icon: <UtensilsIcon className="h-4 w-4" />, permission: "canViewFoodOrders" },
@@ -296,6 +294,7 @@ function AdminPageInner() {
 
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && role !== "admin") return false;
+    if (item.id === "management" && role === "manager" && Object.keys(permissions).length > 0) return true;
     if (item.permission && role !== "admin" && !permissions[item.permission]) return false;
     return true;
   });
@@ -420,7 +419,6 @@ function AdminPageInner() {
             {section === "bookings" && <BookingDashboard password={password} username={username} role={role} permissions={permissions} initialBookingId={pendingBookingId} onInitialBookingConsumed={() => setPendingBookingId(null)} />}
             {section === "beds" && <AdminBeds password={password} username={username} role={role} permissions={permissions} pendingAssignGuest={pendingAssignGuest} onPendingAssignConsumed={() => setPendingAssignGuest(null)} />}
             {section === "timeline" && <AdminTimeline password={password} username={username} role={role} permissions={permissions} />}
-            {section === "analytics" && <AdminAnalytics password={password} username={username} role={role} permissions={permissions} />}
             {section === "inventory" && <InventoryRatePlan password={password} username={username} role={role} permissions={permissions} />}
             {section === "records" && <AdminRecords password={password} username={username} role={role} permissions={permissions} />}
             {section === "foodOrders" && <AdminFoodOrders password={password} username={username} role={role} permissions={permissions} />}
