@@ -15,6 +15,7 @@ import { checkinIdsMatchingContact } from "@/lib/foodTab";
 import { getReconciliationStatus } from "@/lib/reconciliation";
 import { activeCheckinIdsForContact, getPendingFoodTab } from "@/lib/foodTabDb";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
+import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
   getCheckinsByMonth, getActiveCheckins, addCheckin, updateCheckin, deleteCheckin, getCheckinMonths, markVibeMatched,
   getAllBeds, getBedById, updateBedStatus, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
@@ -24,7 +25,7 @@ import {
   getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking,
   createRateScrape, getLatestRateScrape, getRateScrapeById, updateRateScrape,
   getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
-  addAuditEntry, getAuditEntries,
+  addAuditEntry, getAuditEntries, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
@@ -103,7 +104,8 @@ export async function POST(req: NextRequest) {
       getBookings: "canViewBookings", getUpcomingBookings: "canViewBookings",
       addBooking: "canAddBooking", updateBookingStatus: "canViewBookings", deleteBooking: "canDeleteBooking",
       getUsers: "admin_only", createUser: "admin_only", updateUser: "admin_only", deleteUser: "admin_only",
-      getAuditLog: "admin_only", getSystemLogs: "admin_only", runBackup: "admin_only",
+      getAuditLog: "admin_only", getAuditRetention: "admin_only", setAuditRetention: "admin_only", cleanupAuditLog: "admin_only",
+      getSystemLogs: "admin_only", runBackup: "admin_only",
       getLatestRateScrape: "admin_only", getRateScrapeStatus: "admin_only",
       startRateScrape: "admin_only", updateRateScrapeResults: "admin_only",
       backfillManagerPermissions: "admin_only",
@@ -1011,6 +1013,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ entries });
     }
 
+    if (action === "getAuditRetention") {
+      return NextResponse.json(await getAuditRetention());
+    }
+
+    if (action === "setAuditRetention") {
+      const years = Math.max(0, Math.floor(Number(rest.years)) || 0);
+      const months = Math.max(0, Math.floor(Number(rest.months)) || 0);
+      const requestedMonths = years * 12 + months;
+      if (requestedMonths < 1) {
+        return NextResponse.json({ error: "Retention must be at least 1 month" }, { status: 400 });
+      }
+      const totalMonths = normalizeAuditRetentionMonths(requestedMonths);
+      await setSetting(AUDIT_RETENTION_SETTING, String(totalMonths));
+      await addAuditEntry({
+        username: actingUser,
+        action: "audit_retention_updated",
+        target: `${Math.floor(totalMonths / 12)} years ${totalMonths % 12} months`,
+      });
+      const cutoff = auditRetentionCutoff(totalMonths);
+      return NextResponse.json({
+        years: Math.floor(totalMonths / 12),
+        months: totalMonths % 12,
+        totalMonths,
+        cutoff,
+        eligible: await getAuditEntriesBefore(cutoff),
+      });
+    }
+
+    if (action === "cleanupAuditLog") {
+      const retention = await getAuditRetention();
+      const deleted = await deleteAuditEntriesBefore(retention.cutoff);
+      await addAuditEntry({
+        username: actingUser,
+        action: "audit_retention_cleanup",
+        target: `before ${retention.cutoff}`,
+        details: `${deleted.auditLog} general and ${deleted.bookingHistory} booking audit entries deleted`,
+      });
+      return NextResponse.json({ ...retention, deleted, eligible: { auditLog: 0, bookingHistory: 0, total: 0 } });
+    }
+
     if (action === "getSystemLogs") {
       const { page, pageSize, offset } = logListQuery(rest);
       const { logs, total, sources } = await getSystemLogs(pageSize, {
@@ -1128,11 +1170,13 @@ export async function POST(req: NextRequest) {
       const managers = allUsers.filter((u) => u.role === "manager");
       const ALL_PERMISSION_KEYS = [
         "canAddCheckin", "canAssignBed", "canCheckout", "canMarkClean", "canEditRecords", "canDeleteRecords",
-        "canAccessKitchen", "canViewFoodOrders", "canPlaceOrders", "canManageMenu", "canManageCategories",
-        "canManageInventory", "canViewTabs", "canMarkPaid", "canGenerateBills", "canChangeFoodSettings",
-        "canViewExpenses", "canViewFoodBills", "canUseQRGenerator", "canManageAccounts", "canManageAttendance", "canAddIncome", "canReconcile",
+        "canViewFoodOrders", "canPlaceOrders", "canManageInventory", "canMarkPaid",
+        "canViewExpenses", "canViewFoodBills", "canUseQRGenerator", "canManageAttendance", "canAddIncome",
         "canViewDashboard", "canViewBookings", "canViewBeds", "canViewTimeline", "canViewRecords", "canViewAccounts", "canViewSplits", "canViewManagement",
-        "canAddBooking", "canSyncBookings", "canDeleteBooking", "canAddExpense", "canEditExpense", "canDeleteExpense",
+        "canAddBooking", "canCheckIn", "canCheckOut", "canDeleteBooking", "canManageBookingTemplates", "canViewAnalytics",
+        "canAddExpense", "canEditExpense", "canDeleteExpense", "canViewFoodTabs", "canEditFoodOrders", "canVoidFoodOrders", "canApplyFoodDiscounts", "canGenerateFoodBills",
+        "canReconcileAccounts", "canManageAccountSettings", "canManageVendors", "canManageEmployees", "canManagePayroll", "canViewInventory", "canManageRates", "canManageInventoryBlocks",
+        "canSendReviewRequests", "canEditReviewRequests", "canManageReviewSettings",
         "canAddSplitExpense", "canEditSplitExpense", "canDeleteSplitExpense", "canSettleSplits", "canManageSplits",
       ];
       let updated = 0;

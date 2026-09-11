@@ -15,7 +15,7 @@ import {
   getCalendarAvailability, getBookingCalendarData, getBookingDetail, searchBookings, getUnassignedBookings,
   checkBedAvailability, getAvailableBedsForRange, validateBedsForRange, assignBedToBooking, unassignBookingBeds,
   unassignBookingBedsByBedIds,
-  cancelBedAssignments, addBookingHistoryEntry, getBookingHistoryEntries,
+  cancelBedAssignments, addBookingHistoryEntry, getBookingHistoryEntries, getBookingAuditEntries,
   addBooking, updateBookingFull, transitionBookingStatus, getAllDorms, getAllBeds, getBedById,
   getChannelConfig, getSetting, setSetting,
   getRoomTypeMappings, getRatePlanMappings, getAllDailyRates,
@@ -258,6 +258,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   checkAvailability: "canViewBookings",
   getAvailableBeds: "canViewBookings",
   getBookingHistory: "canViewBookings",
+  getBookingAuditLog: "canViewBookings",
   getWhatsAppTemplates: "canViewBookings",
   saveWhatsAppTemplates: "canViewBookings",
   createBooking: "canAddBooking",
@@ -508,6 +509,27 @@ export async function POST(req: NextRequest) {
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
       const history = await getBookingHistoryEntries(bookingId);
       return NextResponse.json({ history });
+    }
+
+    if (action === "getBookingAuditLog") {
+      const history = await getBookingAuditEntries();
+      const entries = history.map((entry) => {
+        const reference = entry.gokoBookingId || entry.bookingRef || `Booking #${entry.bookingId}`;
+        const target = `${reference} · ${entry.guestName || "Unknown guest"}`;
+        const stay = entry.checkinDate
+          ? `Stay ${entry.checkinDate}${entry.checkoutDate ? ` → ${entry.checkoutDate}` : ""}`
+          : "";
+        const context = [entry.platform, stay].filter(Boolean).join(" · ");
+        return {
+          id: entry.id,
+          timestamp: entry.performedAt,
+          username: entry.performedBy || "system",
+          action: entry.action,
+          target,
+          details: [entry.details, context].filter(Boolean).join(" · "),
+        };
+      });
+      return NextResponse.json({ entries });
     }
 
     // --- Create ---

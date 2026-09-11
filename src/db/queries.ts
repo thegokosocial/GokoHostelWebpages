@@ -8,6 +8,7 @@ import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logR
 import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
+import { auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 
 // --- Check-ins ---
 
@@ -331,6 +332,27 @@ export async function addAuditEntry(data: {
 export async function getAuditEntries(limit = 500) {
   const db = getDb();
   return db.select().from(auditLog).orderBy(desc(auditLog.id)).limit(limit);
+}
+
+export async function getAuditEntriesBefore(cutoff: string) {
+  const db = getDb();
+  const general = await db.select({ id: auditLog.id }).from(auditLog).where(lt(auditLog.timestamp, cutoff));
+  const bookings = await db.select({ id: bookingHistory.id }).from(bookingHistory).where(lt(bookingHistory.performedAt, cutoff));
+  return { auditLog: general.length, bookingHistory: bookings.length, total: general.length + bookings.length };
+}
+
+export async function deleteAuditEntriesBefore(cutoff: string) {
+  const db = getDb();
+  const general = await db.delete(auditLog).where(lt(auditLog.timestamp, cutoff)).returning({ id: auditLog.id });
+  const bookings = await db.delete(bookingHistory).where(lt(bookingHistory.performedAt, cutoff)).returning({ id: bookingHistory.id });
+  return { auditLog: general.length, bookingHistory: bookings.length, total: general.length + bookings.length };
+}
+
+export async function getAuditRetention() {
+  const configured = await getSetting("audit_retention_months");
+  const months = normalizeAuditRetentionMonths(configured || DEFAULT_AUDIT_RETENTION_MONTHS);
+  const cutoff = auditRetentionCutoff(months);
+  return { ...auditRetentionParts(months), cutoff, eligible: await getAuditEntriesBefore(cutoff) };
 }
 
 // --- System Logs ---
@@ -2035,6 +2057,29 @@ export async function addBookingHistoryEntry(data: {
 export async function getBookingHistoryEntries(bookingId: number) {
   const db = getDb();
   return db.select().from(bookingHistory).where(eq(bookingHistory.bookingId, bookingId)).orderBy(desc(bookingHistory.id));
+}
+
+/** Recent lifecycle events for the Management audit view, enriched with booking context. */
+export async function getBookingAuditEntries(limit = 500) {
+  const db = getDb();
+  return db.select({
+    id: bookingHistory.id,
+    bookingId: bookingHistory.bookingId,
+    action: bookingHistory.action,
+    details: bookingHistory.details,
+    performedBy: bookingHistory.performedBy,
+    performedAt: bookingHistory.performedAt,
+    guestName: bookings.guestName,
+    platform: bookings.platform,
+    bookingRef: bookings.bookingRef,
+    gokoBookingId: bookings.gokoBookingId,
+    checkinDate: bookings.checkinDate,
+    checkoutDate: bookings.checkoutDate,
+  })
+    .from(bookingHistory)
+    .leftJoin(bookings, eq(bookingHistory.bookingId, bookings.id))
+    .orderBy(desc(bookingHistory.id))
+    .limit(limit);
 }
 
 export async function getLinkedBookings(gokoBookingId: string) {
