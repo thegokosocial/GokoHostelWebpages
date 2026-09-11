@@ -89,7 +89,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |
 | `quickLinks` | `QuickLinks` | `canViewQuickLinks` | mobile-friendly sections of links and QR/image cards; admins edit |
 
-The public guest page is `/quick-links`. It displays active sections and cards from the Links & QRs Management tab. QR images are the primary scan-first content, scale to the available phone width, and are not dependent on guest taps; link-only cards retain a fallback open-link button.
+The public guest page is `/quick-links`. It displays active sections and cards from the Links & QRs Management tab. Uploaded QR images are the primary scan-first content; when a card has a URL but no uploaded image, the page generates and displays a QR code automatically. QR codes scale to the available phone width, and guests do not need to tap anything.
 
 ---
 
