@@ -31,7 +31,7 @@ import {
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
 import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
-import { eq, and, sql, inArray, or, desc, lte, gte } from "drizzle-orm";
+import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
   const token = process.env.GITHUB_TOKEN;
@@ -550,7 +550,6 @@ export async function POST(req: NextRequest) {
       }).from(bookingBedAssignments).where(and(
         eq(bookingBedAssignments.status, "assigned"),
         lte(bookingBedAssignments.checkinDate, today),
-        gte(bookingBedAssignments.checkoutDate, today),
       ));
       const bookingByReference = new Map<string, number>();
       for (const booking of allBookings) {

@@ -285,6 +285,8 @@ describe("Dashboard booking activity", () => {
     expect(dashboardRoute).toContain("b.checkinId ? [b.checkinId]");
     expect(dashboardRoute).toContain('eq(bookingBedAssignments.status, "assigned")');
     expect(dashboardRoute).toContain("assignment.bedId === b.id");
+    expect(dashboardRoute).toContain("lte(bookingBedAssignments.checkinDate, today)");
+    expect(dashboardRoute).not.toContain("gte(bookingBedAssignments.checkoutDate, today)");
     expect(dashboardRoute).toContain("normalizedPhone(booking.contact) === phone");
     expect(dashboardRoute).toContain("normalizedName(booking.guestName) === name");
     expect(dashboardRoute).toContain("phoneMatches.length === 1");
