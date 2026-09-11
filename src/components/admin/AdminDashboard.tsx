@@ -402,7 +402,7 @@ export function AdminDashboard({
             <AlertTriangleIcon className="h-5 w-5 text-orange-600 dark:text-amber-400" />
             <span className="font-medium text-orange-800 dark:text-amber-200">{todayCheckouts.length} guest{todayCheckouts.length !== 1 ? "s" : ""} due for checkout</span>
           </div>
-          <motion.div className="mt-3 space-y-2.5" variants={staggerContainer} initial="hidden" animate="visible">
+          <motion.div className="mt-3 max-h-80 space-y-2.5 overflow-y-auto pr-1" variants={staggerContainer} initial="hidden" animate="visible">
             {todayCheckouts.map((co, i) => (
               <motion.div key={i} variants={staggerItem} className="rounded-xl border border-gray-100 dark:border-zinc-700/50 bg-white dark:bg-zinc-900 p-3 shadow-sm dark:shadow-none transition-all duration-200 hover:bg-brand-sand/50 dark:hover:bg-zinc-800/50">
                 <div className="flex items-start justify-between gap-2">
@@ -456,7 +456,7 @@ export function AdminDashboard({
         {todayCheckins.length === 0 ? (
           <p className="mt-2 text-sm text-brand-green-dark/50 dark:text-zinc-500">No check-ins today yet</p>
         ) : (
-          <motion.div className="mt-3 space-y-2.5" variants={staggerContainer} initial="hidden" animate="visible">
+          <motion.div className="mt-3 max-h-80 space-y-2.5 overflow-y-auto pr-1" variants={staggerContainer} initial="hidden" animate="visible">
             {todayCheckins.map((item, i) => {
               const age = getAgeFromDob(item.dob);
               const isFlagged = age !== null && !item.vibeMatched && (age < ageRange.min || age > ageRange.max);

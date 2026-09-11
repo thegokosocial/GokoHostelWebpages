@@ -286,9 +286,17 @@ describe("Dashboard booking activity", () => {
     expect(bookingDashboard).toContain('setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [] })');
   });
 
-  it("keeps today's check-ins in a bounded scrollable list like today's bookings", () => {
-    expect(dashboard).toContain('max-h-80 space-y-2.5 overflow-y-auto pr-1');
-    expect(dashboard).toContain("Today&apos;s Check-ins");
+  it("keeps today's check-ins and checkouts in bounded scrollable lists like today's bookings", () => {
+    const checkinsSection = dashboard.match(/\{\/\* Today's check-ins \*\/\}[\s\S]*?\{\/\* Today's bookings \*\/\}/);
+    const checkoutsSection = dashboard.match(/\{\/\* Checkouts due \*\/\}[\s\S]*?\{\/\* Today's check-ins \*\/\}/);
+    const bookingsSection = dashboard.match(/\{\/\* Today's bookings \*\/\}[\s\S]*?\{\/\* Checkout confirmation modal \*\/\}/);
+
+    expect(checkinsSection).not.toBeNull();
+    expect(checkoutsSection).not.toBeNull();
+    expect(bookingsSection).not.toBeNull();
+    expect(checkinsSection![0]).toContain('max-h-80 space-y-2.5 overflow-y-auto pr-1');
+    expect(checkoutsSection![0]).toContain('max-h-80 space-y-2.5 overflow-y-auto pr-1');
+    expect(bookingsSection![0]).toContain('max-h-80 space-y-2.5 overflow-y-auto pr-1');
   });
 });
 
