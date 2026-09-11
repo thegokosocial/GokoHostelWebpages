@@ -493,6 +493,7 @@ export async function POST(req: NextRequest) {
       const allCheckins = await getCheckinsByMonth(monthKey);
       const today = todayIST();
       const todayCheckins = allCheckins.filter((r) => r.arrivalDate === today && r.status === "active");
+      const todayCompletedCheckinCount = allCheckins.filter((r) => r.arrivalDate === today && (r.status === "active" || r.status === "checked_out")).length;
 
       const allBeds = await getAllBeds();
       const total = allBeds.length;
@@ -583,7 +584,7 @@ export async function POST(req: NextRequest) {
       const tomorrow = addCalendarDays(today, 1);
       const todayStart = new Date(`${today}T00:00:00+05:30`).toISOString();
       const tomorrowStart = new Date(`${tomorrow}T00:00:00+05:30`).toISOString();
-      const [inHouse, todayBookings, cancellationRows] = await Promise.all([
+      const [inHouse, todayBookings, cancellationRows, expectedCheckinRows] = await Promise.all([
         db.select({
           id: bookings.id,
           guestName: bookings.guestName,
@@ -615,6 +616,10 @@ export async function POST(req: NextRequest) {
           sql`${bookingHistory.performedAt} >= ${todayStart}`,
           sql`${bookingHistory.performedAt} < ${tomorrowStart}`,
         )),
+        db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(
+          eq(bookings.checkinDate, today),
+          sql`${bookings.status} IN ('received', 'confirmed', 'checked_in', 'checked_out')`,
+        )),
       ]);
       const unpaidStays = inHouse
         .map((b) => {
@@ -628,6 +633,8 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         todayCheckins: todayCheckinsWithBed,
+        todayCompletedCheckinCount,
+        todayExpectedCheckinCount: Number(expectedCheckinRows[0]?.count) || 0,
         todayCheckouts: todayCheckoutBeds,
         todayBookings,
         todayBookingCount: todayBookings.length,

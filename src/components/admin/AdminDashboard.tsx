@@ -32,6 +32,8 @@ export function AdminDashboard({
   const router = useRouter();
   const { showError } = useAdminToast();
   const [todayCheckins, setTodayCheckins] = useState<{ row: string[]; assignedBed: string | null; dob: string; dobFromId: string; vibeMatched: number }[]>([]);
+  const [todayCompletedCheckinCount, setTodayCompletedCheckinCount] = useState(0);
+  const [todayExpectedCheckinCount, setTodayExpectedCheckinCount] = useState(0);
   const [todayCheckouts, setTodayCheckouts] = useState<{
     name: string; contact: string; bedId: string; dorm: string; bedIdx: number; expectedCheckout: string;
     pendingTab: number; paidTotal: number; totalOrders: number; pendingOrders: number; checkinId: number | null;
@@ -69,6 +71,8 @@ export function AdminDashboard({
       if (res.ok) {
         const data = await res.json();
         setTodayCheckins(data.todayCheckins || []);
+        setTodayCompletedCheckinCount(Number(data.todayCompletedCheckinCount) || 0);
+        setTodayExpectedCheckinCount(Number(data.todayExpectedCheckinCount) || 0);
         setTodayCheckouts(data.todayCheckouts || []);
         setTodayBookings(data.todayBookings || []);
         setTodayBookingCount(Number(data.todayBookingCount) || 0);
@@ -288,8 +292,8 @@ export function AdminDashboard({
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-500/10"><UsersIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" /></div>
             <div className="min-w-0">
-              <p className="text-lg font-bold text-brand-green-dark dark:text-zinc-100 leading-tight">{todayCheckins.length}</p>
-              <p className="text-[10px] text-brand-green-dark/60 dark:text-zinc-500 leading-tight">Check-ins today</p>
+              <p className="text-lg font-bold text-brand-green-dark dark:text-zinc-100 leading-tight">{todayCompletedCheckinCount} <span className="text-sm font-semibold text-brand-green-dark/55 dark:text-zinc-400">/ {todayExpectedCheckinCount}</span></p>
+              <p className="text-[10px] text-brand-green-dark/60 dark:text-zinc-500 leading-tight">Completed / expected check-ins</p>
             </div>
           </div>
         </motion.div>
