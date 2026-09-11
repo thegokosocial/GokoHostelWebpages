@@ -108,7 +108,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 `BookingDetailPanel.tsx` exposes **Edit Booking** for manual/offline/walk-in reservations when the user has `canAddBooking`. The editor supports guest details, dates (with derived nights), persons, nightly rate, special requests, and add/remove room units. Dates and bed changes are saved separately; active occupancy-affecting changes trigger the existing PMS refresh path, while closed historical bed assignments remain protected.
 
-Dashboard check-ins linked to a booking open that booking in the Booking Dashboard for assignment. The legacy Beds assignment UI is reserved for unlinked walk-ins; each individual check-in is matched by guest name plus contact, so members of the same group can be assigned independently. A double-bed screen exposes its two physical slots independently for walk-in assignment. A one-person booking may also be assigned one physical slot of a double unit; multi-person bookings retain capacity validation.
+Dashboard check-ins linked to a booking open that booking in the Booking Dashboard for assignment; existing booking-bed assignments are also displayed on the check-in row. The legacy Beds assignment UI is reserved for unlinked walk-ins; each individual check-in is matched by guest name plus contact, so members of the same group can be assigned independently. A double-bed screen exposes its two physical slots independently for walk-in assignment. A one-person booking may also be assigned one physical slot of a double unit; multi-person bookings retain capacity validation.
 
 Calendar POSTs use `fetchWithRetry("/api/admin/bookings", …)` — not `useAdminApi`.
 

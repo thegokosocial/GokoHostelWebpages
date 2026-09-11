@@ -30,7 +30,7 @@ import {
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
-import { beds, checkins, foodOrders, bookings, bookingHistory } from "@/db/schema";
+import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
 import { eq, and, sql, inArray, or, desc } from "drizzle-orm";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
@@ -608,14 +608,31 @@ export async function POST(req: NextRequest) {
         if (b.status === "occupied" && b.guestContact) assignedGuests.set(checkinIdentity(b.guestName || "", b.guestContact), `${b.dormName} / ${b.bedId}`);
       }
 
-      const todayCheckinsWithBed = todayCheckins.map((r) => ({
+      const bookingAssignedBeds = new Map<number, string[]>();
+      const bookingAssignments = await getDb().select({
+        bookingId: bookingBedAssignments.bookingId,
+        bedId: bookingBedAssignments.bedId,
+      }).from(bookingBedAssignments).where(eq(bookingBedAssignments.status, "assigned"));
+      const bedsById = new Map(allBeds.map((b) => [b.id, `${b.dormName} / ${b.bedId}`]));
+      for (const assignment of bookingAssignments) {
+        const label = bedsById.get(assignment.bedId);
+        if (!label) continue;
+        const labels = bookingAssignedBeds.get(assignment.bookingId) || [];
+        labels.push(label);
+        bookingAssignedBeds.set(assignment.bookingId, labels);
+      }
+
+      const todayCheckinsWithBed = todayCheckins.map((r) => {
+        const linkedBookingId = r.bookingId ? bookingByReference.get(String(r.bookingId).trim()) || null : null;
+        return {
         row: [r.submittedAt, r.arrivalDate, r.arrivalTime, r.name, r.persons, r.contact, r.stayingDays, r.comingFrom, r.nationality, r.emergencyName, r.emergencyPhone, r.idType, r.idCardLink, r.visaLink, r.verified, String(r.id)],
-        assignedBed: assignedGuests.get(checkinIdentity(r.name, r.contact)) || null,
-        linkedBookingId: r.bookingId ? bookingByReference.get(String(r.bookingId).trim()) || null : null,
+        assignedBed: assignedGuests.get(checkinIdentity(r.name, r.contact)) || (linkedBookingId ? bookingAssignedBeds.get(linkedBookingId)?.join(", ") || null : null),
+        linkedBookingId,
         dob: (r as any).dob || "",
         dobFromId: (r as any).dobFromId || "",
         vibeMatched: (r as any).vibeMatched || 0,
-      }));
+        };
+      });
 
       const validationEnabled = (await getSetting("image_validation")) !== "off";
       const guestMinAge = Number(await getSetting("guest_min_age")) || 18;
