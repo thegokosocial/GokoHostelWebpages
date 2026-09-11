@@ -40,7 +40,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const datesChanged = checkinDate !== booking.checkinDate || checkoutDate !== originalCheckout;
   const validDates = Boolean(checkinDate && checkoutDate && checkoutDate > checkinDate);
   const parsedAmountPaid = amountPaid === "" ? NaN : Number(amountPaid);
-  const validAmountPaid = Number.isInteger(parsedAmountPaid) && parsedAmountPaid >= 0 && parsedAmountPaid <= (booking.amountTotal || 0);
+  const validAmountPaid = Number.isInteger(parsedAmountPaid) && parsedAmountPaid >= 0;
   const validForm = Boolean(guestName.trim() && validDates && Number.isInteger(Number(persons)) && Number(persons) > 0 && Number.isInteger(Number(nightlyRate)) && Number(nightlyRate) >= 0 && validAmountPaid);
   const paymentChanged = validAmountPaid && parsedAmountPaid !== Number(booking.amountPaid || 0);
   const selectedAddUnits = useMemo(() => availableUnits.filter((unit) => addUnitKeys.includes(unit.key)), [availableUnits, addUnitKeys]);
@@ -110,7 +110,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
             <p className="text-xs text-muted-foreground sm:col-span-2">{validDates ? `${getNights(checkinDate, checkoutDate)} night${getNights(checkinDate, checkoutDate) === 1 ? "" : "s"}` : "Enter a check-out date after check-in."}</p>
             <label className="text-xs font-medium">Persons<input type="number" min={1} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={persons} onChange={(e) => setPersons(e.target.value)} /></label>
             <label className="text-xs font-medium">Nightly rate (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={nightlyRate} onChange={(e) => setNightlyRate(e.target.value)} /></label>
-            <label className="text-xs font-medium sm:col-span-2">Amount received (₹)<input type="number" min={0} max={booking.amountTotal || 0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} /><span className="mt-1 block text-[11px] font-normal text-muted-foreground">Current balance after this edit: ₹{validAmountPaid ? Math.max(0, (booking.amountTotal || 0) - parsedAmountPaid).toLocaleString("en-IN") : "—"}</span></label>
+            <label className="text-xs font-medium sm:col-span-2">Amount received (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} /><span className="mt-1 block text-[11px] font-normal text-muted-foreground">Current balance after this edit: ₹{validAmountPaid ? Math.max(0, (booking.amountTotal || 0) - parsedAmountPaid).toLocaleString("en-IN") : "—"}</span></label>
           </div>
 
           {paymentChanged && parsedAmountPaid < Number(booking.amountPaid || 0) && (
