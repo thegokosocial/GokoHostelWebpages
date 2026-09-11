@@ -309,6 +309,7 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(ui).toContain("onClick={() => setBulkOpen(true)}");
     expect(ui).toContain('action: "blockBeds"');
     expect(ui).toContain('action: "unblockBeds"');
+    expect(ui).toContain('action: "bulkSetAvailability"');
     expect(ui).toContain('action: "bulkSetRates"');
     expect(ui).toContain('action: "bulkAdjustRates"');
     expect(ui).toContain('action: "bulkSetRestrictions"');
@@ -329,6 +330,7 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(ui).toContain("fetchedFreeBeds ?? []");
     expect(ui).toContain('action: "getActiveBlocks"');
     expect(route).toContain("getBedsFreeToBlock: \"canManageInventory\"");
+    expect(route).toContain("bulkSetAvailability: \"canManageInventory\"");
     expect(route).toContain("One or more beds are booked or already blocked for these dates");
     expect(queries).toContain("export async function getBedsFreeToBlock");
     expect(ui).toContain("setFetchedFreeBeds(null)");

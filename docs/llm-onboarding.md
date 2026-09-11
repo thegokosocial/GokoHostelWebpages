@@ -132,7 +132,7 @@ Header Book now → `BookingGateProvider` (age/terms copy in `src/content/bookin
 
 ### 8b. Bulk restriction auto-push is a patch
 
-`bulkSetRestrictions` writes one field on D1 (other flags stay per night) then `triggerRestrictionPush(dates, ids, restrictionPatch(type, value))`. Unknown/null min stay **400** — never fall through to a full snapshot (`?? undefined`). Aiosell `restrictions.*` fields are optional. Manual CM push (`/api/aiosell/push-rates` `includeRestrictions`, `/api/aiosell/push-inventory-restrictions`) is still a full snapshot (`minimumStay ?? null`, not `||`).
+`bulkSetRestrictions` writes one field on D1 (other flags stay per night) then `triggerRestrictionPush(dates, ids, restrictionPatch(type, value))`. Unknown/null min stay **400** — never fall through to a full snapshot (`?? undefined`). Aiosell `restrictions.*` fields are optional. Manual CM push (`/api/aiosell/push-rates` `includeRestrictions`, `/api/aiosell/push-inventory-restrictions`) is still a full snapshot (`minimumStay ?? null`, not `||`). `bulkSetAvailability` uses one bounded availability snapshot and writes the default inventory override per dorm/night. Its value is absolute remaining OTA/PMS inventory, converted with `overrideCeilingToSave` so online assignments and unassigned OTA holds remain protected; `clear` deletes only the default override. It triggers one mapped-dorm inventory push and leaves dirty rows for retry when PMS sync is not accepted.
 
 ### 8b2. Aiosell push bodies coalesce consecutive identical nights
 

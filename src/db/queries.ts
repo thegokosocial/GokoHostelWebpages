@@ -2247,6 +2247,17 @@ export async function upsertInventoryOverride(data: { dormId: number; channelId:
   });
 }
 
+export async function deleteInventoryOverride(data: { dormId: number; channelId: number | null; date: string }) {
+  const db = getDb();
+  return db.delete(inventoryOverrides).where(
+    and(
+      eq(inventoryOverrides.dormId, data.dormId),
+      data.channelId == null ? sql`${inventoryOverrides.channelId} IS NULL` : eq(inventoryOverrides.channelId, data.channelId),
+      eq(inventoryOverrides.date, data.date),
+    ),
+  );
+}
+
 export async function getChannelRatesForRange(ratePlanId: number, channelId: number, startDate: string, endDate: string) {
   const db = getDb();
   return db.select().from(channelRates).where(

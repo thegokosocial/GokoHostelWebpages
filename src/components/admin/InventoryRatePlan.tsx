@@ -650,11 +650,55 @@ function RatePlanChipPicker({
   );
 }
 
+function DormAvailabilityPicker({
+  dorms,
+  mappings,
+  selectedIds,
+  onChange,
+}: {
+  dorms: DormData[];
+  mappings: RoomMappingData[];
+  selectedIds: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const mappingByDorm = new Map(mappings.map((mapping) => [mapping.dormId, mapping]));
+  const allIds = dorms.map((dorm) => dorm.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.includes(id));
+  const toggle = (id: number) => onChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+
+  if (dorms.length === 0) return <p className="text-xs text-brand-green-dark/50">No rooms configured.</p>;
+
+  return (
+    <div className="space-y-2">
+      <button type="button" onClick={() => onChange(allSelected ? [] : allIds)}
+        className="px-2 py-1 rounded text-[10px] font-medium border border-brand-green text-brand-green">
+        {allSelected ? "Deselect All" : "Select All"}
+      </button>
+      <div className="flex flex-wrap gap-1.5">
+        {dorms.map((dorm) => {
+          const mapping = mappingByDorm.get(dorm.id);
+          const selected = selectedIds.includes(dorm.id);
+          return (
+            <button key={dorm.id} type="button" onClick={() => toggle(dorm.id)}
+              className={cn("rounded border px-2 py-1 text-left text-[10px] font-medium", selected ? "border-brand-green bg-brand-green text-white" : "border-input text-brand-green-dark/80")}>
+              <span>{dorm.name}</span>
+              <span className={cn("ml-1 text-[9px]", selected ? "text-white/70" : "text-brand-green-dark/40")}>
+                {mapping ? "PMS" : "Local"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-brand-green-dark/50">PMS updates are sent only for active mapped rooms. Local-only rooms still keep their availability override in Goko.</p>
+    </div>
+  );
+}
+
 // --- Bulk Update Modal ---
 function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   data: GridData | null; password: string; username?: string; onClose: () => void; onSaved: () => void;
 }) {
-  const [tab, setTab] = useState<"blockBeds" | "unblockBeds" | "setRates" | "adjustRates" | "restrictions">("blockBeds");
+  const [tab, setTab] = useState<"blockBeds" | "unblockBeds" | "availability" | "setRates" | "adjustRates" | "restrictions">("blockBeds");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string>("");
 
@@ -671,6 +715,14 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   const [unblockIds, setUnblockIds] = useState<number[]>([]);
   const [activeBlocks, setActiveBlocks] = useState<BlockData[]>([]);
   const [loadingBlocks, setLoadingBlocks] = useState(false);
+
+  // Availability override state
+  const [availabilityDormIds, setAvailabilityDormIds] = useState<number[]>([]);
+  const [availabilityStart, setAvailabilityStart] = useState("");
+  const [availabilityEnd, setAvailabilityEnd] = useState("");
+  const [availabilityDays, setAvailabilityDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [availabilityMode, setAvailabilityMode] = useState<"set" | "clear">("set");
+  const [availabilityValue, setAvailabilityValue] = useState("");
 
   // Set rates state
   const [rateRpIds, setRateRpIds] = useState<number[]>([]);
@@ -825,6 +877,54 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
     } finally { setSaving(false); }
   };
 
+  const handleBulkAvailability = async () => {
+    if (!availabilityDormIds.length || !availabilityStart || !availabilityEnd) return;
+    const value = Number(availabilityValue);
+    if (availabilityMode === "set" && (!Number.isInteger(value) || value < 0)) return;
+    const affectedNights = inclusiveNights(availabilityStart, availabilityEnd).filter((date) => availabilityDays.length === 0 || availabilityDays.includes(civilWeekday(date))).length;
+    const confirmed = window.confirm(
+      `${availabilityMode === "set" ? "Set" : "Clear"} availability for ${availabilityDormIds.length} room${availabilityDormIds.length === 1 ? "" : "s"} across ${affectedNights} night${affectedNights === 1 ? "" : "s"}?${availabilityMode === "set" ? `\n\nOTA/PMS slots remaining: ${value}.` : "\n\nThis removes the default override and restores calculated availability."}`,
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password, username, action: "bulkSetAvailability",
+          dormIds: availabilityDormIds,
+          startDate: availabilityStart,
+          endDate: availabilityEnd,
+          dayFilter: availabilityDays,
+          mode: availabilityMode,
+          onlineRemaining: availabilityMode === "set" ? value : undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setResult(json.error || "Availability update failed");
+        if (json.partial) onSaved();
+        return;
+      }
+      const count = availabilityMode === "set" ? json.updated : json.cleared;
+      const syncMessage = json.sync?.accepted
+        ? " PMS inventory synced."
+        : json.sync?.message
+          ? ` Local update saved; PMS sync pending: ${json.sync.message}.`
+          : " Local update saved; PMS sync can be retried from Channel Manager.";
+      const capMessage = json.capped ? ` ${json.capped} cell(s) capped to available inventory.` : "";
+      const unmappedMessage = json.unmappedDormIds?.length ? ` ${json.unmappedDormIds.length} unmapped dorm(s) are local-only.` : "";
+      setResult(`${availabilityMode === "set" ? "Updated" : "Cleared"} ${count} availability cell(s).${capMessage}${unmappedMessage}${syncMessage}`);
+      onSaved();
+      setTimeout(onClose, 1200);
+    } catch {
+      setResult("Network error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSetRates = async () => {
     if (!rateRpIds.length || !rateStart || !rateEnd || !rateValue) return;
     setSaving(true);
@@ -882,7 +982,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
 
         {/* Tabs */}
         <div className="mt-3 flex gap-1 flex-wrap">
-          {([["blockBeds", "Block Beds"], ["unblockBeds", "Unblock"], ["setRates", "Set Rates"], ["adjustRates", "Adjust Rates"], ["restrictions", "Restrictions"]] as const).map(([id, label]) => (
+          {([["blockBeds", "Block Beds"], ["unblockBeds", "Unblock"], ["availability", "Availability"], ["setRates", "Set Rates"], ["adjustRates", "Adjust Rates"], ["restrictions", "Restrictions"]] as const).map(([id, label]) => (
             <button key={id} type="button" onClick={() => { setTab(id); setResult(""); }}
               className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-colors", tab === id ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark/70 hover:bg-brand-mist")}
             >{label}</button>
@@ -965,6 +1065,42 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
               )}
               <Button variant="cta" size="sm" className="w-full" onClick={handleUnblockBeds} disabled={saving || !unblockIds.length}>
                 {saving ? "Unblocking..." : `Unblock ${unblockIds.length} Block(s)`}
+              </Button>
+            </>
+          )}
+
+          {tab === "availability" && (
+            <>
+              <div>
+                <label className="text-xs font-medium">Rooms / Dorms</label>
+                <div className="mt-1">
+                  <DormAvailabilityPicker
+                    dorms={data?.dorms ?? []}
+                    mappings={data?.roomMappings ?? []}
+                    selectedIds={availabilityDormIds}
+                    onChange={setAvailabilityDormIds}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="text-xs font-medium">Start Date</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={availabilityStart} onChange={(e) => setStartAndNextEnd(e.target.value, setAvailabilityStart, setAvailabilityEnd)} /></div>
+                <div><label className="text-xs font-medium">End Date</label><input type="date" min={availabilityStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={availabilityEnd} onChange={(e) => setAvailabilityEnd(e.target.value)} /></div>
+              </div>
+              <p className="text-[10px] text-brand-green-dark/50">Both dates are nights included. Availability means OTA/PMS slots remaining; walk-in availability is calculated automatically. Past dates are disabled.</p>
+              <div><label className="text-xs font-medium">Days</label><div className="mt-1"><DaySelector days={availabilityDays} setDays={setAvailabilityDays} /></div></div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setAvailabilityMode("set")} className={cn("flex-1 py-1.5 rounded text-xs font-medium border", availabilityMode === "set" ? "bg-brand-green text-white border-brand-green" : "border-input")}>Set Availability</button>
+                <button type="button" onClick={() => setAvailabilityMode("clear")} className={cn("flex-1 py-1.5 rounded text-xs font-medium border", availabilityMode === "clear" ? "bg-amber-600 text-white border-amber-600" : "border-input")}>Clear Override</button>
+              </div>
+              {availabilityMode === "set" && (
+                <div>
+                  <label className="text-xs font-medium">Online (OTA/PMS) slots remaining</label>
+                  <input type="number" min={0} step={1} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={availabilityValue} onChange={(e) => setAvailabilityValue(e.target.value)} placeholder="e.g. 3" />
+                  <p className="mt-0.5 text-[10px] text-brand-green-dark/50">The value is applied per selected room/date. Existing bookings, holds, and blocks are preserved; values above available inventory are capped.</p>
+                </div>
+              )}
+              <Button variant="cta" size="sm" className="w-full" onClick={handleBulkAvailability} disabled={saving || !availabilityDormIds.length || !availabilityStart || !availabilityEnd || (availabilityMode === "set" && (!availabilityValue || !Number.isInteger(Number(availabilityValue)) || Number(availabilityValue) < 0))}>
+                {saving ? "Updating..." : availabilityMode === "set" ? `Set ${availabilityValue || "…"} OTA slot${availabilityValue === "1" ? "" : "s"}` : "Clear Availability Overrides"}
               </Button>
             </>
           )}

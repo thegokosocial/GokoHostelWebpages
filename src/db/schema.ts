@@ -825,7 +825,9 @@ export const inventoryDirty = sqliteTable("inventory_dirty", {
   dormId: integer("dorm_id").notNull(),
   date: text("date").notNull(),
   createdAt: text("created_at").notNull(),
-});
+}, (table) => [
+  uniqueIndex("idx_inventory_dirty_dorm_date").on(table.dormId, table.date),
+]);
 
 // Customer-facing website CMS (Cloudflare-only; not synced to Pi)
 export const siteEvents = sqliteTable("site_events", {

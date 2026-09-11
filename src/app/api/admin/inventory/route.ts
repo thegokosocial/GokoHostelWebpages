@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { triggerInventoryPush, triggerRatePush, triggerRestrictionPush } from "@/lib/aiosellSync";
 import { restrictionPatch } from "@/lib/aiosell";
-import { stayNights, inclusiveNights, civilWeekday, sellableUnits } from "@/lib/inventoryAvailability";
+import { addCalendarDays, computeNightAvailability, civilWeekday, inclusiveNights, overrideCeilingToSave, sellableUnits, unassignedOtaOnNight, stayNights } from "@/lib/inventoryAvailability";
+import { todayIST } from "@/lib/utils";
 import {
   getInventoryGridData, getChannels, upsertChannel, deleteChannel,
   getBedTypeConfigs, upsertBedTypeConfig,
   getActiveBedBlocks, createBedBlock, deactivateBedBlock, deactivateBedBlocksByBedIds,
-  upsertInventoryOverride, getBedsFreeToBlock,
+  upsertInventoryOverride, deleteInventoryOverride, getBedsFreeToBlock, getAllDorms, getAvailabilitySnapshot, getUnassignedOtaHoldsForRange, getRoomTypeMappings, addAuditEntry,
   getChannelRatesForRange, upsertChannelRate,
   getDailyRates, upsertDailyRate,
   getAllBeds,
@@ -25,6 +26,7 @@ const ACTION_PERMISSIONS: Record<string, string> = {
   blockBeds: "canManageInventory",
   unblockBeds: "canManageInventory",
   updateInventoryOverride: "canManageInventory",
+  bulkSetAvailability: "canManageInventory",
   getChannelRates: "canManageInventory",
   updateChannelRate: "canManageInventory",
   updateRate: "canManageInventory",
@@ -169,6 +171,113 @@ export async function POST(req: NextRequest) {
       await upsertInventoryOverride({ dormId, channelId: channelId || null, date, onlineAvailable, offlineAvailable, overriddenBy: actingUser });
       await triggerInventoryPush([date], dormId).catch(() => {});
       return NextResponse.json({ success: true });
+    }
+
+    if (action === "bulkSetAvailability") {
+      const { dormIds: requestedDormIds, startDate, endDate, dayFilter, mode, onlineRemaining } = params;
+      if (!Array.isArray(requestedDormIds) || requestedDormIds.length === 0 || !startDate || !endDate) {
+        return NextResponse.json({ error: "dormIds, startDate and endDate required" }, { status: 400 });
+      }
+      if (!validInventoryDateRange(startDate, endDate)) {
+        return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+      }
+      if (dayFilter !== undefined && (!Array.isArray(dayFilter) || dayFilter.some((day: unknown) => typeof day !== "number" || !Number.isInteger(day) || day < 0 || day > 6))) {
+        return NextResponse.json({ error: "dayFilter must contain weekday numbers from 0 to 6" }, { status: 400 });
+      }
+      const normalizedDayFilter = Array.isArray(dayFilter) ? dayFilter : undefined;
+      const allDates = inclusiveNights(startDate, endDate);
+      if (allDates.length > 366) {
+        return NextResponse.json({ error: "Availability updates are limited to 366 nights" }, { status: 400 });
+      }
+      const filteredDates = filterByDays(allDates, normalizedDayFilter);
+      if (filteredDates.length === 0) {
+        return NextResponse.json({ success: true, updated: 0, cleared: 0, capped: 0, unmappedDormIds: [], sync: { attempted: false, accepted: true }, message: "No nights match the selected days" });
+      }
+      if (mode !== "set" && mode !== "clear") {
+        return NextResponse.json({ error: "mode must be set or clear" }, { status: 400 });
+      }
+      const requestedValue = Number(onlineRemaining);
+      if (mode === "set" && (!Number.isFinite(requestedValue) || !Number.isInteger(requestedValue) || requestedValue < 0)) {
+        return NextResponse.json({ error: "onlineRemaining must be a non-negative whole number" }, { status: 400 });
+      }
+
+      const dormIds = [...new Set(requestedDormIds)];
+      if (dormIds.some((id: unknown) => typeof id !== "number" || !Number.isInteger(id) || id <= 0)) {
+        return NextResponse.json({ error: "dormIds must contain positive integers" }, { status: 400 });
+      }
+      if (dormIds.length * filteredDates.length > 10000) {
+        return NextResponse.json({ error: "Availability updates are limited to 10,000 room-night cells" }, { status: 400 });
+      }
+      const knownDormIds = new Set((await getAllDorms()).map((d) => d.id));
+      if (dormIds.some((id) => !knownDormIds.has(id))) {
+        return NextResponse.json({ error: "One or more dorms do not exist" }, { status: 400 });
+      }
+
+      const mappings = (await getRoomTypeMappings()).filter((mapping) => mapping.isActive);
+      const mappedDormIds = new Set(mappings.map((mapping) => mapping.dormId));
+      const unmappedDormIds = dormIds.filter((id) => !mappedDormIds.has(id));
+      const [bedRows, assignments, blocks, overrides] = await getAvailabilitySnapshot(startDate, endDate);
+      const holds = await getUnassignedOtaHoldsForRange(startDate, addCalendarDays(endDate, 1));
+      const applied: Array<{ dormId: number; date: string; capped: boolean }> = [];
+
+      try {
+        for (const dormId of dormIds) {
+          for (const date of filteredDates) {
+            const stats = computeNightAvailability(
+              dormId,
+              date,
+              bedRows,
+              blocks,
+              assignments,
+              overrides,
+              unassignedOtaOnNight(holds, dormId, date),
+            );
+            if (mode === "clear") {
+              await deleteInventoryOverride({ dormId, channelId: null, date });
+              applied.push({ dormId, date, capped: false });
+            } else {
+              await upsertInventoryOverride({
+                dormId,
+                channelId: null,
+                date,
+                onlineAvailable: overrideCeilingToSave(stats, requestedValue),
+                offlineAvailable: null,
+                overriddenBy: actingUser,
+              });
+              applied.push({ dormId, date, capped: requestedValue > stats.available });
+            }
+          }
+        }
+      } catch (error: any) {
+        const partialDates = [...new Set(applied.map((item) => item.date))];
+        const partialDormIds = [...new Set(applied.map((item) => item.dormId))];
+        const sync = partialDates.length > 0
+          ? await triggerInventoryPush(partialDates, partialDormIds).catch(() => undefined)
+          : undefined;
+        await recordBulkAvailabilityAudit(actingUser, mode, dormIds, filteredDates, normalizedDayFilter, requestedValue, applied, sync, true);
+        return NextResponse.json({
+          success: false,
+          partial: applied.length > 0,
+          updated: mode === "set" ? applied.length : 0,
+          cleared: mode === "clear" ? applied.length : 0,
+          capped: applied.filter((item) => item.capped).length,
+          error: error?.message || "Bulk availability update failed",
+          sync,
+        }, { status: 500 });
+      }
+
+      const affectedDates = [...new Set(applied.map((item) => item.date))];
+      const sync = await triggerInventoryPush(affectedDates, dormIds).catch(() => undefined);
+      await recordBulkAvailabilityAudit(actingUser, mode, dormIds, filteredDates, normalizedDayFilter, requestedValue, applied, sync, false);
+
+      return NextResponse.json({
+        success: true,
+        updated: mode === "set" ? applied.length : 0,
+        cleared: mode === "clear" ? applied.length : 0,
+        capped: applied.filter((item) => item.capped).length,
+        unmappedDormIds,
+        sync,
+      });
     }
 
     if (action === "getChannelRates") {
@@ -359,4 +468,44 @@ function generateDateRange(startDate: string, endDate: string): string[] {
 function filterByDays(dates: string[], dayFilter?: number[]): string[] {
   if (!dayFilter || dayFilter.length === 0 || dayFilter.length === 7) return dates;
   return dates.filter((d) => dayFilter.includes(civilWeekday(d)));
+}
+
+function validInventoryDateRange(startDate: string, endDate: string): boolean {
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  if (!iso.test(startDate) || !iso.test(endDate) || startDate > endDate || startDate < todayIST()) return false;
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  return !Number.isNaN(start.valueOf()) && !Number.isNaN(end.valueOf())
+    && start.toISOString().slice(0, 10) === startDate
+    && end.toISOString().slice(0, 10) === endDate;
+}
+
+async function recordBulkAvailabilityAudit(
+  username: string,
+  mode: "set" | "clear",
+  dormIds: number[],
+  dates: string[],
+  dayFilter: number[] | undefined,
+  requestedValue: number,
+  applied: Array<{ dormId: number; date: string; capped: boolean }>,
+  sync: { attempted: boolean; accepted: boolean; message?: string } | void,
+  partial: boolean,
+) {
+  await addAuditEntry({
+    username,
+    action: "INVENTORY_AVAILABILITY_BULK_UPDATED",
+    target: dormIds.join(","),
+    details: JSON.stringify({
+      mode,
+      dormIds,
+      dateCount: dates.length,
+      dayFilter,
+      cellCount: dormIds.length * dates.length,
+      applied: applied.length,
+      capped: applied.filter((item) => item.capped).length,
+      requestedValue: mode === "set" ? requestedValue : undefined,
+      partial,
+      sync: sync ? { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } : null,
+    }),
+  }).catch(() => {});
 }
