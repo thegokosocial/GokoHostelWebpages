@@ -37,7 +37,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → Stayflexi URL
 | `/my-bills` | Food bills | phone; back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
 | `/review/[token]` | Rating funnel | token |
-| `/admin` | PMS SPA | password every API call |
+| `/admin` | PMS SPA | direct username/password form; password every API call |
 
 ---
 

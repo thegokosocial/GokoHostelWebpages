@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, CalendarDaysIcon, WrenchIcon, BookOpenIcon, KeyIcon, XIcon, WalletIcon, MenuIcon, StarIcon, WarehouseIcon, UtensilsIcon, SplitIcon } from "lucide-react";
+import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, CalendarDaysIcon, WrenchIcon, BookOpenIcon, KeyIcon, XIcon, WalletIcon, MenuIcon, StarIcon, WarehouseIcon, UtensilsIcon, SplitIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 // import { DarkModeToggle } from "@/components/DarkModeToggle";
@@ -58,8 +58,8 @@ function AdminPageInner() {
   const [pendingAssignGuest, setPendingAssignGuest] = useState<string | null>(null);
   const [pendingBookingId, setPendingBookingId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<"admin" | "manager" | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [autoLogging, setAutoLogging] = useState(true);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [cpCurrent, setCpCurrent] = useState("");
@@ -146,8 +146,7 @@ function AdminPageInner() {
     setLoading(true);
     setError("");
     try {
-      const body: any = { password, action: "auth" };
-      if (selectedRole === "manager" && username) body.username = username;
+      const body: any = { password, username, action: "auth" };
 
       const res = await fetch("/api/admin/checkins", {
         method: "POST",
@@ -180,7 +179,6 @@ function AdminPageInner() {
     setPassword("");
     setUsername("");
     setSection("dashboard");
-    setSelectedRole(null);
     setPermissions({});
     localStorage.removeItem("gokoAdminSession");
   };
@@ -204,75 +202,54 @@ function AdminPageInner() {
             Goko Check-in Panel
           </h1>
 
-          {!selectedRole ? (
-            <div className="mt-6 space-y-3">
-              <p className="text-center text-sm text-brand-green-dark/70 dark:text-zinc-400">Select your access level</p>
-              <button
-                type="button"
-                onClick={() => setSelectedRole("admin")}
-                className="w-full rounded-xl border-2 border-brand-green bg-white dark:bg-card px-4 py-4 text-left transition-all duration-200 hover:bg-brand-green/[0.04] dark:hover:bg-zinc-800 hover:shadow-soft dark:hover:shadow-none hover:-translate-y-0.5"
-              >
-                <span className="font-display text-base font-bold text-brand-green">Admin Access</span>
-                <p className="mt-0.5 text-xs text-brand-green-dark/60 dark:text-muted-foreground">Full access: view, add, modify, and delete entries</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedRole("manager")}
-                className="w-full rounded-xl border-2 border-brand-mist dark:border-zinc-700 bg-white dark:bg-card px-4 py-4 text-left transition-all duration-200 hover:border-brand-green/30 hover:shadow-soft dark:hover:shadow-none hover:-translate-y-0.5"
-              >
-                <span className="font-display text-base font-bold text-brand-green-dark dark:text-zinc-200">Staff Access</span>
-                <p className="mt-0.5 text-xs text-brand-green-dark/60 dark:text-muted-foreground">View records and add new entries</p>
-              </button>
+          <form
+            onSubmit={(e) => { e.preventDefault(); login(); }}
+            className="mt-6 space-y-4"
+          >
+            <p className="text-center text-sm text-brand-green-dark/70 dark:text-zinc-400">Sign in to continue</p>
+            <div>
+              <Label htmlFor="admin-user">Username</Label>
+              <Input
+                id="admin-user"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter username"
+                autoFocus
+                autoComplete="username"
+              />
             </div>
-          ) : (
-            <form
-              onSubmit={(e) => { e.preventDefault(); login(); }}
-              className="mt-6 space-y-4"
-            >
-              <p className="text-center text-sm text-brand-green-dark/70 dark:text-zinc-400">
-                {selectedRole === "admin" ? "Enter admin password" : "Staff login"}
-              </p>
-              {selectedRole === "manager" && (
-                <div>
-                  <Label htmlFor="staff-user">Username</Label>
-                  <Input
-                    id="staff-user"
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter username"
-                    autoFocus
-                  />
-                </div>
-              )}
-              <div>
-                <Label htmlFor="admin-pw">Password</Label>
+            <div>
+              <Label htmlFor="admin-pw">Password</Label>
+              <div className="relative">
                 <Input
                   id="admin-pw"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password"
-                  autoFocus={selectedRole === "admin"}
+                  className="pr-10"
+                  autoComplete="current-password"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-brand-green-dark/60 transition-colors hover:text-brand-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green/40"
+                >
+                  {showPassword ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                </button>
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <label className="flex items-center gap-2 text-sm text-brand-green-dark/70 dark:text-zinc-400">
-                <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-brand-mist dark:border-zinc-600" />
-                Keep me signed in
-              </label>
-              <Button type="submit" variant="cta" className="w-full" disabled={loading || !password || (selectedRole === "manager" && !username)}>
-                {loading ? "Verifying..." : "Login"}
-              </Button>
-              <button
-                type="button"
-                onClick={() => { setSelectedRole(null); setPassword(""); setUsername(""); setError(""); }}
-                className="w-full text-center text-sm text-brand-green-dark/60 dark:text-zinc-500 transition-colors hover:text-brand-green"
-              >
-                Back to role selection
-              </button>
-            </form>
-          )}
+            </div>
+            {error && <p className="text-sm text-red-500">{error}</p>}
+            <label className="flex items-center gap-2 text-sm text-brand-green-dark/70 dark:text-zinc-400">
+              <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-brand-mist dark:border-zinc-600" />
+              Keep me signed in
+            </label>
+            <Button type="submit" variant="cta" className="w-full" disabled={loading || !password || !username}>
+              {loading ? "Verifying..." : "Login"}
+            </Button>
+          </form>
         </div>
       </section>
     );

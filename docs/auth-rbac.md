@@ -8,7 +8,7 @@ Code: `src/lib/auth.ts`, `src/lib/actionPermissions.ts`, `src/lib/adminNav.ts`.
 
 ## How login works
 
-There are **no JWT cookies**. The admin SPA keeps the password in React state (optional “remember me” in localStorage). Every admin `fetch` sends `{ password, username? }`.
+There are **no JWT cookies**. The admin SPA keeps the password in React state (optional “remember me” in localStorage). `/admin` opens directly to one username/password form; every new login sends `{ password, username, action }`. The server determines whether the account is admin, manager, or a database user from those credentials. Older remembered sessions without a username remain supported for compatibility.
 
 ```mermaid
 sequenceDiagram
