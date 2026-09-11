@@ -87,7 +87,7 @@ export function QuickLinks({ password, username, role }: { password: string; use
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Links & QRs</h2><p className="mt-1 text-sm text-brand-green-dark/60 dark:text-zinc-400">Quick access to food, payment, Wi‑Fi, and other useful resources.</p></div>
-        {canEdit && <Button type="button" variant="cta" onClick={() => setSectionDraft({ name: "", description: "" })}><PlusIcon className="mr-2 h-4 w-4" />Add section</Button>}
+        {canEdit && <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => window.open("/quick-links", "_blank", "noopener,noreferrer")}><ExternalLinkIcon className="mr-2 h-4 w-4" />View guest page</Button><Button type="button" variant="cta" onClick={() => setSectionDraft({ name: "", description: "" })}><PlusIcon className="mr-2 h-4 w-4" />Add section</Button></div>}
       </div>
       {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       {sections.length === 0 && <div className="rounded-2xl border border-dashed border-brand-mist bg-white p-8 text-center text-sm text-brand-green-dark/60">No sections yet.{canEdit && " Add one to start building your quick-links page."}</div>}

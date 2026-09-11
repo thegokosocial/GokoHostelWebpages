@@ -12,6 +12,7 @@ const paths = [
   "/faqs",
   "/reviews",
   "/booking-enquiry",
+  "/quick-links",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

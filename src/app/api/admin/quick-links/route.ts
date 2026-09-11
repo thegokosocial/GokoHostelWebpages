@@ -114,3 +114,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Internal error" }, { status: 500 });
   }
 }
+
+export async function GET() {
+  try {
+    const db = getDb();
+    const sections = await db.select().from(quickLinkSections).orderBy(asc(quickLinkSections.displayOrder), asc(quickLinkSections.id));
+    const items = await db.select().from(quickLinks).where(eq(quickLinks.isActive, 1)).orderBy(asc(quickLinks.displayOrder), asc(quickLinks.id));
+    return NextResponse.json({ sections, items }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("Public quick links error:", error);
+    return NextResponse.json({ error: "Unable to load links" }, { status: 500 });
+  }
+}

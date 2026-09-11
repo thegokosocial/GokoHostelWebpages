@@ -110,7 +110,7 @@ Obsolete keys and their planned cleanup are tracked in [permission-debt.md](perm
 
 Admin always sees all. Staff see first allowed section (`firstVisibleAdminSection`).
 
-Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access), and Links & QRs (`canViewQuickLinks`). Links & QRs mutations are admin-only; non-admin users are read-only. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access), and Links & QRs (`canViewQuickLinks`). Links & QRs mutations are admin-only; non-admin users are read-only. The public guest page is `/quick-links`; it exposes active cards only. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 ---
 

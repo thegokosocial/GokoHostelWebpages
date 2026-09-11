@@ -20,6 +20,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | `/api/food/status` | GET | none | Order status / guest orders |
 | `/api/food/bills` | GET `?phone=` | none | My bills |
 | `/api/site` | GET `?page=events\|community` | none | CMS JSON, `s-maxage=60` |
+| `/api/quick-links` | GET | none | Active guest links and QR/image cards |
 | `/api/media/[...key]` | GET | none | R2 JPEG |
 | `/api/review` | POST | token in JSON | `getReviewRequest`, `submitRating`, `submitFeedback` |
 | `/api/form-c/[id]` | GET | token = `ADMIN_PASSWORD` | FRRO payload + photo |
