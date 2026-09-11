@@ -18,6 +18,7 @@ export function QuickLinks({ password, username, role }: { password: string; use
   const [sectionDraft, setSectionDraft] = useState<Draft | null>(null);
   const [itemDraft, setItemDraft] = useState<Draft | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const canEdit = role === "admin";
 
   const request = useCallback(async (body: Record<string, unknown>) => {
@@ -48,8 +49,12 @@ export function QuickLinks({ password, username, role }: { password: string; use
 
   const saveItem = async () => {
     if (!itemDraft?.sectionId || !itemDraft.title?.trim()) return;
-    await request({ action: "saveItem", ...itemDraft, isActive: itemDraft.isActive !== false });
-    setItemDraft(null); await load();
+    setSaving(true);
+    try {
+      await request({ action: "saveItem", ...itemDraft, isActive: itemDraft.isActive !== false });
+      setItemDraft(null); await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not save item"); }
+    finally { setSaving(false); }
   };
 
   const uploadImage = async (file: File) => {
@@ -115,7 +120,7 @@ export function QuickLinks({ password, username, role }: { password: string; use
             {sectionDraft ? (
               <div className="mt-4 space-y-3"><input autoFocus value={sectionDraft.name || ""} onChange={(e) => setSectionDraft({ ...sectionDraft, name: e.target.value })} placeholder="Section name" className="w-full rounded-lg border border-brand-mist px-3 py-2" /><textarea value={sectionDraft.description} onChange={(e) => setSectionDraft({ ...sectionDraft, description: e.target.value })} placeholder="Short description (optional)" className="w-full rounded-lg border border-brand-mist px-3 py-2" /><Button variant="cta" className="w-full" onClick={saveSection}>Save section</Button></div>
             ) : (
-              <div className="mt-4 space-y-3"><input autoFocus value={itemDraft?.title || ""} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, title: e.target.value } : draft)} placeholder="Title" className="w-full rounded-lg border border-brand-mist px-3 py-2" /><textarea value={itemDraft?.description || ""} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, description: e.target.value } : draft)} placeholder="Description (optional)" className="w-full rounded-lg border border-brand-mist px-3 py-2" /><div className="flex items-center gap-2"><LinkIcon className="h-4 w-4 text-brand-green" /><input value={itemDraft?.url || ""} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, url: e.target.value } : draft)} placeholder="https://… (optional)" className="w-full rounded-lg border border-brand-mist px-3 py-2" /></div><div className="rounded-lg border border-dashed border-brand-mist p-3"><label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-brand-green"><UploadIcon className="h-4 w-4" />{uploading ? "Uploading…" : "Upload QR / image"}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadImage(file); }} /></label>{itemDraft?.imageUrl && <div className="mt-3 flex items-center gap-3"><img src={itemDraft.imageUrl} alt="QR preview" className="h-20 w-20 rounded-lg border border-brand-mist bg-brand-sand object-contain" /><div className="min-w-0 flex-1 text-xs text-brand-green-dark/60"><p className="truncate">QR/image attached</p><button type="button" className="mt-1 text-red-600" onClick={() => setItemDraft((draft) => draft ? { ...draft, imageUrl: "" } : draft)}>Remove</button></div></div>}</div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={itemDraft?.isActive !== false} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, isActive: e.target.checked } : draft)} />Visible on the page</label><Button variant="cta" className="w-full" onClick={saveItem}>Save item</Button></div>
+              <div className="mt-4 space-y-3"><input autoFocus value={itemDraft?.title || ""} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, title: e.target.value } : draft)} placeholder="Title" className="w-full rounded-lg border border-brand-mist px-3 py-2" /><textarea value={itemDraft?.description || ""} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, description: e.target.value } : draft)} placeholder="Description (optional)" className="w-full rounded-lg border border-brand-mist px-3 py-2" /><div className="flex items-center gap-2"><LinkIcon className="h-4 w-4 text-brand-green" /><input value={itemDraft?.url || ""} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, url: e.target.value } : draft)} placeholder="https://… (optional)" className="w-full rounded-lg border border-brand-mist px-3 py-2" /></div><div className="rounded-lg border border-dashed border-brand-mist p-3"><label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-brand-green"><UploadIcon className="h-4 w-4" />{uploading ? "Uploading…" : "Upload QR / image"}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading || saving} onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadImage(file); }} /></label>{itemDraft?.imageUrl && <div className="mt-3 flex items-center gap-3"><img src={itemDraft.imageUrl} alt="QR preview" className="h-20 w-20 rounded-lg border border-brand-mist bg-brand-sand object-contain" /><div className="min-w-0 flex-1 text-xs text-brand-green-dark/60"><p className="truncate">QR/image attached — click Save item to keep it</p><button type="button" className="mt-1 text-red-600" onClick={() => setItemDraft((draft) => draft ? { ...draft, imageUrl: "" } : draft)}>Remove</button></div></div>}</div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={itemDraft?.isActive !== false} onChange={(e) => setItemDraft((draft) => draft ? { ...draft, isActive: e.target.checked } : draft)} />Visible on the page</label><Button variant="cta" className="w-full" onClick={saveItem} disabled={saving || uploading}>{saving ? "Saving…" : "Save item"}</Button></div>
             )}
           </div>
         </div>
