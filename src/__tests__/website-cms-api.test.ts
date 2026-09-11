@@ -594,7 +594,7 @@ describe("GET /api/media/[...key]", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });
 
-  it("always serves JPEG even if R2 metadata disagrees", async () => {
+  it("preserves the stored media content type", async () => {
     vi.mocked(getMediaObject).mockResolvedValue({
       body: new ReadableStream(),
       httpMetadata: { contentType: "application/octet-stream" },
@@ -604,7 +604,7 @@ describe("GET /api/media/[...key]", () => {
       { params: Promise.resolve({ key: ["events", "2026-08-28-abcd1234.jpg"] }) },
     );
     expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toBe("image/jpeg");
+    expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
   });
 });
 

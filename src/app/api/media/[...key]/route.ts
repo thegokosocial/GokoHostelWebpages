@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ key
 
   return new NextResponse(object.body as BodyInit, {
     headers: {
-      "Content-Type": "image/jpeg",
+      "Content-Type": object.httpMetadata?.contentType || "image/jpeg",
       "Cache-Control": "public, max-age=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
     },

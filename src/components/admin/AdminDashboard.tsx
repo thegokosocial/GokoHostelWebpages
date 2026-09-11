@@ -8,7 +8,7 @@ import { useAdminApi } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
-import { BedDoubleIcon, UsersIcon, CalendarCheckIcon, AlertTriangleIcon, LogOutIcon, Loader2Icon, ExternalLinkIcon, BanknoteIcon, SmartphoneIcon, XIcon, CheckCircleIcon, UtensilsIcon, BookOpenIcon, CalendarPlusIcon, BanIcon, UserRoundCheckIcon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, CalendarCheckIcon, AlertTriangleIcon, LogOutIcon, Loader2Icon, ExternalLinkIcon, BanknoteIcon, SmartphoneIcon, XIcon, CheckCircleIcon, UtensilsIcon, BookOpenIcon, CalendarPlusIcon, BanIcon, UserRoundCheckIcon, QrCodeIcon } from "lucide-react";
 import { getAgeFromDob, dobsMatch } from "@/lib/parseDob";
 import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
 import { useAdminToast } from "@/components/admin/AdminToast";
@@ -112,6 +112,7 @@ export function AdminDashboard({
   const canCollectStay = hasPermission(role, permissions || {}, "canCheckIn") || hasPermission(role, permissions || {}, "canAddBooking");
   const canViewBookings = hasPermission(role, permissions || {}, "canViewBookings");
   const canManageAttendance = role === "admin" || (role === "manager" && !!permissions?.canManageAttendance);
+  const canViewQuickLinks = hasPermission(role, permissions || {}, "canViewQuickLinks");
   const canViewReconciliation = role === "admin" || (!!(permissions?.canReconcileAccounts || permissions?.canReconcile) && !!permissions?.canViewAccounts);
 
   const foodApiCall = useCallback(async (body: Record<string, any>) => {
@@ -282,6 +283,15 @@ export function AdminDashboard({
               <div className="text-left"><p className="font-semibold text-brand-green-dark dark:text-zinc-100">Staff Attendance</p><p className="text-xs text-brand-green-dark/50 dark:text-zinc-500">Mark leave &amp; view payroll</p></div>
             </div>
             <span className="text-brand-green-dark/30 dark:text-zinc-600">→</span>
+          </button>
+        )}
+        {canViewQuickLinks && (
+          <button type="button" onClick={() => window.open("/quick-links", "_blank", "noopener,noreferrer")} className="flex w-full items-center justify-between rounded-xl border border-brand-mist dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 shadow-card dark:shadow-none transition-all hover:shadow-soft dark:hover:bg-zinc-800/70">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-500/10"><QrCodeIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" /></div>
+              <div className="text-left"><p className="font-semibold text-brand-green-dark dark:text-zinc-100">Guest Links & QRs</p><p className="text-xs text-brand-green-dark/50 dark:text-zinc-500">Open the guest QR page</p></div>
+            </div>
+            <span className="text-brand-green-dark/30 dark:text-zinc-600">↗</span>
           </button>
         )}
       </div>
