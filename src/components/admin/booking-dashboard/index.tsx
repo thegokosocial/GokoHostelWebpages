@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { PlusIcon, TableIcon, CalendarIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon } from "lucide-react";
+import { PlusIcon, TableIcon, CalendarIcon, ListIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { BookingCalendarGrid } from "./BookingCalendarGrid";
 import { BookingTableView } from "./BookingTableView";
 import { BookingSearchBar } from "./BookingSearchBar";
@@ -11,10 +11,10 @@ import { BookingDetailPanel } from "./BookingDetailPanel";
 import { CreateBookingModal } from "./CreateBookingModal";
 import { UnassignedBookings } from "./UnassignedBookings";
 import { DateRangeSelector } from "./DateRangeSelector";
-import { getDateRange, getHostelToday, rangeCoveringStay } from "./utils";
+import { getDateRange, getHostelToday, rangeCoveringStay, STATUS_LABELS } from "./utils";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "../AdminLoading";
-import type { DashboardBooking, BedAssignment, DateRange, CalendarDorm } from "./types";
+import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm } from "./types";
 import type { Role } from "../types";
 import { hasPermission } from "../types";
 import { fetchWithRetry } from "@/components/admin/useAdminApi";
@@ -49,6 +49,11 @@ function apiErrorDetails(response: Response, data: Record<string, any>, action: 
   }, null, 2);
 }
 
+const ALL_BOOKINGS_PAGE_SIZE = 50;
+const ALL_BOOKING_STATUSES: Array<BookingStatus | "all"> = [
+  "all", "received", "checked_in", "checked_out", "hold", "no_show", "cancelled", "modified",
+];
+
 
 export function BookingDashboard({
   password,
@@ -68,12 +73,18 @@ export function BookingDashboard({
   const { apiCall } = useBookingApi(password, username);
   const { showError, showSuccess, showInfo } = useAdminToast();
 
-  const [view, setView] = useState<"calendar" | "table">("calendar");
+  const [view, setView] = useState<"calendar" | "table" | "all">("calendar");
   const [dateRange, setDateRange] = useState<DateRange>(() => {
     const { start, end } = getDateRange("10days");
     return { startDate: start, endDate: end, mode: "10days" };
   });
   const [bookings, setBookings] = useState<DashboardBooking[]>([]);
+  const [allBookings, setAllBookings] = useState<DashboardBooking[]>([]);
+  const [allBookingsTotal, setAllBookingsTotal] = useState(0);
+  const [allBookingStatusCounts, setAllBookingStatusCounts] = useState<Record<string, number>>({});
+  const [allBookingStatus, setAllBookingStatus] = useState<BookingStatus | "all">("all");
+  const [allBookingsPage, setAllBookingsPage] = useState(0);
+  const [allBookingsLoading, setAllBookingsLoading] = useState(false);
   const [assignments, setAssignments] = useState<BedAssignment[]>([]);
   const [dorms, setDorms] = useState<CalendarDorm[]>([]);
   const [unassignedBookings, setUnassignedBookings] = useState<DashboardBooking[]>([]);
@@ -88,12 +99,15 @@ export function BookingDashboard({
   const [refreshing, setRefreshing] = useState(false);
 
   const selectedBooking = useMemo(
-    () => bookings.find((b) => b.id === selectedBookingId) ?? (externalDetail?.booking.id === selectedBookingId ? externalDetail.booking : null),
-    [bookings, externalDetail, selectedBookingId],
+    () => bookings.find((b) => b.id === selectedBookingId)
+      ?? allBookings.find((b) => b.id === selectedBookingId)
+      ?? (externalDetail?.booking.id === selectedBookingId ? externalDetail.booking : null),
+    [allBookings, bookings, externalDetail, selectedBookingId],
   );
 
   const openBooking = useCallback(async (bookingId: number) => {
-    const visible = bookings.find((booking) => booking.id === bookingId);
+    const visible = bookings.find((booking) => booking.id === bookingId)
+      ?? allBookings.find((booking) => booking.id === bookingId);
     if (visible) {
       setExternalDetail(null);
       setSelectedBookingId(bookingId);
@@ -112,7 +126,7 @@ export function BookingDashboard({
     } catch {
       showError("Network error loading booking details");
     }
-  }, [apiCall, bookings, showError]);
+  }, [allBookings, apiCall, bookings, showError]);
 
   useEffect(() => {
     if (!initialBookingId || openingInitialBookingId.current === initialBookingId) return;
@@ -172,10 +186,41 @@ export function BookingDashboard({
     }
   }, [apiCall, dateRange.startDate, dateRange.endDate, showError, dorms]);
 
+  const loadAllBookings = useCallback(async () => {
+    setAllBookingsLoading(true);
+    try {
+      const res = await apiCall({
+        action: "getAllBookings",
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        page: allBookingsPage,
+        pageSize: ALL_BOOKINGS_PAGE_SIZE,
+        status: allBookingStatus,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to load all bookings" }));
+        showError(data.error || "Failed to load all bookings", apiErrorDetails(res, data, "getAllBookings"));
+        return;
+      }
+      const data = await res.json();
+      setAllBookings(data.bookings || []);
+      setAllBookingsTotal(Number(data.total || 0));
+      setAllBookingStatusCounts(data.statusCounts || {});
+    } catch {
+      showError("Network error loading all bookings");
+    } finally {
+      setAllBookingsLoading(false);
+    }
+  }, [allBookingStatus, allBookingsPage, apiCall, dateRange.endDate, dateRange.startDate, showError]);
+
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange.startDate, dateRange.endDate]);
+
+  useEffect(() => {
+    if (view === "all") void loadAllBookings();
+  }, [loadAllBookings, view]);
 
   useEffect(() => {
     void apiCall({ action: "getWhatsAppTemplates" }).then(async (res) => {
@@ -184,6 +229,7 @@ export function BookingDashboard({
   }, [apiCall]);
 
   const handleDateRangeChange = useCallback((newRange: DateRange) => {
+    setAllBookingsPage(0);
     setDateRange(newRange);
   }, []);
 
@@ -199,7 +245,10 @@ export function BookingDashboard({
           const data = await res.json().catch(() => ({}));
           showSuccess(data.message || "Action completed");
           if (data.warning) showInfo(data.warning);
-          if (reload) await loadData(true);
+          if (reload) {
+            await loadData(true);
+            if (view === "all") await loadAllBookings();
+          }
           if (externalDetail?.booking.id === bookingId) {
             const detailRes = await apiCall({ action: "getDetail", bookingId });
             if (detailRes.ok) {
@@ -211,14 +260,17 @@ export function BookingDashboard({
         }
         const data = await res.json().catch(() => ({ error: "Action failed" }));
         showError(data.error || "Action failed");
-        if (reload) await loadData(true);
+        if (reload) {
+          await loadData(true);
+          if (view === "all") await loadAllBookings();
+        }
         return false;
       } catch {
         showError("Network error");
         return false;
       }
     },
-    [apiCall, externalDetail, loadData, showError, showInfo, showSuccess],
+    [apiCall, externalDetail, loadAllBookings, loadData, showError, showInfo, showSuccess, view],
   );
 
   if (loading) {
@@ -233,7 +285,9 @@ export function BookingDashboard({
     <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
       {/* Toolbar */}
       <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Booking Calendar</h2>
+        <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">
+          {view === "all" ? "All Bookings" : "Booking Calendar"}
+        </h2>
         <div className="flex flex-wrap items-center gap-2">
           <BookingSearchBar
             bookings={bookings}
@@ -277,6 +331,7 @@ export function BookingDashboard({
           )}
           <div className="flex rounded-lg border border-input">
             <button
+              type="button"
               onClick={() => setView("calendar")}
               className={cn(
                 "flex items-center gap-1 rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors",
@@ -289,9 +344,10 @@ export function BookingDashboard({
               <span className="hidden sm:inline">Calendar</span>
             </button>
             <button
+              type="button"
               onClick={() => setView("table")}
               className={cn(
-                "flex items-center gap-1 rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                "flex items-center gap-1 border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
                 view === "table"
                   ? "bg-brand-green text-white"
                   : "bg-background text-muted-foreground hover:bg-muted",
@@ -299,6 +355,21 @@ export function BookingDashboard({
             >
               <TableIcon className="size-3.5" />
               <span className="hidden sm:inline">Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("all")}
+              className={cn(
+                "flex items-center gap-1 rounded-r-lg border-l border-input px-3 py-1.5 text-xs font-medium transition-colors",
+                view === "all"
+                  ? "bg-brand-green text-white"
+                  : "bg-background text-muted-foreground hover:bg-muted",
+              )}
+              aria-label="All bookings"
+            >
+              <ListIcon className="size-3.5" />
+              <span className="hidden sm:inline">All Bookings</span>
+              <span className="sm:hidden">All</span>
             </button>
           </div>
           {hasPermission(role, permissions, "canAddBooking") && (
@@ -361,7 +432,7 @@ export function BookingDashboard({
           selectedBookingId={selectedBookingId}
           onToggleDorm={handleToggleDorm}
         />
-      ) : (
+      ) : view === "table" ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <BookingTableView
             bookings={bookings}
@@ -369,6 +440,74 @@ export function BookingDashboard({
             onSelectBooking={openBooking}
             selectedBookingId={selectedBookingId}
           />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <div className="mb-3 flex flex-col gap-2 rounded-xl border border-border bg-white p-3 dark:bg-card sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">All booking statuses</p>
+              <p className="text-xs text-muted-foreground">
+                Showing bookings that overlap {dateRange.startDate} to {dateRange.endDate}.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="all-booking-status" className="text-xs text-muted-foreground">Status</label>
+              <select
+                id="all-booking-status"
+                value={allBookingStatus}
+                onChange={(event) => {
+                  setAllBookingsPage(0);
+                  setAllBookingStatus(event.target.value as BookingStatus | "all");
+                }}
+                className="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground"
+              >
+                {ALL_BOOKING_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "all" ? `All (${Object.values(allBookingStatusCounts).reduce((sum, count) => sum + count, 0)})` : `${STATUS_LABELS[status]} (${allBookingStatusCounts[status] || 0})`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {allBookingsLoading ? (
+            <div className="flex min-h-48 items-center justify-center rounded-xl border border-border bg-white dark:bg-card">
+              <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <BookingTableView
+              bookings={allBookings}
+              assignments={assignments}
+              onSelectBooking={openBooking}
+              selectedBookingId={selectedBookingId}
+            />
+          )}
+
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {allBookingsTotal === 0 ? "No bookings" : `${allBookingsPage * ALL_BOOKINGS_PAGE_SIZE + 1}-${Math.min((allBookingsPage + 1) * ALL_BOOKINGS_PAGE_SIZE, allBookingsTotal)} of ${allBookingsTotal}`}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={allBookingsLoading || allBookingsPage === 0}
+                onClick={() => setAllBookingsPage((page) => Math.max(0, page - 1))}
+                aria-label="Previous bookings page"
+              >
+                <ChevronLeftIcon className="size-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={allBookingsLoading || (allBookingsPage + 1) * ALL_BOOKINGS_PAGE_SIZE >= allBookingsTotal}
+                onClick={() => setAllBookingsPage((page) => page + 1)}
+                aria-label="Next bookings page"
+              >
+                <ChevronRightIcon className="size-3.5" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

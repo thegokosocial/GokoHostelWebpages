@@ -285,6 +285,11 @@ describe("Dashboard booking activity", () => {
     expect(bookingDashboard).toContain('externalDetail?.booking.id === selectedBookingId');
     expect(bookingDashboard).toContain('setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [] })');
   });
+
+  it("keeps today's check-ins in a bounded scrollable list like today's bookings", () => {
+    expect(dashboard).toContain('max-h-80 space-y-2.5 overflow-y-auto pr-1');
+    expect(dashboard).toContain("Today&apos;s Check-ins");
+  });
 });
 
 describe("Booking Dashboard: moveRoom assigns the new bed before releasing the old one", () => {
@@ -322,6 +327,35 @@ describe("Booking Calendar: inclusive last night", () => {
     // 29 Aug → range Aug 28 .. Sep 6 (yesterday through yesterday+9)
     expect(occupiesInclusiveRange("2026-09-06", "2026-09-07", "2026-08-28", "2026-09-06")).toBe(true);
     expect("2026-09-06" < "2026-09-06").toBe(false);
+  });
+});
+
+describe("Booking dashboard: all-status table view", () => {
+  const queriesCode = readFile("src/db/queries.ts");
+  const route = readFile("src/app/api/admin/bookings/route.ts");
+  const dashboard = readFile("src/components/admin/booking-dashboard/index.tsx");
+
+  it("keeps cancelled bookings out of calendar data while providing a separate table query", () => {
+    const calendarFn = queriesCode.match(/export async function getBookingCalendarData[\s\S]*?return \{ bookings/ )![0];
+    const tableFn = queriesCode.match(/export async function getBookingTableData[\s\S]*?export async function getBookingDetail/)![0];
+    expect(calendarFn).toContain("status} != 'cancelled'");
+    expect(tableFn).toContain("checkinDate} <= ${endDate}");
+    expect(tableFn).toContain("checkoutDate} > ${startDate}");
+    expect(tableFn).not.toContain("status} != 'cancelled'");
+  });
+
+  it("protects all-status rows with the existing booking view permission", () => {
+    expect(route).toContain('getAllBookings: "canViewBookings"');
+    expect(route).toContain('action === "getAllBookings"');
+    expect(route).toContain("Invalid booking status");
+  });
+
+  it("has a separate All Bookings tab and reuses the selected-booking detail flow", () => {
+    expect(dashboard).toContain('useState<"calendar" | "table" | "all">');
+    expect(dashboard).toContain('action: "getAllBookings"');
+    expect(dashboard).toContain('setView("all")');
+    expect(dashboard).toContain("onSelectBooking={openBooking}");
+    expect(dashboard).toContain("allBookingStatusCounts");
   });
 });
 
@@ -427,6 +461,18 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(panel).toContain('booking.source === "manual" ? `#${booking.id}`');
     expect(panel).toContain("walkinDiscountOnGross");
     expect(panel).toContain("parseGokoWalkin");
+  });
+
+  it("offers manual offline/walk-in bookings a status-preserving editor", () => {
+    expect(panel).toContain('const canEditBooking = booking.source === "manual"');
+    expect(panel).toContain("canEditBooking");
+    expect(panel).toContain("EditBookingModal");
+    const editor = readFile("src/components/admin/booking-dashboard/EditBookingModal.tsx");
+    expect(editor).toContain('action: "getAvailableBeds"');
+    expect(editor).toContain('onAction("editReservation"');
+    expect(editor).toContain("Dates and bed changes are checked against existing bookings");
+    expect(editor).toContain("status stays");
+    expect(editor).toContain("getNights(checkinDate, checkoutDate)");
   });
 
   it("walk-in New Booking has percent and amount discount tabs; tax is not hardcoded 12%", () => {
@@ -592,6 +638,9 @@ describe("Unassigned bookings: same availability as New Booking", () => {
     expect(route).toContain('action === "modifyCheckout"');
     expect(route).toContain('action === "editReservation"');
     expect(route).toContain('action === "moveRoom"');
+    expect(route).toContain("const inventoryChanged = bedsChanged || (datesChanged && !stayClosed(detail.booking.status))");
+    expect(route).toContain("if (inventoryChanged) await pushIfGokoOccupancy");
+    expect(route).toContain("const oldDates = bookingDateRange");
     expect(route.split("stayCheckout(").length).toBeGreaterThan(5);
     expect(route).not.toContain("checkoutDate || checkinDate");
     expect(route).not.toContain("checkoutDate || oldCheckin");

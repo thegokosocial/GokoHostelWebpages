@@ -37,6 +37,7 @@ import { useAdminToast } from "@/components/admin/AdminToast";
 import { hasPermission, type Role } from "../types";
 import type { DashboardBooking, BedAssignment, BookingHistoryEntry } from "./types";
 import { bookingWhatsAppNumber, bookingWhatsAppReference, fillBookingWhatsAppTemplate, type BookingWhatsAppTemplate } from "@/lib/bookingWhatsApp";
+import { EditBookingModal } from "./EditBookingModal";
 
 export function BookingDetailPanel({
   booking,
@@ -69,6 +70,7 @@ export function BookingDetailPanel({
   const [refundRupees, setRefundRupees] = useState("0");
   const [refundPay, setRefundPay] = useState<{ amount: number } | null>(null);
   const [showWhatsAppTemplates, setShowWhatsAppTemplates] = useState(false);
+  const [showEditBooking, setShowEditBooking] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
     action: string;
     title: string;
@@ -214,6 +216,7 @@ export function BookingDetailPanel({
     && (booking.status === "checked_in" || booking.status === "checked_out")
     && (hasPermission(role, permissions, "canAddBooking") || hasPermission(role, permissions, "canCheckIn"));
   const collectedHint = formatCurrency(booking.amountPaid || 0);
+  const canEditBooking = booking.source === "manual" && hasPermission(role, permissions, "canAddBooking");
 
   return (
     <>
@@ -426,6 +429,12 @@ export function BookingDetailPanel({
         {/* Actions */}
         <div className="border-t border-border p-4">
           <div className="flex flex-wrap gap-2">
+            {canEditBooking && (
+              <Button size="sm" variant="outline" onClick={() => setShowEditBooking(true)} disabled={busy}>
+                <EditIcon className="size-3.5" />
+                Edit Booking
+              </Button>
+            )}
             {booking.status === "received" && (hasPermission(role, permissions, "canAddBooking") || hasPermission(role, permissions, "canCheckIn")) && (
               <Button
                 size="sm"
@@ -531,6 +540,17 @@ export function BookingDetailPanel({
             </div>
           </div>
         </div>
+      )}
+
+      {showEditBooking && (
+        <EditBookingModal
+          booking={booking}
+          assignments={assignments}
+          password={password}
+          username={username}
+          onAction={onAction}
+          onClose={() => setShowEditBooking(false)}
+        />
       )}
 
       {/* Check-in popup */}

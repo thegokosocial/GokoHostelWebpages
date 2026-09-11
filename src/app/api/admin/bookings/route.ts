@@ -12,7 +12,7 @@ import {
 } from "@/lib/channelAutoAssign";
 import { pushNoShow } from "@/lib/aiosell";
 import {
-  getCalendarAvailability, getBookingCalendarData, getBookingDetail, searchBookings, getUnassignedBookings,
+  getCalendarAvailability, getBookingCalendarData, getBookingTableData, getBookingDetail, searchBookings, getUnassignedBookings,
   checkBedAvailability, getAvailableBedsForRange, validateBedsForRange, assignBedToBooking, unassignBookingBeds,
   unassignBookingBedsByBedIds,
   cancelBedAssignments, addBookingHistoryEntry, getBookingHistoryEntries, getBookingAuditEntries,
@@ -252,6 +252,7 @@ function diffDays(start: string, end: string): number {
 
 const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   getCalendarData: "canViewBookings",
+  getAllBookings: "canViewBookings",
   getDetail: "canViewBookings",
   search: "canViewBookings",
   getUnassigned: "canViewBookings",
@@ -318,6 +319,30 @@ export async function POST(req: NextRequest) {
     }
 
     // --- View Actions ---
+
+    if (action === "getAllBookings") {
+      const { startDate, endDate, page, pageSize, status, query } = body;
+      if (!startDate || !endDate) return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
+      const validStatuses = new Set(["received", "checked_in", "checked_out", "hold", "no_show", "cancelled", "modified"]);
+      const requestedStatus = typeof status === "string" && status !== "all" ? status : undefined;
+      if (requestedStatus && !validStatuses.has(requestedStatus)) {
+        return NextResponse.json({ error: "Invalid booking status" }, { status: 400 });
+      }
+
+      stage = "load all booking rows";
+      const result = await getBookingTableData(startDate, endDate, {
+        page: Number.isFinite(Number(page)) ? Number(page) : 0,
+        pageSize: Number.isFinite(Number(pageSize)) ? Number(pageSize) : 50,
+        status: requestedStatus,
+        query: typeof query === "string" ? query : undefined,
+      });
+      const bookings = result.bookings.map((b) => {
+        const checkout = stayCheckout(b.checkinDate, b.checkoutDate);
+        const nights = checkout ? diffDays(b.checkinDate, checkout) : 0;
+        return { ...b, nights, balance: (b.amountTotal ?? 0) - (b.amountPaid ?? 0) };
+      });
+      return NextResponse.json({ ...result, bookings, role, permissions });
+    }
 
     if (action === "getWhatsAppTemplates") {
       const templates = parseBookingWhatsAppTemplates(await getSetting(BOOKING_WHATSAPP_SETTING));
@@ -1459,7 +1484,7 @@ export async function POST(req: NextRequest) {
     // --- Edit Reservation (prices / add-remove beds) ---
 
     if (action === "editReservation") {
-      const { bookingId, nightlyRate, amountBeforeTax, amountTax, amountTotal, amountPaid, addBedIds, removeBedIds, taxMode } = body;
+      const { bookingId, guestName, contact, email, specialRequests, persons, checkinDate: requestedCheckin, checkoutDate: requestedCheckout, nightlyRate, amountBeforeTax, amountTax, amountTotal, amountPaid, addBedIds, removeBedIds, taxMode } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
 
       const detail = await getBookingDetail(bookingId);
@@ -1468,9 +1493,54 @@ export async function POST(req: NextRequest) {
       if (bedsChanged && stayClosed(detail.booking.status)) {
         return NextResponse.json({ error: "Cannot change beds on a closed booking" }, { status: 409 });
       }
+      const checkinDate = requestedCheckin ?? detail.booking.checkinDate;
+      const checkoutDate = stayCheckout(checkinDate, requestedCheckout ?? detail.booking.checkoutDate);
+      if (!checkinDate || !checkoutDate || checkoutDate <= checkinDate) return NextResponse.json({ error: "Check-out must be after check-in" }, { status: 400 });
+      const datesChanged = checkinDate !== detail.booking.checkinDate || checkoutDate !== stayCheckout(detail.booking.checkinDate, detail.booking.checkoutDate);
+      if (datesChanged && bedsChanged) return NextResponse.json({ error: "Save date changes and bed changes separately" }, { status: 400 });
+      if (persons !== undefined && (!Number.isInteger(Number(persons)) || Number(persons) < 1)) return NextResponse.json({ error: "Persons must be at least 1" }, { status: 400 });
+      if (nightlyRate !== undefined && (!Number.isInteger(Number(nightlyRate)) || Number(nightlyRate) < 0)) return NextResponse.json({ error: "Nightly rate must be a non-negative whole number" }, { status: 400 });
 
       const updates: Record<string, any> = {};
       const changes: string[] = [];
+
+      if (guestName !== undefined) {
+        if (typeof guestName !== "string" || !guestName.trim()) return NextResponse.json({ error: "Guest name is required" }, { status: 400 });
+        updates.guestName = guestName.trim();
+        if (updates.guestName !== detail.booking.guestName) changes.push(`Guest name → ${updates.guestName}`);
+      }
+      if (contact !== undefined) {
+        if (typeof contact !== "string") return NextResponse.json({ error: "Contact must be text" }, { status: 400 });
+        updates.contact = contact.trim();
+        if (updates.contact !== (detail.booking.contact || "")) changes.push("Contact updated");
+      }
+      if (email !== undefined) {
+        if (typeof email !== "string") return NextResponse.json({ error: "Email must be text" }, { status: 400 });
+        updates.email = email.trim();
+        if (updates.email !== (detail.booking.email || "")) changes.push("Email updated");
+      }
+      if (specialRequests !== undefined) {
+        if (typeof specialRequests !== "string") return NextResponse.json({ error: "Special requests must be text" }, { status: 400 });
+        updates.specialRequests = specialRequests.trim();
+        if (updates.specialRequests !== (detail.booking.specialRequests || "")) changes.push("Special requests updated");
+      }
+      if (persons !== undefined && Number(persons) !== detail.booking.persons) {
+        updates.persons = Number(persons);
+        changes.push(`Persons → ${updates.persons}`);
+      }
+      if (datesChanged) {
+        const currentAssignments = detail.assignments.filter((a) => a.status === "assigned");
+        if (!stayClosed(detail.booking.status) && currentAssignments.length > 0) {
+          const selectionError = await validateBedsForRange(currentAssignments.map((a) => a.bedId), checkinDate, checkoutDate, bookingId);
+          if (selectionError) return NextResponse.json({ error: selectionError }, { status: 400 });
+          if (!(await reassignSameBeds(bookingId, currentAssignments, checkinDate, checkoutDate, actingUser))) {
+            return NextResponse.json({ error: "Could not re-assign beds for the new dates" }, { status: 409 });
+          }
+        }
+        updates.checkinDate = checkinDate;
+        updates.checkoutDate = checkoutDate;
+        changes.push(`Dates → ${checkinDate} to ${checkoutDate}`);
+      }
 
       // Price updates
       if (nightlyRate !== undefined) {
@@ -1512,14 +1582,22 @@ export async function POST(req: NextRequest) {
         changes.push(`Amount paid → ${amountPaid}`);
       }
 
-      const checkinDate = detail.booking.checkinDate;
-      const checkoutDate = stayCheckout(checkinDate, detail.booking.checkoutDate);
-      if (!checkoutDate) return NextResponse.json({ error: "Invalid booking dates" }, { status: 400 });
       if (Array.isArray(addBedIds) && addBedIds.length > 0) {
         const selectionError = await validateBedsForRange(addBedIds, checkinDate, checkoutDate, bookingId);
         if (selectionError) return NextResponse.json({ error: selectionError }, { status: 400 });
       }
-      const dates = bookingDateRange(checkinDate, checkoutDate);
+      if (persons !== undefined) {
+        const requestedBedIds = new Set(detail.assignments.filter((a) => a.status === "assigned").map((a) => a.bedId));
+        for (const bedId of (Array.isArray(removeBedIds) ? removeBedIds : [])) requestedBedIds.delete(Number(bedId));
+        for (const bedId of (Array.isArray(addBedIds) ? addBedIds : [])) requestedBedIds.add(Number(bedId));
+        const units = sellableUnits((await getAllBeds()) || []);
+        const selectedUnits = units.filter((unit) => unit.beds.some((bed) => bed.id != null && requestedBedIds.has(bed.id)));
+        const capacity = selectedUnits.reduce((sum, unit) => sum + unit.capacity, 0);
+        if (capacity > 0 && Number(persons) > capacity) return NextResponse.json({ error: `Selected rooms hold at most ${capacity} guest(s)` }, { status: 400 });
+      }
+      const oldDates = bookingDateRange(detail.booking.checkinDate, stayCheckout(detail.booking.checkinDate, detail.booking.checkoutDate));
+      const newDates = bookingDateRange(checkinDate, checkoutDate);
+      const dates = [...new Set([...oldDates, ...newDates])];
       const dormIds = [...activeAssignmentDormIds(detail.assignments)];
       if (addBedIds && Array.isArray(addBedIds)) {
         for (const bedId of addBedIds) {
@@ -1527,7 +1605,10 @@ export async function POST(req: NextRequest) {
           if (bed) dormIds.push(bed.dormId);
         }
       }
-      const before = bedsChanged ? await otaFingerprint(dormIds, dates) : "";
+      // Date changes also alter occupancy: release the old nights and publish the new nights.
+      // Closed bookings have no active inventory to publish.
+      const inventoryChanged = bedsChanged || (datesChanged && !stayClosed(detail.booking.status));
+      const before = inventoryChanged ? await otaFingerprint(dormIds, dates) : "";
 
       // Add beds first so a conflict cannot drop the existing assignment.
       if (addBedIds && Array.isArray(addBedIds) && addBedIds.length > 0) {
@@ -1556,6 +1637,15 @@ export async function POST(req: NextRequest) {
       }
 
       if (Object.keys(updates).length > 0) {
+        if (nightlyRate !== undefined && amountBeforeTax === undefined && amountTotal === undefined) {
+          const nights = diffDays(checkinDate, checkoutDate);
+          const bedsCount = parseGokoWalkin(detail.booking.rawData)?.unitPricing ? 1 : Math.max(1, detail.assignments.filter((a) => a.status === "assigned").length);
+          const taxPercent = await loadBookingTaxPercent();
+          const priced = stayAmounts(Number(nightlyRate) * nights * bedsCount, detail.booking.rawData, taxPercent);
+          updates.amountBeforeTax = priced.totalBeforeTax;
+          updates.amountTax = priced.tax;
+          updates.amountTotal = priced.totalBeforeTax + priced.tax;
+        }
         await updateBookingFull(bookingId, updates);
       }
 
@@ -1568,7 +1658,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      if (bedsChanged) await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
+      if (inventoryChanged) await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
       if (changes.length > 0) await dispatchPush({
         title: "Booking Modified",
         body: `${notificationFirstName(detail.booking.guestName)} · ${changes.join("; ")}`,
