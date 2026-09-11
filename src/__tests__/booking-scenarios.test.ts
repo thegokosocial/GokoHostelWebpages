@@ -8,6 +8,7 @@ const q = vi.hoisted(() => ({
   authenticateUser: vi.fn(),
   getCalendarAvailability: vi.fn(),
   getBookingCalendarData: vi.fn(),
+  getBookingTableData: vi.fn(),
   getBookingDetail: vi.fn(),
   searchBookings: vi.fn(),
   getUnassignedBookings: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("@/lib/aiosell", () => ({ pushNoShow: q.pushNoShow }));
 vi.mock("@/db/queries", () => ({
   getCalendarAvailability: q.getCalendarAvailability,
   getBookingCalendarData: q.getBookingCalendarData,
+  getBookingTableData: q.getBookingTableData,
   getBookingDetail: q.getBookingDetail,
   searchBookings: q.searchBookings,
   getUnassignedBookings: q.getUnassignedBookings,
@@ -746,5 +748,28 @@ describe("calendar nights enrichment", () => {
     expect(json.bookings[0]).toMatchObject({ nights: 1, balance: 1000 });
     expect(json.bookings[1]).toMatchObject({ nights: 3, balance: 2500 });
     expect(json.bookings[2]).toMatchObject({ nights: 2, balance: 0 });
+  });
+
+  it("returns cancelled and no-show rows through the table-only action", async () => {
+    q.getBookingTableData.mockResolvedValue({
+      bookings: [
+        { id: 1, status: "cancelled", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", amountTotal: 1000, amountPaid: 0 },
+        { id: 2, status: "no_show", checkinDate: "2026-09-07", checkoutDate: "2026-09-08", amountTotal: 2000, amountPaid: 500 },
+      ],
+      total: 2,
+      statusCounts: { cancelled: 1, no_show: 1 },
+      page: 0,
+      pageSize: 50,
+    });
+    const res = await POST(req({
+      password: "x", action: "getAllBookings", startDate: "2026-09-01", endDate: "2026-09-10", status: "all",
+    }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.bookings).toEqual([
+      expect.objectContaining({ id: 1, status: "cancelled", nights: 1, balance: 1000 }),
+      expect.objectContaining({ id: 2, status: "no_show", nights: 1, balance: 1500 }),
+    ]);
+    expect(q.getBookingTableData).toHaveBeenCalledWith("2026-09-01", "2026-09-10", expect.objectContaining({ status: undefined, page: 0, pageSize: 50 }));
   });
 });

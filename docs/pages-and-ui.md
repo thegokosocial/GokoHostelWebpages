@@ -101,7 +101,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `BookingDetailPanel.tsx` | Check-in/out (food-tab warn), Collect, cancel-with-refund |
 | `CreateBookingModal.tsx` | Walk-in / engine |
 | `UnassignedBookings.tsx` | OTA leftover chips, Reject |
-| `BookingSearchBar.tsx` / `DateRangeSelector.tsx` / `BookingMobileDayView.tsx` / `BookingTableView.tsx` / `BookingTile.tsx` | chrome; All Bookings keeps the same row-click/detail-panel behavior and exposes every booking status |
+| `BookingSearchBar.tsx` / `DateRangeSelector.tsx` / `BookingMobileDayView.tsx` / `BookingTableView.tsx` / `BookingTile.tsx` | chrome; All Bookings keeps the same row-click/detail-panel behavior, exposes every booking status, and wraps its filters on narrow screens |
 | `CheckInPopup.tsx` | Collected → `RecordPaymentModal`; Later = check-in unpaid |
 | `ConfirmDialog.tsx` | Overlay is `flex items-center justify-center` — **not** `left-1/2 -translate-x-1/2` (that combination with `modalVariants` `y` slides the dialog off a phone) |
 | `utils.ts` / `types.ts` | date math, types |

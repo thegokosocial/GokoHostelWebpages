@@ -1721,6 +1721,49 @@ export async function getBookingCalendarData(startDate: string, endDate: string)
   });
 }
 
+export async function getBookingTableData(
+  startDate: string,
+  endDate: string,
+  options: { page?: number; pageSize?: number; status?: string; query?: string } = {},
+) {
+  return dbRead(async () => {
+    const db = getDb();
+    const page = Math.max(0, Math.floor(options.page ?? 0));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(options.pageSize ?? 50)));
+    const query = options.query?.trim();
+    const overlap = [
+      sql`${bookings.checkinDate} <= ${endDate}`,
+      sql`${bookings.checkoutDate} > ${startDate}`,
+      query
+        ? sql`(${bookings.guestName} LIKE ${`%${query}%`} OR ${bookings.bookingRef} LIKE ${`%${query}%`} OR ${bookings.contact} LIKE ${`%${query}%`})`
+        : undefined,
+    ];
+    const baseWhere = and(...overlap);
+    const where = and(baseWhere, options.status ? eq(bookings.status, options.status) : undefined);
+
+    const [rows, totalRows, statusRows] = await Promise.all([
+      db.select().from(bookings)
+        .where(where)
+        .orderBy(desc(bookings.checkinDate), desc(bookings.id))
+        .limit(pageSize)
+        .offset(page * pageSize),
+      db.select({ total: sql<number>`count(*)` }).from(bookings).where(where),
+      db.select({ status: bookings.status, total: sql<number>`count(*)` })
+        .from(bookings)
+        .where(baseWhere)
+        .groupBy(bookings.status),
+    ]);
+
+    return {
+      bookings: rows,
+      total: Number(totalRows[0]?.total ?? 0),
+      statusCounts: Object.fromEntries(statusRows.map((row) => [row.status, Number(row.total ?? 0)])),
+      page,
+      pageSize,
+    };
+  });
+}
+
 export async function getBookingDetail(bookingId: number) {
   return dbRead(async () => {
     const db = getDb();

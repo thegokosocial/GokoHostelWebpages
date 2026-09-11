@@ -9,15 +9,18 @@ import type { DashboardBooking } from "./types";
 export function BookingSearchBar({
   bookings,
   onSelect,
+  onRemoteSearch,
 }: {
   bookings: DashboardBooking[];
   onSelect: (id: number) => void;
+  onRemoteSearch?: (query: string) => Promise<DashboardBooking[]>;
 }) {
   const [query, setQuery] = useState("");
+  const [remoteResults, setRemoteResults] = useState<DashboardBooking[] | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const results = useMemo(() => {
+  const localResults = useMemo(() => {
     if (query.length < 4) return [];
     const q = query.toLowerCase();
     return bookings
@@ -31,6 +34,27 @@ export function BookingSearchBar({
       )
       .slice(0, 10);
   }, [bookings, query]);
+
+  useEffect(() => {
+    if (!onRemoteSearch || query.length < 4) {
+      setRemoteResults(null);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void onRemoteSearch(query).then((next) => {
+        if (active) setRemoteResults(next);
+      }).catch(() => {
+        if (active) setRemoteResults([]);
+      });
+    }, 200);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [onRemoteSearch, query]);
+
+  const results = remoteResults ?? localResults;
 
   useEffect(() => {
     setIsOpen(results.length > 0 && query.length >= 4);

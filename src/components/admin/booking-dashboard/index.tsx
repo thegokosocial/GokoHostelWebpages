@@ -83,8 +83,10 @@ export function BookingDashboard({
   const [allBookingsTotal, setAllBookingsTotal] = useState(0);
   const [allBookingStatusCounts, setAllBookingStatusCounts] = useState<Record<string, number>>({});
   const [allBookingStatus, setAllBookingStatus] = useState<BookingStatus | "all">("all");
+  const [allBookingSearch, setAllBookingSearch] = useState("");
   const [allBookingsPage, setAllBookingsPage] = useState(0);
   const [allBookingsLoading, setAllBookingsLoading] = useState(false);
+  const allBookingsRequest = useRef(0);
   const [assignments, setAssignments] = useState<BedAssignment[]>([]);
   const [dorms, setDorms] = useState<CalendarDorm[]>([]);
   const [unassignedBookings, setUnassignedBookings] = useState<DashboardBooking[]>([]);
@@ -187,6 +189,8 @@ export function BookingDashboard({
   }, [apiCall, dateRange.startDate, dateRange.endDate, showError, dorms]);
 
   const loadAllBookings = useCallback(async () => {
+    const requestId = allBookingsRequest.current + 1;
+    allBookingsRequest.current = requestId;
     setAllBookingsLoading(true);
     try {
       const res = await apiCall({
@@ -196,22 +200,45 @@ export function BookingDashboard({
         page: allBookingsPage,
         pageSize: ALL_BOOKINGS_PAGE_SIZE,
         status: allBookingStatus,
+        query: allBookingSearch.trim() || undefined,
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Failed to load all bookings" }));
-        showError(data.error || "Failed to load all bookings", apiErrorDetails(res, data, "getAllBookings"));
+        if (requestId === allBookingsRequest.current) {
+          showError(data.error || "Failed to load all bookings", apiErrorDetails(res, data, "getAllBookings"));
+        }
         return;
       }
       const data = await res.json();
+      if (requestId !== allBookingsRequest.current) return;
       setAllBookings(data.bookings || []);
       setAllBookingsTotal(Number(data.total || 0));
       setAllBookingStatusCounts(data.statusCounts || {});
     } catch {
-      showError("Network error loading all bookings");
+      if (requestId === allBookingsRequest.current) showError("Network error loading all bookings");
     } finally {
-      setAllBookingsLoading(false);
+      if (requestId === allBookingsRequest.current) setAllBookingsLoading(false);
     }
-  }, [allBookingStatus, allBookingsPage, apiCall, dateRange.endDate, dateRange.startDate, showError]);
+  }, [allBookingSearch, allBookingStatus, allBookingsPage, apiCall, dateRange.endDate, dateRange.startDate, showError]);
+
+  const searchAllBookings = useCallback(async (query: string) => {
+    try {
+      const res = await apiCall({
+        action: "getAllBookings",
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        page: 0,
+        pageSize: 10,
+        status: allBookingStatus,
+        query,
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.bookings || [];
+    } catch {
+      return [];
+    }
+  }, [allBookingStatus, apiCall, dateRange.endDate, dateRange.startDate]);
 
   useEffect(() => {
     loadData();
@@ -290,8 +317,9 @@ export function BookingDashboard({
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <BookingSearchBar
-            bookings={bookings}
+            bookings={view === "all" ? allBookings : bookings}
             onSelect={openBooking}
+            onRemoteSearch={view === "all" ? searchAllBookings : undefined}
           />
           {(role === "admin" || role === "manager" || hasPermission(role, permissions, "canManageBookingTemplates")) && (
             <Button variant="outline" size="sm" onClick={() => setShowTemplateManager(true)}>
@@ -302,7 +330,13 @@ export function BookingDashboard({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => loadData(true)}
+            onClick={() => {
+              if (view === "all") {
+                void Promise.all([loadData(true), loadAllBookings()]);
+              } else {
+                void loadData(true);
+              }
+            }}
             disabled={refreshing}
           >
             {refreshing ? <Loader2Icon className="size-3.5 animate-spin" /> : <RefreshCwIcon className="size-3.5" />}
@@ -450,7 +484,19 @@ export function BookingDashboard({
                 Showing bookings that overlap {dateRange.startDate} to {dateRange.endDate}.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="all-booking-search" className="sr-only">Search all bookings</label>
+              <input
+                id="all-booking-search"
+                type="search"
+                value={allBookingSearch}
+                onChange={(event) => {
+                  setAllBookingsPage(0);
+                  setAllBookingSearch(event.target.value);
+                }}
+                placeholder="Search all bookings"
+                className="h-8 w-full rounded-lg border border-input bg-background px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring sm:w-44"
+              />
               <label htmlFor="all-booking-status" className="text-xs text-muted-foreground">Status</label>
               <select
                 id="all-booking-status"

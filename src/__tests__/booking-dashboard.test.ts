@@ -334,6 +334,7 @@ describe("Booking dashboard: all-status table view", () => {
   const queriesCode = readFile("src/db/queries.ts");
   const route = readFile("src/app/api/admin/bookings/route.ts");
   const dashboard = readFile("src/components/admin/booking-dashboard/index.tsx");
+  const searchBar = readFile("src/components/admin/booking-dashboard/BookingSearchBar.tsx");
 
   it("keeps cancelled bookings out of calendar data while providing a separate table query", () => {
     const calendarFn = queriesCode.match(/export async function getBookingCalendarData[\s\S]*?return \{ bookings/ )![0];
@@ -355,7 +356,12 @@ describe("Booking dashboard: all-status table view", () => {
     expect(dashboard).toContain('action: "getAllBookings"');
     expect(dashboard).toContain('setView("all")');
     expect(dashboard).toContain("onSelectBooking={openBooking}");
+    expect(dashboard).toContain("onRemoteSearch={view === \"all\" ? searchAllBookings : undefined}");
+    expect(dashboard).toContain("Promise.all([loadData(true), loadAllBookings()])");
+    expect(dashboard).toContain('id="all-booking-search"');
     expect(dashboard).toContain("allBookingStatusCounts");
+    expect(searchBar).toContain("onRemoteSearch");
+    expect(searchBar).toContain("window.clearTimeout(timer)");
   });
 });
 
