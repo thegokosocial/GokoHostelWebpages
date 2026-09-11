@@ -119,6 +119,20 @@ stateDiagram-v2
 
 ---
 
+### Booking views
+
+The admin Bookings dashboard has three presentation scopes:
+
+- `Calendar`: uses `getCalendarData` and intentionally excludes cancelled bookings from calendar occupancy tiles.
+- `Table`: shows the current calendar-range operational rows.
+- `All Bookings`: uses `getAllBookings`, includes every booking status, filters by stays overlapping the selected date range, and paginates the result. Selecting a row opens the same `BookingDetailPanel` as the calendar/table views.
+
+The All Bookings read path requires `canViewBookings` and does not change booking status, bed assignment, inventory, or calendar availability behavior.
+
+### Manual booking editing
+
+The booking detail panel offers a status-preserving editor for manual/offline/walk-in bookings. Name, phone, email, dates, derived nights, persons, nightly rate, special requests, and room/bed units are validated server-side. Date changes validate and reassign the existing active beds, then refresh PMS occupancy for both old and new nights. Bed changes validate conflicts, add before removing, and refresh occupancy. Date and bed changes must be saved separately; closed bookings allow guest/detail edits but retain historical assignments. Existing discount and tax rules are retained or recalculated by the server.
+
 ## Calendar PMS vs physical beds
 
 ```mermaid
@@ -301,6 +315,10 @@ sequenceDiagram
 ```
 
 `useAdminApi` only hits `/api/admin/checkins`. Splits / food / bookings / inventory / expenses each `fetch` their own URL.
+
+## Mobile presentation invariants
+
+The shared shell treats fixed controls and anchor navigation as mobile-specific presentation concerns: floating actions account for device safe-area insets, anchor jumps leave room for the sticky header, and public footer/booking controls expose touch-sized targets. These changes do not alter action payloads, navigation routes, authentication, permissions, or workflow state.
 
 ---
 

@@ -96,15 +96,17 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 | File | Role |
 |------|------|
-| `index.tsx` | Calendar shell |
+| `index.tsx` | Calendar shell; Calendar, operational Table, and date-scoped All Bookings views |
 | `BookingCalendarGrid.tsx` | Bars by dorm/night |
 | `BookingDetailPanel.tsx` | Check-in/out (food-tab warn), Collect, cancel-with-refund |
 | `CreateBookingModal.tsx` | Walk-in / engine |
 | `UnassignedBookings.tsx` | OTA leftover chips, Reject |
-| `BookingSearchBar.tsx` / `DateRangeSelector.tsx` / `BookingMobileDayView.tsx` / `BookingTableView.tsx` / `BookingTile.tsx` | chrome |
+| `BookingSearchBar.tsx` / `DateRangeSelector.tsx` / `BookingMobileDayView.tsx` / `BookingTableView.tsx` / `BookingTile.tsx` | chrome; All Bookings keeps the same row-click/detail-panel behavior and exposes every booking status |
 | `CheckInPopup.tsx` | Collected → `RecordPaymentModal`; Later = check-in unpaid |
 | `ConfirmDialog.tsx` | Overlay is `flex items-center justify-center` — **not** `left-1/2 -translate-x-1/2` (that combination with `modalVariants` `y` slides the dialog off a phone) |
 | `utils.ts` / `types.ts` | date math, types |
+
+`BookingDetailPanel.tsx` exposes **Edit Booking** for manual/offline/walk-in reservations when the user has `canAddBooking`. The editor supports guest details, dates (with derived nights), persons, nightly rate, special requests, and add/remove room units. Dates and bed changes are saved separately; active occupancy-affecting changes trigger the existing PMS refresh path, while closed historical bed assignments remain protected.
 
 Calendar POSTs use `fetchWithRetry("/api/admin/bookings", …)` — not `useAdminApi`.
 
@@ -141,3 +143,7 @@ Calendar POSTs use `fetchWithRetry("/api/admin/bookings", …)` — not `useAdmi
 Do not import `pmsLog.ts` or `foodTabDb.ts` from client components (`getDb` / `better-sqlite3` in the Worker bundle).
 
 Phone-safe overlays: parent `flex items-center justify-center` + `modalVariants` (scale/y only). Never `left-1/2 -translate-x-1/2` on a node that also animates `y` (`src/lib/animations.ts`).
+
+## Mobile shell invariants
+
+The shared public shell keeps anchor targets below the sticky header, preserves the browser text scale on mobile, and offsets fixed WhatsApp/back-to-top controls for device safe areas. Footer links and booking actions use touch-sized inline targets. These are presentation-only changes: routes, APIs, auth, permissions, booking, check-in, food, and payment workflows remain unchanged.
