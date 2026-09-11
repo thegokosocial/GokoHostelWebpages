@@ -16,6 +16,7 @@ import {
 import { todayIST } from "@/lib/utils";
 
 const ACTIVE_STAY_STATUSES = sql`${bookings.status} IN ('confirmed', 'checked_in', 'checked_out')`;
+const EXPECTED_ROOM_STATUSES = sql`${bookings.status} IN ('received', 'confirmed', 'checked_in', 'checked_out')`;
 
 function utcStart(date: string) {
   return new Date(`${date}T00:00:00.000+05:30`).toISOString();
@@ -30,6 +31,12 @@ function utcExclusiveEnd(date: string) {
 function nextDate(date: string) {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
+function nextMonth(date: string) {
+  const value = new Date(`${date.slice(0, 7)}-01T00:00:00Z`);
+  value.setUTCMonth(value.getUTCMonth() + 1);
   return value.toISOString().slice(0, 10);
 }
 
@@ -68,6 +75,20 @@ function leadBucketSql() {
   END`;
 }
 
+function roomClassSql() {
+  return sql`CASE
+    WHEN lower(COALESCE(${bookings.roomType}, '')) LIKE '%dorm%'
+      OR lower(COALESCE(${bookings.roomType}, '')) LIKE '%hostel%'
+      OR lower(COALESCE(${bookings.roomType}, '')) LIKE '%bed%' THEN 'dorm/bed'
+    WHEN lower(COALESCE(${bookings.roomType}, '')) LIKE '%single%'
+      OR lower(COALESCE(${bookings.roomType}, '')) LIKE '%-s-%' THEN 'single'
+    WHEN lower(COALESCE(${bookings.roomType}, '')) LIKE '%double%'
+      OR lower(COALESCE(${bookings.roomType}, '')) LIKE '%twin%'
+      OR lower(COALESCE(${bookings.roomType}, '')) LIKE '%-d-%' THEN 'double'
+    ELSE 'other'
+  END`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -89,6 +110,9 @@ export async function POST(req: NextRequest) {
     const from = utcStart(fromDate);
     const to = utcExclusiveEnd(toDate);
     const stayToExclusive = nextDate(toDate);
+    const monthStart = `${toDate.slice(0, 8)}01`;
+    const monthEndExclusive = nextMonth(toDate);
+    const monthDays = Math.round((Date.parse(`${monthEndExclusive}T00:00:00Z`) - Date.parse(`${monthStart}T00:00:00Z`)) / 86400000);
     const db = getDb();
     const bookingWhere = [gte(bookings.createdAt, from), lt(bookings.createdAt, to)];
     const stayWhere = [gte(bookings.checkinDate, fromDate), lt(bookings.checkinDate, stayToExclusive)];
@@ -121,6 +145,7 @@ export async function POST(req: NextRequest) {
       staySummary,
       stayByDay,
       stayByRoomType,
+      expectedRoomRevenue,
       stayEvents,
       checkInByHour,
       checkOutByHour,
@@ -188,8 +213,26 @@ export async function POST(req: NextRequest) {
       }).from(bookings).where(and(...stayWhere, ACTIVE_STAY_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)),
       db.select({ date: bookings.checkinDate, arrivals: sql<number>`COUNT(*)`, guests: sql<number>`COALESCE(SUM(${bookings.persons}), 0)`, revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal}), 0)` })
         .from(bookings).where(and(...stayWhere, ACTIVE_STAY_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)).groupBy(bookings.checkinDate).orderBy(bookings.checkinDate),
-      db.select({ roomType: sql<string>`COALESCE(NULLIF(${bookings.roomType}, ''), 'unspecified')`, stays: sql<number>`COUNT(*)`, guests: sql<number>`COALESCE(SUM(${bookings.persons}), 0)`, revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal}), 0)` })
-        .from(bookings).where(and(...stayWhere, ACTIVE_STAY_STATUSES)).groupBy(sql`COALESCE(NULLIF(${bookings.roomType}, ''), 'unspecified')`).orderBy(sql`COUNT(*) DESC`),
+      db.select({
+        roomType: sql<string>`COALESCE(NULLIF(${bookings.roomType}, ''), 'unspecified')`,
+        roomClass: roomClassSql(),
+        stays: sql<number>`COUNT(*)`,
+        guests: sql<number>`COALESCE(SUM(${bookings.persons}), 0)`,
+        nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${stayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${fromDate})))), 0)`,
+        revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal} * (MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${stayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${fromDate})))) / MAX(1, julianday(${bookings.checkoutDate}) - julianday(${bookings.checkinDate}))), 0)`,
+      }).from(bookings).where(and(...stayWhere, EXPECTED_ROOM_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`))
+        .groupBy(sql`COALESCE(NULLIF(${bookings.roomType}, ''), 'unspecified')`, roomClassSql()).orderBy(sql`COUNT(*) DESC`),
+      db.select({
+        stays: sql<number>`COUNT(*)`,
+        nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${monthEndExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${monthStart})))), 0)`,
+        revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal} * (MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${monthEndExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${monthStart})))) / MAX(1, julianday(${bookings.checkoutDate}) - julianday(${bookings.checkinDate}))), 0)`,
+      }).from(bookings).where(and(
+        lt(bookings.checkinDate, monthEndExclusive),
+        sql`${bookings.checkoutDate} > ${monthStart}`,
+        lt(bookings.createdAt, to),
+        EXPECTED_ROOM_STATUSES,
+        sql`${bookings.checkoutDate} > ${bookings.checkinDate}`,
+      )),
       db.select({ checkIns: sql<number>`SUM(CASE WHEN ${bookings.checkedInAt} >= ${from} AND ${bookings.checkedInAt} < ${to} THEN 1 ELSE 0 END)`, checkOuts: sql<number>`SUM(CASE WHEN ${bookings.checkedOutAt} >= ${from} AND ${bookings.checkedOutAt} < ${to} THEN 1 ELSE 0 END)` }).from(bookings),
       db.select({ hour: sql<number>`CAST(strftime('%H', ${bookings.checkedInAt}, '+05:30') AS INTEGER)`, count: sql<number>`COUNT(*)` })
         .from(bookings).where(and(gte(bookings.checkedInAt, from), lt(bookings.checkedInAt, to))).groupBy(sql`strftime('%H', ${bookings.checkedInAt}, '+05:30')`).orderBy(sql`strftime('%H', ${bookings.checkedInAt}, '+05:30')`),
@@ -248,6 +291,7 @@ export async function POST(req: NextRequest) {
     const stayResult = staySummary[0] || { stays: 0, guests: 0, revenue: 0, nights: 0, leadDays: 0 };
     const foodResult = foodSummary[0] || { orders: 0, gross: 0, paid: 0, pending: 0 };
     const expenseResult = expenseSummary[0] || { expenses: 0, total: 0 };
+    const expectedRoom = expectedRoomRevenue[0] || { stays: 0, nights: 0, revenue: 0 };
     const bookedStayValue = number(stayResult.revenue);
     const foodRevenue = number(foodResult.gross);
     const availableBedNights = occupancyByDate.reduce((sum, row) => sum + row.availableBeds, 0);
@@ -261,6 +305,19 @@ export async function POST(req: NextRequest) {
     const adr = nights ? bookedStayValue / nights : 0;
     const revpar = availableBedNights ? bookedStayValue / availableBedNights : 0;
     const averageStayLength = stayCount ? nights / stayCount : 0;
+    const roomClassTotals = new Map<string, { stays: number; guests: number; nights: number; revenue: number }>();
+    for (const row of stayByRoomType) {
+      const roomClass = String(row.roomClass || "other");
+      const current = roomClassTotals.get(roomClass) || { stays: 0, guests: 0, nights: 0, revenue: 0 };
+      current.stays += number(row.stays);
+      current.guests += number(row.guests);
+      current.nights += number(row.nights);
+      current.revenue += number(row.revenue);
+      roomClassTotals.set(roomClass, current);
+    }
+    const byRoomClass = [...roomClassTotals.entries()]
+      .sort(([, a], [, b]) => b.stays - a.stays)
+      .map(([roomClass, row]) => ({ roomClass, ...row, adr: row.nights ? row.revenue / row.nights : 0 }));
 
     return NextResponse.json({
       range: { fromDate, toDate, days, timezone: "Asia/Kolkata" },
@@ -269,6 +326,8 @@ export async function POST(req: NextRequest) {
         actualCheckIns: number(stayEvents[0]?.checkIns), actualCheckOuts: number(stayEvents[0]?.checkOuts), guests: number(stayResult.guests),
         cancellations: number(bookingResult.cancelled), noShows: number(bookingResult.noShow), bookedStayValue, foodRevenue, totalRevenue,
         expenses: number(expenseResult.total), activityBalance: totalRevenue - number(expenseResult.total), foodOrders: number(foodResult.orders), foodPaid: number(foodResult.paid), foodPending: number(foodResult.pending),
+        expectedRoomRevenue: number(expectedRoom.revenue), expectedRoomStays: number(expectedRoom.stays), expectedRoomNights: number(expectedRoom.nights), expectedRoomMonth: monthStart.slice(0, 7), expectedRoomMonthDays: monthDays,
+        averageDailyBookings: number(bookingResult.total) / days, averageDailyRoomValue: bookedStayValue / days, averageDailyFoodSales: foodRevenue / days, averageDailyExpenses: number(expenseResult.total) / days,
         occupiedBedNights: bedIds.length ? occupiedBedNights : null, availableBedNights: bedIds.length ? availableBedNights : null,
         occupancy: availableBedNights ? (occupiedBedNights / availableBedNights) * 100 : null, adr, revpar, averageStayLength, averageLeadDays,
       },
@@ -287,7 +346,12 @@ export async function POST(req: NextRequest) {
       },
       stays: {
         stays: stayCount, guests: number(stayResult.guests), revenue: number(stayResult.revenue), nights, adr, revpar, averageStayLength, averageLeadDays,
-        byRoomType: stayByRoomType.map((row) => ({ roomType: row.roomType, stays: number(row.stays), guests: number(row.guests), revenue: number(row.revenue) })),
+        byRoomClass,
+        byRoomType: stayByRoomType.map((row) => {
+          const nights = number(row.nights);
+          const revenue = number(row.revenue);
+          return { roomType: row.roomType, roomClass: row.roomClass, stays: number(row.stays), guests: number(row.guests), nights, revenue, adr: nights ? revenue / nights : 0 };
+        }),
       },
       occupancy: { byDate: occupancyByDate, totalBeds: bedIds.length, blockedBedNights: occupancyByDate.reduce((sum, row) => sum + (bedIds.length - row.availableBeds), 0) },
       food: {
@@ -313,6 +377,8 @@ export async function POST(req: NextRequest) {
         receivedDate: "Bookings, food orders, and expenses use their created/recorded timestamp in Asia/Kolkata",
         stayDate: "Stay metrics use guest check-in/check-out dates; checkout date is not a consumed night",
         bookingWindow: "Calendar days between booking creation date and check-in date",
+        dailyAverages: "Daily values divided by the selected elapsed date range, including the end date",
+        expectedRoomRevenue: "Booked room value from received/confirmed/completed bookings recorded by the report end date, prorated to the selected report month; cancelled and no-show bookings are excluded",
       },
       generatedAt: new Date().toISOString(),
     });
