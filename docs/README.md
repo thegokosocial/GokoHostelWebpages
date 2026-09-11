@@ -9,7 +9,7 @@ If those files are missing on a machine, do not invent secrets. Bindings that *a
 
 When handbook and `src/` disagree, **trust `src/`**. When live production status disagrees, trust `MAINTAINER.local.md`. Project-wide update requirements are in [`AGENTS.md`](../AGENTS.md).
 
-Last source-aligned pass: **31 Aug 2026** (stay collect/refund, Room Revenue, 0% tax, food-tab Worker split). After a product change, update the matching file here (Cursor rule `goko-local-docs`).
+Last source-aligned pass: **11 Sep 2026** (bulk inventory availability updates, PMS push/retry behavior, and existing analytics corrections). After a product change, update the matching file here (Cursor rule `goko-local-docs`).
 
 ---
 
