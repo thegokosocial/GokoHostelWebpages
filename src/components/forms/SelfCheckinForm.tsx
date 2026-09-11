@@ -1219,7 +1219,7 @@ export function SelfCheckinForm() {
         )}
 
         {/* Foreign guest Form C fields */}
-        {nationality && nationality !== "India" && (
+        {isForeignNationality(nationality) && (
           <div className="space-y-5 rounded-2xl border border-brand-green/20 dark:border-brand-green/30 bg-brand-green/[0.06] dark:bg-brand-green/10 p-5">
             <p className="text-sm font-semibold text-brand-green-dark dark:text-brand-green">Additional details for foreign nationals (required for Form C)</p>
 

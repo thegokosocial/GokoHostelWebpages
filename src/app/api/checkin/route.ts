@@ -84,6 +84,9 @@ export async function POST(req: NextRequest) {
     if (isForeignNationality(nationality) && idType !== "passport") {
       return NextResponse.json({ error: "Foreign nationals must provide a passport", field: "idType" }, { status: 400 });
     }
+    if (isForeignNationality(nationality) && visaImages.length === 0 && !prevVisaLink) {
+      return NextResponse.json({ error: "Visa document is required for non-Indian nationals", field: "visaImages" }, { status: 400 });
+    }
 
     for (const file of [...idImages, ...visaImages]) {
       if (file.size > 10 * 1024 * 1024) {

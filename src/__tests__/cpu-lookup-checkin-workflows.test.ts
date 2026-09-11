@@ -78,6 +78,14 @@ function checkinReq(fields: Record<string, string>) {
   return new NextRequest("http://localhost/api/checkin", { method: "POST", body: fd });
 }
 
+function checkinReqWithFiles(fields: Record<string, string>, visa = false) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  fd.append("idImages", new File(["passport"], "passport.jpg", { type: "image/jpeg" }));
+  if (visa) fd.append("visaImages", new File(["visa"], "visa.jpg", { type: "image/jpeg" }));
+  return new NextRequest("http://localhost/api/checkin", { method: "POST", body: fd });
+}
+
 describe("GET /api/food/lookup", () => {
   beforeEach(() => {
     for (const fn of Object.values(q)) fn.mockReset();
@@ -193,6 +201,25 @@ describe("POST /api/checkin required fields", () => {
     expect(noContact.status).toBe(400);
     expect(await noContact.json()).toEqual({ error: "Missing required fields" });
 
+    expect(q.addCheckin).not.toHaveBeenCalled();
+  });
+
+  it("rejects a foreign check-in without a visa at the API boundary", async () => {
+    const res = await checkinPOST(checkinReqWithFiles({
+      name: "Jean Dupont",
+      contactNumber: "9876543210",
+      nationality: "France",
+      idType: "passport",
+      arrivalDate: "2026-09-11",
+      stayingDays: "2",
+      comingFrom: "Paris",
+      numberOfPersons: "1",
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Visa document is required for non-Indian nationals",
+      field: "visaImages",
+    });
     expect(q.addCheckin).not.toHaveBeenCalled();
   });
 });

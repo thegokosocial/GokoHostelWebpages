@@ -302,10 +302,10 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               if (data.link) links.push(data.link);
             } else {
               const errText = await uploadRes.text();
-              showError("Visa upload failed. Entry will be saved without visa document.", errText);
+              showError("Visa upload failed. Entry was not saved because a visa document is required.", errText);
             }
           } catch (err: any) {
-            showError("Visa upload error. Entry will be saved without visa document.", err?.message || "Network error");
+            showError("Visa upload error. Entry was not saved because a visa document is required.", err?.message || "Network error");
           }
         }
         if (links.length > 0) entry[15] = links.join(" | ");
@@ -362,10 +362,10 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               if (data.link) links.push(data.link);
             } else {
               const errText = await uploadRes.text();
-              showError("Visa upload failed. Entry will be saved without visa document.", errText);
+              showError("Visa upload failed. Entry was not saved because a visa document is required.", errText);
             }
           } catch (err: any) {
-            showError("Visa upload error. Entry will be saved without visa document.", err?.message || "Network error");
+            showError("Visa upload error. Entry was not saved because a visa document is required.", err?.message || "Network error");
           }
         }
         if (links.length > 0) entry[15] = links.join(" | ");
@@ -611,7 +611,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               <Label className="text-xs">Date of Birth</Label>
               <Input type="date" value={newDob} onChange={(e) => setNewDob(e.target.value)} className="mt-1" />
             </div>
-            {newEntry[8] && newEntry[8] !== "India" && (
+            {isForeignNationality(newEntry[8]) && (
               <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-blue-100 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/30 p-3">
                 <p className="mb-2 text-xs font-semibold text-blue-800 dark:text-blue-300">Form C fields (foreign guest)</p>
                 <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
@@ -756,7 +756,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                 )}
               </div>
             </div>
-            {pastEntry[8] && pastEntry[8] !== "India" && (
+            {isForeignNationality(pastEntry[8]) && (
               <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-blue-100 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/30 p-3">
                 <p className="mb-2 text-xs font-semibold text-blue-800 dark:text-blue-300">Form C fields (foreign guest)</p>
                 <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
@@ -1127,7 +1127,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                             className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-[10px] font-medium text-brand-green hover:bg-brand-green/[0.12]">
                             <UploadIcon className="h-3 w-3" /> Upload ID
                           </button>
-                        ) : col === "Visa" && !cell && (row[8] || "").trim() !== "" && (row[8] || "").toLowerCase() !== "india" && hasPermission(role, permissions, "canEditRecords") ? (
+                        ) : col === "Visa" && !cell && isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") ? (
                           <button type="button" onClick={() => openUploadPopup(origIdx, "visa", row[3] || "Guest", row[8] || "")}
                             className="inline-flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50">
                             <UploadIcon className="h-3 w-3" /> Upload Visa
@@ -1139,7 +1139,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                   {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords")) && (
                     <td className="px-3 py-3">
                       <div className="flex gap-1">
-                        {(row[8] || "").toLowerCase() !== "india" && row[8] && hasPermission(role, permissions, "canEditRecords") && (
+                        {isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") && (
                           <button type="button" onClick={() => openFormC(origIdx, row)}
                             className="flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 px-2 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50">
                             <FileTextIcon className="h-3 w-3" /> Form C
