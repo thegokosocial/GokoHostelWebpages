@@ -13,7 +13,7 @@ import { useAdminApi } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { CHECKIN_COLUMNS, type Role, hasPermission } from "./types";
 import { countries } from "@/content/countries";
-import { BOOKING_PLATFORMS } from "@/lib/checkinSchema";
+import { BOOKING_PLATFORMS, isForeignNationality } from "@/lib/checkinSchema";
 import { useAdminToast } from "@/components/admin/AdminToast";
 
 const TEXT_FIELDS = [
@@ -45,6 +45,12 @@ const FORM_C_FIELDS = [
   { key: "homeCountryPhone", label: "Home Country Phone", type: "tel" },
 ];
 
+const ID_TYPE_OPTIONS = ["aadhaar", "driving_licence", "passport"];
+
+function getIdTypeOptions(nationality: string): string[] {
+  return isForeignNationality(nationality) ? ["passport"] : ID_TYPE_OPTIONS;
+}
+
 function getDefaults(): string[] {
   const arr = Array(17).fill("");
   const now = new Date();
@@ -69,11 +75,13 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEntry, setNewEntry] = useState<string[]>(getDefaults());
   const [newIdFiles, setNewIdFiles] = useState<File[]>([]);
+  const [newVisaFiles, setNewVisaFiles] = useState<File[]>([]);
   const [newFirstName, setNewFirstName] = useState("");
   const [newLastName, setNewLastName] = useState("");
   const [showPastForm, setShowPastForm] = useState(false);
   const [pastEntry, setPastEntry] = useState<string[]>(getDefaults());
   const [pastIdFiles, setPastIdFiles] = useState<File[]>([]);
+  const [pastVisaFiles, setPastVisaFiles] = useState<File[]>([]);
   const [pastFirstName, setPastFirstName] = useState("");
   const [pastLastName, setPastLastName] = useState("");
   const [pastCheckoutDate, setPastCheckoutDate] = useState("");
@@ -96,7 +104,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [verifyPopup, setVerifyPopup] = useState<{ origIdx: number; row: string[] } | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [uploadPopup, setUploadPopup] = useState<{ origIdx: number; type: "id" | "visa"; guestName: string } | null>(null);
+  const [uploadPopup, setUploadPopup] = useState<{ origIdx: number; type: "id" | "visa"; guestName: string; nationality: string } | null>(null);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadIdType, setUploadIdType] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -117,6 +125,11 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
   const [expandedCard, setExpandedCard] = useState<number | null>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
   const scrollBackId = useRef<string | null>(null);
+
+  const openUploadPopup = (origIdx: number, type: "id" | "visa", guestName: string, nationality: string) => {
+    setUploadIdType(type === "id" && isForeignNationality(nationality) ? "passport" : "");
+    setUploadPopup({ origIdx, type, guestName, nationality });
+  };
 
   useEffect(() => {
     if (scrollBackId.current && rows.length > 0) {
@@ -207,6 +220,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
 
   const startEdit = (rowIndex: number) => {
     const padded = Array(17).fill("").map((_, i) => rows[rowIndex][i] || "");
+    if (isForeignNationality(padded[8])) padded[13] = "passport";
     setEditEntry(padded);
     setEditIndex(rowIndex);
     const nameParts = (padded[3] || "").trim().split(/\s+/);
@@ -219,6 +233,10 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
 
   const updateRow = async () => {
     if (editIndex === null) return;
+    if (isForeignNationality(editEntry[8]) && !editEntry[15] && editVisaFiles.length === 0) {
+      showError("Visa document is required for foreign nationals");
+      return;
+    }
     setLoading(true);
     try {
       const updated = [...editEntry];
@@ -244,10 +262,12 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
 
   const addEntry = async () => {
     if (!newFirstName.trim() || !newLastName.trim()) { showError("First name and last name are required"); return; }
+    if (isForeignNationality(newEntry[8]) && newVisaFiles.length === 0) { showError("Visa document is required for foreign nationals"); return; }
     newEntry[3] = `${newFirstName.trim()} ${newLastName.trim()}`;
     setLoading(true);
     try {
       const entry = [...newEntry]; entry[0] = new Date().toISOString();
+      if (isForeignNationality(entry[8])) entry[13] = "passport";
 
       if (newIdFiles.length > 0) {
         const links: string[] = [];
@@ -270,10 +290,31 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
         if (links.length > 0) entry[14] = links.join(" | ");
       }
 
-      const isForeigner = newEntry[8] && newEntry[8] !== "India";
+      if (newVisaFiles.length > 0) {
+        const links: string[] = [];
+        for (const file of newVisaFiles) {
+          const fd = new FormData();
+          fd.append("file", file); fd.append("name", entry[3] || "Guest"); fd.append("type", "visa"); fd.append("password", password);
+          try {
+            const uploadRes = await fetch("/api/admin/upload", { method: "POST", body: fd });
+            if (uploadRes.ok) {
+              const data = await uploadRes.json();
+              if (data.link) links.push(data.link);
+            } else {
+              const errText = await uploadRes.text();
+              showError("Visa upload failed. Entry will be saved without visa document.", errText);
+            }
+          } catch (err: any) {
+            showError("Visa upload error. Entry will be saved without visa document.", err?.message || "Network error");
+          }
+        }
+        if (links.length > 0) entry[15] = links.join(" | ");
+      }
+
+      const isForeigner = isForeignNationality(entry[8]);
       const formCData = isForeigner ? JSON.stringify(newFormCFields) : undefined;
       const res = await apiCall({ action: "add", entry, formCData, bookingPlatform: newBookingPlatform, bookingId: newBookingId, dob: newDob });
-      if (res.ok) { setShowAddForm(false); setNewEntry(getDefaults()); setNewFirstName(""); setNewLastName(""); setNewIdFiles([]); setNewFormCFields({}); setNewBookingPlatform(""); setNewBookingId(""); setNewDob(""); refresh(); }
+      if (res.ok) { setShowAddForm(false); setNewEntry(getDefaults()); setNewFirstName(""); setNewLastName(""); setNewIdFiles([]); setNewVisaFiles([]); setNewFormCFields({}); setNewBookingPlatform(""); setNewBookingId(""); setNewDob(""); refresh(); }
     } finally { setLoading(false); }
   };
 
@@ -282,9 +323,11 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
     pastEntry[3] = `${pastFirstName.trim()} ${pastLastName.trim()}`;
     if (!pastEntry[1]) { showError("Arrival date is required for past records"); return; }
     if (pastCheckoutDate && pastCheckoutDate < pastEntry[1]) { showError("Checkout date must be on or after arrival date"); return; }
+    if (isForeignNationality(pastEntry[8]) && pastVisaFiles.length === 0) { showError("Visa document is required for foreign nationals"); return; }
     setLoading(true);
     try {
       const entry = [...pastEntry]; entry[0] = new Date().toISOString();
+      if (isForeignNationality(entry[8])) entry[13] = "passport";
 
       if (pastIdFiles.length > 0) {
         const links: string[] = [];
@@ -307,10 +350,31 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
         if (links.length > 0) entry[14] = links.join(" | ");
       }
 
-      const isForeigner = pastEntry[8] && pastEntry[8] !== "India";
+      if (pastVisaFiles.length > 0) {
+        const links: string[] = [];
+        for (const file of pastVisaFiles) {
+          const fd = new FormData();
+          fd.append("file", file); fd.append("name", entry[3] || "Guest"); fd.append("type", "visa"); fd.append("password", password);
+          try {
+            const uploadRes = await fetch("/api/admin/upload", { method: "POST", body: fd });
+            if (uploadRes.ok) {
+              const data = await uploadRes.json();
+              if (data.link) links.push(data.link);
+            } else {
+              const errText = await uploadRes.text();
+              showError("Visa upload failed. Entry will be saved without visa document.", errText);
+            }
+          } catch (err: any) {
+            showError("Visa upload error. Entry will be saved without visa document.", err?.message || "Network error");
+          }
+        }
+        if (links.length > 0) entry[15] = links.join(" | ");
+      }
+
+      const isForeigner = isForeignNationality(entry[8]);
       const formCData = isForeigner ? JSON.stringify(pastFormCFields) : undefined;
       const res = await apiCall({ action: "addPast", entry, checkoutDate: pastCheckoutDate, formCData, bookingPlatform: pastBookingPlatform, bookingId: pastBookingId, dob: pastDob });
-      if (res.ok) { setShowPastForm(false); setPastEntry(getDefaults()); setPastFirstName(""); setPastLastName(""); setPastIdFiles([]); setPastCheckoutDate(""); setPastFormCFields({}); setPastBookingPlatform(""); setPastBookingId(""); setPastDob(""); refresh(); }
+      if (res.ok) { setShowPastForm(false); setPastEntry(getDefaults()); setPastFirstName(""); setPastLastName(""); setPastIdFiles([]); setPastVisaFiles([]); setPastCheckoutDate(""); setPastFormCFields({}); setPastBookingPlatform(""); setPastBookingId(""); setPastDob(""); refresh(); }
       else { const errData = await res.json().catch(() => ({})); showError("Failed to save past record", errData.error); }
     } finally { setLoading(false); }
   };
@@ -506,12 +570,12 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               <div key={field.index}>
                 <Label className="text-xs">{field.label}</Label>
                 {field.type === "select" ? (
-                  <select value={newEntry[field.index]} onChange={(e) => { const u = [...newEntry]; u[field.index] = e.target.value; setNewEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <select value={newEntry[field.index]} onChange={(e) => { const u = [...newEntry]; u[field.index] = e.target.value; if (field.index === 8) { if (isForeignNationality(e.target.value)) u[13] = "passport"; else setNewVisaFiles([]); } setNewEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                     <option value="">Select...</option>
-                    {field.options!.map((opt) => <option key={opt} value={opt}>{opt.replace("_", " ")}</option>)}
+                    {(field.index === 13 ? getIdTypeOptions(newEntry[8]) : field.options!).map((opt) => <option key={opt} value={opt}>{opt.replace("_", " ")}</option>)}
                   </select>
                 ) : field.type === "country" ? (
-                  <select value={newEntry[field.index]} onChange={(e) => { const u = [...newEntry]; u[field.index] = e.target.value; setNewEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <select value={newEntry[field.index]} onChange={(e) => { const u = [...newEntry]; u[field.index] = e.target.value; if (field.index === 8) { if (isForeignNationality(e.target.value)) u[13] = "passport"; else setNewVisaFiles([]); } setNewEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                     {countries.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 ) : (
@@ -570,6 +634,18 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            {isForeignNationality(newEntry[8]) && (
+              <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/30 p-3">
+                <Label className="text-xs">Visa document photo(s) <span className="text-brand-red">*</span></Label>
+                <p className="mt-1 text-[10px] text-amber-800/70 dark:text-amber-300/70">Required for non-Indian guests. Upload the visa page(s).</p>
+                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
+                  <UploadIcon className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+                  {newVisaFiles.length === 0 ? "Choose visa files" : `${newVisaFiles.length} visa file(s)`}
+                  <input type="file" accept="image/*,.pdf" multiple className="hidden" onChange={(e) => { if (e.target.files) setNewVisaFiles(Array.from(e.target.files)); }} />
+                </label>
+                {newVisaFiles.length > 0 && <button type="button" onClick={() => setNewVisaFiles([])} className="ml-2 text-xs text-brand-red hover:underline">Remove</button>}
               </div>
             )}
             <div className="sm:col-span-2 md:col-span-3">
@@ -635,12 +711,12 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               <div key={field.index}>
                 <Label className="text-xs">{field.label}</Label>
                 {field.type === "select" ? (
-                  <select value={pastEntry[field.index]} onChange={(e) => { const u = [...pastEntry]; u[field.index] = e.target.value; setPastEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <select value={pastEntry[field.index]} onChange={(e) => { const u = [...pastEntry]; u[field.index] = e.target.value; if (field.index === 8) { if (isForeignNationality(e.target.value)) u[13] = "passport"; else setPastVisaFiles([]); } setPastEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                     <option value="">Select...</option>
-                    {field.options!.map((opt) => <option key={opt} value={opt}>{opt.replace("_", " ")}</option>)}
+                    {(field.index === 13 ? getIdTypeOptions(pastEntry[8]) : field.options!).map((opt) => <option key={opt} value={opt}>{opt.replace("_", " ")}</option>)}
                   </select>
                 ) : field.type === "country" ? (
-                  <select value={pastEntry[field.index]} onChange={(e) => { const u = [...pastEntry]; u[field.index] = e.target.value; setPastEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <select value={pastEntry[field.index]} onChange={(e) => { const u = [...pastEntry]; u[field.index] = e.target.value; if (field.index === 8) { if (isForeignNationality(e.target.value)) u[13] = "passport"; else setPastVisaFiles([]); } setPastEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                     {countries.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 ) : (
@@ -705,6 +781,18 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                 </div>
               </div>
             )}
+            {isForeignNationality(pastEntry[8]) && (
+              <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/30 p-3">
+                <Label className="text-xs">Visa document photo(s) <span className="text-brand-red">*</span></Label>
+                <p className="mt-1 text-[10px] text-amber-800/70 dark:text-amber-300/70">Required for non-Indian guests. Upload the visa page(s).</p>
+                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
+                  <UploadIcon className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+                  {pastVisaFiles.length === 0 ? "Choose visa files" : `${pastVisaFiles.length} visa file(s)`}
+                  <input type="file" accept="image/*,.pdf" multiple className="hidden" onChange={(e) => { if (e.target.files) setPastVisaFiles(Array.from(e.target.files)); }} />
+                </label>
+                {pastVisaFiles.length > 0 && <button type="button" onClick={() => setPastVisaFiles([])} className="ml-2 text-xs text-brand-red hover:underline">Remove</button>}
+              </div>
+            )}
             <div className="sm:col-span-2 md:col-span-3">
               <Label className="text-xs">ID Card photos</Label>
               {pastIdFiles.length > 0 && (
@@ -764,7 +852,16 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               ) : (
               <div key={col}>
                 <Label className="text-xs">{col}</Label>
-                {col === "ID Card" || col === "Visa" ? (
+                {col === "ID Type" ? (
+                  <select value={editEntry[i]} onChange={(e) => { const u = [...editEntry]; u[i] = e.target.value; setEditEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {!isForeignNationality(editEntry[8]) && <option value="">Select...</option>}
+                    {getIdTypeOptions(editEntry[8]).map((opt) => <option key={opt} value={opt}>{opt.replace("_", " ")}</option>)}
+                  </select>
+                ) : col === "Nationality" ? (
+                  <select value={editEntry[i]} onChange={(e) => { const u = [...editEntry]; u[i] = e.target.value; if (isForeignNationality(e.target.value)) u[13] = "passport"; setEditEntry(u); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {countries.map((country) => <option key={country} value={country}>{country}</option>)}
+                  </select>
+                ) : col === "ID Card" || col === "Visa" ? (
                   <div className="mt-1 space-y-2">
                     {editEntry[i] && <p className="truncate text-xs text-brand-green-dark/60">{editEntry[i].split(" | ").filter(Boolean).length} file(s)</p>}
                     <label className="flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
@@ -861,7 +958,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                             ID {idLinks.length > 1 ? (li === 0 ? "Front" : "Back") : "Card"} <ExternalLinkIcon className="h-2.5 w-2.5" />
                           </a>
                         )) : hasPermission(role, permissions, "canEditRecords") ? (
-                          <button type="button" onClick={() => setUploadPopup({ origIdx, type: "id", guestName: row[3] || "Guest" })} className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-[10px] font-medium text-brand-green hover:bg-brand-green/[0.12]">
+                          <button type="button" onClick={() => openUploadPopup(origIdx, "id", row[3] || "Guest", row[8] || "")} className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-[10px] font-medium text-brand-green hover:bg-brand-green/[0.12]">
                             <UploadIcon className="h-2.5 w-2.5" /> Upload ID
                           </button>
                         ) : null}
@@ -869,8 +966,8 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                           <a key={`visa-${li}`} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50">
                             Visa {visaLinks.length > 1 ? `#${li + 1}` : ""} <ExternalLinkIcon className="h-2.5 w-2.5" />
                           </a>
-                        )) : (row[8] || "").toLowerCase() !== "india" && row[8] && hasPermission(role, permissions, "canEditRecords") ? (
-                          <button type="button" onClick={() => setUploadPopup({ origIdx, type: "visa", guestName: row[3] || "Guest" })} className="inline-flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50">
+                        )) : isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") ? (
+                          <button type="button" onClick={() => openUploadPopup(origIdx, "visa", row[3] || "Guest", row[8] || "")} className="inline-flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50">
                             <UploadIcon className="h-2.5 w-2.5" /> Upload Visa
                           </button>
                         ) : null}
@@ -879,7 +976,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                       {/* Actions */}
                       {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords")) && (
                         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-brand-mist pt-2">
-                          {(row[8] || "").toLowerCase() !== "india" && row[8] && hasPermission(role, permissions, "canEditRecords") && (
+                          {isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") && (
                             <button type="button" onClick={() => openFormC(origIdx, row)} className="flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 px-2 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50">
                               <FileTextIcon className="h-3 w-3" /> Form C
                             </button>
@@ -1026,12 +1123,12 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                             ))}
                           </div>
                         ) : col === "ID Card" && !cell && hasPermission(role, permissions, "canEditRecords") ? (
-                          <button type="button" onClick={() => setUploadPopup({ origIdx, type: "id", guestName: row[3] || "Guest" })}
+                          <button type="button" onClick={() => openUploadPopup(origIdx, "id", row[3] || "Guest", row[8] || "")}
                             className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-[10px] font-medium text-brand-green hover:bg-brand-green/[0.12]">
                             <UploadIcon className="h-3 w-3" /> Upload ID
                           </button>
                         ) : col === "Visa" && !cell && (row[8] || "").trim() !== "" && (row[8] || "").toLowerCase() !== "india" && hasPermission(role, permissions, "canEditRecords") ? (
-                          <button type="button" onClick={() => setUploadPopup({ origIdx, type: "visa", guestName: row[3] || "Guest" })}
+                          <button type="button" onClick={() => openUploadPopup(origIdx, "visa", row[3] || "Guest", row[8] || "")}
                             className="inline-flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50">
                             <UploadIcon className="h-3 w-3" /> Upload Visa
                           </button>
@@ -1161,10 +1258,8 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                   <Label className="text-xs">ID Type</Label>
                   <select value={uploadIdType} onChange={(e) => setUploadIdType(e.target.value)}
                     className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    <option value="">Select type...</option>
-                    <option value="aadhaar">Aadhaar</option>
-                    <option value="driving_licence">Driving Licence</option>
-                    <option value="passport">Passport</option>
+                    {!isForeignNationality(uploadPopup.nationality) && <option value="">Select type...</option>}
+                    {getIdTypeOptions(uploadPopup.nationality).map((opt) => <option key={opt} value={opt}>{opt.replace("_", " ")}</option>)}
                   </select>
                 </div>
               )}

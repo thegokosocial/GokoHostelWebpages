@@ -128,6 +128,34 @@ describe("Checkins auth-vs-list workflows", () => {
     expect(getCheckinsByMonth).toHaveBeenCalledWith("2026-08");
   });
 
+  it("rejects non-passport IDs for foreign admin records", async () => {
+    authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Front Desk",
+      permissions: { canAddCheckin: true },
+    });
+    const entry = Array(17).fill("");
+    entry[8] = "France";
+    entry[13] = "aadhaar";
+    const res = await POST(req({ password: "x", action: "add", entry }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Foreign nationals must provide a passport" });
+  });
+
+  it("rejects foreign admin records without a visa link", async () => {
+    authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Front Desk",
+      permissions: { canAddCheckin: true },
+    });
+    const entry = Array(17).fill("");
+    entry[8] = "France";
+    entry[13] = "passport";
+    const res = await POST(req({ password: "x", action: "add", entry }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Visa document is required for foreign nationals" });
+  });
+
   it("forbids staff from getSystemLogs", async () => {
     authenticateUser.mockResolvedValue(bookingsOnly);
     const res = await POST(req({ password: "x", action: "getSystemLogs" }));

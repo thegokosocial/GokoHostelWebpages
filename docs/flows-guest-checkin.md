@@ -39,7 +39,7 @@ sequenceDiagram
 ```
 
 1. Phone → latest checkin by contact. Hit: prefill + reuse `idCardLink` / `visaLink`. Miss: blank form.
-2. Fields: booking platform + id (auto `GOKO{date}{rand}` for Offline/Walk-in), arrival, name, persons, days, nationality, coming from, emergency, ID type + photos. Foreign: visa + Form C extras.
+2. Fields: booking platform + id (auto `GOKO{date}{rand}` for Offline/Walk-in), arrival, name, persons, days, nationality, coming from, emergency, ID type + photos. Indian guests can choose Aadhaar, Driving Licence, or Passport. A non-Indian nationality automatically selects Passport, shows no other ID type, and requires visa page photo(s); APIs reject non-passport or missing-visa foreign submissions. Foreign guests also provide Form C extras. Admin Records add and past-record forms prompt for and upload the required visa; edit and ID-upload flows follow the same passport-only rule.
 3. Optional Vision (`settings.image_validation`): labels → OCR → Aadhaar/DL/passport scoring → name match → SafeSearch. Type mismatch: changing dropdown to `detectedIdType` accepts. Vision down: submit still allowed (`idServerError`).
 4. Server: required fields → Vision again unless `prevIdCardLink` → Drive `{Guest}_{id_1}_{timestamp}` under month folder → `formCData` JSON for foreigners → insert `status: active`.
 5. `verified`: `yes` (passed or reused ID), `pending` (off / error), `spoof_warning`, `no` (admin reject).

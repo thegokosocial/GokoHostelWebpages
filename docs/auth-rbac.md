@@ -136,6 +136,8 @@ Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), M
 | deleteBooking | `canDeleteBooking` |
 | users, audit, backup, settings, stats, health, rate scrape, initDorms… | admin_only |
 
+For `add`, `addPast`, and `update`, any non-Indian nationality must use `idType=passport` and include a stored visa document link. The Admin Records UI prompts for visa uploads; self-check-in enforces the same rule through its public validation flow. Indian guests may use Aadhaar, Driving Licence, or Passport.
+
 ### `/api/admin/bookings`
 
 Calendar PMS. View keys `canViewBookings`. Mutating `canAddBooking` / `canDeleteBooking` / `canCheckIn` / `canCheckOut`. `getPendingFoodTab` is the same OR as `checkOut`. Rollback check-in/out = admin_only. Unassigned **Reject** is admin/manager (`role`), not `canDeleteBooking` — staff 403 on full-cancel of a stay with no assigned beds. Env manager can Reject without that key; assigned cancel still needs `canDeleteBooking`.

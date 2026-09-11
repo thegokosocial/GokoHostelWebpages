@@ -3,7 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState, useRef, useEffect } from "react";
-import { checkinSchema, type CheckinFormData, BOOKING_PLATFORMS } from "@/lib/checkinSchema";
+import { checkinSchema, isForeignNationality, type CheckinFormData, BOOKING_PLATFORMS } from "@/lib/checkinSchema";
 import { countries } from "@/content/countries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -335,6 +335,7 @@ export function SelfCheckinForm() {
   });
 
   const nationality = watch("nationality");
+  const idType = watch("idType");
   const bookingPlatform = watch("bookingPlatform");
   const bookingId = watch("bookingId");
   const numberOfPersons = watch("numberOfPersons");
@@ -342,6 +343,12 @@ export function SelfCheckinForm() {
   const firstName = watch("firstName");
   const lastName = watch("lastName");
   const needsBookingId = bookingPlatform && bookingPlatform !== "Offline booking" && bookingPlatform !== "Walk-in";
+
+  useEffect(() => {
+    if (isForeignNationality(nationality) && idType !== "passport") {
+      setValue("idType", "passport", { shouldValidate: true });
+    }
+  }, [idType, nationality, setValue]);
 
   useEffect(() => {
     if (!prefilledNameRef.current || !prevIdCardLink || idFiles.length > 0) return;
@@ -637,7 +644,7 @@ export function SelfCheckinForm() {
         formData.append("prevVisaLink", prevVisaLink);
       }
 
-      if (data.nationality && data.nationality !== "India") {
+      if (isForeignNationality(data.nationality)) {
         if (data.arrivedFromCountry) formData.append("arrivedFromCountry", data.arrivedFromCountry);
         if (data.arrivedFromCity) formData.append("arrivedFromCity", data.arrivedFromCity);
         if (data.arrivedFromPlace) formData.append("arrivedFromPlace", data.arrivedFromPlace);
@@ -1113,9 +1120,9 @@ export function SelfCheckinForm() {
               errors.idType && "border-brand-red"
             )}
           >
-            <option value="">Select ID type...</option>
-            <option value="aadhaar">Aadhaar Card</option>
-            <option value="driving_licence">Driving Licence</option>
+            {!isForeignNationality(nationality) && <option value="">Select ID type...</option>}
+            {!isForeignNationality(nationality) && <option value="aadhaar">Aadhaar Card</option>}
+            {!isForeignNationality(nationality) && <option value="driving_licence">Driving Licence</option>}
             <option value="passport">Passport</option>
           </select>
           {errors.idType && (
@@ -1167,7 +1174,7 @@ export function SelfCheckinForm() {
         />
 
         {/* Previous Visa preview for return guests */}
-        {nationality && nationality !== "India" && prevVisaLink && visaFiles.length === 0 && (
+        {isForeignNationality(nationality) && prevVisaLink && visaFiles.length === 0 && (
           <div>
             <Label className="mb-2 block text-sm font-medium text-brand-green-dark">
               Visa document (from previous visit)
@@ -1197,7 +1204,7 @@ export function SelfCheckinForm() {
         )}
 
         {/* Visa (conditional, multiple images/PDF) */}
-        {nationality && nationality !== "India" && (
+        {isForeignNationality(nationality) && (
           <MultiDocUpload
             label={prevVisaLink && visaFiles.length === 0 ? "Upload new visa (optional)" : "Visa document (required for non-Indian nationals)"}
             error={errors.visaImages?.message as string | undefined}

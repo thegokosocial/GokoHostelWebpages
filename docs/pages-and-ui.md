@@ -31,7 +31,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → Stayflexi URL
 
 | Path | Role | Auth |
 |------|------|------|
-| `/self-checkin` | ID check-in | none |
+| `/self-checkin` | ID check-in; foreign nationality is passport-only | none |
 | `/food-order` | Menu + cart | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
 | `/my-bills` | Food bills | phone; back → previous page |
@@ -52,7 +52,7 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 | `beds` | `AdminBeds` | checkins beds | `canViewBeds` |
 | `timeline` | `AdminTimeline` | checkins `getBeds` | `canViewTimeline` |
 | `inventory` | `InventoryRatePlan` | `/api/admin/inventory` | `canManageInventory` |
-| `records` | `AdminRecords` | checkins list/add/… | `canViewRecords` |
+| `records` | `AdminRecords` | checkins list/add/…; foreign add/past records prompt for passport + visa uploads | `canViewRecords` |
 | `foodOrders` | `AdminFoodOrders` | `/api/admin/food-orders` + kitchen | `canViewFoodOrders` |
 | `expenditure` | `AdminExpenditure` | `/api/admin/expenses` | `canViewAccounts` |
 | `splits` | `AdminSplits` | `/api/admin/splits` | `canViewSplits` — **omitted on Pi** |

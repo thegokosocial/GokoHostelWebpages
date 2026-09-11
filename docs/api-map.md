@@ -10,7 +10,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 
 | Route | Method | Auth | Purpose |
 |-------|--------|------|---------|
-| `/api/checkin` | POST multipart | none | Self check-in → Vision + Drive + D1 |
+| `/api/checkin` | POST multipart | none | Self check-in → Vision + Drive + D1; non-Indian nationality requires `idType=passport` |
 | `/api/checkin/lookup` | GET `?phone=` | none | Returning guest prefill |
 | `/api/validate-id` | POST multipart | none | Live ID/visa OCR |
 | `/api/settings` | GET | none | Public flags (`image_validation`, etc.) |
@@ -33,7 +33,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | Route | Auth | Purpose |
 |-------|------|---------|
 | `/api/food/kitchen` | `authenticateKitchen` | Queue, status, mods, busy, menu |
-| `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape) |
+| `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape); foreign record add/update requires passport and visa |
 | `/api/admin/bookings` | per-action map | Calendar PMS |
 | `/api/admin/inventory` | `canManageInventory` | Grid, blocks, rates, channels |
 | `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |

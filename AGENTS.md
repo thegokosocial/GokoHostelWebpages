@@ -40,6 +40,7 @@ Before every commit, inspect both staged and unstaged diffs. The commit must con
 - Timeline uses `canViewTimeline` for viewing; assign/change/unassign uses `canAssignBed`, checkout uses `canCheckout`, and cleaning uses `canMarkClean`.
 - Existing compatibility fallbacks must be treated as intentional unless explicitly removed.
 - `canSyncBookings` and `canAccessKitchen` are retired from the active catalog. Keep old stored JSON keys only during the documented compatibility window.
+- Check-in identity rule: Indian guests may use Aadhaar, Driving Licence, or Passport; any non-Indian nationality defaults to and permits only Passport, requires a visa upload, and must be enforced by self-check-in/Admin Records APIs too.
 
 ## Secrets and local live state
 

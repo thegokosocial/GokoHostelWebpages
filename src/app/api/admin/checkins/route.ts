@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import { isOfflineMode } from "@/lib/runtime";
 import { authenticateUser, hashPassword, verifyPassword, type UserRole } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { isForeignNationality } from "@/lib/checkinSchema";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { logListQuery, logSafePage } from "@/lib/logRetention";
 import { todayIST } from "@/lib/utils";
@@ -142,6 +143,15 @@ export async function POST(req: NextRequest) {
       if (!entry) return NextResponse.json({ error: "No entry data" }, { status: 400 });
 
       const e = Array.isArray(entry) ? entry : [];
+      const entryNationality = Array.isArray(entry) ? entry[8] : entry.nationality;
+      const entryIdType = Array.isArray(entry) ? entry[13] : entry.idType;
+      if (isForeignNationality(entryNationality) && entryIdType !== "passport") {
+        return NextResponse.json({ error: "Foreign nationals must provide a passport" }, { status: 400 });
+      }
+      const entryVisaLink = Array.isArray(entry) ? entry[15] : entry.visaLink;
+      if (isForeignNationality(entryNationality) && !entryVisaLink) {
+        return NextResponse.json({ error: "Visa document is required for foreign nationals" }, { status: 400 });
+      }
       const platform = bookingPlatform || e[11] || "";
       const rawBid = rawBookingId || e[12] || "";
       const finalBookingId = (platform === "Offline booking" || platform === "Walk-in")
@@ -185,6 +195,15 @@ export async function POST(req: NextRequest) {
       if (!entry) return NextResponse.json({ error: "No entry data" }, { status: 400 });
 
       const e = Array.isArray(entry) ? entry : [];
+      const entryNationality = Array.isArray(entry) ? entry[8] : entry.nationality;
+      const entryIdType = Array.isArray(entry) ? entry[13] : entry.idType;
+      if (isForeignNationality(entryNationality) && entryIdType !== "passport") {
+        return NextResponse.json({ error: "Foreign nationals must provide a passport" }, { status: 400 });
+      }
+      const entryVisaLink = Array.isArray(entry) ? entry[15] : entry.visaLink;
+      if (isForeignNationality(entryNationality) && !entryVisaLink) {
+        return NextResponse.json({ error: "Visa document is required for foreign nationals" }, { status: 400 });
+      }
       const arrivalDate = e[1] || "";
       const monthKey = arrivalDate ? getMonthKey(new Date(arrivalDate)) : getMonthKey();
 
@@ -227,6 +246,15 @@ export async function POST(req: NextRequest) {
       if (!isValidId(rowId) || !entry) return NextResponse.json({ error: "Missing data" }, { status: 400 });
 
       const e = Array.isArray(entry) ? entry : null;
+      const entryNationality = e ? e[8] : entry.nationality;
+      const entryIdType = e ? e[13] : entry.idType;
+      if (isForeignNationality(entryNationality) && entryIdType !== "passport") {
+        return NextResponse.json({ error: "Foreign nationals must provide a passport" }, { status: 400 });
+      }
+      const entryVisaLink = e ? e[15] : entry.visaLink;
+      if (isForeignNationality(entryNationality) && !entryVisaLink) {
+        return NextResponse.json({ error: "Visa document is required for foreign nationals" }, { status: 400 });
+      }
       const data = e ? {
         submittedAt: e[0], arrivalDate: e[1], arrivalTime: e[2], name: e[3],
         persons: e[4], contact: e[5], stayingDays: e[6], comingFrom: e[7],

@@ -4,6 +4,7 @@ import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
 import { addCheckin, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
+import { isForeignNationality } from "@/lib/checkinSchema";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -79,6 +80,9 @@ export async function POST(req: NextRequest) {
     const hasIdImages = idImages.length > 0 || !!prevIdCardLink;
     if (!name || !contactNumber || !nationality || !idType || !hasIdImages || !arrivalDate || !stayingDays || !comingFrom || !numberOfPersons) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+    if (isForeignNationality(nationality) && idType !== "passport") {
+      return NextResponse.json({ error: "Foreign nationals must provide a passport", field: "idType" }, { status: 400 });
     }
 
     for (const file of [...idImages, ...visaImages]) {
@@ -222,7 +226,7 @@ export async function POST(req: NextRequest) {
     const submittedAt = new Date().toISOString();
     const verified = reusingPrevId ? "yes" : !validationEnabled ? "pending" : validationFailed ? "pending" : idSpoofWarning ? "spoof_warning" : "yes";
 
-    const isForeigner = nationality && nationality !== "India";
+    const isForeigner = isForeignNationality(nationality);
     let formCData = "";
     if (isForeigner) {
       let extractedPassport = {};

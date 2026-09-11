@@ -11,6 +11,10 @@ export const BOOKING_PLATFORMS = [
 
 export type BookingPlatform = (typeof BOOKING_PLATFORMS)[number];
 
+export function isForeignNationality(nationality: string | null | undefined): boolean {
+  return Boolean(nationality?.trim() && nationality.trim().toLowerCase() !== "india");
+}
+
 export const checkinSchema = z
   .object({
     bookingPlatform: z.enum(BOOKING_PLATFORMS, {
@@ -90,6 +94,13 @@ export const checkinSchema = z
     homeCountryPhone: z.string().optional(),
   })
   .refine(
+    (data) => !isForeignNationality(data.nationality) || data.idType === "passport",
+    {
+      message: "Foreign nationals must provide a passport",
+      path: ["idType"],
+    }
+  )
+  .refine(
     (data) => {
       if (data.prevIdCardLink) return true;
       return data.idImages && data.idImages.length > 0;
@@ -101,7 +112,7 @@ export const checkinSchema = z
   )
   .refine(
     (data) => {
-      if (data.nationality && data.nationality !== "India") {
+      if (isForeignNationality(data.nationality)) {
         if (data.prevVisaLink) return true;
         return data.visaImages && data.visaImages.length > 0;
       }
@@ -114,7 +125,7 @@ export const checkinSchema = z
   )
   .refine(
     (data) => {
-      if (data.nationality && data.nationality !== "India") {
+      if (isForeignNationality(data.nationality)) {
         return !!data.arrivedFromCountry;
       }
       return true;
@@ -126,7 +137,7 @@ export const checkinSchema = z
   )
   .refine(
     (data) => {
-      if (data.nationality && data.nationality !== "India") {
+      if (isForeignNationality(data.nationality)) {
         return !!data.purposeOfVisit;
       }
       return true;
