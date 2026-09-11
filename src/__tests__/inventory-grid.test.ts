@@ -2,7 +2,7 @@ import { rateScrapeDates } from "@/lib/rateScrapeResults";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { cn, localDateStr } from "@/lib/utils";
-import { computeNightAvailability, bedsFreeToBlock } from "@/lib/inventoryAvailability";
+import { computeNightAvailability, bedsFreeToBlock, summarizeAvailability } from "@/lib/inventoryAvailability";
 
 const ui = readFileSync("src/components/admin/InventoryRatePlan.tsx", "utf8");
 const adminPage = readFileSync("src/app/admin/page.tsx", "utf8");
@@ -270,6 +270,20 @@ describe("Inventory grid: availability and occupancy workflows", () => {
     expect(free30.map((b) => b.id)).not.toContain(3);
   });
 
+  it("summarizes selected room-night counts without mixing units and nights", () => {
+    const data = fixture();
+    const summary = summarizeAvailability([
+      computeAvailability(data, 1, "2026-08-29"),
+      computeAvailability(data, 1, "2026-08-30"),
+    ]);
+    expect(summary.roomNights).toBe(2);
+    expect(summary.total).toBe(24);
+    expect(summary.blocked).toBe(2);
+    expect(summary.assigned).toBe(3);
+    expect(summary.available).toBe(19);
+    expect(summary.online + summary.offline).toBe(summary.available);
+  });
+
   it("maps rate-plan rows under the dorm's room mapping and prefers adult1Rate", () => {
     const data = fixture();
     const mapping = data.roomMappings.find((rm) => rm.dormId === 1);
@@ -310,6 +324,10 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(ui).toContain('action: "blockBeds"');
     expect(ui).toContain('action: "unblockBeds"');
     expect(ui).toContain('action: "bulkSetAvailability"');
+    expect(ui).toContain("AvailabilityPreviewPanel");
+    expect(ui).toContain("Counts are summed across the selected room-nights");
+    expect(route).toContain("preview === true");
+    expect(route).toContain("summarizeAvailability");
     expect(ui).toContain('action: "bulkSetRates"');
     expect(ui).toContain('action: "bulkAdjustRates"');
     expect(ui).toContain('action: "bulkSetRestrictions"');

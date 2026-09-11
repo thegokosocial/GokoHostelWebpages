@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { triggerInventoryPush, triggerRatePush, triggerRestrictionPush } from "@/lib/aiosellSync";
 import { restrictionPatch } from "@/lib/aiosell";
-import { addCalendarDays, computeNightAvailability, civilWeekday, inclusiveNights, overrideCeilingToSave, sellableUnits, unassignedOtaOnNight, stayNights } from "@/lib/inventoryAvailability";
+import { addCalendarDays, computeNightAvailability, civilWeekday, inclusiveNights, overrideCeilingToSave, overridePreview, sellableUnits, summarizeAvailability, unassignedOtaOnNight, stayNights } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
 import {
   getInventoryGridData, getChannels, upsertChannel, deleteChannel,
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "bulkSetAvailability") {
-      const { dormIds: requestedDormIds, startDate, endDate, dayFilter, mode, onlineRemaining } = params;
+      const { dormIds: requestedDormIds, startDate, endDate, dayFilter, mode, onlineRemaining, preview } = params;
       if (!Array.isArray(requestedDormIds) || requestedDormIds.length === 0 || !startDate || !endDate) {
         return NextResponse.json({ error: "dormIds, startDate and endDate required" }, { status: 400 });
       }
@@ -197,7 +197,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "mode must be set or clear" }, { status: 400 });
       }
       const requestedValue = Number(onlineRemaining);
-      if (mode === "set" && (!Number.isFinite(requestedValue) || !Number.isInteger(requestedValue) || requestedValue < 0)) {
+      const hasValidRequestedValue = Number.isFinite(requestedValue) && Number.isInteger(requestedValue) && requestedValue >= 0;
+      if (mode === "set" && !hasValidRequestedValue && preview !== true) {
         return NextResponse.json({ error: "onlineRemaining must be a non-negative whole number" }, { status: 400 });
       }
 
@@ -219,19 +220,56 @@ export async function POST(req: NextRequest) {
       const [bedRows, assignments, blocks, overrides] = await getAvailabilitySnapshot(startDate, endDate);
       const holds = await getUnassignedOtaHoldsForRange(startDate, addCalendarDays(endDate, 1));
       const applied: Array<{ dormId: number; date: string; capped: boolean }> = [];
+      const cellStats = dormIds.flatMap((dormId) => filteredDates.map((date) => ({
+        dormId,
+        date,
+        stats: computeNightAvailability(
+          dormId,
+          date,
+          bedRows,
+          blocks,
+          assignments,
+          overrides,
+          unassignedOtaOnNight(holds, dormId, date),
+        ),
+      })));
+      const statsByCell = new Map(cellStats.map((cell) => [`${cell.dormId}:${cell.date}`, cell.stats]));
+      const selectedCellKeys = new Set(cellStats.map((cell) => `${cell.dormId}:${cell.date}`));
+      const overridesAfterClear = overrides.filter((override) => !(override.channelId == null && selectedCellKeys.has(`${override.dormId}:${override.date}`)));
+
+      if (preview === true) {
+        const current = summarizeAvailability(cellStats.map((cell) => cell.stats));
+        const afterStats = mode === "clear"
+          ? cellStats.map(({ dormId, date }) => computeNightAvailability(
+            dormId,
+            date,
+            bedRows,
+            blocks,
+            assignments,
+            overridesAfterClear,
+            unassignedOtaOnNight(holds, dormId, date),
+          ))
+          : hasValidRequestedValue
+            ? cellStats.map((cell) => ({ ...cell.stats, ...overridePreview(cell.stats, requestedValue) }))
+            : cellStats.map((cell) => cell.stats);
+        return NextResponse.json({
+          success: true,
+          preview: true,
+          selected: { rooms: dormIds.length, nights: filteredDates.length, roomNights: cellStats.length },
+          current,
+          after: summarizeAvailability(afterStats),
+          capped: mode === "set" && hasValidRequestedValue
+            ? cellStats.filter((cell) => requestedValue > cell.stats.available).length
+            : 0,
+          requestedOnline: mode === "set" && hasValidRequestedValue ? requestedValue : null,
+        });
+      }
 
       try {
         for (const dormId of dormIds) {
           for (const date of filteredDates) {
-            const stats = computeNightAvailability(
-              dormId,
-              date,
-              bedRows,
-              blocks,
-              assignments,
-              overrides,
-              unassignedOtaOnNight(holds, dormId, date),
-            );
+            const stats = statsByCell.get(`${dormId}:${date}`);
+            if (!stats) throw new Error("Availability snapshot mismatch");
             if (mode === "clear") {
               await deleteInventoryOverride({ dormId, channelId: null, date });
               applied.push({ dormId, date, capped: false });

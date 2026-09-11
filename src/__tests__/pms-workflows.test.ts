@@ -1834,6 +1834,32 @@ describe("Bulk availability workflows", () => {
     }));
   }
 
+  it("previews online, offline, blocked, and booked counts without writing or pushing", async () => {
+    queryMocks.getAvailabilitySnapshot.mockResolvedValue([
+      [
+        { id: 1, dormId: 8, bedId: "EXE-1", type: "Bunk" },
+        { id: 2, dormId: 8, bedId: "EXE-2", type: "Bunk" },
+        { id: 3, dormId: 8, bedId: "EXE-3", type: "Bunk" },
+      ],
+      [{ bedId: 1, dormId: 8, checkinDate: "2026-09-12", checkoutDate: "2026-09-13", inventoryPool: "online" }],
+      [{ bedId: 2, dormId: 8, startDate: "2026-09-12", endDate: "2026-09-13" }],
+      [],
+    ] as never);
+    const res = await post({
+      password: "x", action: "bulkSetAvailability", preview: true, dormIds: [8],
+      startDate: "2026-09-12", endDate: "2026-09-12", mode: "set", onlineRemaining: 0,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.current).toEqual(expect.objectContaining({ total: 3, blocked: 1, assigned: 1, available: 1, online: 1, offline: 0 }));
+    expect(body.after).toEqual(expect.objectContaining({ total: 3, blocked: 1, assigned: 1, available: 1, online: 0, offline: 1 }));
+    expect(body.selected).toEqual({ rooms: 1, nights: 1, roomNights: 1 });
+    expect(queryMocks.upsertInventoryOverride).not.toHaveBeenCalled();
+    expect(queryMocks.deleteInventoryOverride).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(queryMocks.addAuditEntry).not.toHaveBeenCalled();
+  });
+
   it("sets absolute remaining OTA availability while preserving held online inventory", async () => {
     queryMocks.getAvailabilitySnapshot.mockResolvedValue([
       [

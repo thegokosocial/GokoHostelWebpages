@@ -7,7 +7,7 @@ import {
   RefreshCwIcon, Loader2Icon, ChevronLeftIcon, ChevronRightIcon,
   PackageIcon, EditIcon,
 } from "lucide-react";
-import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, civilWeekday, unassignedOtaOnNight, type NightAvailability } from "@/lib/inventoryAvailability";
+import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, civilWeekday, unassignedOtaOnNight, type AvailabilitySummary, type NightAvailability } from "@/lib/inventoryAvailability";
 import type { Role } from "./types";
 
 type Props = { password: string; username?: string; role: Role; permissions: Record<string, boolean> };
@@ -33,6 +33,14 @@ type GridData = {
   overrides: OverrideData[];
   unassignedOta?: Array<{ dormId: number; date: string; rooms: number }>;
   bedConfigs: Array<{ id: number; dormId: number; bedType: string; maxOccupancy: number; extraPersonAllowed: number }>;
+};
+
+type BulkAvailabilityPreview = {
+  selected: { rooms: number; nights: number; roomNights: number };
+  current: AvailabilitySummary;
+  after: AvailabilitySummary;
+  capped: number;
+  requestedOnline: number | null;
 };
 
 function generateDates(start: string, days: number): string[] {
@@ -694,6 +702,49 @@ function DormAvailabilityPicker({
   );
 }
 
+function AvailabilityPreviewPanel({ preview, loading, mode }: { preview: BulkAvailabilityPreview | null; loading: boolean; mode: "set" | "clear" }) {
+  if (!preview && !loading) return null;
+  if (loading) return (
+    <div className="rounded-lg border border-brand-mist bg-brand-sand/40 px-3 py-2 text-xs text-brand-green-dark/60">
+      <Loader2Icon className="mr-1 inline-block h-3 w-3 animate-spin" /> Loading selected availability…
+    </div>
+  );
+  if (!preview) return null;
+
+  const rows = [
+    ["Online", preview.current.online, preview.after.online, "text-sky-700"],
+    ["Offline", preview.current.offline, preview.after.offline, "text-emerald-700"],
+    ["Blocked", preview.current.blocked, preview.after.blocked, "text-orange-700"],
+    ["Booked / held", preview.current.assigned + preview.current.unassignedOta, preview.after.assigned + preview.after.unassignedOta, "text-brand-green-dark"],
+  ] as const;
+  const afterLabel = mode === "clear"
+    ? "after clear"
+    : preview.requestedOnline == null
+      ? "after value"
+      : `after set ${preview.requestedOnline}`;
+
+  return (
+    <div className="rounded-lg border border-brand-mist bg-brand-sand/40 px-3 py-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[10px] text-brand-green-dark/60">
+        <span className="font-medium text-brand-green-dark">Selected availability</span>
+        <span>{preview.selected.rooms} room{preview.selected.rooms === 1 ? "" : "s"} × {preview.selected.nights} night{preview.selected.nights === 1 ? "" : "s"} · {preview.selected.roomNights} room-nights</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {rows.map(([label, current, after, color]) => (
+          <div key={label} className="rounded-md border border-brand-mist/70 bg-white/70 px-2 py-1.5">
+            <div className={cn("text-[10px] font-medium", color)}>{label}</div>
+            <div className="mt-0.5 text-sm font-bold text-brand-green-dark">
+              {current} <span className="text-[10px] font-normal text-brand-green-dark/40">→ {after}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[10px] text-brand-green-dark/50">Counts are summed across the selected room-nights. Left = current, right = {afterLabel}. Blocked and booked/held counts are preserved.</p>
+      {preview.capped > 0 && <p className="mt-0.5 text-[10px] text-amber-700">{preview.capped} selected cell{preview.capped === 1 ? " is" : "s are"} above physical availability and will be capped.</p>}
+    </div>
+  );
+}
+
 // --- Bulk Update Modal ---
 function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   data: GridData | null; password: string; username?: string; onClose: () => void; onSaved: () => void;
@@ -723,6 +774,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   const [availabilityDays, setAvailabilityDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [availabilityMode, setAvailabilityMode] = useState<"set" | "clear">("set");
   const [availabilityValue, setAvailabilityValue] = useState("");
+  const [availabilityPreview, setAvailabilityPreview] = useState<BulkAvailabilityPreview | null>(null);
+  const [loadingAvailabilityPreview, setLoadingAvailabilityPreview] = useState(false);
 
   // Set rates state
   const [rateRpIds, setRateRpIds] = useState<number[]>([]);
@@ -750,6 +803,39 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
 
   const today = todayIST();
   const blockExclusiveEnd = exclusiveEndFromInclusive(blockStart, blockEnd);
+
+  useEffect(() => {
+    if (!availabilityDormIds.length || !availabilityStart || !availabilityEnd) {
+      setAvailabilityPreview(null);
+      setLoadingAvailabilityPreview(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setLoadingAvailabilityPreview(true);
+      try {
+        const typedValue = Number(availabilityValue);
+        const validValue = Number.isInteger(typedValue) && typedValue >= 0;
+        const res = await fetch("/api/admin/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            password, username, action: "bulkSetAvailability", preview: true,
+            dormIds: availabilityDormIds, startDate: availabilityStart, endDate: availabilityEnd,
+            dayFilter: availabilityDays, mode: availabilityMode,
+            onlineRemaining: availabilityMode === "set" && validValue ? typedValue : undefined,
+          }),
+        });
+        const json = await res.json();
+        if (!cancelled) setAvailabilityPreview(res.ok && json.success && json.preview ? json : null);
+      } catch {
+        if (!cancelled) setAvailabilityPreview(null);
+      } finally {
+        if (!cancelled) setLoadingAvailabilityPreview(false);
+      }
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [availabilityDormIds, availabilityStart, availabilityEnd, availabilityDays, availabilityMode, availabilityValue, password, username]);
 
   const setStartAndNextEnd = (start: string, setStart: (v: string) => void, setEnd: (v: string) => void) => {
     setStart(start);
@@ -1099,6 +1185,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   <p className="mt-0.5 text-[10px] text-brand-green-dark/50">The value is applied per selected room/date. Existing bookings, holds, and blocks are preserved; values above available inventory are capped.</p>
                 </div>
               )}
+              <AvailabilityPreviewPanel preview={availabilityPreview} loading={loadingAvailabilityPreview} mode={availabilityMode} />
               <Button variant="cta" size="sm" className="w-full" onClick={handleBulkAvailability} disabled={saving || !availabilityDormIds.length || !availabilityStart || !availabilityEnd || (availabilityMode === "set" && (!availabilityValue || !Number.isInteger(Number(availabilityValue)) || Number(availabilityValue) < 0))}>
                 {saving ? "Updating..." : availabilityMode === "set" ? `Set ${availabilityValue || "…"} OTA slot${availabilityValue === "1" ? "" : "s"}` : "Clear Availability Overrides"}
               </Button>

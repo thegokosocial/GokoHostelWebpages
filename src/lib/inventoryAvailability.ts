@@ -12,6 +12,40 @@ export type NightAvailability = {
   overridden: boolean;
 };
 
+export type AvailabilitySummary = {
+  roomNights: number;
+  total: number;
+  blocked: number;
+  assigned: number;
+  unassignedOta: number;
+  available: number;
+  online: number;
+  offline: number;
+};
+
+/** Add room/bed-unit counts across the selected room-night cells. */
+export function summarizeAvailability(snapshots: NightAvailability[]): AvailabilitySummary {
+  return snapshots.reduce((summary, snapshot) => ({
+    roomNights: summary.roomNights + 1,
+    total: summary.total + snapshot.total,
+    blocked: summary.blocked + snapshot.blocked,
+    assigned: summary.assigned + snapshot.assigned,
+    unassignedOta: summary.unassignedOta + snapshot.unassignedOta,
+    available: summary.available + snapshot.available,
+    online: summary.online + snapshot.online,
+    offline: summary.offline + snapshot.offline,
+  }), {
+    roomNights: 0,
+    total: 0,
+    blocked: 0,
+    assigned: 0,
+    unassignedOta: 0,
+    available: 0,
+    online: 0,
+    offline: 0,
+  });
+}
+
 /** Beds already counting against the OTA ceiling (assigned online + unassigned channel_manager rooms). */
 export function heldOnline(snap: Pick<NightAvailability, "onlineAssigned" | "unassignedOta">): number {
   return Math.max(0, snap.onlineAssigned) + Math.max(0, snap.unassignedOta);
