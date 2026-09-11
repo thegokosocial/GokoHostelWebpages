@@ -96,6 +96,8 @@ Manual/offline/walk-in bookings can use `editReservation` to update guest name, 
 
 **Account settings:** `list/add/update/delete` × Accounts, Vendors, Employees; `paySalary`.
 
+Booking creation also exposes `getRoomReceiptAccounts` (`canAddBooking` or `canCheckIn`) for active receiving-account display data. Walk-in `createBooking` accepts optional `advanceAmount`, `advancePaymentMethod` (`cash` or `online`), and `advanceOnlineAccountId`; the server recomputes the total, records the advance as paid, creates a room receipt for online advances, and rejects advances for engine bookings. Reservation edits cannot lower the total below money already collected or alter the collected amount.
+
 **Website:** `getAll`, `saveEventsCopy`, `saveCommunityCopy`, `addEvent`, `updateEvent`, `deleteEvent`, `addSpace`, `updateSpace`, `deleteSpace`, `discardMedia`.
 
 **Channel manager (admin):** `getConfig`, `saveConfig` (webhook secret **required** to set `isActive`), `getRoomMappings`, `saveRoomMapping`, `deleteRoomMapping`, `getRatePlans`, `saveRatePlan`, `deleteRatePlan`, `getDailyRates`, `saveDailyRates`, `getSyncLogs` (filters: `direction`, `type` prefix e.g. `inventory` matches `inventory (auto)`, `status`, `since` floored at 30 days; `page` 1-based, `pageSize` default 50 cap 100, or `limit` as pageSize; `download: true` raises cap to 2000). Returns `{ logs, total, page, pageSize }`. Management Logs Download menu turns that payload into **JSON** or a client-side **PDF** (`logExport.ts`).

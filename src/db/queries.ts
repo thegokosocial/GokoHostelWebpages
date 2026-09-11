@@ -451,6 +451,7 @@ export async function addBooking(data: {
   property?: string; rawData?: string;
   amountBeforeTax?: number; amountTax?: number; amountTotal?: number;
   amountPaid?: number; nightlyRate?: number; currency?: string;
+  paymentMethod?: string; cashReceived?: number; changeGiven?: number;
   email?: string; cmBookingId?: string; gokoBookingId?: string;
   ratePlan?: string;
 }) {
@@ -476,6 +477,9 @@ export async function addBooking(data: {
     amountTax: data.amountTax ?? 0,
     amountTotal: data.amountTotal ?? 0,
     amountPaid: data.amountPaid ?? 0, // Channel prepaid omits this; calendar check-in copies total as online.
+    paymentMethod: data.paymentMethod || "",
+    cashReceived: data.cashReceived ?? 0,
+    changeGiven: data.changeGiven ?? 0,
     nightlyRate: data.nightlyRate ?? 0,
     currency: data.currency || "INR",
     email: data.email || "",

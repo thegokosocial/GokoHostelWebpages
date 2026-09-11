@@ -99,7 +99,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `index.tsx` | Calendar shell; Calendar, operational Table, and date-scoped All Bookings views |
 | `BookingCalendarGrid.tsx` | Bars by dorm/night |
 | `BookingDetailPanel.tsx` | Check-in/out (food-tab warn), Collect, cancel-with-refund |
-| `CreateBookingModal.tsx` | Walk-in / engine |
+| `CreateBookingModal.tsx` | Walk-in / engine; walk-in bookings include an optional advance-payment section between Special Requests and Discount. It records cash or online advance, selects an active online receiving account, and previews the remaining balance. |
 | `UnassignedBookings.tsx` | OTA leftover chips, Reject |
 | `BookingSearchBar.tsx` / `DateRangeSelector.tsx` / `BookingMobileDayView.tsx` / `BookingTableView.tsx` / `BookingTile.tsx` | chrome; All Bookings keeps the same row-click/detail-panel behavior, exposes every booking status, and wraps its filters on narrow screens |
 | `CheckInPopup.tsx` | Collected → `RecordPaymentModal`; Later = check-in unpaid |
