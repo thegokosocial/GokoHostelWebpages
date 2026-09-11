@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { accounts } from "@/db/schema";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { otaFingerprint, pushIfOtaChanged, type InventorySyncResult } from "@/lib/aiosellSync";
@@ -258,6 +261,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   getUnassigned: "canViewBookings",
   checkAvailability: "canViewBookings",
   getAvailableBeds: "canViewBookings",
+  getRoomReceiptAccounts: ["canAddBooking", "canCheckIn"],
   getBookingHistory: "canViewBookings",
   getBookingAuditLog: "canViewBookings",
   getWhatsAppTemplates: "canViewBookings",
@@ -319,6 +323,15 @@ export async function POST(req: NextRequest) {
     }
 
     // --- View Actions ---
+
+    if (action === "getRoomReceiptAccounts") {
+      const [items, defaultId] = await Promise.all([
+        getDb().select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname })
+          .from(accounts).where(eq(accounts.isActive, 1)),
+        getSetting("room_online_receipt_account_id"),
+      ]);
+      return NextResponse.json({ accounts: items, roomOnlineReceiptAccountId: defaultId });
+    }
 
     if (action === "getAllBookings") {
       const { startDate, endDate, page, pageSize, status, query } = body;
@@ -561,7 +574,7 @@ export async function POST(req: NextRequest) {
     // --- Create ---
 
     if (action === "createBooking") {
-      const { guestName, contact, email, checkinDate, checkoutDate, platform, nightlyRate, specialRequests, bedIds, persons, unitRates, discountPercent, discountAmount, discountReason } = body;
+      const { guestName, contact, email, checkinDate, checkoutDate, platform, nightlyRate, specialRequests, bedIds, persons, unitRates, discountPercent, discountAmount, discountReason, advanceAmount, advancePaymentMethod, advanceOnlineAccountId } = body;
       if (!guestName || !checkinDate || !checkoutDate) {
         return NextResponse.json({ error: "guestName, checkinDate, checkoutDate required" }, { status: 400 });
       }
@@ -608,6 +621,21 @@ export async function POST(req: NextRequest) {
       const tax = priced.tax;
       const total = totalBeforeTax + tax;
       const reason = typeof discountReason === "string" ? discountReason.trim() : "";
+      const hasAdvanceInput = advanceAmount !== undefined || advancePaymentMethod !== undefined || advanceOnlineAccountId !== undefined;
+      if (hasAdvanceInput && src !== "walkin") {
+        return NextResponse.json({ error: "Advance payment is available for walk-in bookings only" }, { status: 400 });
+      }
+      const advance = advanceAmount === undefined || advanceAmount === "" ? 0 : Number(advanceAmount);
+      if (advanceAmount === null || (typeof advanceAmount === "string" && advanceAmount !== "" && advanceAmount.trim() === "") || !Number.isInteger(advance) || advance < 0 || advance > total) {
+        return NextResponse.json({ error: "Advance payment must be a whole amount between ₹0 and the booking total" }, { status: 400 });
+      }
+      if (advance > 0 && advancePaymentMethod !== "cash" && advancePaymentMethod !== "online") {
+        return NextResponse.json({ error: "Advance payment method must be cash or online" }, { status: 400 });
+      }
+      let advanceAccountId: number | undefined;
+      if (advance > 0 && advancePaymentMethod === "online") {
+        advanceAccountId = await resolveReceiptAccount("room", advanceOnlineAccountId);
+      }
 
       const newBookingId = await addBooking({
         guestName,
@@ -621,6 +649,11 @@ export async function POST(req: NextRequest) {
         amountBeforeTax: totalBeforeTax,
         amountTax: tax,
         amountTotal: total,
+        amountPaid: advance,
+        paymentStatus: advance > 0 ? "paid" : undefined,
+        paymentMethod: advance > 0 ? advancePaymentMethod : undefined,
+        cashReceived: advancePaymentMethod === "cash" ? advance : 0,
+        changeGiven: 0,
         specialRequests: specialRequests || "",
         source: "manual",
         status: "received",
@@ -664,11 +697,24 @@ export async function POST(req: NextRequest) {
         await pushIfOtaChanged(before, dormIds, dates).catch(() => {});
       }
 
+      if (advance > 0 && advancePaymentMethod === "online" && advanceAccountId) {
+        await createGuestReceipt({
+          receiptId: crypto.randomUUID(),
+          sourceType: "booking",
+          sourceId: newBookingId,
+          kind: "stay",
+          accountId: advanceAccountId,
+          amount: advance,
+          createdBy: actingUser,
+          notes: `Advance stay payment for ${guestName}`,
+        });
+      }
+
       if (newBookingId) {
         await addBookingHistoryEntry({
           bookingId: newBookingId,
           action: "Created",
-          details: `Manual booking by ${actingUser}. ${unitsCount} unit(s), ${guestCount} guest(s), ${nights} night(s).${discount > 0 ? ` Discount ₹${discount}${reason ? ` (${reason})` : ""}.` : ""}`,
+          details: `Manual booking by ${actingUser}. ${unitsCount} unit(s), ${guestCount} guest(s), ${nights} night(s).${discount > 0 ? ` Discount ₹${discount}${reason ? ` (${reason})` : ""}.` : ""}${advance > 0 ? ` Advance ₹${advance} (${advancePaymentMethod}); balance ₹${Math.max(0, total - advance)}.` : ""}`,
           performedBy: actingUser,
         });
         await dispatchPush({
@@ -1581,8 +1627,22 @@ export async function POST(req: NextRequest) {
         }
       }
       if (amountPaid !== undefined) {
-        updates.amountPaid = amountPaid;
-        changes.push(`Amount paid → ${amountPaid}`);
+        if (!Number.isInteger(Number(amountPaid)) || Number(amountPaid) !== Number(detail.booking.amountPaid || 0)) {
+          return NextResponse.json({ error: "Collected payment cannot be changed from reservation edit" }, { status: 400 });
+        }
+      }
+
+      if (Object.keys(updates).length > 0 && nightlyRate !== undefined && amountBeforeTax === undefined && amountTotal === undefined) {
+        const nights = diffDays(checkinDate, checkoutDate);
+        const bedsCount = parseGokoWalkin(detail.booking.rawData)?.unitPricing ? 1 : Math.max(1, detail.assignments.filter((a) => a.status === "assigned").length);
+        const taxPercent = await loadBookingTaxPercent();
+        const priced = stayAmounts(Number(nightlyRate) * nights * bedsCount, detail.booking.rawData, taxPercent);
+        updates.amountBeforeTax = priced.totalBeforeTax;
+        updates.amountTax = priced.tax;
+        updates.amountTotal = priced.totalBeforeTax + priced.tax;
+      }
+      if (Number(updates.amountTotal ?? detail.booking.amountTotal ?? 0) < Number(detail.booking.amountPaid || 0)) {
+        return NextResponse.json({ error: "Booking total cannot be less than the amount already collected" }, { status: 400 });
       }
 
       if (Array.isArray(addBedIds) && addBedIds.length > 0) {
@@ -1640,15 +1700,6 @@ export async function POST(req: NextRequest) {
       }
 
       if (Object.keys(updates).length > 0) {
-        if (nightlyRate !== undefined && amountBeforeTax === undefined && amountTotal === undefined) {
-          const nights = diffDays(checkinDate, checkoutDate);
-          const bedsCount = parseGokoWalkin(detail.booking.rawData)?.unitPricing ? 1 : Math.max(1, detail.assignments.filter((a) => a.status === "assigned").length);
-          const taxPercent = await loadBookingTaxPercent();
-          const priced = stayAmounts(Number(nightlyRate) * nights * bedsCount, detail.booking.rawData, taxPercent);
-          updates.amountBeforeTax = priced.totalBeforeTax;
-          updates.amountTax = priced.tax;
-          updates.amountTotal = priced.totalBeforeTax + priced.tax;
-        }
         await updateBookingFull(bookingId, updates);
       }
 

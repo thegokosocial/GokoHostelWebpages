@@ -21,6 +21,7 @@ import {
 import type { CalendarDorm, DateRange } from "./types";
 
 type AvailableUnit = { key: string; label: string; dormId: number; dormName: string; type: "Double" | "Bed"; capacity: number; bedIds: number[]; pool?: "online" | "offline" | "block" };
+type ReceiptAccount = { id: number; name: string; nickname: string };
 
 const DISCOUNT_REASONS = ["Complimentary", "Staff Stay", "Loyalty Guest", "Service Issue", "Manager Discount", "Other"];
 const QUICK_PERCENTS = [5, 10, 15, 20, 25, 50, 100];
@@ -69,6 +70,11 @@ export function CreateBookingModal({
   const [discountAmount, setDiscountAmount] = useState("");
   const [discountReason, setDiscountReason] = useState(DISCOUNT_REASONS[0]);
   const [customReason, setCustomReason] = useState("");
+  const [advanceAmount, setAdvanceAmount] = useState("");
+  const [advancePaymentMethod, setAdvancePaymentMethod] = useState<"cash" | "online">("cash");
+  const [receiptAccounts, setReceiptAccounts] = useState<ReceiptAccount[]>([]);
+  const [receiptAccountId, setReceiptAccountId] = useState("");
+  const [loadingReceiptAccounts, setLoadingReceiptAccounts] = useState(false);
 
   const nights = useMemo(() => getNights(checkinDate, checkoutDate), [checkinDate, checkoutDate]);
   const pricing = useMemo(() => {
@@ -118,6 +124,30 @@ export function CreateBookingModal({
     return () => { cancelled = true; };
   }, [checkinDate, checkoutDate, password, username]);
 
+  useEffect(() => {
+    if (platform !== "walkin" || advancePaymentMethod !== "online") return;
+    let cancelled = false;
+    setLoadingReceiptAccounts(true);
+    const payload: Record<string, unknown> = { password, username, action: "getRoomReceiptAccounts" };
+    fetchWithRetry("/api/admin/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }, { retryServerError: true }).then(async (res) => {
+      if (cancelled) return;
+      if (!res.ok) throw new Error("Could not load receiving accounts");
+      const data = await res.json();
+      const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+      setReceiptAccounts(accounts);
+      setReceiptAccountId((current) => current || (data.roomOnlineReceiptAccountId ? String(data.roomOnlineReceiptAccountId) : accounts[0] ? String(accounts[0].id) : ""));
+    }).catch(() => {
+      if (!cancelled) setReceiptAccounts([]);
+    }).finally(() => {
+      if (!cancelled) setLoadingReceiptAccounts(false);
+    });
+    return () => { cancelled = true; };
+  }, [advancePaymentMethod, password, platform, username]);
+
   const availableBeds = useMemo(() => {
     const dormMap = new Map<number, { id: number; name: string; beds: AvailableUnit[] }>();
     for (const unit of availableUnits) {
@@ -142,8 +172,11 @@ export function CreateBookingModal({
   const selectedCapacity = selectedUnitRows.reduce((sum, u) => sum + u.capacity, 0);
   const personCount = persons === "" ? NaN : Number(persons);
   const validPersonCount = Number.isInteger(personCount) && personCount >= 1;
+  const parsedAdvance = advanceAmount === "" ? 0 : Number(advanceAmount);
+  const validAdvance = Number.isInteger(parsedAdvance) && parsedAdvance >= 0 && parsedAdvance <= pricing.total
+    && (parsedAdvance === 0 || advancePaymentMethod === "cash" || Boolean(receiptAccountId));
   const selectionIsMinimal = validPersonCount && !selectedUnitRows.some((unit) => selectedCapacity - unit.capacity >= personCount);
-  const canSubmit = guestName.trim() && phone.trim() && selectedUnits.length > 0 && validPersonCount && personCount <= selectedCapacity && selectionIsMinimal && nights > 0;
+  const canSubmit = guestName.trim() && phone.trim() && selectedUnits.length > 0 && validPersonCount && personCount <= selectedCapacity && selectionIsMinimal && nights > 0 && validAdvance;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -169,6 +202,11 @@ export function CreateBookingModal({
         if (discountMode === "percent") payload.discountPercent = Number(discountPercent) || 0;
         else payload.discountAmount = Number(discountAmount) || 0;
         payload.discountReason = discountReason === "Other" ? customReason.trim() : discountReason;
+      }
+      if (platform === "walkin" && parsedAdvance > 0) {
+        payload.advanceAmount = parsedAdvance;
+        payload.advancePaymentMethod = advancePaymentMethod;
+        if (advancePaymentMethod === "online") payload.advanceOnlineAccountId = Number(receiptAccountId);
       }
 
       const res = await fetch("/api/admin/bookings", {
@@ -423,6 +461,53 @@ export function CreateBookingModal({
                 className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
+
+            {platform === "walkin" && (
+              <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                <Label className="text-xs">Advance Payment (Optional)</Label>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Total amount</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(pricing.total)}</span>
+                </div>
+                <Input
+                  type="number"
+                  min={0}
+                  max={pricing.total}
+                  step={1}
+                  value={advanceAmount}
+                  onChange={(e) => setAdvanceAmount(e.target.value)}
+                  placeholder="Advance collected"
+                />
+                <div className="flex gap-2">
+                  {(["cash", "online"] as const).map((method) => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setAdvancePaymentMethod(method)}
+                      className={cn("rounded-md border px-3 py-1.5 text-xs capitalize", advancePaymentMethod === method ? "border-brand-green bg-brand-green/10 text-brand-green" : "border-input text-muted-foreground hover:bg-muted")}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
+                {advancePaymentMethod === "online" && parsedAdvance > 0 && (
+                  <select
+                    value={receiptAccountId}
+                    onChange={(e) => setReceiptAccountId(e.target.value)}
+                    disabled={loadingReceiptAccounts}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs text-foreground"
+                  >
+                    <option value="">{loadingReceiptAccounts ? "Loading receiving accounts..." : "Select receiving account"}</option>
+                    {receiptAccounts.map((account) => <option key={account.id} value={account.id}>{account.nickname || account.name}</option>)}
+                  </select>
+                )}
+                <div className="flex items-center justify-between border-t border-border pt-2 text-xs">
+                  <span className="text-muted-foreground">Remaining amount</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(Math.max(0, pricing.total - (Number.isFinite(parsedAdvance) ? parsedAdvance : 0)))}</span>
+                </div>
+                {advanceAmount !== "" && !validAdvance && <p className="text-xs text-destructive">Enter a valid advance amount and receiving account.</p>}
+              </div>
+            )}
 
             {platform === "walkin" && (
               <div>

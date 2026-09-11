@@ -35,6 +35,8 @@ const q = vi.hoisted(() => ({
   deactivateBedBlocksByBedIds: vi.fn(),
   shortenAssignedCheckout: vi.fn(),
   pushNoShow: vi.fn(),
+  resolveReceiptAccount: vi.fn(),
+  createGuestReceipt: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: q.authenticateUser }));
@@ -43,6 +45,11 @@ vi.mock("@/lib/aiosellSync", () => ({
   pushIfOtaChanged: vi.fn(async () => undefined),
 }));
 vi.mock("@/lib/aiosell", () => ({ pushNoShow: q.pushNoShow }));
+vi.mock("@/lib/guestReceipts", () => ({
+  createGuestReceipt: q.createGuestReceipt,
+  resolveReceiptAccount: q.resolveReceiptAccount,
+  latestReceiptAccount: vi.fn(),
+}));
 vi.mock("@/db/queries", () => ({
   getCalendarAvailability: q.getCalendarAvailability,
   getBookingCalendarData: q.getBookingCalendarData,
@@ -137,6 +144,7 @@ describe("createBooking permutations", () => {
     for (const fn of Object.values(q)) fn.mockReset();
     q.authenticateUser.mockResolvedValue(admin);
     q.addBooking.mockResolvedValue(10);
+    q.resolveReceiptAccount.mockResolvedValue(22);
     vi.mocked(pushIfOtaChanged).mockReset();
     vi.mocked(pushIfOtaChanged).mockResolvedValue(undefined);
   });
@@ -720,6 +728,85 @@ describe("date change permutations", () => {
     const saved = JSON.parse(q.updateBookingFull.mock.calls[0][1].rawData);
     expect(saved.gokoWalkin.discount).toBe(0);
     expect(saved.gokoWalkin.discountPercent).toBeUndefined();
+  });
+});
+
+describe("walk-in advance payment", () => {
+  beforeEach(() => {
+    for (const fn of Object.values(q)) fn.mockReset();
+    q.authenticateUser.mockResolvedValue(admin);
+    q.addBooking.mockResolvedValue(10);
+    q.resolveReceiptAccount.mockResolvedValue(22);
+  });
+
+  it("records a cash advance and leaves the calculated balance", async () => {
+    const res = await POST(req({
+      password: "x", action: "createBooking", guestName: "Cash Guest",
+      checkinDate: "2026-09-05", checkoutDate: "2026-09-06", nightlyRate: 1000,
+      advanceAmount: 400, advancePaymentMethod: "cash",
+    }));
+    expect(res.status).toBe(200);
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
+      amountTotal: 1050, amountPaid: 400, paymentStatus: "paid", paymentMethod: "cash", cashReceived: 400,
+    }));
+    expect(q.createGuestReceipt).not.toHaveBeenCalled();
+  });
+
+  it("records an online advance with a room receipt account", async () => {
+    const res = await POST(req({
+      password: "x", action: "createBooking", guestName: "Online Guest",
+      checkinDate: "2026-09-05", checkoutDate: "2026-09-06", nightlyRate: 1000,
+      advanceAmount: 500, advancePaymentMethod: "online", advanceOnlineAccountId: 22,
+    }));
+    expect(res.status).toBe(200);
+    expect(q.resolveReceiptAccount).toHaveBeenCalledWith("room", 22);
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "stay", accountId: 22, amount: 500 }));
+  });
+
+  it("does not create an online receipt when bed assignment fails", async () => {
+    mockBeds([7]);
+    q.assignBedToBooking.mockResolvedValue(false);
+    const res = await POST(req({
+      password: "x", action: "createBooking", guestName: "Conflict Guest",
+      checkinDate: "2026-09-05", checkoutDate: "2026-09-06", nightlyRate: 1000,
+      bedIds: [7], advanceAmount: 500, advancePaymentMethod: "online", advanceOnlineAccountId: 22,
+    }));
+    expect(res.status).toBe(409);
+    expect(q.createGuestReceipt).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid, over-total, and engine-booking advances", async () => {
+    const over = await POST(req({
+      password: "x", action: "createBooking", guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", nightlyRate: 1000,
+      advanceAmount: 1051, advancePaymentMethod: "cash",
+    }));
+    expect(over.status).toBe(400);
+    const engine = await POST(req({
+      password: "x", action: "createBooking", guestName: "Guest", platform: "booking_engine", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", nightlyRate: 1000,
+      advanceAmount: 100, advancePaymentMethod: "cash",
+    }));
+    expect(engine.status).toBe(400);
+  });
+
+  it("does not allow an edit to reduce the total below collected money", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500 },
+      assignments: [],
+    });
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountTotal: 400 }));
+    expect(res.status).toBe(400);
+    expect(q.updateBookingFull).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid total before changing beds", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500 },
+      assignments: [{ id: 1, status: "assigned", bedId: 7, dormId: 9 }],
+    });
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountTotal: 400, addBedIds: [9] }));
+    expect(res.status).toBe(400);
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+    expect(q.cancelBedAssignments).not.toHaveBeenCalled();
   });
 });
 
