@@ -843,6 +843,22 @@ describe("walk-in advance payment", () => {
     expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountTotal: 400, amountPaid: 300 }));
   });
 
+  it("does not reprice a booking when the edit submits the unchanged nightly rate", async () => {
+    q.getSetting.mockResolvedValue("0");
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received",
+        source: "manual", nightlyRate: 1350, amountBeforeTax: 1286, amountTax: 64, amountTotal: 1350, amountPaid: 1350,
+        rawData: stringifyGokoWalkin({ discount: 64, taxPercent: 5 }),
+      },
+      assignments: [],
+    });
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, guestName: "Renamed Guest", nightlyRate: 1350 }));
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ guestName: "Renamed Guest" }));
+    expect(q.updateBookingFull).not.toHaveBeenCalledWith(10, expect.objectContaining({ amountTotal: expect.anything() }));
+  });
+
   it("rejects an invalid total before changing beds", async () => {
     q.getBookingDetail.mockResolvedValue({
       booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500 },

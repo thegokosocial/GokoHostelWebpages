@@ -498,6 +498,9 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(editor).toContain("status stays");
     expect(editor).toContain("getNights(checkinDate, checkoutDate)");
     expect(editor).toContain('const validAmountPaid = Number.isInteger(parsedAmountPaid) && parsedAmountPaid >= 0;');
+    expect(editor).toContain('const nightlyRateChanged = Number(nightlyRate) !== Number(booking.nightlyRate ?? 0);');
+    expect(editor).toContain('...(nightlyRateChanged ? { nightlyRate: Number(nightlyRate) } : {}),');
+    expect(editor).not.toContain("Current balance after this edit:");
     expect(editor).not.toContain('max={booking.amountTotal || 0}');
   });
 

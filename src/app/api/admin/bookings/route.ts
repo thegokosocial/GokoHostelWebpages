@@ -1546,6 +1546,7 @@ export async function POST(req: NextRequest) {
       const checkoutDate = stayCheckout(checkinDate, requestedCheckout ?? detail.booking.checkoutDate);
       if (!checkinDate || !checkoutDate || checkoutDate <= checkinDate) return NextResponse.json({ error: "Check-out must be after check-in" }, { status: 400 });
       const datesChanged = checkinDate !== detail.booking.checkinDate || checkoutDate !== stayCheckout(detail.booking.checkinDate, detail.booking.checkoutDate);
+      const nightlyRateChanged = nightlyRate !== undefined && Number(nightlyRate) !== Number(detail.booking.nightlyRate ?? 0);
       if (datesChanged && bedsChanged) return NextResponse.json({ error: "Save date changes and bed changes separately" }, { status: 400 });
       if (persons !== undefined && (!Number.isInteger(Number(persons)) || Number(persons) < 1)) return NextResponse.json({ error: "Persons must be at least 1" }, { status: 400 });
       if (nightlyRate !== undefined && (!Number.isInteger(Number(nightlyRate)) || Number(nightlyRate) < 0)) return NextResponse.json({ error: "Nightly rate must be a non-negative whole number" }, { status: 400 });
@@ -1592,7 +1593,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Price updates
-      if (nightlyRate !== undefined) {
+      if (nightlyRateChanged) {
         updates.nightlyRate = nightlyRate;
         changes.push(`Nightly rate → ${nightlyRate}`);
       }
@@ -1626,7 +1627,7 @@ export async function POST(req: NextRequest) {
           if (cleared) updates.rawData = cleared;
         }
       }
-      if (Object.keys(updates).length > 0 && nightlyRate !== undefined && amountBeforeTax === undefined && amountTotal === undefined) {
+      if (Object.keys(updates).length > 0 && nightlyRateChanged && amountBeforeTax === undefined && amountTotal === undefined) {
         const nights = diffDays(checkinDate, checkoutDate);
         const bedsCount = parseGokoWalkin(detail.booking.rawData)?.unitPricing ? 1 : Math.max(1, detail.assignments.filter((a) => a.status === "assigned").length);
         const taxPercent = await loadBookingTaxPercent();
