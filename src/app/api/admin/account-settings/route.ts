@@ -8,6 +8,7 @@ import { syncInsert, syncUpdate } from "@/db/syncMeta";
 import { calculateEmployeePayroll } from "@/lib/employeeAttendance";
 import { todayIST } from "@/lib/utils";
 import { parseExpenseCategories, parseIncomeCategories } from "@/lib/accountCategories";
+import { permissionEnabled } from "@/lib/actionPermissions";
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,7 +21,17 @@ export async function POST(req: NextRequest) {
     }
 
     const { role, permissions } = auth;
-    if (role !== "admin" && !permissions["canManageAccounts"]) {
+    const actionPermissions: Record<string, string> = {
+      listCategories: "canManageAccountSettings", saveCategories: "canManageAccountSettings",
+      listAccounts: "canManageAccountSettings", saveReceiptDefaults: "canManageAccountSettings",
+      addAccount: "canManageAccountSettings", updateAccount: "canManageAccountSettings", deleteAccount: "canManageAccountSettings",
+      listVendors: "canManageVendors", addVendor: "canManageVendors", updateVendor: "canManageVendors", deleteVendor: "canManageVendors",
+      listEmployees: "canManageEmployees", addEmployee: "canManageEmployees", updateEmployee: "canManageEmployees", deleteEmployee: "canManageEmployees",
+      paySalary: "canManagePayroll",
+    };
+    const requiredPermission = actionPermissions[String(action)] || "canManageAccountSettings";
+    const canUseSettings = role === "admin" || permissionEnabled(permissions, requiredPermission) || permissionEnabled(permissions, "canManageAccountSettings");
+    if (!canUseSettings) {
       return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
     }
 

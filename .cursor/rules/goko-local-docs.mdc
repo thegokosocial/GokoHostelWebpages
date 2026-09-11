@@ -15,6 +15,10 @@ Committed `docs/` is how this project is explained. Gitignored `docs/secrets-and
 4. Do **not** `git add docs/secrets-and-access.md` or `MAINTAINER.local.md`.
 5. If those secrets files are missing on this machine, say so. Do not invent live IDs.
 
+For any page or RBAC change, keep the complete view/action matrix synchronized in `docs/pages-and-ui.md` and `docs/auth-rbac.md`. A page-level `canView*` key is only an entry gate; document and test create, edit, delete, payment, workflow, and destructive action permissions separately.
+
+Before committing, inspect staged and unstaged diffs. Product behavior changes must include their matching documentation and focused tests in the same commit; never commit source-only RBAC/API/page changes. Run `git diff --cached --check` and the applicable validation commands before pushing.
+
 Skip only for pure comment/format/typo-in-code with zero behavior change.
 
 ## Which file
@@ -39,6 +43,6 @@ Skip only for pure comment/format/typo-in-code with zero behavior change.
 | Folder layout / lib / admin UI | `docs/directory.md`, `docs/pages-and-ui.md` |
 | Tests / CI | `docs/testing-and-ci.md` |
 
-Index: `docs/README.md`. New agent: `docs/llm-onboarding.md` + `docs/developing.md`. Dedicated pass: skill `goko-local-docs`.
+Index: `docs/README.md`. New agent: `docs/llm-onboarding.md` + `docs/developing.md`. Dedicated pass: skill `goko-local-docs`. Project-wide agent instructions also live in the repository root `AGENTS.md` and apply to every chat/agent working in GokoWeb.
 
 If you change a landmine (array wire format, permission mismatch, occupancy split, `useAdminApi` target), update `docs/llm-onboarding.md`.

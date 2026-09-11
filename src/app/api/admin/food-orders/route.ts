@@ -62,14 +62,14 @@ export async function POST(req: NextRequest) {
     const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
       listOrders: "canViewFoodOrders", getOrderDetails: "canViewFoodOrders",
       getOrderModifications: "canViewFoodOrders", getActiveGuests: "canViewFoodOrders",
-      getGuestsWithTabs: "canViewFoodOrders", getGuestTab: "canViewFoodOrders",
-      getGuestAllOrders: "canViewFoodOrders", getWalkinOrders: "canViewFoodOrders",
-      getCombinedBill: "canViewFoodOrders", getMenu: "canViewFoodOrders",
-      updateOrderStatus: ["canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
-      voidItem: ["canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canPlaceOrders", "canViewFoodOrders"],
-      reassignOrder: ["canPlaceOrders", "canViewFoodOrders"],
+      getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders"],
+      getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders"], getWalkinOrders: "canViewFoodOrders",
+      getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: "canViewFoodOrders",
+      updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
+      voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
+      reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
-      applyDiscount: "canMarkPaid", removeDiscount: "canMarkPaid",
+      applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
       cleanupOldOrders: "admin_only",
     };
 

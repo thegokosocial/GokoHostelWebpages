@@ -52,7 +52,7 @@ Website CMS: **admin role only**, not a permission key. **403 on Pi.**
 
 `auth` on checkins returns `{ role, permissions }` with no extra gate. `changeMyPassword` is **omitted** from `ACTION_PERMISSIONS`, so `actionAllowed(undefined)` → **allowed** for any authenticated user.
 
-`/api/admin/food` and `/api/admin/channel-manager`: **admin role only** (whole route).
+`/api/admin/channel-manager`: **admin role only**. `/api/admin/food` uses a per-action permission map for menu, stock, and food settings; admin bypasses all permissions.
 
 `/api/admin/reviews`: admin **or** `canViewReviews`.
 
@@ -74,18 +74,23 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Check-in:** `canAddCheckin`, `canAssignBed`, `canCheckout`, `canMarkClean`, `canEditRecords`, `canDeleteRecords`
 
-**Booking (UI):** `canAddBooking`, `canSyncBookings`, `canDeleteBooking`  
-**Booking API extra (not in Users checkboxes):** `canCheckIn`, `canCheckOut` — `checkIn` / `collectStayPayment` are OR of `canCheckIn` + `canAddBooking`.
+**Booking:** `canAddBooking`, `canCheckIn`, `canCheckOut`, `canDeleteBooking`, `canManageBookingTemplates`
 
-**Food (UI):** `canAccessKitchen`, `canViewFoodOrders`, `canPlaceOrders`, `canManageMenu`, `canManageCategories`, `canManageInventory`, `canViewTabs`, `canMarkPaid`, `canGenerateBills`, `canChangeFoodSettings`
+**Food:** `canViewFoodOrders`, `canViewFoodTabs`, `canPlaceOrders`, `canEditFoodOrders`, `canVoidFoodOrders`, `canMarkPaid`, `canApplyFoodDiscounts`, `canGenerateFoodBills`, `canManageInventory`, `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageFoodSettings`
 
-**Expenses:** `canAddExpense`, `canEditExpense`, `canDeleteExpense`, `canViewExpenses`, `canViewFoodBills`, `canAddIncome`, `canReconcile`, `canManageAccounts`
+**Expenses:** `canAddExpense`, `canEditExpense`, `canDeleteExpense`, `canViewExpenses`, `canViewFoodBills`, `canAddIncome`, `canReconcileAccounts`, `canManageAccountSettings`, `canManageVendors`, `canManageEmployees`, `canManagePayroll`
 
 **Splits:** `canAddSplitExpense`, `canEditSplitExpense`, `canDeleteSplitExpense`, `canSettleSplits`, `canManageSplits` (plus nav `canViewSplits`). `payGokoReimbursement` / Goko-as-payer add **and update** / `listAccounts` also need `canAddExpense` (inline AND; `actionAllowed` arrays are OR).
 
-**Tools:** `canUseQRGenerator`
+**Reviews:** `canViewReviews`, `canSendReviewRequests`, `canEditReviewRequests`, `canManageReviewSettings`
 
-`canManageInventory` gates the **Inventory** admin tab and `/api/admin/inventory` only. The Users UI puts it in the food group (“add stock”); food `addStock` is still admin-only on `/api/admin/food`. `canAccessKitchen` is stored on users but **not** checked by kitchen login or admin nav.
+**Analytics:** `canViewAnalytics`
+
+**Tools:** `canUseQRGenerator`, `canManageAttendance`
+
+`canManageInventory` gates the **Inventory** admin tab and `/api/admin/inventory`, plus stock controls inside Menu. Menu viewing and administration use the dedicated menu permissions above.
+`canCheckIn` / `canCheckOut` are grantable calendar controls. The booking API remains backward-compatible with `canAddBooking`.
+Obsolete keys and their planned cleanup are tracked in [permission-debt.md](permission-debt.md).
 
 ### Admin nav permissions
 
@@ -105,7 +110,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 Admin always sees all. Staff see first allowed section (`firstVisibleAdminSection`).
 
-Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), QR (`canUseQRGenerator`), Account Settings (`canManageAccounts`). Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access). Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 ---
 
@@ -122,7 +127,8 @@ Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), Q
 | delete | `canDeleteRecords` |
 | getDashboard, markVibeMatched | `canViewDashboard` |
 | checkoutBed, checkoutGuest, undoCheckout, getPendingFoodTab | `canCheckout` **or** `canViewDashboard` |
-| getBeds, getBedHistory | `canViewBeds` |
+| getBeds | `canViewBeds` **or** `canViewTimeline` |
+| getBedHistory | `canViewBeds` |
 | assignBed, unassignBed, changeBed | `canAssignBed` **or** `canViewBeds` |
 | markClean | `canMarkClean` |
 | getBookings, getUpcomingBookings, updateBookingStatus | `canViewBookings` |
@@ -144,9 +150,9 @@ View list/tabs: `canViewFoodOrders`. Place/void/qty: `canPlaceOrders` or view. P
 
 ### `/api/admin/expenses`
 
-list/getMy: `canViewExpenses`. add: `canAddExpense`. update/delete: edit/delete expense keys. food revenue **and** room revenue (`getRoomRevenue`): `canViewFoodBills`. ledger: `canViewAccounts`. income: `canAddIncome`. reconcile/opening: `canManageAccounts`.
+list/getMy: `canViewExpenses`. add: `canAddExpense`. update/delete: edit/delete expense keys. food revenue **and** room revenue (`getRoomRevenue`): `canViewFoodBills`. ledger: `canViewAccounts`. income: `canAddIncome`. reconcile: `canReconcileAccounts` (legacy alias `canReconcile`). opening balance: `canManageAccountSettings` (legacy alias `canManageAccounts`).
 
-Accounts UI also uses `canReconcile` on the Reconcile tab.
+Accounts UI uses `canReconcileAccounts` on the Reconcile tab; `canReconcile` remains a compatibility alias.
 
 ### `/api/admin/splits`
 
@@ -154,7 +160,7 @@ Every action requires `canViewSplits`. Then: list* → view; people/groups → `
 
 ### `/api/admin/account-settings`
 
-Entire route: `canManageAccounts` (or admin).
+Entire route: `canManageAccountSettings` (or legacy `canManageAccounts`) or admin.
 
 ---
 

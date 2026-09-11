@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
-import type { Role, ManagementTab } from "./types";
+import { hasPermission, type Role, type ManagementTab } from "./types";
 
 const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 
@@ -38,25 +38,26 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "health", label: "Health & Stats", icon: <HeartPulseIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "history", label: "History", icon: <HistoryIcon className="h-3.5 w-3.5" /> },
   { id: "rates", label: "Rates", icon: <IndianRupeeIcon className="h-3.5 w-3.5" /> },
-  { id: "menu", label: "Menu", icon: <UtensilsIcon className="h-3.5 w-3.5" />, adminOnly: true },
+  { id: "menu", label: "Menu", icon: <UtensilsIcon className="h-3.5 w-3.5" />, permission: "canViewMenu" },
   { id: "website", label: "Website", icon: <GlobeIcon className="h-3.5 w-3.5" />, adminOnly: true },
-  { id: "foodSettings", label: "Food Settings", icon: <SettingsIcon className="h-3.5 w-3.5" />, adminOnly: true },
+  { id: "foodSettings", label: "Food Settings", icon: <SettingsIcon className="h-3.5 w-3.5" />, permission: "canManageFoodSettings" },
   { id: "bulkUpload", label: "Bulk Upload", icon: <UploadIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "qrGenerator", label: "QR Codes", icon: <QrCodeIcon className="h-3.5 w-3.5" />, permission: "canUseQRGenerator" },
-  { id: "accountSettings", label: "Account Settings", icon: <WalletIcon className="h-3.5 w-3.5" />, permission: "canManageAccounts" },
+  { id: "accountSettings", label: "Account Settings", icon: <WalletIcon className="h-3.5 w-3.5" />, permission: "canManageAccountSettings" },
   { id: "attendance", label: "Attendance", icon: <UserRoundCheckIcon className="h-3.5 w-3.5" />, permission: "canManageAttendance" },
   { id: "serverSync", label: "Server Sync", icon: <ServerIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "channelManager", label: "Channel Manager", icon: <WifiIcon className="h-3.5 w-3.5" />, adminOnly: true },
-  { id: "analytics", label: "Analytics", icon: <BarChart3Icon className="h-3.5 w-3.5" /> },
+  { id: "analytics", label: "Analytics", icon: <BarChart3Icon className="h-3.5 w-3.5" />, permission: "canViewAnalytics" },
 ];
 
 export function AdminManagement({ password, username, role, permissions = {}, initialTab, initialChannelTab, onTabUsed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; initialTab?: ManagementTab; initialChannelTab?: "sync"; onTabUsed?: () => void }) {
-  const visibleTabs = TABS.filter((t) => {
+  const visibleTabs = useMemo(() => TABS.filter((t) => {
     if (t.id === "website" && process.env.NEXT_PUBLIC_GOKO_RUNTIME === "pi") return false;
     if (t.adminOnly && role !== "admin") return false;
-    if (t.permission && role !== "admin" && !permissions[t.permission]) return false;
+    if (t.id === "analytics" && role === "manager") return true;
+    if (t.permission && !hasPermission(role, permissions, t.permission)) return false;
     return true;
-  });
+  }), [role, permissions]);
   const defaultTab = visibleTabs[0]?.id || "history";
   const [tab, setTab] = useTabWithHistory<ManagementTab>("tab", defaultTab, {
     validValues: visibleTabs.map((t) => t.id),
@@ -67,7 +68,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
       setTab(initialTab);
       onTabUsed?.();
     }
-  }, [initialTab]);
+  }, [initialTab, onTabUsed, setTab, visibleTabs]);
   const [subMenuOpen, setSubMenuOpen] = useState(false);
 
   const activeTab = visibleTabs.find((t) => t.id === tab);
@@ -157,7 +158,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         {tab === "health" && <ManagementHealth password={password} role={role} />}
         {tab === "history" && <AdminBedHistory password={password} username={username} role={role} />}
         {tab === "rates" && <AdminCheckRates password={password} username={username} role={role} />}
-        {tab === "menu" && <AdminMenuManagement password={password} username={username} role={role} />}
+        {tab === "menu" && <AdminMenuManagement password={password} username={username} role={role} permissions={permissions} />}
         {tab === "website" && visibleTabs.some((t) => t.id === "website") && <AdminWebsite password={password} username={username} role={role} />}
         {tab === "foodSettings" && <AdminFoodSettings password={password} username={username} role={role} />}
         {tab === "bulkUpload" && <AdminBulkImport password={password} username={username} role={role} />}

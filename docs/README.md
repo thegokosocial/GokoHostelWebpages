@@ -7,7 +7,7 @@ Project knowledge for humans and LLMs. **Passwords, tokens, SSH, and live Worker
 
 If those files are missing on a machine, do not invent secrets. Bindings that *are* in git: `wrangler.jsonc`.
 
-When handbook and `src/` disagree, **trust `src/`**. When live production status disagrees, trust `MAINTAINER.local.md`.
+When handbook and `src/` disagree, **trust `src/`**. When live production status disagrees, trust `MAINTAINER.local.md`. Project-wide update requirements are in [`AGENTS.md`](../AGENTS.md).
 
 Last source-aligned pass: **31 Aug 2026** (stay collect/refund, Room Revenue, 0% tax, food-tab Worker split). After a product change, update the matching file here (Cursor rule `goko-local-docs`).
 

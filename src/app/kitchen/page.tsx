@@ -28,7 +28,7 @@ export default function KitchenPage() {
   }, []);
 
   // Auth is handled via the kitchen API password independently.
-  // The canAccessKitchen permission in the admin panel controls visibility/assignment only.
+  // Kitchen access is authenticated separately from admin-panel permissions.
   const login = async () => {
     setLoading(true);
     setError("");

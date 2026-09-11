@@ -15,9 +15,9 @@
 | Income Records | `canViewAccounts` | `listIncomeRecords` |
 | Food Revenue | `canViewFoodBills` | `getFoodRevenue` |
 | Room Revenue | `canViewFoodBills` | `getRoomRevenue` |
-| Reconcile | `canReconcile` | `getReconciliation`, `saveReconciliation`, `undoReconciliation` |
+| Reconcile | `canReconcileAccounts` | `getReconciliation`, `saveReconciliation`, `undoReconciliation` |
 
-Account Settings (Management): accounts/vendors/employees/salary — `canManageAccounts`. Bulk XLSX: `/api/admin/bulk-import-accounts`.
+Account Settings (Management): accounts/vendors/employees/salary — `canManageAccountSettings`. Bulk XLSX: `/api/admin/bulk-import-accounts`.
 
 ---
 

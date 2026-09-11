@@ -16,6 +16,10 @@ Committed `docs/` is the knowledge base. Never `git add docs/secrets-and-access.
 5. Production stamps (Worker version, D1 applied list, R2) → `MAINTAINER.local.md`.
 6. If those gitignored files are missing, stop and say so.
 
+## Commit gate
+
+Before committing, inspect both the working-tree and staged diffs. A commit that changes product behavior must also include the matching handbook updates in the same commit; do not commit source-only RBAC/API/page changes. Confirm the permission catalog, UI gates, server action maps, tests, `docs/pages-and-ui.md`, `docs/auth-rbac.md`, `docs/api-map.md`, and relevant flow/onboarding docs are synchronized. Run `git diff --cached --check` plus the applicable tests/typecheck/build before pushing.
+
 ## File map
 
 | Change | Files |

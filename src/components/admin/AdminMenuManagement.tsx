@@ -11,7 +11,7 @@ import {
   ChevronDownIcon, ToggleLeftIcon, ToggleRightIcon, PackagePlusIcon,
   LayoutListIcon, TableIcon,
 } from "lucide-react";
-import type { Role } from "./types";
+import { hasPermission, type Role } from "./types";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { SiteImageField } from "./SiteImageField";
 import { foodImageSrc } from "@/lib/foodImage";
@@ -108,7 +108,11 @@ function priceDisplayToPaise(display: string): number {
   return Math.round(num * 100);
 }
 
-export function AdminMenuManagement({ password, username, role }: { password: string; username?: string; role: Role }) {
+export function AdminMenuManagement({ password, username, role, permissions = {} }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean> }) {
+  const canManageCategories = hasPermission(role, permissions, "canManageMenuCategories");
+  const canManageItems = hasPermission(role, permissions, "canManageMenuItems");
+  const canToggleAvailability = hasPermission(role, permissions, "canToggleMenuAvailability");
+  const canManageInventory = hasPermission(role, permissions, "canManageInventory");
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -244,7 +248,7 @@ export function AdminMenuManagement({ password, username, role }: { password: st
   const toggleCategoryActive = async (cat: Category) => {
     setSaving(true);
     try {
-      await apiCall({ action: "updateCategory", id: cat.id, isActive: cat.isActive ? 0 : 1 });
+      await apiCall({ action: "toggleCategoryAvailability", id: cat.id, isActive: cat.isActive ? 0 : 1 });
       await loadCategories();
     } finally { setSaving(false); }
   };
@@ -413,9 +417,11 @@ export function AdminMenuManagement({ password, username, role }: { password: st
       <div className="mt-6 rounded-2xl border border-brand-mist bg-white dark:bg-card p-5 shadow-card dark:shadow-none">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-display text-base font-bold text-brand-green-dark">Categories</h3>
-          <Button type="button" variant="cta" size="sm" onClick={openAddCategory} disabled={saving}>
-            <PlusIcon className="mr-1 h-4 w-4" /> Add Category
-          </Button>
+          {canManageCategories && (
+            <Button type="button" variant="cta" size="sm" onClick={openAddCategory} disabled={saving}>
+              <PlusIcon className="mr-1 h-4 w-4" /> Add Category
+            </Button>
+          )}
         </div>
 
         {/* Category Form (Add/Edit) */}
@@ -445,10 +451,10 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                 <Label className="text-xs">Display Order</Label>
                 <Input type="number" value={categoryForm.displayOrder} onChange={(e) => setCategoryForm({ ...categoryForm, displayOrder: e.target.value })} className="mt-1" />
               </div>
-              <div className="flex items-center gap-2 sm:col-span-2">
+              {canManageInventory && <div className="flex items-center gap-2 sm:col-span-2">
                 <input type="checkbox" id="catTrackInv" checked={categoryForm.trackInventoryDefault} onChange={(e) => setCategoryForm({ ...categoryForm, trackInventoryDefault: e.target.checked })} className="rounded" />
                 <Label htmlFor="catTrackInv" className="text-xs cursor-pointer">Default Inventory Tracking — new items auto-enable inventory</Label>
-              </div>
+              </div>}
               <div className="flex items-center gap-2 sm:col-span-2">
                 <input type="checkbox" id="catDiscExempt" checked={categoryForm.discountExempt} onChange={(e) => setCategoryForm({ ...categoryForm, discountExempt: e.target.checked })} className="rounded" />
                 <Label htmlFor="catDiscExempt" className="text-xs cursor-pointer">Exempt from Discounts — items in this category won&apos;t be discounted when applying bill discounts</Label>
@@ -512,15 +518,15 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                       No Discount
                     </span>
                   )}
-                  <button type="button" onClick={() => toggleCategoryActive(cat)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Toggle active">
+                  {canToggleAvailability && <button type="button" onClick={() => toggleCategoryActive(cat)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Toggle active">
                     {cat.isActive ? <ToggleRightIcon className="h-4 w-4 text-green-600" /> : <ToggleLeftIcon className="h-4 w-4" />}
-                  </button>
-                  <button type="button" onClick={() => openEditCategory(cat)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Edit">
+                  </button>}
+                  {canManageCategories && <button type="button" onClick={() => openEditCategory(cat)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Edit">
                     <PencilIcon className="h-3.5 w-3.5" />
-                  </button>
-                  <button type="button" onClick={() => deleteCategory(cat.id, cat.name)} className="rounded p-1 text-red-400 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600" title="Delete">
+                  </button>}
+                  {canManageCategories && <button type="button" onClick={() => deleteCategory(cat.id, cat.name)} className="rounded p-1 text-red-400 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600" title="Delete">
                     <Trash2Icon className="h-3.5 w-3.5" />
-                  </button>
+                  </button>}
                 </div>
               </div>
             ))}
@@ -550,7 +556,7 @@ export function AdminMenuManagement({ password, username, role }: { password: st
             )}
           </div>
           <div className="flex items-center gap-2">
-            {selectedCategoryId && (
+            {selectedCategoryId && canToggleAvailability && (
               <>
                 <Button type="button" variant="outline" size="sm" onClick={() => bulkToggle(selectedCategoryId, true)} disabled={saving}>
                   Mark all available
@@ -560,9 +566,9 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                 </Button>
               </>
             )}
-            <Button type="button" size="sm" onClick={openAddItem} disabled={saving || categories.length === 0}>
+            {canManageItems && <Button type="button" size="sm" onClick={openAddItem} disabled={saving || categories.length === 0}>
               <PlusIcon className="mr-1 h-4 w-4" /> Add Item
-            </Button>
+            </Button>}
             <div className="flex rounded-lg border border-brand-mist bg-white dark:bg-card p-0.5">
               <button type="button" onClick={() => setItemViewMode("card")} className={cn("rounded-md p-1.5 transition-colors", itemViewMode === "card" ? "bg-brand-green text-white" : "text-brand-green-dark/50 hover:bg-brand-sand")} title="Card view">
                 <LayoutListIcon className="h-3.5 w-3.5" />
@@ -728,7 +734,7 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                 <p className="mt-0.5 text-[10px] text-brand-green-dark/40">Optional. Items with 0 display in default order.</p>
               </div>
               {/* Inventory Tracking */}
-              <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-brand-mist bg-brand-sand/20 p-3">
+              {canManageInventory && <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-brand-mist bg-brand-sand/20 p-3">
                 <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
                   <input type="checkbox" checked={itemForm.trackInventory} onChange={(e) => setItemForm({ ...itemForm, trackInventory: e.target.checked })} className="rounded" />
                   Track Inventory
@@ -745,7 +751,7 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                     </div>
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
             <div className="mt-4 flex gap-2">
               <Button type="button" size="sm" onClick={saveItem} disabled={saving || imageBusy}>
@@ -846,7 +852,7 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                           )}
 
                           <div className="mt-3 flex flex-wrap gap-1.5 border-t border-brand-mist pt-2">
-                            {item.trackInventory && (
+                            {canManageInventory && item.trackInventory && (
                               addStockItemId === item.id ? (
                                 <div className="flex items-center gap-1">
                                   <Input type="number" min="1" value={addStockQty} onChange={(e) => setAddStockQty(e.target.value)} className="h-7 w-16 text-xs" placeholder="Qty" autoFocus />
@@ -863,16 +869,16 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                                 </button>
                               )
                             )}
-                            <button type="button" onClick={() => toggleItemAvailability(item)} className="flex items-center gap-1 rounded-lg bg-brand-sand px-2 py-1 text-[10px] font-medium text-brand-green-dark/70 hover:bg-brand-green/10">
+                            {canToggleAvailability && <button type="button" onClick={() => toggleItemAvailability(item)} className="flex items-center gap-1 rounded-lg bg-brand-sand px-2 py-1 text-[10px] font-medium text-brand-green-dark/70 hover:bg-brand-green/10">
                               {item.isAvailable ? <ToggleRightIcon className="h-3 w-3 text-green-600" /> : <ToggleLeftIcon className="h-3 w-3" />}
                               {item.isAvailable ? "Mark Unavailable" : "Mark Available"}
-                            </button>
-                            <button type="button" onClick={() => openEditItem(item)} className="flex items-center gap-1 rounded-lg bg-brand-sand px-2 py-1 text-[10px] font-medium text-brand-green-dark/70 hover:bg-brand-green/10">
+                            </button>}
+                            {canManageItems && <button type="button" onClick={() => openEditItem(item)} className="flex items-center gap-1 rounded-lg bg-brand-sand px-2 py-1 text-[10px] font-medium text-brand-green-dark/70 hover:bg-brand-green/10">
                               <PencilIcon className="h-3 w-3" /> Edit
-                            </button>
-                            <button type="button" onClick={() => deleteItem(item.id, item.name)} className="flex items-center gap-1 rounded-lg bg-red-50 dark:bg-red-950 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 dark:hover:bg-red-900/50">
+                            </button>}
+                            {canManageItems && <button type="button" onClick={() => deleteItem(item.id, item.name)} className="flex items-center gap-1 rounded-lg bg-red-50 dark:bg-red-950 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 dark:hover:bg-red-900/50">
                               <Trash2Icon className="h-3 w-3" /> Delete
-                            </button>
+                            </button>}
                           </div>
                         </div>
                       )}
@@ -957,7 +963,7 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                           </td>
                           <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {item.trackInventory && (
+                              {canManageInventory && item.trackInventory && (
                                 addStockItemId === item.id ? (
                                   <div className="flex items-center gap-1">
                                     <Input type="number" min="1" value={addStockQty} onChange={(e) => setAddStockQty(e.target.value)} className="h-7 w-16 text-xs" placeholder="Qty" autoFocus />
@@ -974,15 +980,15 @@ export function AdminMenuManagement({ password, username, role }: { password: st
                                   </button>
                                 )
                               )}
-                              <button type="button" onClick={() => toggleItemAvailability(item)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Toggle availability">
+                              {canToggleAvailability && <button type="button" onClick={() => toggleItemAvailability(item)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Toggle availability">
                                 {item.isAvailable ? <ToggleRightIcon className="h-4 w-4 text-green-600" /> : <ToggleLeftIcon className="h-4 w-4" />}
-                              </button>
-                              <button type="button" onClick={() => openEditItem(item)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Edit">
+                              </button>}
+                              {canManageItems && <button type="button" onClick={() => openEditItem(item)} className="rounded p-1 text-brand-green-dark/40 hover:bg-brand-sand/50 hover:text-brand-green-dark" title="Edit">
                                 <PencilIcon className="h-3.5 w-3.5" />
-                              </button>
-                              <button type="button" onClick={() => deleteItem(item.id, item.name)} className="rounded p-1 text-red-400 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600" title="Delete">
+                              </button>}
+                              {canManageItems && <button type="button" onClick={() => deleteItem(item.id, item.name)} className="rounded p-1 text-red-400 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600" title="Delete">
                                 <Trash2Icon className="h-3.5 w-3.5" />
-                              </button>
+                              </button>}
                             </div>
                           </td>
                         </tr>

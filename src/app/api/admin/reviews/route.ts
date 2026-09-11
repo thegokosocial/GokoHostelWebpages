@@ -9,6 +9,7 @@ import { checkins, reviewRequests, reviewFeedback } from "@/db/schema";
 import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
 
 import { authenticateUser } from "@/lib/auth";
+import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 
 function generateToken(): string {
   const bytes = new Uint8Array(18);
@@ -27,6 +28,17 @@ export async function POST(req: NextRequest) {
     const { role, permissions } = auth;
     if (role !== "admin" && !permissions.canViewReviews) {
       return NextResponse.json({ error: "No permission" }, { status: 403 });
+    }
+
+    const actionPermissions: Record<string, ActionPerm> = {
+      sendWhatsApp: ["canSendReviewRequests", "canViewReviews"],
+      updateSettings: ["canManageReviewSettings", "canViewReviews"],
+      editReviewRequest: ["canEditReviewRequests", "canViewReviews"],
+      resetReviewRequest: ["canEditReviewRequests", "canViewReviews"],
+    };
+    const actionPermission = actionPermissions[String(action)];
+    if (actionPermission && actionAllowed(role, permissions, actionPermission) !== "allowed") {
+      return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
     }
 
     if (action === "listAskReview") {

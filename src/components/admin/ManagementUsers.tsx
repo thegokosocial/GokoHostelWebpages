@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAdminApi } from "./useAdminApi";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "./AdminLoading";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { PlusIcon, Trash2Icon, PencilIcon, ShieldIcon, ShieldCheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Role } from "./types";
+import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
 
 type User = {
   id: number;
@@ -19,76 +20,6 @@ type User = {
   createdAt: string;
   isSystem: boolean;
 };
-
-const NAV_PERMISSION_OPTIONS = [
-  { key: "canViewDashboard", label: "View Dashboard" },
-  { key: "canViewBookings", label: "View Bookings" },
-  { key: "canViewBeds", label: "View Beds" },
-  { key: "canViewTimeline", label: "View Timeline" },
-  { key: "canViewRecords", label: "View Records" },
-  { key: "canViewFoodOrders", label: "View Food Orders" },
-  { key: "canViewAccounts", label: "View Accounts" },
-  { key: "canViewSplits", label: "View Splits" },
-  { key: "canViewReviews", label: "View Reviews" },
-  { key: "canViewManagement", label: "View Management" },
-];
-
-const CHECKIN_PERMISSION_OPTIONS = [
-  { key: "canAddCheckin", label: "Add check-ins" },
-  { key: "canAssignBed", label: "Assign beds" },
-  { key: "canCheckout", label: "Checkout guests" },
-  { key: "canMarkClean", label: "Mark beds clean" },
-  { key: "canEditRecords", label: "Edit records" },
-  { key: "canDeleteRecords", label: "Delete records" },
-];
-
-const BOOKING_PERMISSION_OPTIONS = [
-  { key: "canAddBooking", label: "Add bookings" },
-  { key: "canSyncBookings", label: "Sync bookings from email" },
-  { key: "canDeleteBooking", label: "Delete bookings" },
-];
-
-const FOOD_PERMISSION_OPTIONS = [
-  { key: "canAccessKitchen", label: "Kitchen page access" },
-  { key: "canViewFoodOrders", label: "View food orders" },
-  { key: "canPlaceOrders", label: "Place orders for guests" },
-  { key: "canManageMenu", label: "Manage menu items" },
-  { key: "canManageCategories", label: "Activate / deactivate categories" },
-  { key: "canManageInventory", label: "Manage inventory / add stock" },
-  { key: "canViewTabs", label: "View guest tabs / order summary" },
-  { key: "canMarkPaid", label: "Mark orders as paid" },
-  { key: "canGenerateBills", label: "Generate / print bills" },
-  { key: "canChangeFoodSettings", label: "Change food settings" },
-];
-
-const EXPENSE_PERMISSION_OPTIONS = [
-  { key: "canAddExpense", label: "Add expenses" },
-  { key: "canEditExpense", label: "Edit expenses" },
-  { key: "canDeleteExpense", label: "Delete expenses" },
-  { key: "canViewExpenses", label: "View expense records" },
-  { key: "canViewFoodBills", label: "View food revenue" },
-  { key: "canAddIncome", label: "Add daily income entries" },
-  { key: "canReconcile", label: "Reconcile daily balances" },
-  { key: "canManageAccounts", label: "Manage account settings" },
-];
-
-const TOOLS_PERMISSION_OPTIONS = [
-  { key: "canUseQRGenerator", label: "Use QR code generator" },
-  { key: "canManageAttendance", label: "Manage staff attendance" },
-];
-
-const SPLITS_PERMISSION_OPTIONS = [
-  { key: "canAddSplitExpense", label: "Add split expenses" },
-  { key: "canEditSplitExpense", label: "Edit split expenses" },
-  { key: "canDeleteSplitExpense", label: "Delete split expenses" },
-  { key: "canSettleSplits", label: "Settle splits / Goko pay" },
-  { key: "canManageSplits", label: "Manage people and groups" },
-];
-
-const ALL_PERMISSION_GROUPS = [
-  NAV_PERMISSION_OPTIONS, CHECKIN_PERMISSION_OPTIONS, BOOKING_PERMISSION_OPTIONS,
-  FOOD_PERMISSION_OPTIONS, EXPENSE_PERMISSION_OPTIONS, SPLITS_PERMISSION_OPTIONS, TOOLS_PERMISSION_OPTIONS,
-];
 
 export function ManagementUsers({ password, username, role }: { password: string; username?: string; role: Role }) {
   const { apiCall } = useAdminApi(password, username);
@@ -107,9 +38,7 @@ export function ManagementUsers({ password, username, role }: { password: string
   const formRef = useRef<HTMLDivElement>(null);
   const scrollBackUserId = useRef<number | null>(null);
 
-  useEffect(() => { loadUsers(); }, []);
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
       const res = await apiCall({ action: "getUsers" });
@@ -118,7 +47,9 @@ export function ManagementUsers({ password, username, role }: { password: string
         setUsers(data.users || []);
       }
     } finally { setLoading(false); }
-  };
+  }, [apiCall]);
+
+  useEffect(() => { void loadUsers(); }, [loadUsers]);
 
   const saveUser = async () => {
     if (!formUsername || !formDisplayName || (!editingUser && !formPassword)) {
@@ -253,27 +184,18 @@ export function ManagementUsers({ password, username, role }: { password: string
               <button
                 type="button"
                 onClick={() => {
-                  const allKeys = ALL_PERMISSION_GROUPS.flat().map((p) => p.key);
-                  const allSelected = allKeys.every((k) => formPermissions[k]);
+                  const allSelected = ALL_PERMISSION_KEYS.every((k) => formPermissions[k]);
                   const updated: Record<string, boolean> = { ...formPermissions };
-                  for (const k of allKeys) updated[k] = !allSelected;
+                  for (const k of ALL_PERMISSION_KEYS) updated[k] = !allSelected;
                   setFormPermissions(updated);
                 }}
                 className="rounded-md border border-brand-mist px-2.5 py-1 text-[10px] font-medium text-brand-green-dark/60 hover:bg-brand-sand"
               >
-                {ALL_PERMISSION_GROUPS.flat().every((p) => formPermissions[p.key]) ? "Deselect All" : "Select All"}
+                {ALL_PERMISSION_KEYS.every((key) => formPermissions[key]) ? "Deselect All" : "Select All"}
               </button>
             </div>
 
-            {([
-              ["Navigation Permissions", NAV_PERMISSION_OPTIONS],
-              ["Check-in & Beds", CHECKIN_PERMISSION_OPTIONS],
-              ["Bookings", BOOKING_PERMISSION_OPTIONS],
-              ["Food & Kitchen", FOOD_PERMISSION_OPTIONS],
-              ["Accounts & Finance", EXPENSE_PERMISSION_OPTIONS],
-              ["Splits", SPLITS_PERMISSION_OPTIONS],
-              ["Tools", TOOLS_PERMISSION_OPTIONS],
-            ] as [string, typeof NAV_PERMISSION_OPTIONS][]).map(([heading, options], idx) => (
+            {PERMISSION_GROUPS.map(({ label: heading, options }, idx) => (
               <div key={heading} className={idx > 0 ? "mt-4 border-t border-brand-mist pt-4" : ""}>
                 <label className="mb-2 block text-xs font-medium text-brand-green-dark/60">{heading}</label>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

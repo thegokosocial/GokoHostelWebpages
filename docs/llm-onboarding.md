@@ -94,11 +94,14 @@ Collisions / orphans:
 
 | Key | UI label | What actually gates |
 |-----|----------|---------------------|
-| `canManageInventory` | “Manage inventory / add stock” (food group) | **Only** Inventory PMS tab + `/api/admin/inventory`. Food `addStock` lives on `/api/admin/food` (**admin role**) — this key does **not** open food stock. |
-| `canManageMenu`, `canManageCategories`, `canChangeFoodSettings` | shown | `/api/admin/food` is **admin role only** — keys do not open the API |
-| `canAccessKitchen` | Kitchen page access | **Dead checkbox.** Kitchen `/api/food/kitchen` uses `authenticateKitchen` (any env/DB password). Admin nav does not hide `/kitchen` with this key. |
-| `canSyncBookings` | Gmail sync | UI on leftover `AdminBookings.tsx`. Live Bookings tab is calendar. `/api/bookings/sync` is **env `ADMIN_PASSWORD` / `MANAGER_PASSWORD` only** (no username, no DB users). |
-| `canCheckIn` / `canCheckOut` | **not in Users UI** | Calendar buttons also accept grantable `canAddBooking`. API `checkIn`/`checkOut`/`collectStayPayment` is OR of dedicated key + `canAddBooking`. |
+| `canManageInventory` | “Manage inventory / add stock” (food group) | Inventory PMS tab, `/api/admin/inventory`, and Menu stock controls |
+| `canViewMenu` | “View menu management” | Menu tab and read-only menu actions |
+| `canManageMenuCategories` | “Manage menu categories” | Add, edit, and delete categories |
+| `canManageMenuItems` | “Manage menu items” | Add, edit, and delete items; menu item photos |
+| `canToggleMenuAvailability` | “Toggle menu availability” | Category/item availability and bulk availability |
+| `canManageFoodSettings` | “Manage food settings” | Food Settings tab and settings writes |
+| `canAccessKitchen` / `canSyncBookings` | Legacy permission keys | Removed from the active permission catalog; retained only in stored JSON during the compatibility window. See `docs/permission-debt.md`. |
+| `canCheckIn` / `canCheckOut` | Calendar check-in / check-out controls | Calendar buttons also accept grantable `canAddBooking`. API `checkIn`/`checkOut`/`collectStayPayment` is OR of dedicated key + `canAddBooking`. |
 | `canCheckout` | Checkout guests (beds) | checkins `checkoutBed` — different from `canCheckOut` |
 
 Calendar Cancel / No Show: `canDeleteBooking` (same as the API). Unassigned **Reject** is admin/manager only (not that key). Do not hide Cancel/No Show behind `canCancelBooking` / `canMarkNoShow` / `canCreateBooking` — those keys are not in Users.

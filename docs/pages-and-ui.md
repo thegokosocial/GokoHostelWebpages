@@ -67,24 +67,26 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 
 Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
-| `tab` | UI | Notes |
-|-------|-----|--------|
-| `dorms` | `AdminSetup` | init/remove dorms/beds |
-| `users` | `ManagementUsers` | permission checkboxes |
-| `backup` | `ManagementBackup` | |
-| `audit` | `ManagementAudit` | |
-| `logs` | `ManagementLogs` | PMS + system; import `pmsLogSummary` not `pmsLog` |
-| `health` | `ManagementHealth` | |
-| `history` | `AdminBedHistory` | visible to non-admin |
-| `rates` | `AdminCheckRates` | competitor scrape; visible |
-| `menu` | `AdminMenuManagement` | `/api/admin/food` **admin role** |
-| `website` | `AdminWebsite` | CMS; Cloudflare only |
-| `foodSettings` | `AdminFoodSettings` | |
-| `bulkUpload` | `AdminBulkImport` | check-in XLSX |
-| `qrGenerator` | `qr-generator/` | `canUseQRGenerator` |
-| `accountSettings` | `AccountSettings` | `canManageAccounts` |
-| `serverSync` | `ServerSync` | `/api/sync` |
-| `channelManager` | `ChannelManager` | Aiosell config |
+| `tab` | UI | Permissions | Notes |
+|-------|-----|-------------|-------|
+| `dorms` | `AdminSetup` | admin only | init/remove dorms/beds |
+| `users` | `ManagementUsers` | admin only | permission checkboxes |
+| `backup` | `ManagementBackup` | admin only | |
+| `audit` | `ManagementAudit` | admin only | |
+| `logs` | `ManagementLogs` | admin only | PMS + system; import `pmsLogSummary` not `pmsLog` |
+| `health` | `ManagementHealth` | admin only | |
+| `history` | `AdminBedHistory` | management access | visible to non-admin |
+| `rates` | `AdminCheckRates` | management access | competitor scrape; visible |
+| `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | `/api/admin/food` per-action map |
+| `website` | `AdminWebsite` | admin only | CMS; Cloudflare only |
+| `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | `/api/admin/food` |
+| `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |
+| `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
+| `accountSettings` | `AccountSettings` | `canManageAccountSettings` | |
+| `attendance` | `ManagementAttendance` | `canManageAttendance` | |
+| `serverSync` | `ServerSync` | admin only | `/api/sync` |
+| `channelManager` | `ChannelManager` | admin only | Aiosell config |
+| `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |
 
 ---
 

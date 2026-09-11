@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
+import { actionAllowed } from "@/lib/actionPermissions";
 import { isPiRuntime } from "@/lib/runtime";
 import { getMediaBucket, putMediaObject } from "@/lib/mediaR2";
 import { isSafeMediaKey, keyToMediaUrl } from "@/lib/mediaKeys";
@@ -26,7 +27,10 @@ export async function POST(req: NextRequest) {
 
     const auth = await authenticateUser(password, username);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (auth.role !== "admin") return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    const access = actionAllowed(auth.role, auth.permissions, folder === "menu" ? "canManageMenuItems" : "admin_only");
+    if (access !== "allowed") {
+      return NextResponse.json({ error: access === "admin_required" ? "Admin access required" : "Insufficient permissions" }, { status: 403 });
+    }
 
     if (!getMediaBucket()) {
       return NextResponse.json({ error: "R2 bucket not bound. Create goko-media and bind MEDIA." }, { status: 503 });

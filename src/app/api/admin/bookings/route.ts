@@ -260,7 +260,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   getBookingHistory: "canViewBookings",
   getBookingAuditLog: "canViewBookings",
   getWhatsAppTemplates: "canViewBookings",
-  saveWhatsAppTemplates: "canViewBookings",
+  saveWhatsAppTemplates: ["canManageBookingTemplates", "canViewBookings"],
   createBooking: "canAddBooking",
   assignBeds: "canAddBooking",
   checkIn: ["canCheckIn", "canAddBooking"],
@@ -325,7 +325,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "saveWhatsAppTemplates") {
-      if (role !== "admin" && role !== "manager") {
+      if (role !== "admin" && role !== "manager" && !permissions.canManageBookingTemplates) {
         return NextResponse.json({ error: "Admin or manager access required" }, { status: 403 });
       }
       const templates = validateBookingWhatsAppTemplates(body.templates);

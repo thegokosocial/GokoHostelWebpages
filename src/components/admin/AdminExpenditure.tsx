@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { PlusCircleIcon, FileTextIcon, IndianRupeeIcon, BedDoubleIcon, BookOpenIcon, ScaleIcon, HandCoinsIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
-import type { Role } from "./types";
+import { hasPermission, type Role } from "./types";
 
 const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 const AdminAddExpense = dynamic(() => import("./AdminAddExpense").then((m) => m.AdminAddExpense), { loading: tabLoader, ssr: false });
@@ -27,7 +27,7 @@ const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?
   { id: "incomeRecords", label: "Income Records", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
   { id: "foodBill", label: "Food Revenue", icon: <IndianRupeeIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
   { id: "roomBill", label: "Room Revenue", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
-  { id: "reconcile", label: "Reconcile", icon: <ScaleIcon className="h-3.5 w-3.5" />, permission: "canReconcile" },
+  { id: "reconcile", label: "Reconcile", icon: <ScaleIcon className="h-3.5 w-3.5" />, permission: "canReconcileAccounts" },
 ];
 
 export function AdminExpenditure({
@@ -41,7 +41,7 @@ export function AdminExpenditure({
   role: Role;
   permissions: Record<string, boolean>;
 }) {
-  const visibleTabs = TABS.filter((t) => !t.permission || role === "admin" || !!permissions[t.permission!]);
+  const visibleTabs = TABS.filter((t) => !t.permission || hasPermission(role, permissions, t.permission));
   const defaultTab = visibleTabs[0]?.id || "addExpense";
   const [tab, setTab] = useTabWithHistory<AccountsTab>("tab", defaultTab);
 

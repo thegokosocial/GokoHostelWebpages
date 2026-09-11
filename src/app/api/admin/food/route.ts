@@ -8,6 +8,7 @@ import {
   addStock as addStockQuery, getLowStockItems as getLowStockItemsQuery,
 } from "@/db/queries";
 import { authenticateUser } from "@/lib/auth";
+import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { sanitizeFoodImageUrl } from "@/lib/foodImage";
 import { mediaUrlToKey } from "@/lib/mediaKeys";
 import { deleteMediaKeys } from "@/lib/mediaR2";
@@ -43,6 +44,25 @@ const FOOD_SETTINGS_KEYS = [
   "food_show_out_of_stock",
 ];
 
+const FOOD_ACTION_PERMISSIONS: Record<string, ActionPerm> = {
+  getCategories: "canViewMenu",
+  getMenuItems: "canViewMenu",
+  getMenuItemsByCategory: "canViewMenu",
+  addCategory: "canManageMenuCategories",
+  updateCategory: "canManageMenuCategories",
+  toggleCategoryAvailability: "canToggleMenuAvailability",
+  deleteCategory: "canManageMenuCategories",
+  addMenuItem: "canManageMenuItems",
+  updateMenuItem: "canManageMenuItems",
+  deleteMenuItem: "canManageMenuItems",
+  toggleItemAvailability: "canToggleMenuAvailability",
+  bulkToggleAvailability: "canToggleMenuAvailability",
+  addStock: "canManageInventory",
+  getLowStockItems: "canManageInventory",
+  getFoodSettings: "canManageFoodSettings",
+  updateFoodSettings: "canManageFoodSettings",
+};
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -52,10 +72,12 @@ export async function POST(req: NextRequest) {
     if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const { role } = auth;
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    const required = FOOD_ACTION_PERMISSIONS[action];
+    const access = actionAllowed(auth.role, auth.permissions, required || "admin_only");
+    if (access !== "allowed") {
+      return NextResponse.json({ error: access === "admin_required" ? "Admin access required" : "Insufficient permissions" }, { status: 403 });
     }
+    const canManageInventory = actionAllowed(auth.role, auth.permissions, "canManageInventory") === "allowed";
 
     switch (action) {
       // --- Categories ---
@@ -89,6 +111,13 @@ export async function POST(req: NextRequest) {
         const { id, ...data } = params;
         if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
         await updateMenuCategory(id, data);
+        return NextResponse.json({ ok: true });
+      }
+
+      case "toggleCategoryAvailability": {
+        const { id, isActive } = params;
+        if (!id || isActive === undefined) return NextResponse.json({ error: "id and isActive are required" }, { status: 400 });
+        await updateMenuCategory(id, { isActive: isActive ? 1 : 0 });
         return NextResponse.json({ ok: true });
       }
 
@@ -139,9 +168,9 @@ export async function POST(req: NextRequest) {
           ingredients: typeof ingredients === "string" ? ingredients : JSON.stringify(ingredients || []),
           imageUrl: safeImageUrl,
           displayOrder: displayOrder ?? 0,
-          trackInventory: trackInventory ?? 0,
-          stockQuantity: stockQuantity ?? 0,
-          lowStockThreshold: lowStockThreshold ?? 5,
+          trackInventory: canManageInventory ? trackInventory ?? 0 : 0,
+          stockQuantity: canManageInventory ? stockQuantity ?? 0 : 0,
+          lowStockThreshold: canManageInventory ? lowStockThreshold ?? 5 : 5,
         });
         return NextResponse.json({ ok: true });
       }
@@ -157,6 +186,11 @@ export async function POST(req: NextRequest) {
           const safeImageUrl = sanitizeFoodImageUrl(data.imageUrl);
           if (data.imageUrl && !safeImageUrl) return NextResponse.json({ error: "Invalid item photo" }, { status: 400 });
           data.imageUrl = safeImageUrl;
+        }
+        if (!canManageInventory) {
+          delete data.trackInventory;
+          delete data.stockQuantity;
+          delete data.lowStockThreshold;
         }
         await updateMenuItem(id, data);
         if (Object.prototype.hasOwnProperty.call(data, "imageUrl") && previous.imageUrl !== data.imageUrl) {

@@ -144,9 +144,9 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
   }, [password, username]);
 
   const TAB_PERMISSIONS: Record<FoodTab, string> = {
-    summary: "canViewTabs",
+    summary: "canViewFoodTabs",
     place: "canPlaceOrders",
-    combined: "canGenerateBills",
+    combined: "canGenerateFoodBills",
     payment: "canMarkPaid",
     active: "canViewFoodOrders",
   };

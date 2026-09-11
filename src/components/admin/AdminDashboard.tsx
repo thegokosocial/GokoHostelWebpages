@@ -112,7 +112,7 @@ export function AdminDashboard({
   const canCollectStay = hasPermission(role, permissions || {}, "canCheckIn") || hasPermission(role, permissions || {}, "canAddBooking");
   const canViewBookings = hasPermission(role, permissions || {}, "canViewBookings");
   const canManageAttendance = role === "admin" || (role === "manager" && !!permissions?.canManageAttendance);
-  const canViewReconciliation = role === "admin" || (!!permissions?.canReconcile && !!permissions?.canViewAccounts);
+  const canViewReconciliation = role === "admin" || (!!(permissions?.canReconcileAccounts || permissions?.canReconcile) && !!permissions?.canViewAccounts);
 
   const foodApiCall = useCallback(async (body: Record<string, any>) => {
     const payload: Record<string, any> = { password, ...body };

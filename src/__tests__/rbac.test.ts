@@ -5,6 +5,7 @@ import { CHECKIN_LOOKUP_DATA_KEYS, checkinLookupData } from "@/lib/checkinLookup
 import { buildFoodLookupGuests } from "@/lib/foodLookup";
 import { normalizePhone } from "@/lib/phoneUtils";
 import { shouldPollOrderStatus, stepperIndex, STATUS_STEPS } from "@/lib/orderStatus";
+import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
 
 type UserRole = "admin" | "manager" | "staff";
 
@@ -16,7 +17,7 @@ const CHECKINS_PERMISSIONS: Record<string, ActionPerm> = {
   getDashboard: "canViewDashboard", markVibeMatched: "canViewDashboard",
   checkoutBed: ["canCheckout", "canViewDashboard"], checkoutGuest: ["canCheckout", "canViewDashboard"], undoCheckout: ["canCheckout", "canViewDashboard"],
   getPendingFoodTab: ["canCheckout", "canViewDashboard"],
-  getBeds: "canViewBeds", assignBed: ["canAssignBed", "canViewBeds"], unassignBed: ["canAssignBed", "canViewBeds"],
+  getBeds: ["canViewBeds", "canViewTimeline"], assignBed: ["canAssignBed", "canViewBeds"], unassignBed: ["canAssignBed", "canViewBeds"],
   changeBed: ["canAssignBed", "canViewBeds"], markClean: "canMarkClean",
   getBedHistory: "canViewBeds", deleteBedHistory: "admin_only",
   initDorms: "admin_only", removeDorm: "admin_only", removeBed: "admin_only",
@@ -73,6 +74,15 @@ const SPLITS_PERMISSIONS: Record<string, ActionPerm> = {
   addSettlement: "canSettleSplits", deleteSettlement: "canSettleSplits", payGokoReimbursement: "canSettleSplits",
 };
 
+const MENU_PERMISSIONS: Record<string, ActionPerm> = {
+  getCategories: "canViewMenu", getMenuItems: "canViewMenu", getMenuItemsByCategory: "canViewMenu",
+  addCategory: "canManageMenuCategories", updateCategory: "canManageMenuCategories", toggleCategoryAvailability: "canToggleMenuAvailability", deleteCategory: "canManageMenuCategories",
+  addMenuItem: "canManageMenuItems", updateMenuItem: "canManageMenuItems", deleteMenuItem: "canManageMenuItems",
+  toggleItemAvailability: "canToggleMenuAvailability", bulkToggleAvailability: "canToggleMenuAvailability",
+  addStock: "canManageInventory", getLowStockItems: "canManageInventory",
+  getFoodSettings: "canManageFoodSettings", updateFoodSettings: "canManageFoodSettings",
+};
+
 function checkPermission(
   role: UserRole,
   permissions: Record<string, boolean>,
@@ -109,6 +119,33 @@ describe("RBAC: Admin always has access", () => {
       expect(checkPermission(role, permissions, SPLITS_PERMISSIONS, action)).toBe("allowed");
     }
   });
+
+  it("admin can access all menu actions", () => {
+    for (const action of Object.keys(MENU_PERMISSIONS)) {
+      expect(checkPermission(role, permissions, MENU_PERMISSIONS, action)).toBe("allowed");
+    }
+  });
+});
+
+describe("RBAC: active permission catalog", () => {
+  it("exposes current fine-grained capabilities and excludes retired controls", () => {
+    expect(ALL_PERMISSION_KEYS).toEqual(expect.arrayContaining([
+      "canCheckIn", "canCheckOut", "canViewAnalytics", "canViewFoodTabs",
+      "canEditFoodOrders", "canVoidFoodOrders", "canApplyFoodDiscounts", "canGenerateFoodBills",
+      "canManageAccountSettings", "canManageVendors", "canManageEmployees", "canManagePayroll",
+      "canViewMenu", "canManageMenuCategories", "canManageMenuItems", "canToggleMenuAvailability", "canManageFoodSettings",
+      "canSendReviewRequests", "canEditReviewRequests", "canManageReviewSettings",
+    ]));
+    expect(ALL_PERMISSION_KEYS).not.toContain("canSyncBookings");
+    expect(ALL_PERMISSION_KEYS).not.toContain("canAccessKitchen");
+  });
+
+  it("keeps renamed permissions compatible with existing users", () => {
+    expect(checkPermission("staff", { canViewTabs: true }, { view: "canViewFoodTabs" }, "view")).toBe("allowed");
+    expect(checkPermission("staff", { canGenerateBills: true }, { bill: "canGenerateFoodBills" }, "bill")).toBe("allowed");
+    expect(checkPermission("staff", { canReconcile: true }, { reconcile: "canReconcileAccounts" }, "reconcile")).toBe("allowed");
+    expect(checkPermission("staff", { canManageAccounts: true }, { settings: "canManageAccountSettings" }, "settings")).toBe("allowed");
+  });
 });
 
 describe("RBAC: Staff with no permissions is blocked", () => {
@@ -143,6 +180,16 @@ describe("RBAC: Staff with no permissions is blocked", () => {
     expect(checkPermission(role, permissions, EXPENSES_PERMISSIONS, "saveReconciliation")).toBe("forbidden");
   });
 
+  it("menu permissions remain independently scoped", () => {
+    expect(checkPermission(role, { canViewMenu: true }, MENU_PERMISSIONS, "getMenuItems")).toBe("allowed");
+    expect(checkPermission(role, { canViewMenu: true }, MENU_PERMISSIONS, "addMenuItem")).toBe("forbidden");
+    expect(checkPermission(role, { canManageMenuItems: true }, MENU_PERMISSIONS, "updateMenuItem")).toBe("allowed");
+    expect(checkPermission(role, { canManageMenuItems: true }, MENU_PERMISSIONS, "deleteCategory")).toBe("forbidden");
+    expect(checkPermission(role, { canToggleMenuAvailability: true }, MENU_PERMISSIONS, "toggleItemAvailability")).toBe("allowed");
+    expect(checkPermission(role, { canManageInventory: true }, MENU_PERMISSIONS, "addStock")).toBe("allowed");
+    expect(checkPermission(role, { canManageFoodSettings: true }, MENU_PERMISSIONS, "updateFoodSettings")).toBe("allowed");
+  });
+
   it("staff without permissions cannot view splits", () => {
     expect(checkPermission(role, permissions, SPLITS_PERMISSIONS, "listMembers")).toBe("forbidden");
     expect(checkPermission(role, permissions, SPLITS_PERMISSIONS, "getBalances")).toBe("forbidden");
@@ -165,6 +212,11 @@ describe("RBAC: Staff with specific permissions", () => {
     expect(checkPermission(role, permissions, CHECKINS_PERMISSIONS, "checkoutBed")).toBe("allowed");
     expect(checkPermission(role, permissions, CHECKINS_PERMISSIONS, "getPendingFoodTab")).toBe("allowed");
     expect(checkPermission(role, permissions, CHECKINS_PERMISSIONS, "markVibeMatched")).toBe("allowed");
+  });
+
+  it("timeline view permission can load timeline data without bed permission", () => {
+    expect(checkPermission(role, { canViewTimeline: true }, CHECKINS_PERMISSIONS, "getBeds")).toBe("allowed");
+    expect(checkPermission(role, { canViewTimeline: true }, CHECKINS_PERMISSIONS, "assignBed")).toBe("forbidden");
   });
 
   it("staff with canMarkPaid can handle payments but not view orders without canViewFoodOrders", () => {
@@ -281,9 +333,10 @@ describe("RBAC: Splits", () => {
 
   it("ManagementUsers Select All includes splits keys and nav view", () => {
     const ui = readFileSync("src/components/admin/ManagementUsers.tsx", "utf8");
-    expect(ui).toContain("canViewSplits");
-    expect(ui).toContain("SPLITS_PERMISSION_OPTIONS");
-    expect(ui).toMatch(/ALL_PERMISSION_GROUPS = \[[\s\S]*SPLITS_PERMISSION_OPTIONS/);
+    const catalog = readFileSync("src/lib/permissionCatalog.ts", "utf8");
+    expect(ui).toContain("PERMISSION_GROUPS");
+    expect(catalog).toContain("canViewSplits");
+    expect(catalog).toContain("canManageSplits");
   });
 });
 

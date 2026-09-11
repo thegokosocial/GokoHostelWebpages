@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const auth = await authenticateUser(body.password, body.username);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (auth.role !== "admin" && auth.role !== "manager") {
+    if (auth.role !== "admin" && auth.role !== "manager" && !auth.permissions.canViewAnalytics) {
       return NextResponse.json({ error: "Manager access required" }, { status: 403 });
     }
 

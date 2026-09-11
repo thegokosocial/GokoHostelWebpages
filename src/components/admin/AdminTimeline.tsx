@@ -9,7 +9,7 @@ import { cn, localDateStr } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { ChevronDownIcon, ChevronRightIcon, LogOutIcon, SparklesIcon, Loader2Icon, XCircleIcon } from "lucide-react";
-import { parseBedRow, type Role, type BedRow } from "./types";
+import { hasPermission, parseBedRow, type Role, type BedRow } from "./types";
 import { AdminLoading } from "./AdminLoading";
 import { canLookupFoodTab, foodTabUncheckedMessage, unpaidFoodCheckoutMessage } from "@/lib/foodTab";
 
@@ -48,6 +48,9 @@ export function AdminTimeline({ password, username, role, permissions }: { passw
   const days = Array.from({ length: numDays }, (_, i) => { const d = new Date(startDate); d.setDate(d.getDate() + i); return d; });
   const colWidth = numDays <= 5 ? "flex-1" : numDays <= 7 ? "w-[120px] shrink-0" : "w-[100px] shrink-0";
   const today = fmtDate(new Date());
+  const canAssign = hasPermission(role, permissions || {}, "canAssignBed") || hasPermission(role, permissions || {}, "canViewBeds");
+  const canCheckout = hasPermission(role, permissions || {}, "canCheckout") || hasPermission(role, permissions || {}, "canViewDashboard");
+  const canMarkClean = hasPermission(role, permissions || {}, "canMarkClean");
 
   useEffect(() => { load(); }, []);
 
@@ -212,7 +215,7 @@ export function AdminTimeline({ password, username, role, permissions }: { passw
                           {isActive && (
                             <div className="absolute left-0 top-full z-30 mt-1 min-w-[150px] rounded-xl border border-brand-mist bg-white dark:bg-card p-2.5 shadow-lift dark:shadow-none"
                               onClick={(e) => e.stopPropagation()}>
-                              {c.info.status === "free" && bed.status === "available" && unassigned.length > 0 && (
+                              {canAssign && c.info.status === "free" && bed.status === "available" && unassigned.length > 0 && (
                                 <div>
                                   <p className="mb-1 text-[9px] font-bold uppercase tracking-wide text-brand-green-dark/40">Assign</p>
                                   {unassigned.slice(0, 5).map((g, gi) => (
@@ -228,20 +231,20 @@ export function AdminTimeline({ password, username, role, permissions }: { passw
                                 <p className="text-[10px] text-amber-600">Bed currently {bed.status === "cleanup" ? "needs cleaning" : "in use"}</p>
                               )}
                               {c.info.status === "free" && bed.status === "available" && unassigned.length === 0 && <p className="text-[10px] text-brand-green-dark/40">No guests to assign</p>}
-                              {(c.info.status === "occupied" || c.info.status === "checkout") && (
+                              {(c.info.status === "occupied" || c.info.status === "checkout") && (canCheckout || canAssign) && (
                                 <div>
                                   <p className="mb-1 text-[11px] font-semibold">{bed.guestName}</p>
-                                  <button type="button" onClick={() => act("checkoutBed", idx)}
+                                  {canCheckout && <button type="button" onClick={() => act("checkoutBed", idx)}
                                     className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950">
                                     <LogOutIcon className="h-3 w-3" /> Checkout
-                                  </button>
-                                  <button type="button" onClick={() => { if (confirm("Unassign this bed? (No cleanup needed)")) act("unassignBed", idx); }}
+                                  </button>}
+                                  {canAssign && <button type="button" onClick={() => { if (confirm("Unassign this bed? (No cleanup needed)")) act("unassignBed", idx); }}
                                     className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-gray-600 dark:text-gray-400 transition-colors hover:bg-gray-50 dark:hover:bg-white/5">
                                     <XCircleIcon className="h-3 w-3" /> Unassign
-                                  </button>
+                                  </button>}
                                 </div>
                               )}
-                              {c.info.status === "cleanup" && (
+                              {canMarkClean && c.info.status === "cleanup" && (
                                 <button type="button" onClick={() => act("markClean", idx)}
                                   className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-orange-600 transition-colors hover:bg-orange-50 dark:hover:bg-orange-950">
                                   <SparklesIcon className="h-3 w-3" /> Mark clean

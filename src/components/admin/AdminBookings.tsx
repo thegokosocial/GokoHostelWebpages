@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAdminApi } from "./useAdminApi";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "./AdminLoading";
@@ -69,47 +69,16 @@ export function AdminBookings({ password, username, role, permissions = {} }: { 
     paymentStatus: "unknown", specialRequests: "", property: "goko_hostel",
   });
   const [saving, setSaving] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState<string | null>(null);
-  const [syncResult, setSyncResult] = useState<string | null>(null);
 
-  useEffect(() => { loadBookings(); loadSyncStatus(); }, []);
-
-  const loadSyncStatus = async () => {
-    const res = await apiCall({ action: "getSetting", key: "last_email_sync" });
-    if (res.ok) { const d = await res.json(); setLastSync(d.value || null); }
-  };
-
-  const syncEmails = async (resync = false) => {
-    if (resync && !confirm("This will delete all email-synced bookings and re-import them. Continue?")) return;
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const res = await fetch("/api/bookings/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, resync }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSyncResult(`Synced ${data.synced} new booking(s). ${data.skipped || 0} skipped.`);
-        setLastSync(new Date().toISOString());
-        await loadBookings();
-      } else {
-        setSyncResult(`Sync failed: ${data.error}`);
-      }
-    } catch {
-      setSyncResult("Network error during sync");
-    } finally { setSyncing(false); }
-  };
-
-  const loadBookings = async () => {
+  const loadBookings = useCallback(async () => {
     setLoading(true);
     try {
       const res = await apiCall({ action: "getBookings" });
       if (res.ok) { const d = await res.json(); setBookings(d.bookings || []); }
     } finally { setLoading(false); }
-  };
+  }, [apiCall]);
+
+  useEffect(() => { void loadBookings(); }, [loadBookings]);
 
   const addBooking = async () => {
     if (!form.guestName || !form.checkinDate) { showError("Guest name and check-in date are required"); return; }
@@ -163,7 +132,6 @@ export function AdminBookings({ password, username, role, permissions = {} }: { 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Bookings</h2>
-          {lastSync && <p className="mt-0.5 text-[10px] text-brand-green-dark/40">Last email sync: {new Date(lastSync).toLocaleString()}</p>}
           <select value={filterProperty} onChange={(e) => setFilterProperty(e.target.value)} className="mt-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium">
             <option value="goko_hostel">Goko Hostel</option>
             <option value="sunnys_paradise">Sunny&apos;s Paradise</option>
@@ -175,27 +143,11 @@ export function AdminBookings({ password, username, role, permissions = {} }: { 
               <PlusIcon className="mr-1 h-4 w-4" /> Add Booking
             </Button>
           )}
-          {hasPermission(role, permissions, "canSyncBookings") && (
-            <>
-              <Button type="button" variant="outline" onClick={() => syncEmails(false)} disabled={syncing}>
-                {syncing ? "Syncing..." : "Sync Emails"}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => syncEmails(true)} disabled={syncing}>
-                Re-sync All
-              </Button>
-            </>
-          )}
           <Button type="button" variant="outline" onClick={loadBookings}>
             <RefreshCwIcon className="mr-1 h-4 w-4" /> Refresh
           </Button>
         </div>
       </div>
-      {syncResult && (
-        <div className={`rounded-xl p-3 text-sm ${syncResult.includes("failed") || syncResult.includes("error") ? "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400" : "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400"}`}>
-          {syncResult}
-        </div>
-      )}
-
       {/* Today's Arrivals */}
       {todayArrivals.length > 0 && (
         <div className="rounded-2xl border-2 border-brand-green bg-brand-green/[0.03] p-5">

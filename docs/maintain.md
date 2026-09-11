@@ -2,6 +2,28 @@
 
 **Git-safe.** Commands without passwords. Values: [secrets-and-access.md](secrets-and-access.md). Live stamps: `MAINTAINER.local.md`. After you change the product, update `docs/` (rule `goko-local-docs`).
 
+Project-wide agent rule: [`AGENTS.md`](../AGENTS.md). It applies to every chat/agent working in this repository and requires code, permission maps, tests, and matching handbook pages to be updated in the same turn.
+
+## Permission and page maintenance
+
+The permission system has two levels: a page/tab entry permission and separate action permissions inside that page. Never document a page as merely “view” when it also has mutations.
+
+| Source / document | Responsibility |
+|---|---|
+| `src/lib/permissionCatalog.ts` | Single active permission catalog used by Management → Users |
+| `src/lib/actionPermissions.ts` | Shared admin bypass and compatibility aliases |
+| `src/lib/adminNav.ts` | Top-level admin page gates |
+| `src/components/admin/AdminManagement.tsx` | Management tab gates |
+| `src/app/api/admin/**/route.ts` | Server-side action enforcement; security-critical |
+| `docs/pages-and-ui.md` | Page/tab → view and action permission matrix |
+| `docs/auth-rbac.md` | Full authentication and API action RBAC matrix |
+| `docs/api-map.md` | Route and action inventory |
+| `docs/permission-debt.md` | Retired keys and compatibility cleanup dates |
+
+Current menu permissions are `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory`, and `canManageFoodSettings`. Timeline viewing uses `canViewTimeline`; assign/change/unassign, checkout, and mark-clean remain separate operations using `canAssignBed`, `canCheckout`, and `canMarkClean`. Admin bypasses all maps. Existing compatibility fallbacks are intentional and must be preserved unless explicitly removed.
+
+When a page or action changes, update the source catalog/map, the UI gate, focused RBAC tests, and the matching handbook tables in the same turn. Run `npx vitest run`, `npx tsc --noEmit`, `git diff --check`, and `npm run build` for RBAC/API/UI changes.
+
 **Current schema line:** migrations `0047_daily_ledger_opening_adjusted.sql` and `0048_analytics_indexes.sql` are applied on the remote D1 as of 11 Sep 2026. `0048` adds timestamp indexes for booking and expense analytics. The repository’s latest migration is `0048_analytics_indexes.sql`; apply new migrations to D1 before using their dependent code in production. Analytics implementation commit `5b9d49b` is pushed to `main`; production Worker rollout is through the configured Workers Build.
 
 ---

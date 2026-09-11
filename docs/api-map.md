@@ -36,11 +36,11 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape) |
 | `/api/admin/bookings` | per-action map | Calendar PMS |
 | `/api/admin/inventory` | `canManageInventory` | Grid, blocks, rates, channels |
-| `/api/admin/food` | **admin role only** | Menu CRUD + food settings |
+| `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |
 | `/api/admin/food-orders` | per-action map | Tabs, pay, void, combined bill, cleanup |
 | `/api/admin/expenses` | per-action map | Expenses, ledger, reconcile, food revenue |
 | `/api/admin/splits` | per-action map, 403 on Pi | Staff/volunteer IOUs + Goko Accounts bridge |
-| `/api/admin/account-settings` | `canManageAccounts` or admin | Accounts, vendors, employees, salary |
+| `/api/admin/account-settings` | `canManageAccountSettings` or legacy `canManageAccounts` or admin | Accounts, vendors, employees, salary |
 | `/api/admin/website` | **admin role**, 403 on Pi | CMS JSON |
 | `/api/admin/website/upload` | admin, 403 on Pi, 503 if no R2 | CMS JPEG |
 | `/api/admin/channel-manager` | **admin role** | Aiosell config, room/rate maps, daily rates, sync logs |

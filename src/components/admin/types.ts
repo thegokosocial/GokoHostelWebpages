@@ -1,4 +1,5 @@
 export type Role = "admin" | "manager" | "staff";
+import { permissionEnabled } from "@/lib/actionPermissions";
 
 export type AdminSection = "dashboard" | "bookings" | "beds" | "timeline" | "inventory" | "records" | "foodOrders" | "expenditure" | "splits" | "reviews" | "management";
 
@@ -38,7 +39,7 @@ export function parseBedRow(row: string[]): BedRow {
 
 export function hasPermission(role: Role, permissions: Record<string, boolean>, key: string): boolean {
   if (role === "admin") return true;
-  return !!permissions[key];
+  return permissionEnabled(permissions, key);
 }
 
 export const CHECKIN_COLUMNS = [

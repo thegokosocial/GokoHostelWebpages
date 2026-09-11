@@ -1,6 +1,6 @@
 # Continuing development
 
-**Git-safe.** How to pick up this repo and add work without breaking production. Read [llm-onboarding.md](llm-onboarding.md) first (landmines). Secrets: gitignored [secrets-and-access.md](secrets-and-access.md). Live stamps: gitignored `MAINTAINER.local.md`.
+**Git-safe.** How to pick up this repo and add work without breaking production. Project-wide agent requirements: [`AGENTS.md`](../AGENTS.md). Read [llm-onboarding.md](llm-onboarding.md) next (landmines). Secrets: gitignored [secrets-and-access.md](secrets-and-access.md). Live stamps: gitignored `MAINTAINER.local.md`.
 
 ---
 

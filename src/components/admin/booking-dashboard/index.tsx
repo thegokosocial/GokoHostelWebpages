@@ -239,7 +239,7 @@ export function BookingDashboard({
             bookings={bookings}
             onSelect={openBooking}
           />
-          {(role === "admin" || role === "manager") && (
+          {(role === "admin" || role === "manager" || hasPermission(role, permissions, "canManageBookingTemplates")) && (
             <Button variant="outline" size="sm" onClick={() => setShowTemplateManager(true)}>
               <MessageTemplatesIcon />
               <span className="hidden sm:inline">Message Templates</span>

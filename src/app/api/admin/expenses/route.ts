@@ -63,8 +63,8 @@ export async function POST(req: NextRequest) {
       getDailyLedger: "canViewAccounts", listIncomeRecords: "canViewAccounts", getReconciliation: "canViewAccounts",
       getIncomeAccounts: "canAddIncome", addDailyIncome: "canAddIncome", deleteDailyIncome: "canDeleteExpense",
       getExpenseCategories: "canAddExpense", getIncomeCategories: "canAddIncome",
-      saveReconciliation: "canManageAccounts", undoReconciliation: "canManageAccounts",
-      adjustOpeningBalance: "canManageAccounts",
+      saveReconciliation: "canReconcileAccounts", undoReconciliation: "canReconcileAccounts",
+      adjustOpeningBalance: "canManageAccountSettings",
     };
 
     const requiredPerm = ACTION_PERMISSIONS[action];

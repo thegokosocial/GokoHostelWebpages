@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       getDashboard: "canViewDashboard", markVibeMatched: "canViewDashboard",
       checkoutBed: ["canCheckout", "canViewDashboard"], checkoutGuest: ["canCheckout", "canViewDashboard"], undoCheckout: ["canCheckout", "canViewDashboard"],
       getPendingFoodTab: ["canCheckout", "canViewDashboard"],
-      getBeds: "canViewBeds", assignBed: ["canAssignBed", "canViewBeds"], unassignBed: ["canAssignBed", "canViewBeds"],
+      getBeds: ["canViewBeds", "canViewTimeline"], assignBed: ["canAssignBed", "canViewBeds"], unassignBed: ["canAssignBed", "canViewBeds"],
       changeBed: ["canAssignBed", "canViewBeds"], markClean: "canMarkClean",
       getBedHistory: "canViewBeds", deleteBedHistory: "admin_only",
       initDorms: "admin_only", removeDorm: "admin_only", removeBed: "admin_only",
@@ -1171,6 +1171,7 @@ export async function POST(req: NextRequest) {
       const ALL_PERMISSION_KEYS = [
         "canAddCheckin", "canAssignBed", "canCheckout", "canMarkClean", "canEditRecords", "canDeleteRecords",
         "canViewFoodOrders", "canPlaceOrders", "canManageInventory", "canMarkPaid",
+        "canViewMenu", "canManageMenuCategories", "canManageMenuItems", "canToggleMenuAvailability", "canManageFoodSettings",
         "canViewExpenses", "canViewFoodBills", "canUseQRGenerator", "canManageAttendance", "canAddIncome",
         "canViewDashboard", "canViewBookings", "canViewBeds", "canViewTimeline", "canViewRecords", "canViewAccounts", "canViewSplits", "canViewManagement",
         "canAddBooking", "canCheckIn", "canCheckOut", "canDeleteBooking", "canManageBookingTemplates", "canViewAnalytics",
