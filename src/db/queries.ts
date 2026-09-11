@@ -1991,11 +1991,12 @@ export async function validateBedsForRange(
   checkinDate: string,
   checkoutDate: string,
   excludeBookingId?: number,
+  allowPartialDouble = false,
 ): Promise<string | null> {
   if (bedIds.length === 0) return null;
   const requestedIds = new Set(bedIds);
   const selectedUnits = sellableUnits(await getAllBeds()).filter((u) => u.beds.some((b) => requestedIds.has(b.id)));
-  if (selectedUnits.some((u) => u.type === "Double" && !u.beds.every((b) => requestedIds.has(b.id)))) {
+  if (!allowPartialDouble && selectedUnits.some((u) => u.type === "Double" && !u.beds.every((b) => requestedIds.has(b.id)))) {
     return "A double bed must be selected as one complete room";
   }
   const tagged = await getAvailableBedsForRange(checkinDate, checkoutDate, undefined, excludeBookingId);

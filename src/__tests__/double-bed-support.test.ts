@@ -15,11 +15,24 @@ describe("double bed support", () => {
     const dashboard = readFileSync("src/components/admin/AdminDashboard.tsx", "utf8");
     const beds = readFileSync("src/components/admin/AdminBeds.tsx", "utf8");
     const route = readFileSync("src/app/api/admin/checkins/route.ts", "utf8");
+    const bookingRoute = readFileSync("src/app/api/admin/bookings/route.ts", "utf8");
 
     expect(dashboard).toContain("item.linkedBookingId");
     expect(dashboard).toContain('onNavigate("bookings", { bookingId: item.linkedBookingId })');
     expect(beds).toContain("onNavigateToBooking");
     expect(route).toContain("This guest has a booking. Open the booking assignment screen to assign the room.");
     expect(route).toContain("bookingId: linkedBooking[0].id");
+    expect(route).toContain("function checkinIdentity");
+    expect(route).not.toContain("This double room is reserved for a different booking");
+    expect(bookingRoute).toContain('const slots = available.map');
+    expect(bookingRoute).toContain('allowPartialDouble = detail.booking.persons === 1');
+  });
+
+  it("shows server reasons for legacy bed-action failures", () => {
+    const beds = readFileSync("src/components/admin/AdminBeds.tsx", "utf8");
+
+    expect(beds).toContain('showError(d.error || "Could not assign this bed")');
+    expect(beds).toContain('showError(d.error || "Could not check out this bed")');
+    expect(beds).toContain('showError(d.error || "Could not change this bed")');
   });
 });

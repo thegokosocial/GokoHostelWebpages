@@ -439,7 +439,7 @@ describe("Food tab API workflows", () => {
       q.updateBedStatus.mockResolvedValue(undefined);
       q.logBedHistoryEntry.mockResolvedValue(undefined);
       const where = vi.fn().mockResolvedValue({ meta: { changes: 2 } });
-      const limit = vi.fn().mockResolvedValue([]);
+      const limit = vi.fn().mockResolvedValue([{ id: 42, name: "Ada" }]);
       q.getDb.mockReturnValue({
         update: () => ({ set: () => ({ where }) }),
         select: () => ({ from: () => ({ where: () => ({ limit }) }) }),

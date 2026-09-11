@@ -201,7 +201,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         await loadBeds();
       } else {
         const d = await res.json().catch(() => ({}));
-        showError("Checkout failed", d.error);
+        showError(d.error || "Could not check out this bed");
       }
     } finally { setCheckingOut(false); }
   };
@@ -240,7 +240,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         guestBookingId: guest[16],
       });
       if (res.ok) { setAssigningGuest(null); await loadBeds(); }
-      else { const d = await res.json().catch(() => ({})); showError("Bed assignment failed", d.error || "Could not assign this bed"); }
+      else { const d = await res.json().catch(() => ({})); showError(d.error || "Could not assign this bed"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -270,7 +270,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     try {
       const res = await apiCall({ action: "checkoutBed", bedId: bedIdx });
       if (res.ok) await loadBeds();
-      else { const d = await res.json().catch(() => ({})); showError("Checkout failed", d.error || "Could not check out this bed"); }
+      else { const d = await res.json().catch(() => ({})); showError(d.error || "Could not check out this bed"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -279,7 +279,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     try {
       const res = await apiCall({ action: "markClean", bedId: bedIdx });
       if (res.ok) await loadBeds();
-      else { const d = await res.json().catch(() => ({})); showError("Cleaning failed", d.error || "Could not mark this bed clean"); }
+      else { const d = await res.json().catch(() => ({})); showError(d.error || "Could not mark this bed clean"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -289,7 +289,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     try {
       const res = await apiCall({ action: "unassignBed", bedId: bedIdx });
       if (res.ok) await loadBeds();
-      else { const d = await res.json().catch(() => ({})); showError("Unassign failed", d.error || "Could not unassign this bed"); }
+      else { const d = await res.json().catch(() => ({})); showError(d.error || "Could not unassign this bed"); }
     } finally { setLoadingBedIdx(null); }
   };
 
@@ -300,7 +300,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
     try {
       const res = await apiCall({ action: "changeBed", fromBedId: fromIdx, toBedId: toIdx });
       if (res.ok) { setChangingBed(null); await loadBeds(); }
-      else { const d = await res.json(); showError("Failed to change bed", d.error); }
+      else { const d = await res.json(); showError(d.error || "Could not change this bed"); }
     } finally { setLoadingBedIdx(null); }
   };
 

@@ -509,6 +509,7 @@ export async function POST(req: NextRequest) {
       const units = sellableUnits(allInventoryBeds.length > 0 ? allInventoryBeds : available)
         .filter((u) => u.beds.every((b) => availableIds.has(b.id)))
         .map((u) => ({ key: u.key, label: u.label, dormId: u.dormId, dormName: u.beds[0]?.dormName || "", type: u.type, capacity: u.capacity, bedIds: u.beds.map((b) => b.id), pool: available.find((b) => b.id === u.beds[0]?.id)?.pool || "online" }));
+      const slots = available.map((b) => ({ key: `slot:${b.id}`, label: b.bedId, dormId: b.dormId, dormName: b.dormName, type: "Bed" as const, capacity: 1, bedIds: [b.id], pool: b.pool || "online" }));
       const dormRates: Record<number, number> = {};
       const mappings = await getRoomTypeMappings();
       const ratePlans = await getRatePlanMappings();
@@ -526,7 +527,7 @@ export async function POST(req: NextRequest) {
         }
       }
       const taxRate = await loadBookingTaxPercent();
-      return NextResponse.json({ beds, units, dormRates, taxRate });
+      return NextResponse.json({ beds, units, slots, dormRates, taxRate });
     }
 
     if (action === "getBookingHistory") {
@@ -716,7 +717,8 @@ export async function POST(req: NextRequest) {
         const allUnits = sellableUnits(allAssignmentBeds.length > 0 ? allAssignmentBeds : selected);
         const selectedUnits = allUnits.filter((u) => u.beds.some((b) => selectedIds.has(b.id)));
         const doubleDormIds = new Set(selectedUnits.filter((unit) => unit.type === "Double").map((unit) => unit.dormId));
-        if (selectedUnits.some((u) => !u.beds.every((b) => selectedIds.has(b.id)))) {
+        const allowPartialDouble = detail.booking.persons === 1 && selected.length === 1 && selectedUnits.length === 1 && selectedUnits[0].type === "Double";
+        if (!allowPartialDouble && selectedUnits.some((u) => !u.beds.every((b) => selectedIds.has(b.id)))) {
           return NextResponse.json({ error: "Select the complete double room, not one internal slot" }, { status: 400 });
         }
         if (selectedUnits.reduce((sum, u) => sum + u.capacity, 0) < detail.booking.persons) {
@@ -746,7 +748,8 @@ export async function POST(req: NextRequest) {
       } else if (currentAssigned > 0 && currentAssigned + bedIds.length > enriched.requestedBedCount) {
         return NextResponse.json({ error: `Booking already has ${currentAssigned} of ${enriched.requestedBedCount} beds; assign one per person` }, { status: 400 });
       }
-      const selectionError = await validateBedsForRange(bedIds, checkinDate, checkoutDate, bookingId);
+      const allowPartialDouble = detail.booking.persons === 1 && bedIds.length === 1;
+      const selectionError = await validateBedsForRange(bedIds, checkinDate, checkoutDate, bookingId, allowPartialDouble);
       if (selectionError) return NextResponse.json({ error: selectionError }, { status: 400 });
 
       const fromChannel = channelSource(detail.booking.source);

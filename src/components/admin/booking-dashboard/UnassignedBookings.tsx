@@ -100,7 +100,7 @@ export function UnassignedBookings({
           }
           return;
         }
-        if (!cancelled) setRangeBeds(data.units || []);
+        if (!cancelled) setRangeBeds(booking.persons === 1 ? (data.slots || data.units || []) : (data.units || []));
       } catch {
         if (!cancelled) {
           setRangeBeds([]);
