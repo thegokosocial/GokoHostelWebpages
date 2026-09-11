@@ -207,6 +207,7 @@ export const bookings = sqliteTable("bookings", {
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_bookings_checkin").on(table.checkinDate),
+  index("idx_bookings_created").on(table.createdAt),
   index("idx_bookings_platform").on(table.platform),
   index("idx_bookings_status").on(table.status),
   index("idx_bookings_ref").on(table.bookingRef),
@@ -544,6 +545,7 @@ export const expenses = sqliteTable("expenses", {
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_expenses_month").on(table.createdMonth),
+  index("idx_expenses_created").on(table.createdAt),
   index("idx_expenses_created_by").on(table.createdBy),
 ]);
 

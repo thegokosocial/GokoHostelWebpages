@@ -2,6 +2,8 @@
 
 **Git-safe.** Commands without passwords. Values: [secrets-and-access.md](secrets-and-access.md). Live stamps: `MAINTAINER.local.md`. After you change the product, update `docs/` (rule `goko-local-docs`).
 
+**Current schema line:** migrations `0047_daily_ledger_opening_adjusted.sql` and `0048_analytics_indexes.sql` are applied on the remote D1 as of 11 Sep 2026. `0048` adds timestamp indexes for booking and expense analytics. The repository’s latest migration is `0048_analytics_indexes.sql`; apply new migrations to D1 before using their dependent code in production.
+
 ---
 
 ## Local dev
@@ -40,6 +42,14 @@ npm run preview:cf
 6. If Pi should get ops changes: pull/build on Pi (`npm run db:migrate:pi` skips CMS `0035` and splits `0041`; it **does** apply stay-payment `0042`).
 
 Do **not** run `drizzle-kit generate` expecting production SQL. Write `migrations/` by hand.
+
+### Analytics
+
+Admin Analytics is a lazy-loaded top-level section at `/admin?section=analytics`. It uses the read-only `POST /api/admin/analytics` endpoint and the `canViewAnalytics` permission. Beds and Timeline remain separate sections; their assignment and redirect flows are not part of Analytics.
+
+The current dashboard reports booking timing/channel mix, planned stays, actual recorded check-ins/checkouts, food order timing/items, recorded expenses, and a clearly labelled activity balance. It is intentionally combined across properties because food orders and expenses are not property-tagged. “Booked stay value” is prorated by overlapping nights; “Activity balance” is not cash flow, profit, or accrual revenue.
+
+Analytics uses IST boundaries, server-side SQL aggregation, a dependency-free chart UI, and CSV export. Keep the timestamp indexes in `schema.ts` and `migrations/0048_analytics_indexes.sql` aligned. Do not add property filters until food orders and expenses have a trustworthy property dimension.
 
 ---
 

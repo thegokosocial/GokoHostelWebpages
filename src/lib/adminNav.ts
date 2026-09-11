@@ -5,14 +5,14 @@ export function isSplitsSectionEnabled(): boolean {
 }
 
 export const ADMIN_NAV: AdminSection[] = [
-  "dashboard", "bookings", "beds", "timeline", "inventory", "records", "foodOrders", "expenditure",
+  "dashboard", "bookings", "beds", "timeline", "analytics", "inventory", "records", "foodOrders", "expenditure",
   ...(isSplitsSectionEnabled() ? ["splits" as const] : []),
   "reviews", "management",
 ];
 
 export const ADMIN_NAV_PERMS: Record<AdminSection, string> = {
   dashboard: "canViewDashboard", bookings: "canViewBookings", beds: "canViewBeds",
-  timeline: "canViewTimeline", inventory: "canManageInventory", records: "canViewRecords", foodOrders: "canViewFoodOrders",
+  timeline: "canViewTimeline", analytics: "canViewAnalytics", inventory: "canManageInventory", records: "canViewRecords", foodOrders: "canViewFoodOrders",
   expenditure: "canViewAccounts", splits: "canViewSplits", reviews: "canViewReviews", management: "canViewManagement",
 };
 
