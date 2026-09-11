@@ -2,7 +2,7 @@
 
 **Git-safe.** Commands without passwords. Values: [secrets-and-access.md](secrets-and-access.md). Live stamps: `MAINTAINER.local.md`. After you change the product, update `docs/` (rule `goko-local-docs`).
 
-**Current schema line:** migrations `0047_daily_ledger_opening_adjusted.sql` and `0048_analytics_indexes.sql` are applied on the remote D1 as of 11 Sep 2026. `0048` adds timestamp indexes for booking and expense analytics. The repository’s latest migration is `0048_analytics_indexes.sql`; apply new migrations to D1 before using their dependent code in production.
+**Current schema line:** migrations `0047_daily_ledger_opening_adjusted.sql` and `0048_analytics_indexes.sql` are applied on the remote D1 as of 11 Sep 2026. `0048` adds timestamp indexes for booking and expense analytics. The repository’s latest migration is `0048_analytics_indexes.sql`; apply new migrations to D1 before using their dependent code in production. Analytics implementation commit `5b9d49b` is pushed to `main`; production Worker rollout is through the configured Workers Build.
 
 ---
 
