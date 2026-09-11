@@ -58,7 +58,7 @@ export function CreateBookingModal({
   const [platform, setPlatform] = useState<"walkin" | "booking_engine">("walkin");
   const [nightlyRate, setNightlyRate] = useState(500);
   const [specialRequests, setSpecialRequests] = useState("");
-  const [persons, setPersons] = useState(1);
+  const [persons, setPersons] = useState("1");
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [availableUnits, setAvailableUnits] = useState<AvailableUnit[]>([]);
   const [loadingBeds, setLoadingBeds] = useState(false);
@@ -140,8 +140,10 @@ export function CreateBookingModal({
 
   const selectedUnitRows = availableUnits.filter((u) => selectedUnits.includes(u.key));
   const selectedCapacity = selectedUnitRows.reduce((sum, u) => sum + u.capacity, 0);
-  const selectionIsMinimal = !selectedUnitRows.some((unit) => selectedCapacity - unit.capacity >= persons);
-  const canSubmit = guestName.trim() && phone.trim() && selectedUnits.length > 0 && persons > 0 && persons <= selectedCapacity && selectionIsMinimal && nights > 0;
+  const personCount = persons === "" ? NaN : Number(persons);
+  const validPersonCount = Number.isInteger(personCount) && personCount >= 1;
+  const selectionIsMinimal = validPersonCount && !selectedUnitRows.some((unit) => selectedCapacity - unit.capacity >= personCount);
+  const canSubmit = guestName.trim() && phone.trim() && selectedUnits.length > 0 && validPersonCount && personCount <= selectedCapacity && selectionIsMinimal && nights > 0;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -158,7 +160,7 @@ export function CreateBookingModal({
         platform,
         nightlyRate,
         specialRequests: specialRequests.trim(),
-        persons,
+        persons: personCount,
         bedIds: availableUnits.filter((u) => selectedUnits.includes(u.key)).flatMap((u) => u.bedIds),
         unitRates: Object.fromEntries(availableUnits.filter((u) => selectedUnits.includes(u.key)).map((u) => [u.key, dormRates[u.dormId] || 0])),
       };
@@ -286,8 +288,11 @@ export function CreateBookingModal({
             </div>
             <div>
               <Label className="text-xs">Guests</Label>
-              <Input type="number" min={1} value={persons} onChange={(e) => setPersons(Math.max(1, Number(e.target.value) || 1))} className="mt-1 w-24" />
-              {selectedUnits.length > 0 && persons > selectedCapacity && (
+              <Input type="number" min={1} step={1} value={persons} onChange={(e) => setPersons(e.target.value)} className="mt-1 w-24" />
+              {!validPersonCount && (
+                <p className="mt-1 text-[10px] text-red-600">Enter at least 1 guest</p>
+              )}
+              {selectedUnits.length > 0 && validPersonCount && personCount > selectedCapacity && (
                 <p className="mt-1 text-[10px] text-red-600">Selected units hold at most {selectedCapacity} guest(s)</p>
               )}
             </div>
@@ -513,7 +518,7 @@ export function CreateBookingModal({
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
-                      {formatCurrency(nightlyRate)} x {nights} night{nights !== 1 ? "s" : ""} · {selectedUnits.length} unit{selectedUnits.length !== 1 ? "s" : ""} · {persons} guest{persons !== 1 ? "s" : ""}
+                      {formatCurrency(nightlyRate)} x {nights} night{nights !== 1 ? "s" : ""} · {selectedUnits.length} unit{selectedUnits.length !== 1 ? "s" : ""} · {validPersonCount ? personCount : "—"} guest{personCount !== 1 ? "s" : ""}
                     </span>
                     <span className="text-foreground">{formatCurrency(pricing.gross)}</span>
                   </div>

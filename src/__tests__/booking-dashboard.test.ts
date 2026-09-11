@@ -443,6 +443,15 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(cm).toContain('e.target.value === "" ? 0');
   });
 
+  it("lets the guest count be empty while editing and validates before create", () => {
+    const modal = readFile("src/components/admin/booking-dashboard/CreateBookingModal.tsx");
+    expect(modal).toContain('const [persons, setPersons] = useState("1")');
+    expect(modal).toContain('onChange={(e) => setPersons(e.target.value)}');
+    expect(modal).toContain('const personCount = persons === "" ? NaN : Number(persons)');
+    expect(modal).toContain("validPersonCount");
+    expect(modal).toContain('Enter at least 1 guest');
+  });
+
   it("loads Unassigned from getUnassigned, not the visible calendar range", () => {
     expect(dashboard).toContain('action: "getUnassigned"');
     expect(dashboard).toContain("setUnassignedBookings");
