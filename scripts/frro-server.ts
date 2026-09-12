@@ -26,12 +26,39 @@ let browser: Browser | null = null;
 let page: Page | null = null;
 let loggedIn = false;
 let lastResult: { success: boolean; applicationId?: string; error?: string } | null = null;
+let activeJobs = 0;
+let lastActivityAt = Date.now();
+let shuttingDown = false;
+let server: ReturnType<typeof app.listen>;
 
 const FRRO_LOGIN_URL = "https://indianfrro.gov.in/frro/FormC/login.jsp";
 const FRRO_MENU_URL = "https://indianfrro.gov.in/frro/FormC/";
+const IDLE_TIMEOUT_MS = Number(process.env.FRRO_IDLE_TIMEOUT_MS || 30 * 60 * 1000);
+const IDLE_CHECK_INTERVAL_MS = Math.min(60_000, Math.max(1_000, IDLE_TIMEOUT_MS / 2));
+
+function touchActivity() {
+  lastActivityAt = Date.now();
+}
+
+async function shutdown(reason: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\nShutting down (${reason})...`);
+  if (browser) await browser.close().catch(() => {});
+  browser = null;
+  page = null;
+  loggedIn = false;
+  clearInterval(idleTimer);
+  server.close(() => process.exit(0));
+}
+
+app.use((_req, _res, next) => {
+  touchActivity();
+  next();
+});
 
 app.get("/status", (_req, res) => {
-  res.json({ running: true, loggedIn, hasBrowser: !!browser, lastResult });
+  res.json({ running: !shuttingDown, loggedIn, hasBrowser: !!browser, activeJobs, idleTimeoutMs: IDLE_TIMEOUT_MS, lastResult });
 });
 
 app.post("/fill-form-c", async (req, res) => {
@@ -41,6 +68,8 @@ app.post("/fill-form-c", async (req, res) => {
     return res.json({ success: false, error: "Missing apiUrl" });
   }
 
+  activeJobs += 1;
+  touchActivity();
   try {
     // Fetch Form C data from our API
     const dataRes = await fetch(apiUrl);
@@ -112,6 +141,9 @@ app.post("/fill-form-c", async (req, res) => {
   } catch (error: any) {
     console.error("Error:", error.message);
     res.json({ success: false, error: error.message });
+  } finally {
+    activeJobs = Math.max(0, activeJobs - 1);
+    touchActivity();
   }
 });
 
@@ -646,6 +678,7 @@ async function fillFormC(page: Page, d: any) {
 
 
 app.post("/close", async (_req, res) => {
+  touchActivity();
   if (browser) {
     await browser.close();
     browser = null;
@@ -655,8 +688,16 @@ app.post("/close", async (_req, res) => {
   res.json({ success: true });
 });
 
+app.post("/shutdown", (_req, res) => {
+  if (activeJobs > 0) {
+    return res.status(409).json({ success: false, error: "An FRRO automation job is still active." });
+  }
+  res.json({ success: true, message: "FRRO helper stopping" });
+  setTimeout(() => void shutdown("stopped by admin"), 50);
+});
+
 const PORT = 3456;
-const server = app.listen(PORT, "0.0.0.0", () => {
+server = app.listen(PORT, "127.0.0.1", () => {
   const nets = os.networkInterfaces();
   const lanIp = Object.values(nets).flat().find((n: any) => n?.family === "IPv4" && !n?.internal)?.address || "localhost";
   console.log(`\nFRRO Form C Server running on:`);
@@ -664,6 +705,12 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`  Network: http://${lanIp}:${PORT}`);
   console.log(`\nWaiting for requests from admin panel...\n`);
 });
+
+const idleTimer = setInterval(() => {
+  if (!shuttingDown && activeJobs === 0 && Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS) {
+    void shutdown("idle timeout");
+  }
+}, IDLE_CHECK_INTERVAL_MS);
 
 server.on("error", (e: any) => {
   if (e.code === "EADDRINUSE") {
@@ -675,8 +722,5 @@ server.on("error", (e: any) => {
 });
 
 process.on("SIGINT", () => {
-  console.log("\nShutting down...");
-  if (browser) browser.close();
-  server.close();
-  process.exit(0);
+  void shutdown("SIGINT");
 });

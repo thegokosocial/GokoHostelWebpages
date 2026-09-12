@@ -27,6 +27,9 @@ SETUP - macOS / Linux (automated)
 1. Download "macOS/Linux setup" from the Form C window.
 2. Open Terminal and run the downloaded file, for example:
    bash ~/Downloads/frro-setup-macos-linux.sh
+   If the filename has " (1)" because it was downloaded before, drag that file
+   into Terminal after typing "bash " and press Enter. Do not run the .sh file
+   by typing its path directly; macOS may report "permission denied".
 3. It clones/updates GokoWeb, installs dependencies and Chromium, then starts
    the helper. Keep that Terminal window open.
 

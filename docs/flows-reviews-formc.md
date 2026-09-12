@@ -3,6 +3,7 @@
 **Git-safe.** Form C token = `ADMIN_PASSWORD`. FRRO Playwright desktop helper: `npx tsx scripts/frro-server.ts` port **3456**. The Records workflow is intentionally desktop-only because the FRRO website is fixed-width and its upload/CAPTCHA flow is not reliable on mobile. FRRO website login is **not** in `.env.local` (see secrets file).
 
 The Form C window provides downloadable macOS/Linux and Windows setup scripts. They clone or fast-forward the repository, install dependencies and Chromium, then start the helper with `npm run frro:server`. The operator still must keep the terminal open, solve FRRO CAPTCHA, and handle any native photo-file dialog.
+The helper stays active during a submission, refuses shutdown while a job is in progress, can be stopped from the Form C window after the job finishes, and automatically stops after 30 minutes without activity. Starting another submission requires running the setup launcher again.
 
 ---
 

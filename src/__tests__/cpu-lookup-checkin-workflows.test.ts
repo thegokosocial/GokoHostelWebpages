@@ -356,6 +356,13 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(records).not.toContain("India and home-country phone numbers are identical");
     expect(records).toContain("frro-setup-macos-linux.sh");
     expect(records).toContain("frro-setup-windows.ps1");
+    expect(records).toContain("do not open the .sh file directly");
+    expect(records).toContain("/shutdown");
+    const helper = fs.readFileSync(path.join(ROOT, "scripts/frro-server.ts"), "utf-8");
+    expect(helper).toContain("activeJobs");
+    expect(helper).toContain('app.post("/shutdown"');
+    expect(helper).toContain("idle timeout");
+    expect(helper).toContain("FRRO_IDLE_TIMEOUT_MS");
     const setup = fs.readFileSync(path.join(ROOT, "public/frro-setup-macos-linux.sh"), "utf-8");
     expect(setup).toContain("npm install --prefix scripts");
     expect(route).toContain("removeFormCSubmission: \"admin_only\"");

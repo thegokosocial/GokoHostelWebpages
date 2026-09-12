@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, EyeIcon, EyeOffIcon } from "lucide-react";
+import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, EyeIcon, EyeOffIcon, PowerIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
@@ -555,6 +555,18 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
       showSuccess("Incorrect FRRO submission removed from Goko history");
     } finally {
       setFrroDeleting(null);
+    }
+  };
+
+  const stopFrroHelper = async () => {
+    if (!confirm("Stop the local FRRO helper? Do this only after the current automation is finished.")) return;
+    try {
+      const res = await fetch("http://localhost:3456/shutdown", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setFrroStatus(data.error || "The FRRO helper is still busy."); return; }
+      setFrroStatus("FRRO helper stopped. Start the setup script again for another submission.");
+    } catch {
+      setFrroStatus("FRRO helper is not running.");
     }
   };
 
@@ -1773,6 +1785,11 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                 <a href="/frro-setup-macos-linux.sh" download className="font-medium text-brand-green underline hover:text-brand-green-dark">macOS/Linux setup</a>
                 <span className="mx-1">·</span>
                 <a href="/frro-setup-windows.ps1" download className="font-medium text-brand-green underline hover:text-brand-green-dark">Windows setup</a>
+                <span className="mx-1">·</span>
+                <button type="button" onClick={stopFrroHelper} disabled={frroSubmitting} className="inline-flex items-center gap-1 font-medium text-red-700 underline hover:text-red-900 disabled:opacity-50">
+                  <PowerIcon className="h-3 w-3" /> Stop helper
+                </button>
+                <p className="mt-1 text-[10px] text-brand-green-dark/60">After downloading macOS/Linux setup, run `bash` + the file in Terminal; do not open the .sh file directly.</p>
               </div>
 
               <button type="button" onClick={() => setFrroSettingsOpen(!frroSettingsOpen)} className="w-full text-left text-xs font-medium text-brand-green-dark/60 hover:text-brand-green-dark">
