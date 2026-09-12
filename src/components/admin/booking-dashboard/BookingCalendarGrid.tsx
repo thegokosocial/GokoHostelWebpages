@@ -53,10 +53,14 @@ export function BookingCalendarGrid({
     return multi;
   }, [assignments]);
 
-  const [detail, setDetail] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ message: string; dormId: number; date: string; hadHold: boolean } | null>(null);
   useEffect(() => {
     setDetail(null);
   }, [dorms, dates]);
+  const detailHasCurrentHold = detail
+    ? (dorms.find((dorm) => dorm.id === detail.dormId)?.availability?.[detail.date]?.unassignedOta || 0) > 0
+    : false;
+  const showDetail = detail && (!detail.hadHold || detailHasCurrentHold);
   const hasHeld = useMemo(
     () => dorms.some((dorm) => dates.some((date) => (dorm.availability?.[date]?.unassignedOta || 0) > 0)),
     [dorms, dates],
@@ -82,8 +86,8 @@ export function BookingCalendarGrid({
         <span className="text-orange-700 dark:text-orange-300">Orange = blocked</span>
         {hasHeld && <span className="text-zinc-600 dark:text-zinc-300">Grey = held for unassigned OTA</span>}
       </div>
-      {detail && <div role="status" className="flex items-center gap-2 rounded border border-border bg-brand-sand px-2 py-1 dark:bg-zinc-800">
-        <span>{detail}</span>
+      {showDetail && <div role="status" className="flex items-center gap-2 rounded border border-border bg-brand-sand px-2 py-1 dark:bg-zinc-800">
+        <span>{detail.message}</span>
         <button type="button" className="ml-auto underline" onClick={() => setDetail(null)}>Dismiss</button>
       </div>}
     </div>
@@ -177,7 +181,7 @@ export function BookingCalendarGrid({
                     const message = snap
                       ? `${dorm.name} · ${date}: ${snap.online} online / OTA · ${snap.offline} walk-in · ${snap.blocked} blocked${snap.unassignedOta > 0 ? ` · ${snap.unassignedOta} held` : ""} · ${snap.assigned} occupied${snap.total > 0 && snap.blocked === snap.total ? " — Fully blocked" : snap.unassignedOta > 0 && snap.available === 0 ? " — Remaining bed(s) held for unassigned OTA" : snap.online === 0 && snap.offline > 0 ? " — No online availability — walk-in available" : snap.available === 0 ? " — No availability" : ""}`
                       : `${dorm.name} · ${date}: Availability unavailable`;
-                    return <button key={date} type="button" title={message} aria-label={message} onClick={() => setDetail(message)}
+                    return <button key={date} type="button" title={message} aria-label={message} onClick={() => setDetail({ message, dormId: dorm.id, date, hadHold: (snap?.unassignedOta || 0) > 0 })}
                       className="shrink-0 border-r border-border text-[10px] tabular-nums focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600"
                       style={{ width: colWidth }}>
                       {snap ? <>
@@ -217,7 +221,7 @@ export function BookingCalendarGrid({
                         {dates.map((date) => {
                           const status = bed.availability?.[date];
                           const message = `${dorm.name} · ${bed.bedId} · ${date}: ${status ? statusLabel[status] : "Availability unavailable"}`;
-                          return <button key={date} type="button" title={message} aria-label={message} onClick={() => setDetail(message)}
+                          return <button key={date} type="button" title={message} aria-label={message} onClick={() => setDetail({ message, dormId: dorm.id, date, hadHold: false })}
                             className={cn("flex shrink-0 items-center justify-center border-r border-border focus-visible:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600", status ? statusColour[status] : "bg-zinc-50 dark:bg-zinc-900")}
                             style={{ width: colWidth }}>
                             {status === "block" && <BanIcon aria-hidden="true" className="size-3 text-orange-300 dark:text-orange-700" />}
