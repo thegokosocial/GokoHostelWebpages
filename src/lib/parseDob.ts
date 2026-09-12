@@ -62,53 +62,39 @@ function parseAadhaarDob(text: string): string | null {
     "जन्मतिथि\\s*:?",
   ];
   const result = extractDateAfterLabel(text, ...labels);
-  if (result && isPlausibleDob(result)) return result;
+  if (result) return result;
 
   const yobMatch = text.match(/(?:year\s*of\s*birth|YOB)\s*:?\s*(\d{4})/i);
   if (yobMatch) {
-    const yob = `01/01/${yobMatch[1]}`;
-    if (isPlausibleDob(yob)) return yob;
+    return `01/01/${yobMatch[1]}`;
   }
 
   // DigiLocker Aadhaar: DOB appears as standalone YYYY-MM-DD on its own line
   const standalone = extractStandaloneIsoDate(text);
-  if (standalone && isPlausibleDob(standalone)) return standalone;
+  if (standalone) return standalone;
 
   return null;
 }
 
 function parseDrivingLicenceDob(text: string): string | null {
   const labels = [
-    "DOB\\s*: ?",
-    "D[O0]B\\s*: ?",
+    "DOB\\s*:?",
     "D\\.?O\\.?B\\.?\\s*:?",
     "date\\s*of\\s*birth\\s*:?",
     "birth\\s*:?",
   ];
   const result = extractDateAfterLabel(text, ...labels);
-  if (result && isPlausibleDob(result)) return result;
+  if (result) return result;
 
   const standalone = extractStandaloneIsoDate(text);
-  if (standalone && isPlausibleDob(standalone)) return standalone;
+  if (standalone) return standalone;
 
   return null;
 }
 
-function isPlausibleDob(value: string): boolean {
-  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) return false;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  const now = new Date();
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
-    && year >= 1900 && date <= new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-}
-
 function parsePassportDob(text: string): string | null {
   const parsed = parsePassportMRZ(text);
-  if (parsed.dateOfBirth && isPlausibleDob(parsed.dateOfBirth)) return parsed.dateOfBirth;
+  if (parsed.dateOfBirth) return parsed.dateOfBirth;
   return null;
 }
 

@@ -940,7 +940,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700 dark:text-yellow-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Pending</span>
                         ) : null}
                         {guestFlagged && <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", guestUnderage ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" : "bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400")}>{guestUnderage ? `Underage (${guestAge})` : `Overage (${guestAge})`}</span>}
-                        {guestDobMismatch && <span className="rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400">DOB mismatch · ID {guestDobFromId}</span>}
+                        {guestDobMismatch && <span className="rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400">DOB mismatch</span>}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-green-dark/60">
                         <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" />{row[1] || "—"} {row[2] || ""}</span>
@@ -1074,7 +1074,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                               </span>
                             )}
                             {guestDobMismatch && (
-                              <span className="rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400">DOB mismatch · ID {guestDobFromId}</span>
+                              <span className="rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400">DOB mismatch</span>
                             )}
                           </div>
                         </td>
