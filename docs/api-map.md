@@ -12,7 +12,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 |-------|--------|------|---------|
 | `/api/checkin` | POST multipart | none | Self check-in → Vision + Drive + D1; non-Indian nationality requires `idType=passport` |
 | `/api/checkin/lookup` | GET `?phone=` | none | Returning guest prefill |
-| `/api/validate-id` | POST multipart | none | Live ID/visa OCR |
+| `/api/validate-id` | POST multipart | none | Live ID/visa OCR with normalized field-aware name matching and ID DOB extraction |
 | `/api/settings` | GET | none | Public flags (`image_validation`, etc.) |
 | `/api/food/menu` | GET | none | Menu + kitchen hours + busy + WhatsApp flags |
 | `/api/food/order` | POST JSON | none | Place order (idempotency, stock, tab) |

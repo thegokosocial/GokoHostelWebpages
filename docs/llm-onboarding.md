@@ -71,6 +71,8 @@ New Booking / Unassigned chips: `tagBedsForPicker` offers `min(online)+min(offli
 
 `add` sends `entry: string[]` with the **same** layout (`e[3]` name, `e[13]` idType, …).
 
+Vision ID matching uses field-aware normalized name comparison across Aadhaar, Driving Licence, and Passport OCR. `dob` is the entered value and `dobFromId` is the extracted ID value; they remain separate when they differ so staff can review the mismatch.
+
 `getBeds` → `beds[]` parsed by `parseBedRow`: `[dormName, bedId, position, type, status, guestName, guestContact, checkinDate, expectedCheckout, stayingDays, id]`.
 
 `getBeds.unassigned` is a **different** 16-column layout (no platform/bookingId; `id` is index 15). Do not parse unassigned guests with `CHECKIN_COLUMNS` / list indices.

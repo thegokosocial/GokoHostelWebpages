@@ -116,46 +116,61 @@ function checkSafeSearch(safeSearch: VisionAnalysis["safeSearch"]): { safe: bool
   return { safe: true, reason: "" };
 }
 
-const GUARDIAN_PATTERN = /\b[SDWC]\/O\b|पिता|माता|पति|पुत्र|पुत्री/i;
+const GUARDIAN_PATTERN = /\b(?:S\/D\/W|[SDWC]\/O)\b|पिता|माता|पति|पुत्र|पुत्री/i;
 
-function wordBoundaryMatch(text: string, name: string): boolean {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`(?:^|[\\s,.:;/\\-])${escaped}(?:$|[\\s,.:;/\\-])`, "i");
-  return pattern.test(text);
+function normalizeNameToken(value: string): string {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function nameTokens(value: string): string[] {
+  return value.split(/[^\p{L}\p{N}]+/u).map(normalizeNameToken).filter(Boolean);
+}
+
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? diagonal : Math.min(row[j - 1] + 1, above + 1, diagonal + 1);
+      diagonal = above;
+    }
+  }
+  return row[b.length];
+}
+
+function nameTokenMatches(expected: string, actual: string): boolean {
+  return expected === actual || (expected.length >= 5 && actual.length >= 5 && editDistance(expected, actual) <= 1);
+}
+
+function namesMatch(expected: string, actual: string): boolean {
+  const expectedTokens = nameTokens(expected);
+  const actualTokens = nameTokens(actual);
+  if (expectedTokens.length === 0 || actualTokens.length < expectedTokens.length) return false;
+  const used = new Set<number>();
+  return expectedTokens.every((expectedToken) => {
+    const index = actualTokens.findIndex((actualToken, i) => !used.has(i) && nameTokenMatches(expectedToken, actualToken));
+    if (index < 0) return false;
+    used.add(index);
+    return true;
+  });
+}
+
+function collapseSpacedLetters(value: string): string {
+  return value.replace(/(?<!\p{L})\p{L}(?:\s+\p{L}){2,}(?!\p{L})/gu, (match) => match.replace(/\s/g, ""));
 }
 
 function checkNameMatch(text: string, guestName?: string): boolean {
   if (!guestName || guestName.trim().length < 2) return true;
 
-  const parts = guestName.trim().split(/\s+/);
-  const firstName = parts[0]?.toLowerCase();
-  const lastName = parts.length > 1 ? parts[parts.length - 1]?.toLowerCase() : null;
-
   const lines = text.split(/\n/);
   const nonGuardianLines = lines.filter((line) => !GUARDIAN_PATTERN.test(line));
-  const nonGuardianText = nonGuardianLines.join("\n");
-
-  const normalizedText = nonGuardianLines
-    .map((line) => {
-      const collapsed = line.replace(/(?<!\p{L})\p{L}(\s\p{L}){2,}(?!\p{L})/gu, (m) => m.replace(/\s/g, ""));
-      return collapsed;
-    })
-    .join("\n")
-    .toLowerCase();
-
-  const searchTexts = [nonGuardianText.toLowerCase(), normalizedText];
-
-  const firstValid = firstName && firstName.length >= 2;
-  const lastValid = lastName && lastName.length >= 2;
-
-  if (!firstValid && !lastValid) return true;
-
-  for (const searchText of searchTexts) {
-    if (firstValid && wordBoundaryMatch(searchText, firstName!)) return true;
-    if (lastValid && wordBoundaryMatch(searchText, lastName!)) return true;
-  }
-
-  return false;
+  const normalizedLines = nonGuardianLines.map(collapseSpacedLetters);
+  const labelledNames = normalizedLines.map((line) => line.match(/(?:^|\s)name\s*[:=-]\s*(.+)$/i)?.[1]).filter((value): value is string => Boolean(value));
+  if (labelledNames.some((value) => namesMatch(guestName, value))) return true;
+  const normalizedText = normalizedLines.join("\n");
+  return nameTokens(guestName).every((token) => normalizedText.split(/[^\p{L}\p{N}]+/u).some((actual) => nameTokenMatches(token, normalizeNameToken(actual))));
 }
 
 const AADHAAR_ADDRESS_PATTERNS = [
