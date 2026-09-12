@@ -189,7 +189,7 @@ describe("createBooking permutations", () => {
     expect(pushIfOtaChanged).toHaveBeenCalled();
   });
 
-  it.each([1, 2])("a %i-guest double-room booking reserves both slots at one room price", async (persons) => {
+  it("a one-guest double-room booking reserves one slot at the room price", async () => {
     const doubles = [
       { id: 7, bedId: "D-1", dormId: 9, dormName: "Double Room", type: "Double" },
       { id: 8, bedId: "D-2", dormId: 9, dormName: "Double Room", type: "Double" },
@@ -207,19 +207,48 @@ describe("createBooking permutations", () => {
       checkinDate: "2026-09-05",
       checkoutDate: "2026-09-06",
       nightlyRate: 1000,
-      persons,
-      bedIds: [7, 8],
+      persons: 1,
+      bedIds: [7],
       unitRates: { "9:double:1": 1000 },
     }));
 
     expect(res.status).toBe(200);
     expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
-      persons,
+      persons: 1,
       amountBeforeTax: 1000,
       amountTax: 50,
       amountTotal: 1050,
     }));
+    expect(q.assignBedToBooking).toHaveBeenCalledTimes(1);
+    expect(q.validateBedsForRange).toHaveBeenCalledWith([7], "2026-09-05", "2026-09-06", undefined, true);
+  });
+
+  it("a two-guest double-room booking reserves both slots at the room price", async () => {
+    const doubles = [
+      { id: 7, bedId: "D-1", dormId: 9, dormName: "Double Room", type: "Double" },
+      { id: 8, bedId: "D-2", dormId: 9, dormName: "Double Room", type: "Double" },
+    ];
+    q.getAllBeds.mockResolvedValue(doubles);
+    q.getBedById.mockImplementation(async (id: number) => doubles.find((bed) => bed.id === id) || null);
+    q.getAvailableBedsForRange.mockResolvedValue(doubles.map((bed) => ({ ...bed, pool: "online" })));
+    q.validateBedsForRange.mockResolvedValue(null);
+    q.assignBedToBooking.mockResolvedValue(true);
+
+    const res = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Double Guest",
+      checkinDate: "2026-09-05",
+      checkoutDate: "2026-09-06",
+      nightlyRate: 1000,
+      persons: 2,
+      bedIds: [7, 8],
+      unitRates: { "9:double:1": 1000 },
+    }));
+
+    expect(res.status).toBe(200);
     expect(q.assignBedToBooking).toHaveBeenCalledTimes(2);
+    expect(q.validateBedsForRange).toHaveBeenCalledWith([7, 8], "2026-09-05", "2026-09-06", undefined, false);
   });
 
   it("rejects three guests in one double room", async () => {

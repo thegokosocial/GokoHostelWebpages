@@ -590,15 +590,19 @@ export async function POST(req: NextRequest) {
       }
       const selectedIdSet = new Set(selectedIds);
       const selectedUnits = sellableUnits(allPhysicalBeds).filter((u) => u.beds.some((b) => selectedIdSet.has(b.id)));
-      if (selectedUnits.some((u) => !u.beds.every((b) => selectedIdSet.has(b.id)))) {
+      const unitsCount = selectedUnits.length || 1;
+      const guestCount = Math.max(1, Number(persons) || selectedIds.length || unitsCount);
+      const allowPartialDouble = guestCount === 1
+        && selectedIds.length === 1
+        && selectedUnits.length === 1
+        && selectedUnits[0].type === "Double";
+      if (!allowPartialDouble && selectedUnits.some((u) => !u.beds.every((b) => selectedIdSet.has(b.id)))) {
         return NextResponse.json({ error: "A double bed must be reserved as one complete room" }, { status: 400 });
       }
-      if (selectedUnits.flatMap((u) => u.beds).length !== selectedIds.length) {
+      if (!allowPartialDouble && selectedUnits.flatMap((u) => u.beds).length !== selectedIds.length) {
         return NextResponse.json({ error: "Invalid bed selection" }, { status: 400 });
       }
-      const unitsCount = selectedUnits.length || 1;
       const explicitUnitPricing = persons != null || (unitRates && typeof unitRates === "object");
-      const guestCount = Math.max(1, Number(persons) || selectedIds.length || unitsCount);
       const capacity = selectedUnits.reduce((sum, u) => sum + u.capacity, 0);
       if (selectedUnits.length > 0 && guestCount > capacity) {
         return NextResponse.json({ error: `Selected rooms hold at most ${capacity} guest(s)` }, { status: 400 });
@@ -607,7 +611,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `Select only the units needed for ${guestCount} guest(s)` }, { status: 400 });
       }
       if (bedIds && Array.isArray(bedIds) && bedIds.length > 0) {
-        const selectionError = await validateBedsForRange(selectedIds, checkinDate, checkoutDate);
+        const selectionError = await validateBedsForRange(selectedIds, checkinDate, checkoutDate, undefined, allowPartialDouble);
         if (selectionError) return NextResponse.json({ error: selectionError }, { status: 400 });
       }
       const src = platform || "walkin";

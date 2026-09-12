@@ -2,6 +2,8 @@
 
 **Git-safe.** Admin: `/admin`. Aiosell sandbox defaults are in `src/lib/aiosell.ts`. **Live hotel credentials are in D1 `channel_config`** (values in secrets file / Channel Manager UI).
 
+Booking double-bed rule: one guest may reserve one internal slot; two guests must reserve both slots. The picker and create API use the same validation.
+
 ---
 
 ## Two occupancy models

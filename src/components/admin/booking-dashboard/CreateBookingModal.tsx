@@ -387,6 +387,7 @@ export function CreateBookingModal({
                 <span className="font-medium text-emerald-700 dark:text-emerald-400">Green</span> = walk-in
                 {" · "}
                 <span className="font-medium text-orange-600">Orange</span> = blocked (clears the block, no PMS push)
+                {" · "}One guest may use one slot of a double bed; two guests need both slots.
               </p>
               {loadingBeds ? (
                 <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
