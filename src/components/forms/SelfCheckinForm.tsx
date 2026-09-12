@@ -817,7 +817,7 @@ export function SelfCheckinForm() {
             Check-in complete!
           </h2>
           <p className="mt-2 text-brand-green-dark/80">
-            Welcome to Goko Hostel. Our team has been notified. Enjoy your stay!
+            Your check-in was saved successfully. Welcome to Goko Hostel — enjoy your stay!
           </p>
         </div>
 
@@ -870,7 +870,7 @@ export function SelfCheckinForm() {
           Submitting your check-in...
         </h2>
         <p className="mt-3 text-brand-green-dark/70">
-          Uploading documents and saving your details. Please do not close this page or press back.
+          Uploading documents and saving your details. Please wait and do not press the submit button again.
         </p>
         <div className="mt-6 flex justify-center gap-1">
           <div className="h-2 w-2 animate-bounce rounded-full bg-brand-green [animation-delay:0ms]" />

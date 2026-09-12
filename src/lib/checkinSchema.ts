@@ -30,7 +30,8 @@ export const checkinSchema = z
       .regex(nameChars, "Only letters, spaces, hyphens, and apostrophes allowed"),
     lastName: z
       .string()
-      .min(2, "Last name must be at least 2 characters")
+      .trim()
+      .min(1, "Last name is required")
       .max(50, "Last name is too long")
       .regex(nameChars, "Only letters, spaces, hyphens, and apostrophes allowed"),
     numberOfPersons: z

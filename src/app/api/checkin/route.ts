@@ -325,12 +325,14 @@ export async function POST(req: NextRequest) {
     addSystemLog({ level: "info", source: "checkin", message: `Self check-in: ${name}` }).catch(() => {});
 
     if (!isOfflineMode()) {
-      await dispatchPush({
+      void Promise.resolve(dispatchPush({
         title: "New Check-in",
         body: `${notificationFirstName(name)} · ${numberOfPersons} ${Number(numberOfPersons) === 1 ? "guest" : "guests"} · ${finalBookingId ? `Booking ${finalBookingId}` : bookingPlatform || "Walk-in"}`,
         url: "/admin?section=dashboard",
         eventId: `self-checkin-${finalBookingId || submittedAt}`,
         category: "checkin",
+      })).catch((pushErr: any) => {
+        console.error("Check-in notification failed after save:", pushErr?.message || pushErr);
       });
     }
 

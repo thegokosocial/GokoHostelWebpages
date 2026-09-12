@@ -42,6 +42,11 @@ describe("check-in nationality ID rules", () => {
     }
   });
 
+  it("allows a one-character last name", () => {
+    expect(checkinSchema.safeParse({ ...baseCheckin, nationality: "India", idType: "aadhaar", visaImages: [], lastName: "S" }).success).toBe(true);
+    expect(checkinSchema.safeParse({ ...baseCheckin, nationality: "India", idType: "aadhaar", visaImages: [], lastName: " " }).success).toBe(false);
+  });
+
   it("requires a passport for non-Indian guests", () => {
     const result = checkinSchema.safeParse({ ...baseCheckin, idType: "aadhaar" });
     expect(result.success).toBe(false);

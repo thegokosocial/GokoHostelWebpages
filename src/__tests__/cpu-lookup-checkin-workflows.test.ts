@@ -14,6 +14,8 @@ const q = vi.hoisted(() => ({
   getMonthKey: vi.fn(() => "2026-08"),
   addAuditEntry: vi.fn(),
   addSystemLog: vi.fn(),
+  dispatchPush: vi.fn(),
+  isOfflineMode: vi.fn(() => true),
 }));
 
 vi.mock("@/db/queries", () => ({
@@ -34,8 +36,8 @@ vi.mock("@/lib/googleApiFetch", () => ({
   driveGetOrCreateFolder: vi.fn(),
   visionAnalyze: vi.fn(),
 }));
-vi.mock("@/lib/pushNotify", () => ({ dispatchPush: vi.fn() }));
-vi.mock("@/lib/runtime", () => ({ isOfflineMode: () => true }));
+vi.mock("@/lib/pushNotify", () => ({ dispatchPush: q.dispatchPush, notificationFirstName: (name: string) => name }));
+vi.mock("@/lib/runtime", () => ({ isOfflineMode: q.isOfflineMode }));
 
 import { GET as lookupGET } from "@/app/api/food/lookup/route";
 import { POST as checkinPOST } from "@/app/api/checkin/route";
@@ -186,6 +188,7 @@ describe("POST /api/checkin required fields", () => {
   beforeEach(() => {
     for (const fn of Object.values(q)) fn.mockReset();
     q.getMonthKey.mockReturnValue("2026-08");
+    q.isOfflineMode.mockReturnValue(true);
   });
 
   it("400s when name or contact is missing", async () => {
@@ -249,6 +252,29 @@ describe("POST /api/checkin required fields", () => {
     expect(await res.json()).toEqual({ success: true, duplicate: true, checkinId: 42 });
     expect(q.addCheckin).not.toHaveBeenCalled();
   });
+
+  it("still returns success when post-save notification delivery fails", async () => {
+    q.isOfflineMode.mockReturnValue(false);
+    q.getActiveCheckins.mockResolvedValue([]);
+    q.dispatchPush.mockRejectedValue(new Error("push unavailable"));
+    q.incrementStat.mockResolvedValue(undefined);
+    q.addAuditEntry.mockResolvedValue(undefined);
+    q.addSystemLog.mockResolvedValue(undefined);
+
+    const res = await checkinPOST(checkinReqWithFiles({
+      name: "Ada S",
+      contactNumber: "98765 43211",
+      nationality: "India",
+      idType: "passport",
+      arrivalDate: "2026-09-12",
+      stayingDays: "2",
+      comingFrom: "Bangalore",
+      numberOfPersons: "1",
+    }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    expect(q.addCheckin).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
@@ -263,6 +289,13 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(form).toContain("Booking ID <span className=\"text-xs font-normal text-muted-foreground\">(optional)</span>");
     expect(form).not.toContain("Booking ID <span className=\"text-brand-red\">*</span>");
     expect(schema).not.toContain("Booking ID is required for this platform");
+  });
+
+  it("keeps explicit processing and completed states for self check-in", () => {
+    const form = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinForm.tsx"), "utf-8");
+    expect(form).toContain('if (submitting)');
+    expect(form).toContain("Please wait and do not press the submit button again.");
+    expect(form).toContain("Your check-in was saved successfully.");
   });
 
   it("shows returning guests a usable previous ID preview", () => {
