@@ -127,9 +127,7 @@ function wordBoundaryMatch(text: string, name: string): boolean {
 function checkNameMatch(text: string, guestName?: string): boolean {
   if (!guestName || guestName.trim().length < 2) return true;
 
-  const parts = guestName.trim().split(/\s+/);
-  const firstName = parts[0]?.toLowerCase();
-  const lastName = parts.length > 1 ? parts[parts.length - 1]?.toLowerCase() : null;
+  const parts = guestName.trim().toLowerCase().split(/\s+/).filter(Boolean);
 
   const lines = text.split(/\n/);
   const nonGuardianLines = lines.filter((line) => !GUARDIAN_PATTERN.test(line));
@@ -145,17 +143,15 @@ function checkNameMatch(text: string, guestName?: string): boolean {
 
   const searchTexts = [nonGuardianText.toLowerCase(), normalizedText];
 
-  const firstValid = firstName && firstName.length >= 2;
-  const lastValid = lastName && lastName.length >= 2;
+  const idTokens = normalizedText.split(/[^a-z0-9]+/i).filter((token) => token.length > 0);
+  const meaningfulParts = parts.filter((part) => part.length >= 2 || parts.length === 1);
+  if (meaningfulParts.length === 0) return true;
 
-  if (!firstValid && !lastValid) return true;
-
-  for (const searchText of searchTexts) {
-    if (firstValid && wordBoundaryMatch(searchText, firstName!)) return true;
-    if (lastValid && wordBoundaryMatch(searchText, lastName!)) return true;
-  }
-
-  return false;
+  return meaningfulParts.every((part) => {
+    const exact = idTokens.some((token) => token === part);
+    const initial = part.length === 1 && idTokens.some((token) => token.startsWith(part));
+    return exact || initial;
+  }) && searchTexts.some((searchText) => wordBoundaryMatch(searchText, meaningfulParts[0]));
 }
 
 const AADHAAR_ADDRESS_PATTERNS = [

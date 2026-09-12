@@ -84,7 +84,23 @@ function parseDrivingLicenceDob(text: string): string | null {
     "birth\\s*:?",
   ];
   const result = extractDateAfterLabel(text, ...labels);
-  if (result) return result;
+  if (result) {
+    // OCR sometimes linearizes a DL's two-column layout as "Issued on … DoB …"
+    // and returns the issue date for the later DOB label. Prefer a DOB candidate
+    // that is not also explicitly labelled as an issue date.
+    const issueDates = [
+      extractDateAfterLabel(text, "issued\\s*on\\s*: ?", "date\\s*of\\s*issue\\s*: ?", "issue\\s*date\\s*: ?"),
+    ].filter(Boolean) as string[];
+    if (!issueDates.some((date) => dobsMatch(date, result))) return result;
+    const dobCandidates = text.match(/(?:DOB|D\.?O\.?B\.?|date\s*of\s*birth)[^\d]{0,80}(\d{1,2}[\/\.\-\s]\d{1,2}[\/\.\-\s]\d{2,4})/gi) || [];
+    for (const candidate of dobCandidates) {
+      const date = candidate.match(DATE_DMY_PATTERN);
+      if (date) {
+        const parsed = formatDob(date[1], date[2], normalizeYear(date[3]));
+        if (!issueDates.some((issueDate) => dobsMatch(issueDate, parsed))) return parsed;
+      }
+    }
+  }
 
   const standalone = extractStandaloneIsoDate(text);
   if (standalone) return standalone;
@@ -101,16 +117,19 @@ function parsePassportDob(text: string): string | null {
 export function parseDobFromOcr(ocrText: string, idType: string): string | null {
   if (!ocrText || ocrText.trim().length < 10) return null;
 
-  switch (idType) {
+  const parsed = (() => {
+    switch (idType) {
     case "aadhaar":
-      return parseAadhaarDob(ocrText);
+        return parseAadhaarDob(ocrText);
     case "driving_licence":
-      return parseDrivingLicenceDob(ocrText);
+        return parseDrivingLicenceDob(ocrText);
     case "passport":
-      return parsePassportDob(ocrText);
+        return parsePassportDob(ocrText);
     default:
-      return parseAadhaarDob(ocrText) || parseDrivingLicenceDob(ocrText) || parsePassportDob(ocrText);
-  }
+        return parseAadhaarDob(ocrText) || parseDrivingLicenceDob(ocrText) || parsePassportDob(ocrText);
+    }
+  })();
+  return parsed ? normalizeDob(parsed) : null;
 }
 
 /**
@@ -119,12 +138,22 @@ export function parseDobFromOcr(ocrText: string, idType: string): string | null 
 function normalizeDob(dob: string): string | null {
   if (!dob) return null;
   const slashMatch = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashMatch) return `${slashMatch[1].padStart(2, "0")}/${slashMatch[2].padStart(2, "0")}/${slashMatch[3]}`;
+  if (slashMatch) return validDobParts(slashMatch[1], slashMatch[2], slashMatch[3]);
   const isoMatch = dob.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (isoMatch) return `${isoMatch[3].padStart(2, "0")}/${isoMatch[2].padStart(2, "0")}/${isoMatch[1]}`;
+  if (isoMatch) return validDobParts(isoMatch[3], isoMatch[2], isoMatch[1]);
   const dashDmy = dob.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dashDmy) return `${dashDmy[1].padStart(2, "0")}/${dashDmy[2].padStart(2, "0")}/${dashDmy[3]}`;
+  if (dashDmy) return validDobParts(dashDmy[1], dashDmy[2], dashDmy[3]);
   return null;
+}
+
+function validDobParts(dd: string, mm: string, yyyy: string): string | null {
+  const day = Number(dd);
+  const month = Number(mm);
+  const year = Number(yyyy);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (year < 1900 || year > 2100 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  if (date.getTime() > Date.now()) return null;
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
 }
 
 /**
@@ -137,32 +166,24 @@ export function dobsMatch(dob1: string, dob2: string): boolean {
   return n1 === n2;
 }
 
+/** Select the manual DOB first, then a valid DOB extracted from the ID. */
+export function resolveDobForChecks(manualDob?: string | null, dobFromId?: string | null): string | null {
+  return normalizeDob(manualDob || "") || normalizeDob(dobFromId || "");
+}
+
 /**
  * Calculate age from a DOB string in DD/MM/YYYY format.
  * Returns null if the date can't be parsed.
  */
 export function getAgeFromDob(dob: string): number | null {
-  if (!dob) return null;
+  const normalized = normalizeDob(dob);
+  if (!normalized) return null;
 
-  let dd: number, mm: number, yyyy: number;
-
-  const slashMatch = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashMatch) {
-    dd = parseInt(slashMatch[1]);
-    mm = parseInt(slashMatch[2]);
-    yyyy = parseInt(slashMatch[3]);
-  } else {
-    const isoMatch = dob.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (isoMatch) {
-      yyyy = parseInt(isoMatch[1]);
-      mm = parseInt(isoMatch[2]);
-      dd = parseInt(isoMatch[3]);
-    } else {
-      return null;
-    }
-  }
-
-  if (yyyy < 1900 || yyyy > 2100 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  const slashMatch = normalized.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!slashMatch) return null;
+  const dd = parseInt(slashMatch[1]);
+  const mm = parseInt(slashMatch[2]);
+  const yyyy = parseInt(slashMatch[3]);
 
   const today = new Date();
   let age = today.getFullYear() - yyyy;

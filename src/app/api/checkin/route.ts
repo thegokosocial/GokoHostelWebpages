@@ -6,6 +6,7 @@ import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
 import { isSameCheckinVisit } from "@/lib/checkinDuplicate";
+import { getAgeFromDob } from "@/lib/parseDob";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
     const homeAddress = formData.get("homeAddress") as string || "";
     const homeCity = formData.get("homeCity") as string || "";
     const homeCountryPhone = formData.get("homeCountryPhone") as string || "";
+    const formDob = (formData.get("dob") as string || "").trim();
 
     const hasIdImages = idImages.length > 0 || !!prevIdCardLink;
     if (!name || !contactNumber || !nationality || !idType || !hasIdImages || !arrivalDate || !stayingDays || !comingFrom || !numberOfPersons) {
@@ -87,6 +89,9 @@ export async function POST(req: NextRequest) {
     }
     if (isForeignNationality(nationality) && visaImages.length === 0 && !prevVisaLink) {
       return NextResponse.json({ error: "Visa document is required for non-Indian nationals", field: "visaImages" }, { status: 400 });
+    }
+    if (formDob && getAgeFromDob(formDob) === null) {
+      return NextResponse.json({ error: "Please enter a valid date of birth that is not in the future", field: "dob" }, { status: 400 });
     }
 
     const duplicate = (await getActiveCheckins()).find((existing) => isSameCheckinVisit(existing, {
@@ -266,10 +271,8 @@ export async function POST(req: NextRequest) {
       ? generateBookingId()
       : rawBookingId;
 
-    let formDob = "";
     let ocrDob = "";
     try {
-      formDob = (formData.get("dob") as string) || "";
       if (idOcrText) {
         const { parseDobFromOcr } = await import("@/lib/parseDob");
         ocrDob = parseDobFromOcr(idOcrText, idType) || "";

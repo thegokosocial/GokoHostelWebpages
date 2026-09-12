@@ -9,7 +9,7 @@ import { AdminLoading } from "./AdminLoading";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { BedDoubleIcon, UsersIcon, CalendarCheckIcon, AlertTriangleIcon, LogOutIcon, Loader2Icon, ExternalLinkIcon, BanknoteIcon, SmartphoneIcon, XIcon, CheckCircleIcon, UtensilsIcon, BookOpenIcon, CalendarPlusIcon, BanIcon, UserRoundCheckIcon, QrCodeIcon } from "lucide-react";
-import { getAgeFromDob, dobsMatch } from "@/lib/parseDob";
+import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
 import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { hasPermission, type Role, type AdminSection, type ManagementTab } from "./types";
@@ -473,7 +473,7 @@ export function AdminDashboard({
         ) : (
           <motion.div className="mt-3 max-h-80 space-y-2.5 overflow-y-auto pr-1" variants={staggerContainer} initial="hidden" animate="visible">
             {todayCheckins.map((item, i) => {
-              const age = getAgeFromDob(item.dob);
+              const age = getAgeFromDob(resolveDobForChecks(item.dob, item.dobFromId) || "");
               const isFlagged = age !== null && !item.vibeMatched && (age < ageRange.min || age > ageRange.max);
               const isUnderage = age !== null && age < ageRange.min;
               const hasDobMismatch = !!(item.dob && item.dobFromId && !item.vibeMatched && !dobsMatch(item.dob, item.dobFromId));

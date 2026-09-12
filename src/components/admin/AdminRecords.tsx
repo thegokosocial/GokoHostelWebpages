@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
-import { getAgeFromDob, dobsMatch } from "@/lib/parseDob";
+import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
 import { useAdminApi } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { CHECKIN_COLUMNS, type Role, hasPermission } from "./types";
@@ -908,7 +908,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               const isExpanded = expandedCard === origIdx;
               const guestDob = row[20] || "";
               const guestDobFromId = row[22] || "";
-              const guestAge = getAgeFromDob(guestDob);
+              const guestAge = getAgeFromDob(resolveDobForChecks(guestDob, guestDobFromId) || "");
               const guestVibeMatched = row[21] === "1";
               const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
               const guestUnderage = guestAge !== null && guestAge < ageRange.min;
@@ -1047,7 +1047,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               filteredRows.map(({ row, origIdx }) => {
                 const guestDob = row[20] || "";
                 const guestDobFromId = row[22] || "";
-                const guestAge = getAgeFromDob(guestDob);
+                const guestAge = getAgeFromDob(resolveDobForChecks(guestDob, guestDobFromId) || "");
                 const guestVibeMatched = row[21] === "1";
                 const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
                 const guestUnderage = guestAge !== null && guestAge < ageRange.min;
