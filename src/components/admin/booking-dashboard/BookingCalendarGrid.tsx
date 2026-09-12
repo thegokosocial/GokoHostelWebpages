@@ -69,11 +69,11 @@ export function BookingCalendarGrid({
     <>
     <div className="shrink-0 space-y-1 pb-2 text-[11px] text-muted-foreground">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span>Nightly totals: online / walk-in / blocked</span>
+        <span>Nightly totals: online / walk-in / blocked / held</span>
         <span className="text-sky-700 dark:text-sky-300">Blue = online / OTA</span>
         <span className="text-emerald-700 dark:text-emerald-300">Green = walk-in</span>
         <span className="text-orange-700 dark:text-orange-300">Orange = blocked</span>
-        <span>Grey = held for unassigned OTA</span>
+        <span className="text-zinc-600 dark:text-zinc-300">Grey = held for unassigned OTA</span>
       </div>
       {detail && <div role="status" className="flex items-center gap-2 rounded border border-border bg-brand-sand px-2 py-1 dark:bg-zinc-800">
         <span>{detail}</span>
@@ -168,7 +168,7 @@ export function BookingCalendarGrid({
                   {dates.map((date) => {
                     const snap = dorm.availability?.[date];
                     const message = snap
-                      ? `${dorm.name} · ${date}: ${snap.online} online / OTA · ${snap.offline} walk-in · ${snap.blocked} blocked · ${snap.assigned} occupied · ${snap.unassignedOta} unassigned OTA${snap.total > 0 && snap.blocked === snap.total ? " — Fully blocked" : snap.online === 0 && snap.offline > 0 ? " — No online availability — walk-in available" : snap.available === 0 ? " — No availability" : ""}`
+                      ? `${dorm.name} · ${date}: ${snap.online} online / OTA · ${snap.offline} walk-in · ${snap.blocked} blocked · ${snap.unassignedOta} held · ${snap.assigned} occupied${snap.total > 0 && snap.blocked === snap.total ? " — Fully blocked" : snap.unassignedOta > 0 && snap.available === 0 ? " — Remaining bed(s) held for unassigned OTA" : snap.online === 0 && snap.offline > 0 ? " — No online availability — walk-in available" : snap.available === 0 ? " — No availability" : ""}`
                       : `${dorm.name} · ${date}: Availability unavailable`;
                     return <button key={date} type="button" title={message} aria-label={message} onClick={() => setDetail(message)}
                       className="shrink-0 border-r border-border text-[10px] tabular-nums focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600"
@@ -180,6 +180,10 @@ export function BookingCalendarGrid({
                         <span className={cn(isCompact && "block leading-3")}>
                           <span className="text-muted-foreground/50"> / </span>
                           <span className="text-orange-700 dark:text-orange-300">{snap.blocked}</span>
+                        </span>
+                        <span className={cn(isCompact && "block leading-3")}>
+                          <span className="text-muted-foreground/50"> / </span>
+                          <span className="text-zinc-600 dark:text-zinc-300">{snap.unassignedOta}</span>
                         </span>
                       </> : "—"}
                     </button>;

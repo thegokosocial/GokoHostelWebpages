@@ -26,6 +26,14 @@ describe("calendar nightly availability", () => {
     expect(Object.values(result.beds).map((dates) => dates[nights[0]])).toEqual(["online", "offline", "held"]);
   });
 
+  it("keeps an unassigned OTA hold visible as held rather than available", () => {
+    const result = calendarAvailability(beds, nights, [], [
+      { bedId: 1, dormId: 1, checkinDate: nights[0], checkoutDate: nights[1], status: "assigned" },
+      { bedId: 2, dormId: 1, checkinDate: nights[0], checkoutDate: nights[1], status: "assigned" },
+    ], [], [{ dormId: 1, date: nights[0], rooms: 1 }]);
+    expect(result.dorms[1][nights[0]]).toMatchObject({ total: 3, assigned: 2, blocked: 0, unassignedOta: 1, available: 0, online: 0, offline: 0 });
+  });
+
   it("counts double rooms once and applies either slot's block or assignment to the whole room", () => {
     const doubles = [1, 2, 3, 4].map((id) => ({ id, bedId: `D-${id}`, dormId: 1, type: "Double" }));
     const result = calendarAvailability(doubles, nights, [{ bedId: 2, dormId: 1, startDate: nights[0], endDate: nights[1] }], [{ bedId: 4, dormId: 1, checkinDate: nights[0], checkoutDate: nights[1], status: "assigned" }], [], []);

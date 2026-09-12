@@ -202,6 +202,8 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           <span className="font-medium text-emerald-700 dark:text-emerald-400">walk-in</span>
           <span className="mx-0.5">/</span>
           <span className="font-medium text-orange-700 dark:text-orange-400">blocked</span>
+          <span className="mx-0.5">/</span>
+          <span className="font-medium text-zinc-600 dark:text-zinc-300">held</span>
         </span>
       </div>
 
@@ -235,7 +237,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           {["occupancy", "available", "sold"].map((stat) => (
             <div key={stat} className="flex border-b border-brand-mist/50 bg-slate-50 dark:bg-zinc-800/60">
               <div className="sticky left-0 z-10 w-[160px] shrink-0 border-r border-brand-mist bg-slate-50 px-3 py-1.5 text-[11px] font-medium capitalize text-brand-green-dark/50 dark:bg-zinc-800 dark:text-zinc-500">
-                {stat === "occupancy" ? "Occupancy %" : stat === "available" ? "Available" : "Sold"}
+                {stat === "occupancy" ? "Occupancy %" : stat === "available" ? "Available" : "Booked / held"}
               </div>
               {dates.map((date) => {
                 const { isToday, isWeekend } = formatDateShort(date);
@@ -296,6 +298,8 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                           <span className="text-emerald-700 dark:text-emerald-400">{offline}</span>
                           <span className="text-muted-foreground/40">/</span>
                           <span className="text-orange-700 dark:text-orange-400">{blocked}</span>
+                          <span className="text-muted-foreground/40">/</span>
+                          <span className="text-zinc-600 dark:text-zinc-300">{unassignedOta}</span>
                         </span>
                         {overridden && <EditIcon className="ml-0.5 inline h-2.5 w-2.5 text-blue-400" />}
                       </button>
@@ -459,7 +463,7 @@ function InventoryDetailModal({ dormId, date, data, computeAvailability, passwor
           <div className="flex justify-between"><span className="text-brand-green-dark/60">Blocked</span><span className="font-medium text-orange-600">{stats.blocked}</span></div>
           <div className="flex justify-between"><span className="text-brand-green-dark/60">Available</span><span className="font-bold text-brand-green">{stats.available}</span></div>
           <p className="text-[10px] text-brand-green-dark/40">
-            {stats.total} total = {stats.assigned} booked + {stats.blocked} blocked + {preview.online} online + {preview.offline} walk-in
+            {stats.total} total = {stats.assigned} booked + {stats.unassignedOta} held + {stats.blocked} blocked + {preview.online} online + {preview.offline} walk-in
           </p>
           <hr className="border-brand-mist" />
           <div>
