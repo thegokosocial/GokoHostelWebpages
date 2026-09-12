@@ -15,6 +15,7 @@ import { stayDueAtHotel } from "@/lib/stayPayment";
 import { checkinIdsMatchingContact } from "@/lib/foodTab";
 import { getReconciliationStatus } from "@/lib/reconciliation";
 import { activeCheckinIdsForContact, getPendingFoodTab } from "@/lib/foodTabDb";
+import { dedupeCheckins } from "@/lib/checkinDuplicate";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
@@ -787,7 +788,10 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const assignedCheckinIds = new Set(allBeds.filter((b) => b.status === "occupied" && b.checkinId).map((b) => b.checkinId));
+      const assignedCheckinIds = new Set<number>(allBeds
+        .filter((b) => b.status === "occupied" && b.checkinId)
+        .map((b) => b.checkinId)
+        .filter((id): id is number => typeof id === "number"));
       const legacyAssignedCounts = new Map<string, number>();
       for (const bed of allBeds) {
         if (bed.status === "occupied" && !bed.checkinId && bed.guestContact) {
@@ -795,8 +799,9 @@ export async function POST(req: NextRequest) {
           legacyAssignedCounts.set(key, (legacyAssignedCounts.get(key) || 0) + 1);
         }
       }
-      const unassignedCheckins = monthCheckins.filter((r) => {
-        if (!r.contact || r.status !== "active" || assignedCheckinIds.has(r.id)) return false;
+      const dedupedMonthCheckins = dedupeCheckins(monthCheckins.filter((r) => r.status === "active" && r.contact), assignedCheckinIds);
+      const unassignedCheckins = dedupedMonthCheckins.filter((r) => {
+        if (assignedCheckinIds.has(r.id)) return false;
         const key = checkinIdentity(r.name, r.contact);
         const legacyCount = legacyAssignedCounts.get(key) || 0;
         if (legacyCount > 0) { legacyAssignedCounts.set(key, legacyCount - 1); return false; }

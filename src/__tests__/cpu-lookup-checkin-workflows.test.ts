@@ -222,6 +222,33 @@ describe("POST /api/checkin required fields", () => {
     });
     expect(q.addCheckin).not.toHaveBeenCalled();
   });
+
+  it("treats a repeated active self check-in as an idempotent success", async () => {
+    q.addSystemLog.mockResolvedValue(undefined);
+    q.getActiveCheckins.mockResolvedValue([{
+      id: 42,
+      status: "active",
+      name: "Sameer Joshi",
+      contact: "+919876543210",
+      arrivalDate: "2026-09-11",
+      stayingDays: "2",
+      bookingId: "GOKO20260911ABC123",
+    }]);
+
+    const res = await checkinPOST(checkinReqWithFiles({
+      name: "Sameer-Joshi",
+      contactNumber: "98765 43210",
+      nationality: "India",
+      idType: "passport",
+      arrivalDate: "2026-09-11",
+      stayingDays: "2",
+      comingFrom: "Bangalore",
+      numberOfPersons: "1",
+    }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, duplicate: true, checkinId: 42 });
+    expect(q.addCheckin).not.toHaveBeenCalled();
+  });
 });
 
 describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {

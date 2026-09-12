@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
-import { addCheckin, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
+import { addCheckin, getActiveCheckins, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
+import { isSameCheckinVisit } from "@/lib/checkinDuplicate";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -86,6 +87,16 @@ export async function POST(req: NextRequest) {
     }
     if (isForeignNationality(nationality) && visaImages.length === 0 && !prevVisaLink) {
       return NextResponse.json({ error: "Visa document is required for non-Indian nationals", field: "visaImages" }, { status: 400 });
+    }
+
+    const duplicate = (await getActiveCheckins()).find((existing) => isSameCheckinVisit(existing, {
+      name,
+      contact: contactNumber,
+      arrivalDate,
+    }));
+    if (duplicate) {
+      addSystemLog({ level: "info", source: "checkin", message: `Duplicate self check-in ignored: ${name} (#${duplicate.id})` }).catch(() => {});
+      return NextResponse.json({ success: true, duplicate: true, checkinId: duplicate.id });
     }
 
     for (const file of [...idImages, ...visaImages]) {
