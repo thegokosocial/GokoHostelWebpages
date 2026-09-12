@@ -39,10 +39,12 @@ function getNow() {
 }
 
 function CountrySelect({
+  id,
   value,
   onChange,
   error,
 }: {
+  id?: string;
   value: string;
   onChange: (val: string) => void;
   error?: string;
@@ -58,8 +60,12 @@ function CountrySelect({
   return (
     <div className="relative">
       <Input
+        id={id}
         ref={inputRef}
         type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
         placeholder="Search country..."
         value={open ? search : value}
         onChange={(e) => {
@@ -88,7 +94,7 @@ function CountrySelect({
                   "cursor-pointer px-4 py-2.5 text-sm transition-colors hover:bg-brand-sand",
                   c === value && "bg-brand-green/[0.06] font-medium text-brand-green"
                 )}
-                onMouseDown={(e) => {
+                onPointerDown={(e) => {
                   e.preventDefault();
                   onChange(c);
                   setSearch("");
@@ -328,6 +334,7 @@ export function SelfCheckinForm() {
   const [prevVisaLink, setPrevVisaLink] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [success, setSuccess] = useState(false);
   const [idFiles, setIdFiles] = useState<DocFile[]>([]);
   const [visaFiles, setVisaFiles] = useState<DocFile[]>([]);
@@ -658,6 +665,7 @@ export function SelfCheckinForm() {
 
   const onSubmit = async (data: CheckinFormData) => {
     setSubmitting(true);
+    setSubmitError("");
     try {
       const formData = new FormData();
       formData.append("bookingPlatform", data.bookingPlatform);
@@ -714,7 +722,7 @@ export function SelfCheckinForm() {
 
       if (res.status === 422) {
         const errData = await res.json();
-        alert(errData.error || "Document validation failed. Please upload a valid document.");
+        setSubmitError(errData.error || "Document validation failed. Please upload a valid document.");
         if (errData.field === "visaImages") {
           setVisaFiles([]);
           setVisaValidationMsg({ valid: false, message: errData.error || "Visa rejected" });
@@ -742,7 +750,7 @@ export function SelfCheckinForm() {
       setPrevIdCardLink("");
       setPrevVisaLink("");
     } catch {
-      alert("Something went wrong. Please try again or contact the front desk.");
+      setSubmitError("Something went wrong. Please try again or contact the front desk.");
     } finally {
       setSubmitting(false);
     }
@@ -1058,8 +1066,9 @@ export function SelfCheckinForm() {
 
         {/* Nationality */}
         <div>
-          <Label>Nationality <span className="text-brand-red">*</span></Label>
+          <Label htmlFor="nationality">Nationality <span className="text-brand-red">*</span></Label>
           <CountrySelect
+            id="nationality"
             value={nationality}
             onChange={(val) => setValue("nationality", val, { shouldValidate: true })}
             error={errors.nationality?.message}
@@ -1240,6 +1249,7 @@ export function SelfCheckinForm() {
               <div>
                 <Label htmlFor="arrivedFromCountry">Arrived from country <span className="text-brand-red">*</span></Label>
                 <CountrySelect
+                  id="arrivedFromCountry"
                   value={watch("arrivedFromCountry") || ""}
                   onChange={(val) => setValue("arrivedFromCountry", val, { shouldValidate: true })}
                   error={errors.arrivedFromCountry?.message}
@@ -1318,7 +1328,12 @@ export function SelfCheckinForm() {
         )}
       </div>
 
-      <div className="mt-10">
+      <div className="sticky bottom-0 z-10 -mx-6 mt-10 border-t border-brand-mist bg-white/95 px-6 py-4 backdrop-blur dark:bg-card/95 md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none">
+        {submitError && (
+          <p role="alert" className="mb-3 rounded-xl border border-brand-red/20 bg-brand-red/5 p-3 text-center text-sm text-brand-red">
+            {submitError}
+          </p>
+        )}
         {validationLoaded && validationEnabled && !idValidated && !idServerError && idFiles.length > 0 && !prevIdCardLink && (
           <p className="mb-3 text-center text-sm text-brand-red">
             Please click &quot;Verify document&quot; before submitting

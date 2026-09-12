@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
       update: "canEditRecords", delete: "canDeleteRecords",
       getDeleteInfo: "canDeleteRecords",
       verifyCheckin: "canViewRecords", getFormCData: "canViewRecords",
-      reExtractFormC: "admin_only", updateFormCData: "admin_only",
+      reExtractFormC: "admin_only", updateFormCData: "admin_only", removeFormCSubmission: "admin_only",
       getDashboard: "canViewDashboard", markVibeMatched: "canViewDashboard",
       checkoutBed: ["canCheckout", "canViewDashboard"], checkoutGuest: ["canCheckout", "canViewDashboard"], undoCheckout: ["canCheckout", "canViewDashboard"],
       getPendingFoodTab: ["canCheckout", "canViewDashboard"],
@@ -465,6 +465,36 @@ export async function POST(req: NextRequest) {
       await db.update(checkins).set({ formCData: formCData || "" }).where(eq(checkins.id, rowId));
       await addAuditEntry({ username: actingUser, action: "formc_updated", target: String(rowId) });
       return NextResponse.json({ success: true });
+    }
+
+    if (action === "removeFormCSubmission") {
+      const { rowId, submissionIndex } = rest;
+      if (!isValidId(rowId) || !Number.isInteger(Number(submissionIndex)) || Number(submissionIndex) < 0) {
+        return NextResponse.json({ error: "Invalid Form C submission" }, { status: 400 });
+      }
+      const db = getDb();
+      const rows = await db.select({ formCData: checkins.formCData }).from(checkins).where(eq(checkins.id, rowId));
+      if (!rows[0]) return NextResponse.json({ error: "Record not found" }, { status: 404 });
+
+      let data: Record<string, any> = {};
+      if (rows[0].formCData) { try { data = JSON.parse(rows[0].formCData); } catch {} }
+      const submissions = Array.isArray(data.frroSubmissions) && data.frroSubmissions.length > 0
+        ? [...data.frroSubmissions]
+        : data.frroApplicationId ? [{ id: data.frroApplicationId, date: data.frroSubmittedAt || "" }] : [];
+      const index = Number(submissionIndex);
+      if (!submissions[index]) return NextResponse.json({ error: "Form C submission not found" }, { status: 404 });
+      const [removed] = submissions.splice(index, 1);
+      const latest = submissions.at(-1);
+      const updatedData = {
+        ...data,
+        frroSubmissions: submissions,
+        status: submissions.length > 0 ? "submitted" : "draft",
+        frroApplicationId: latest?.id || "",
+        frroSubmittedAt: latest?.date || "",
+      };
+      await db.update(checkins).set({ formCData: JSON.stringify(updatedData) }).where(eq(checkins.id, rowId));
+      await addAuditEntry({ username: actingUser, action: "formc_submission_removed", target: `${rowId}:${removed.id}` });
+      return NextResponse.json({ success: true, formCData: JSON.stringify(updatedData) });
     }
 
     // --- Health Check ---

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon } from "lucide-react";
+import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
@@ -65,6 +65,53 @@ function extractDriveFileId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+function formCSubmissions(data: Record<string, any>): { id: string; date: string }[] {
+  if (Array.isArray(data.frroSubmissions) && data.frroSubmissions.length > 0) return data.frroSubmissions;
+  return data.frroApplicationId ? [{ id: data.frroApplicationId, date: data.frroSubmittedAt || "" }] : [];
+}
+
+function parseFormCDate(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const match = value.trim().match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/) || value.trim().match(/^(\d{4})[/.\-](\d{1,2})[/.\-](\d{1,2})$/);
+  if (!match) return null;
+  const [a, b, c] = match.slice(1).map(Number);
+  const [year, month, day] = c > 31 ? [c, b, a] : [a, b, c];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : null;
+}
+
+function formCSubmissionGuardrails(data: Record<string, any>, row: string[]): string[] {
+  const p = data.extractedPassport || {};
+  const v = data.extractedVisa || {};
+  const missing = [
+    ["passport number", p.passportNumber], ["passport date of birth", p.dateOfBirth], ["passport expiry", p.expiryDate],
+    ["visa number", v.visaNumber], ["visa type", v.type], ["visa expiry", v.validTill],
+    ["arrived-from country", data.arrivedFromCountry], ["purpose of visit", data.purposeOfVisit],
+  ].filter(([, value]) => !String(value || "").trim()).map(([label]) => label);
+  const issues = missing.length > 0 ? [`Missing: ${missing.join(", ")}.`] : [];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const passportIssue = parseFormCDate(p.dateOfIssue);
+  const passportExpiry = parseFormCDate(p.expiryDate);
+  const visaIssue = parseFormCDate(v.dateOfIssue);
+  const visaExpiry = parseFormCDate(v.validTill);
+  if (passportIssue && passportIssue > today) issues.push("Passport issue date is in the future.");
+  if (passportExpiry && passportExpiry <= today) issues.push("Passport has expired.");
+  if (passportIssue && passportExpiry && passportIssue >= passportExpiry) issues.push("Passport issue date must be before expiry.");
+  if (visaIssue && visaIssue > today) issues.push("Visa issue date is in the future.");
+  if (visaExpiry && visaExpiry <= today) issues.push("Visa has expired.");
+  if (visaIssue && visaExpiry && visaIssue >= visaExpiry) issues.push("Visa issue date must be before expiry.");
+  const indiaPhone = String(row[5] || "").replace(/\D/g, "");
+  const homePhone = String(data.homeCountryPhone || "").replace(/\D/g, "");
+  if (indiaPhone && homePhone && indiaPhone === homePhone) issues.push("India and home-country phone numbers are identical; confirm the correct number.");
+  return issues;
+}
+
+function isUsableFrroApplicationId(value: unknown): value is string {
+  const id = String(value || "").trim();
+  return Boolean(id) && !/^(saved|your)$/i.test(id) && !/check\s+frro|application\s+id/i.test(id);
+}
+
 export function AdminRecords({ password, username, role, permissions = {} }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean> }) {
   const { apiCall } = useAdminApi(password, username);
   const { showError, showSuccess } = useAdminToast();
@@ -115,8 +162,10 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
   const [formCSaving, setFormCSaving] = useState(false);
   const [frroUsername, setFrroUsername] = useState("");
   const [frroPassword, setFrroPassword] = useState("");
+  const [showFrroPassword, setShowFrroPassword] = useState(false);
   const [frroSettingsOpen, setFrroSettingsOpen] = useState(false);
   const [frroSubmitting, setFrroSubmitting] = useState(false);
+  const [frroDeleting, setFrroDeleting] = useState<number | null>(null);
   const [frroStatus, setFrroStatus] = useState("");
   const [ageRange, setAgeRange] = useState({ min: 18, max: 40 });
   const [vibeMatchingId, setVibeMatchingId] = useState<number | null>(null);
@@ -489,6 +538,26 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
       setFormCPopup({ origIdx, row, data: {} });
     } finally {
       setFormCLoading(false);
+    }
+  };
+
+  const removeFormCSubmission = async (index: number) => {
+    const submissions = formCSubmissions(formCPopup?.data || {});
+    const submission = submissions[index];
+    if (!formCPopup || !submission || !confirm(`Delete incorrect FRRO submission ${submission.id}? This removes it from Goko history only.`)) return;
+    setFrroDeleting(index);
+    try {
+      const rowId = parseInt(formCPopup.row[17] || "0", 10);
+      const res = await apiCall({ action: "removeFormCSubmission", rowId, submissionIndex: index });
+      if (!res.ok) {
+        showError("Could not delete submission", "The FRRO history was not changed.");
+        return;
+      }
+      const data = await res.json();
+      setFormCPopup({ ...formCPopup, data: data.formCData ? JSON.parse(data.formCData) : formCPopup.data });
+      showSuccess("Incorrect FRRO submission removed from Goko history");
+    } finally {
+      setFrroDeleting(null);
     }
   };
 
@@ -1316,7 +1385,13 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => { if (!formCEditing) setFormCPopup(null); }}>
           <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white dark:bg-card p-4 sm:p-6 shadow-lift" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold text-indigo-800 dark:text-indigo-300">Form C Data — {formCPopup.row[3]}</h3>
+              <div>
+                <h3 className="font-display text-lg font-bold text-indigo-800 dark:text-indigo-300">Form C Data — {formCPopup.row[3]}</h3>
+                <p className="mt-0.5 text-[11px] text-indigo-700/70 dark:text-indigo-300/70">
+                  Draft ID: <span className="font-semibold">{formCPopup.data.draftId || `CHECKIN-${formCPopup.row[17]}`}</span>
+                  {formCPopup.data.frroApplicationId ? " · Submitted" : " · Ready for review"}
+                </p>
+              </div>
               <div className="flex items-center gap-2">
                 {!formCEditing && (
                   <button type="button" onClick={async () => {
@@ -1548,26 +1623,20 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
             )}
 
             <div className="mt-6 space-y-3">
-              {(formCPopup.data.frroApplicationId || formCPopup.data.frroSubmissions?.length > 0) && (
+              {formCSubmissions(formCPopup.data).length > 0 && (
                 <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 p-4">
                   <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Form C submitted to FRRO</p>
-                  {formCPopup.data.frroSubmissions?.length > 0 ? (
-                    <div className="mt-1 space-y-1.5">
-                      {formCPopup.data.frroSubmissions.map((sub: { id: string; date: string }, i: number) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <span className="text-xs text-emerald-700 dark:text-emerald-400">#{i + 1} Application ID: <span className="font-bold">{sub.id}</span></span>
-                          <span className="text-[10px] text-emerald-600">({new Date(sub.date).toLocaleString()})</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <>
-                      <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">Application ID: <span className="font-bold">{formCPopup.data.frroApplicationId}</span></p>
-                      {formCPopup.data.frroSubmittedAt && (
-                        <p className="mt-0.5 text-[10px] text-emerald-600">Submitted: {new Date(formCPopup.data.frroSubmittedAt).toLocaleString()}</p>
-                      )}
-                    </>
-                  )}
+                  <div className="mt-1 space-y-1.5">
+                    {formCSubmissions(formCPopup.data).map((sub, i) => (
+                      <div key={`${sub.id}-${i}`} className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-emerald-700 dark:text-emerald-400">#{i + 1} Application ID: <span className="font-bold">{sub.id}</span></span>
+                        {sub.date && <span className="text-[10px] text-emerald-600">({new Date(sub.date).toLocaleString()})</span>}
+                        <button type="button" onClick={() => removeFormCSubmission(i)} disabled={frroDeleting !== null} className="ml-auto rounded px-2 py-0.5 text-[10px] font-medium text-red-700 underline hover:text-red-900 disabled:opacity-50">
+                          {frroDeleting === i ? "Removing..." : "Delete incorrect entry"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                   <div className="mt-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 p-2">
                     <p className="text-[11px] text-emerald-800 dark:text-emerald-300"><strong>Next steps:</strong> Review the details and submit permanently by logging in here:</p>
                     <a href="https://indianfrro.gov.in/frro/FormC/login.jsp" target="_blank" rel="noopener" className="mt-1 inline-block text-xs font-medium text-emerald-700 dark:text-emerald-400 underline hover:text-emerald-900 dark:hover:text-emerald-300">https://indianfrro.gov.in/frro/FormC/login.jsp</a>
@@ -1575,11 +1644,16 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                   </div>
                 </div>
               )}
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-2">
                 <button
                   type="button"
                   disabled={frroSubmitting}
                   onClick={async () => {
+                    const guardrailIssues = formCSubmissionGuardrails(formCPopup.data, formCPopup.row);
+                    if (guardrailIssues.length > 0) {
+                      setFrroStatus(`Cannot submit: ${guardrailIssues.join(" ")}`);
+                      return;
+                    }
                     setFrroSubmitting(true);
                     setFrroStatus("Connecting to local server...");
                     try {
@@ -1598,9 +1672,9 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                       if (!res) { setFrroStatus("Local server not running. Start with: frro (in terminal)"); return; }
                       const data = await res.json();
                       if (data.success) {
-                        const appId = data.applicationId || "saved";
-                        if (appId.startsWith("FAILED") || appId.includes("check") || appId.includes("missing")) {
-                          setFrroStatus(appId);
+                        const appId = String(data.applicationId || "").trim();
+                        if (!isUsableFrroApplicationId(appId)) {
+                          setFrroStatus("FRRO did not return a valid application ID. Nothing was marked as submitted.");
                         } else {
                           setFrroStatus(`Success! Application ID: ${appId}`);
                           const rowId = parseInt(formCPopup.row[17] || "0", 10);
@@ -1609,7 +1683,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                             prevSubs.push({ id: formCPopup.data.frroApplicationId, date: formCPopup.data.frroSubmittedAt || new Date().toISOString() });
                           }
                           prevSubs.push({ id: appId, date: new Date().toISOString() });
-                          const updatedData = { ...formCPopup.data, frroApplicationId: appId, frroSubmittedAt: new Date().toISOString(), frroSubmissions: prevSubs };
+                          const updatedData = { ...formCPopup.data, status: "submitted", frroApplicationId: appId, frroSubmittedAt: new Date().toISOString(), frroSubmissions: prevSubs };
                           await apiCall({ action: "updateFormCData", rowId, formCData: JSON.stringify(updatedData) });
                           setFormCPopup({ ...formCPopup, data: updatedData });
                         }
@@ -1622,9 +1696,9 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                             if (statusData.lastResult) {
                               clearInterval(poll);
                               if (statusData.lastResult.success) {
-                                const appId = statusData.lastResult.applicationId || "Form C saved";
-                                if (appId.startsWith("FAILED") || appId.includes("check") || appId.includes("missing")) {
-                                  setFrroStatus(appId);
+                                const appId = String(statusData.lastResult.applicationId || "").trim();
+                                if (!isUsableFrroApplicationId(appId)) {
+                                  setFrroStatus("FRRO did not return a valid application ID. Nothing was marked as submitted.");
                                 } else {
                                   setFrroStatus(`Success! Application ID: ${appId}`);
                                   const rowId = parseInt(formCPopup!.row[17] || "0", 10);
@@ -1633,7 +1707,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                                     prevSubs.push({ id: formCPopup!.data.frroApplicationId, date: formCPopup!.data.frroSubmittedAt || new Date().toISOString() });
                                   }
                                   prevSubs.push({ id: appId, date: new Date().toISOString() });
-                                  const updatedData = { ...formCPopup!.data, frroApplicationId: appId, frroSubmittedAt: new Date().toISOString(), frroSubmissions: prevSubs };
+                                  const updatedData = { ...formCPopup!.data, status: "submitted", frroApplicationId: appId, frroSubmittedAt: new Date().toISOString(), frroSubmissions: prevSubs };
                                   apiCall({ action: "updateFormCData", rowId, formCData: JSON.stringify(updatedData) });
                                   setFormCPopup({ ...formCPopup!, data: updatedData });
                                 }
@@ -1650,28 +1724,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                   }}
                   className="rounded-xl bg-brand-green px-4 py-3 text-sm font-semibold text-white shadow-sm dark:shadow-none transition-colors hover:bg-brand-green-dark disabled:opacity-50"
                 >
-                  {frroSubmitting ? "Submitting..." : "Desktop: Auto-Submit"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const checkinId = formCPopup.row[17];
-                    const secret = password;
-                    const expiry = Date.now() + 60 * 60 * 1000;
-                    const payload = `${checkinId}:${expiry}`;
-                    const hash = btoa(payload + ":" + secret).replace(/=/g, "");
-                    const token = `${btoa(payload).replace(/=/g, "")}.${hash}`;
-                    const apiUrl = `${window.location.origin}/api/form-c/${checkinId}?token=${token}`;
-                    const script = `fetch('${apiUrl}').then(r=>r.json()).then(d=>{const fmtD=(s)=>{if(!s)return'';if(/^\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{4}$/.test(s))return s.replace(/[.-]/g,'/');const m=s.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);if(m)return m[3]+'/'+m[2]+'/'+m[1];const mn={JAN:'01',FEB:'02',MAR:'03',APR:'04',MAY:'05',JUN:'06',JUL:'07',AUG:'08',SEP:'09',OCT:'10',NOV:'11',DEC:'12'};const tm=s.match(/^(\\d{1,2})\\s+([A-Za-z]{3,})\\s+(\\d{4})$/);if(tm){const mo=mn[tm[2].toUpperCase().slice(0,3)];if(mo)return tm[1].padStart(2,'0')+'/'+mo+'/'+tm[3];}return s;};const FD=(n,v)=>{if(!v)return;const fv=fmtD(v);if(!fv)return;const el=document.querySelector('input[name=\"'+n+'\"]');if(el){el.removeAttribute('readonly');el.removeAttribute('disabled');el.value=fv;el.dispatchEvent(new Event('change',{bubbles:true}));el.dispatchEvent(new Event('input',{bubbles:true}));if(window.jQuery&&jQuery(el).datepicker){try{const p=fv.split('/');if(p.length===3)jQuery(el).datepicker('setDate',new Date(+p[2],+p[1]-1,+p[0]));}catch{}}}};const F=(n,v)=>{if(!v)return;const els=document.querySelectorAll('input[name=\"'+n+'\"],select[name=\"'+n+'\"],textarea[name=\"'+n+'\"]');if(els.length){els.forEach(el=>{if(el.tagName==='SELECT'){const opts=[...el.options];const match=opts.find(o=>o.text.toUpperCase().includes(v.toUpperCase())||o.value.toUpperCase().includes(v.toUpperCase()));if(match){el.value=match.value;el.dispatchEvent(new Event('change',{bubbles:true}));}else el.value=v;}else if(el.type==='radio'){if(el.value.toLowerCase()===v.toLowerCase())el.checked=true;}else{el.removeAttribute('readonly');el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));}});}};const n2=d.extractedPassport||{};const v2=d.extractedVisa||{};F('applicant_surname',n2.surname||d.guestName?.split(' ').pop()||'');F('applicant_givenname',n2.givenName||d.guestName?.split(' ').slice(0,-1).join(' ')||'');F('applicant_sex',n2.sex||'');F('dobformat','DD/MM/YYYY');FD('applicant_dob',n2.dateOfBirth||'');F('applicant_special_category','Others');F('applicant_nationality',d.nationality||'');F('applicant_permaddr',[d.homeAddress,d.homeCity].filter(Boolean).join(', ')||'');F('applicant_permcity',d.homeCity||'');F('applicant_permcountry',d.nationality||'');F('applicant_refaddr','Near Hema Shree, Gokarna Main Beach');F('applicant_refstate','KARNATAKA');F('applicant_refpincode','581421');F('applicant_passpno',n2.passportNumber||'');F('applicant_passplcofissue',n2.placeOfIssue||'');F('passport_issue_country',d.nationality||'');FD('applicant_passpdoissue',n2.dateOfIssue||'');FD('applicant_passpvalidtill',n2.expiryDate||'');F('applicant_visano',v2.visaNumber||'');F('applicant_visaplcoissue',v2.placeOfIssue||'');F('visa_issue_country','INDIA');FD('applicant_visadoissue',v2.dateOfIssue||'');FD('applicant_visavalidtill',v2.validTill||'');F('applicant_visatype',v2.type||'Tourist');F('applicant_arrivedfromcountry',d.arrivedFromCountry||'');F('applicant_arrivedfromcity',d.arrivedFromCity||'');F('applicant_arrivedfromplace',d.arrivedFromPlace||'');FD('applicant_doarrivalindia',d.dateOfArrivalInIndia||'');FD('applicant_doarrivalhotel',d.arrivalDate||'');F('applicant_timeoarrivalhotel',d.arrivalTime||'');F('applicant_intnddurhotel',d.stayingDays||'');F('applicant_purpovisit',d.purposeOfVisit||'Tourism');F('applicant_contactnoinindia',d.contact||'');F('applicant_mcontactnoinindia',d.contact||'');F('applicant_contactnoperm',d.homeCountryPhone||'');F('applicant_mcontactnoperm',d.homeCountryPhone||'');setTimeout(()=>{FD('applicant_dob',n2.dateOfBirth||'');FD('applicant_passpdoissue',n2.dateOfIssue||'');FD('applicant_passpvalidtill',n2.expiryDate||'');FD('applicant_visadoissue',v2.dateOfIssue||'');FD('applicant_visavalidtill',v2.validTill||'');FD('applicant_doarrivalindia',d.dateOfArrivalInIndia||'');FD('applicant_doarrivalhotel',d.arrivalDate||'');},500);alert('Form C fields filled! Review dates and click Temporary Save.');}).catch(e=>alert('Error: '+e.message))`;
-                    navigator.clipboard.writeText(script).then(() => {
-                      showSuccess("Copied! On FRRO Form C page, open browser console (F12) and paste.");
-                    }).catch(() => {
-                      prompt("Copy this, paste in FRRO page console (F12):", script);
-                    });
-                  }}
-                  className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm dark:shadow-none transition-colors hover:bg-indigo-700"
-                >
-                  Mobile: Copy Script
+                  {frroSubmitting ? "Submitting..." : "Review & Submit (Desktop)"}
                 </button>
               </div>
               {frroStatus && (
@@ -1715,9 +1768,9 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               >
                 Download Photo for FRRO Upload (under 48KB)
               </button>
-              <div className="flex items-center justify-center gap-3 text-[10px] text-brand-green-dark/50">
-                <span>Mobile: paste script in browser console on FRRO page</span>
-                <span>·</span>
+              <div className="text-center text-[10px] text-brand-green-dark/50">
+                <span>Desktop automation only</span>
+                <span className="mx-2">·</span>
                 <a href="/frro-setup-guide.txt" download className="font-medium text-brand-green underline hover:text-brand-green-dark">Download Desktop Setup Guide</a>
               </div>
 
@@ -1726,13 +1779,19 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               </button>
               {frroSettingsOpen && (
                 <div className="grid gap-2 rounded-lg border border-brand-mist bg-brand-sand/30 p-3 sm:grid-cols-2">
+                  <p className="sm:col-span-2 text-[10px] text-brand-green-dark/60">Desktop automation only. Credentials are stored in the admin settings.</p>
                   <div>
                     <label className="text-[10px] text-brand-green-dark/50">FRRO Username</label>
                     <input type="text" value={frroUsername} onChange={(e) => setFrroUsername(e.target.value)} placeholder="Username" className="mt-0.5 w-full rounded-md border border-input bg-white dark:bg-card px-2 py-1.5 text-sm" />
                   </div>
                   <div>
                     <label className="text-[10px] text-brand-green-dark/50">FRRO Password</label>
-                    <input type="password" value={frroPassword} onChange={(e) => setFrroPassword(e.target.value)} placeholder="••••••" className="mt-0.5 w-full rounded-md border border-input bg-white dark:bg-card px-2 py-1.5 text-sm" />
+                    <div className="relative mt-0.5">
+                      <input type={showFrroPassword ? "text" : "password"} value={frroPassword} onChange={(e) => setFrroPassword(e.target.value)} placeholder="••••••" className="w-full rounded-md border border-input bg-white pr-9 dark:bg-card px-2 py-1.5 text-sm" />
+                      <button type="button" onClick={() => setShowFrroPassword((shown) => !shown)} aria-label={showFrroPassword ? "Hide FRRO password" : "Show FRRO password"} className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-brand-green-dark/60 hover:text-brand-green">
+                        {showFrroPassword ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                   <button type="button" onClick={async () => {
                     await apiCall({ action: "setSetting", key: "frro_username", value: frroUsername });

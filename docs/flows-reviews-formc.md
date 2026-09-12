@@ -1,6 +1,6 @@
 # Reviews and FRRO Form C
 
-**Git-safe.** Form C token = `ADMIN_PASSWORD`. FRRO Playwright: `npx tsx scripts/frro-server.ts` port **3456**. FRRO website login is **not** in `.env.local` (see secrets file).
+**Git-safe.** Form C token = `ADMIN_PASSWORD`. FRRO Playwright desktop helper: `npx tsx scripts/frro-server.ts` port **3456**. The Records workflow is intentionally desktop-only because the FRRO website is fixed-width and its upload/CAPTCHA flow is not reliable on mobile. FRRO website login is **not** in `.env.local` (see secrets file).
 
 ---
 
@@ -30,7 +30,7 @@ Admin actions: `listAskReview`, `sendWhatsApp`, `listResponses`, `getAnalytics`,
 
 ## Form C
 
-Foreign check-in stores `form_c_data` JSON (MRZ + visa OCR, `parsePassportData.ts`). Records → Form C popup. `reExtractFormC` / `updateFormCData` = admin_only.
+Foreign check-in stores `form_c_data` JSON (MRZ + visa OCR, `parsePassportData.ts`) as a recoverable draft with a persistent `draftId` and `status: draft`. Records → Form C popup shows the draft ID, extracted details, and a review-and-submit action. A successful FRRO run changes the stored status to `submitted` and keeps the application ID/history. Incorrect application-history entries can be removed from Goko by an admin; this does not delete anything at FRRO. `reExtractFormC` / `updateFormCData` / `removeFormCSubmission` = admin_only.
 
 ```mermaid
 sequenceDiagram

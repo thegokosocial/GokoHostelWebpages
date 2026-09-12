@@ -275,6 +275,32 @@ describe("POST /api/checkin required fields", () => {
     expect(await res.json()).toEqual({ success: true });
     expect(q.addCheckin).toHaveBeenCalledTimes(1);
   });
+
+  it("saves foreign Form C data as a recoverable draft", async () => {
+    q.addCheckin.mockResolvedValue(undefined);
+    q.getActiveCheckins.mockResolvedValue([]);
+    q.incrementStat.mockResolvedValue(undefined);
+    q.addSystemLog.mockResolvedValue(undefined);
+    q.addAuditEntry.mockResolvedValue(undefined);
+    const res = await checkinPOST(checkinReqWithFiles({
+      name: "Jean Dupont",
+      contactNumber: "9876543210",
+      nationality: "France",
+      idType: "passport",
+      arrivalDate: "2026-09-12",
+      stayingDays: "2",
+      comingFrom: "Paris",
+      numberOfPersons: "1",
+      arrivedFromCountry: "France",
+      purposeOfVisit: "Tourism",
+    }, true));
+    expect(res.status).toBe(200);
+    const saved = q.addCheckin.mock.calls[0][0];
+    const formC = JSON.parse(saved.formCData);
+    expect(formC.status).toBe("draft");
+    expect(formC.draftId).toMatch(/^FCD-/);
+    expect(formC.arrivedFromCountry).toBe("France");
+  });
 });
 
 describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
@@ -309,6 +335,25 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(form).toContain('Preview unavailable');
     expect(form).toContain("setPrevIdCardLink(d.idCardLink || \"\")");
     expect(form).toContain("setPrevVisaLink(d.visaLink || \"\")");
+  });
+
+  it("keeps foreign guest controls usable on touch screens", () => {
+    const form = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinForm.tsx"), "utf-8");
+    expect(form).toContain("onPointerDown={(e) => {");
+    expect(form).toContain('id="arrivedFromCountry"');
+    expect(form).toContain('sticky bottom-0');
+    expect(form).toContain('role="alert"');
+  });
+
+  it("keeps FRRO submission desktop-only with visible credential controls", () => {
+    const records = fs.readFileSync(path.join(ROOT, "src/components/admin/AdminRecords.tsx"), "utf-8");
+    const route = fs.readFileSync(path.join(ROOT, "src/app/api/admin/checkins/route.ts"), "utf-8");
+    expect(records).toContain("Review & Submit (Desktop)");
+    expect(records).not.toContain("Mobile: Copy Script");
+    expect(records).toContain('aria-label={showFrroPassword ? "Hide FRRO password" : "Show FRRO password"}');
+    expect(records).toContain("Delete incorrect entry");
+    expect(records).toContain("formCSubmissionGuardrails");
+    expect(route).toContain("removeFormCSubmission: \"admin_only\"");
   });
 
   it("keeps the Welcome heading on the server page and ssr:false on the island only", () => {

@@ -31,7 +31,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → Stayflexi URL
 
 | Path | Role | Auth |
 |------|------|------|
-| `/self-checkin` | ID check-in; foreign nationality is passport-only | none |
+| `/self-checkin` | ID check-in; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
 | `/food-order` | Menu + cart | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
 | `/my-bills` | Food bills | phone; back → previous page |
@@ -52,7 +52,7 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 | `beds` | `AdminBeds` | checkins beds | `canViewBeds` |
 | `timeline` | `AdminTimeline` | checkins `getBeds` | `canViewTimeline` |
 | `inventory` | `InventoryRatePlan` | `/api/admin/inventory` | `canManageInventory` |
-| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads | `canViewRecords` |
+| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads; Form C review/submission is desktop-only and credentials have a password visibility toggle | `canViewRecords` |
 | `foodOrders` | `AdminFoodOrders` | `/api/admin/food-orders` + kitchen | `canViewFoodOrders` |
 | `expenditure` | `AdminExpenditure` | `/api/admin/expenses` | `canViewAccounts` |
 | `splits` | `AdminSplits` | `/api/admin/splits` | `canViewSplits` — **omitted on Pi** |

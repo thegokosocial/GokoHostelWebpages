@@ -122,7 +122,7 @@ Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), M
 |---------|------|
 | list, verifyCheckin, getFormCData | `canViewRecords` |
 | add | `canAddCheckin` |
-| addPast, reExtractFormC, updateFormCData | admin_only |
+| addPast, reExtractFormC, updateFormCData, removeFormCSubmission | admin_only |
 | update | `canEditRecords` |
 | delete | `canDeleteRecords` |
 | getDeleteInfo | `canDeleteRecords` |

@@ -259,6 +259,9 @@ export async function POST(req: NextRequest) {
         extractedVisa = parseVisaFromText(visaOcrText);
       }
       formCData = JSON.stringify({
+        draftId: `FCD-${Date.now()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        status: "draft",
+        draftCreatedAt: submittedAt,
         arrivedFromCountry, arrivedFromCity, arrivedFromPlace,
         dateOfArrivalInIndia, purposeOfVisit, employedInIndia,
         nextDestination, nextDestState, nextDestCity, nextDestPlace,
