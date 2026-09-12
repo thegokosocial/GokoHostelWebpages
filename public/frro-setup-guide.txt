@@ -32,6 +32,8 @@ SETUP - macOS / Linux (automated)
    by typing its path directly; macOS may report "permission denied".
 3. It clones/updates GokoWeb, installs dependencies and Chromium, then starts
    the helper. Keep that Terminal window open.
+   If an earlier interrupted clone is detected, it is moved aside automatically
+   and a clean clone is created.
 
 ========================================
 Linux note

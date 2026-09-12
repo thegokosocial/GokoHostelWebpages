@@ -365,6 +365,9 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(helper).toContain("FRRO_IDLE_TIMEOUT_MS");
     const setup = fs.readFileSync(path.join(ROOT, "public/frro-setup-macos-linux.sh"), "utf-8");
     expect(setup).toContain("npm install --prefix scripts");
+    expect(setup).toContain("rev-parse --verify HEAD");
+    expect(setup).toContain("incomplete-");
+    expect(setup).toContain("already running");
     expect(route).toContain("removeFormCSubmission: \"admin_only\"");
   });
 
