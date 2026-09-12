@@ -291,7 +291,14 @@ describe("Dashboard booking activity", () => {
     expect(dashboardRoute).toContain("normalizedName(booking.guestName) === name");
     expect(dashboardRoute).toContain("phoneMatches.length === 1");
     expect(dashboardRoute).toContain("nameMatches.length === 1");
+    expect(dashboardRoute).toContain("plannedRoomType");
+    expect(dashboardRoute).toContain("plannedBedLabels");
+    expect(dashboardRoute).toContain("datesOverlap(item.checkinDate");
+    expect(dashboardRoute).toContain('bookingBedAssignments.status, "assigned"');
     expect(dashboard).toContain("Room: Not linked");
+    expect(dashboard).toContain("Planned:");
+    expect(dashboard).toContain("Array.isArray(checkout.plannedBedLabels)");
+    expect(readFile("src/components/admin/AdminBeds.tsx")).toContain("Array.isArray((value as { plannedBedLabels?: unknown }).plannedBedLabels)");
     expect(dashboard).toContain("Room: All clear");
     expect(dashboard).toContain("Food: All clear");
     expect(dashboard).toContain("co.roomStatus === \"clear\" && co.pendingTab <= 0");

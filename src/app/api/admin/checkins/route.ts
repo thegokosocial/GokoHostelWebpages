@@ -71,6 +71,10 @@ function normalizedName(value: string | null | undefined): string {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function datesOverlap(startA: string | null | undefined, endA: string | null | undefined, startB: string | null | undefined, endB: string | null | undefined): boolean {
+  return Boolean(startA && endA && startB && endB && startA < endB && endA > startB);
+}
+
 function generateBookingId(): string {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -627,14 +631,23 @@ export async function POST(req: NextRequest) {
         const linkedByCheckin = [...matchedIds].reverse().map((id) => bookingByCheckinId.get(id)).find(Boolean);
         const phone = normalizedPhone(b.guestContact);
         const phoneMatches = phone
-          ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedPhone(booking.contact) === phone)
+          ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedPhone(booking.contact) === phone && datesOverlap(booking.checkinDate, booking.checkoutDate || addCalendarDays(booking.checkinDate, 1), b.checkinDate, b.expectedCheckout))
           : [];
         const name = normalizedName(b.guestName);
         const nameMatches = name
-          ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedName(booking.guestName) === name)
+          ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedName(booking.guestName) === name && datesOverlap(booking.checkinDate, booking.checkoutDate || addCalendarDays(booking.checkinDate, 1), b.checkinDate, b.expectedCheckout))
           : [];
         const linkedBooking = activeAssignedBooking || linkedByCheckin || (phoneMatches.length === 1 ? phoneMatches[0] : null) || (nameMatches.length === 1 ? nameMatches[0] : null);
         const roomDue = linkedBooking ? stayDueAtHotel(linkedBooking.paymentStatus, linkedBooking.amountTotal, linkedBooking.amountPaid) : null;
+        const plannedBedLabels = linkedBooking
+          ? currentAssignments
+            .filter((assignment) => assignment.bookingId === linkedBooking.id && datesOverlap(assignment.checkinDate, assignment.checkoutDate, b.checkinDate, b.expectedCheckout))
+            .map((assignment) => {
+              const assignedBed = allBeds.find((candidate) => candidate.id === assignment.bedId);
+              return assignedBed ? `${assignedBed.dormName} / ${assignedBed.bedId}` : "";
+            })
+            .filter((label, index, labels) => label && labels.indexOf(label) === index)
+          : [];
         return {
           name: b.guestName || "",
           contact: b.guestContact || "",
@@ -649,6 +662,8 @@ export async function POST(req: NextRequest) {
           checkinId: checkinId || null,
           roomStatus: linkedBooking ? (roomDue != null && roomDue > 0 ? "pending" : "clear") : "not_linked",
           roomDue,
+          plannedRoomType: linkedBooking?.roomType || "",
+          plannedBedLabels,
         };
       });
 
@@ -758,6 +773,14 @@ export async function POST(req: NextRequest) {
       const monthKey = getMonthKey();
       const monthCheckins = await getCheckinsByMonth(monthKey);
       const allBookings = await getAllBookings();
+      const db = getDb();
+      const bookingAssignments = await db.select({
+        bookingId: bookingBedAssignments.bookingId,
+        bedId: bookingBedAssignments.bedId,
+        checkinDate: bookingBedAssignments.checkinDate,
+        checkoutDate: bookingBedAssignments.checkoutDate,
+        status: bookingBedAssignments.status,
+      }).from(bookingBedAssignments).where(eq(bookingBedAssignments.status, "assigned"));
       const bookingByReference = new Map<string, number>();
       for (const booking of allBookings) {
         for (const reference of [booking.bookingRef, booking.gokoBookingId, booking.cmBookingId]) {
@@ -793,17 +816,46 @@ export async function POST(req: NextRequest) {
         String(r.id), r.bookingId || "",
       ]);
 
-      const linkedBookingDetails: Record<string, { id: number; persons: number; roomType: string; reference: string }> = {};
+      const linkedBookingDetails: Record<string, { id: number; persons: number; roomType: string; reference: string; source: string; plannedBedLabels: string[]; matchMethod: "reference" | "phone" | "name" }> = {};
       for (const checkin of unassignedCheckins) {
         const reference = String(checkin.bookingId || "").trim();
-        const bookingId = reference ? bookingByReference.get(reference) : undefined;
-        const booking = bookingId ? allBookings.find((item) => item.id === bookingId) : undefined;
-        if (booking) linkedBookingDetails[String(checkin.id)] = {
-          id: booking.id,
-          persons: booking.persons,
-          roomType: booking.roomType || "",
-          reference,
-        };
+        const checkoutDate = addCalendarDays(checkin.arrivalDate, Math.max(1, Number(checkin.stayingDays) || 1));
+        const candidates = allBookings.filter((item) =>
+          !["cancelled", "no_show"].includes(item.status) &&
+          datesOverlap(item.checkinDate, item.checkoutDate || addCalendarDays(item.checkinDate, 1), checkin.arrivalDate, checkoutDate)
+        );
+        const directBooking = reference
+          ? candidates.find((item) => [item.bookingRef, item.gokoBookingId, item.cmBookingId].some((value) => value && String(value).trim() === reference))
+          : undefined;
+        const phone = normalizedPhone(checkin.contact);
+        const phoneMatches = phone ? candidates.filter((item) => normalizedPhone(item.contact) === phone) : [];
+        const guestName = normalizedName(checkin.name);
+        const nameMatches = guestName ? candidates.filter((item) => normalizedName(item.guestName) === guestName) : [];
+        const matched = directBooking
+          ? { booking: directBooking, matchMethod: "reference" as const }
+          : phoneMatches.length === 1
+            ? { booking: phoneMatches[0], matchMethod: "phone" as const }
+            : nameMatches.length === 1
+              ? { booking: nameMatches[0], matchMethod: "name" as const }
+              : null;
+        if (matched) {
+          const plannedBedLabels = bookingAssignments
+            .filter((assignment) => assignment.bookingId === matched.booking.id && datesOverlap(assignment.checkinDate, assignment.checkoutDate, checkin.arrivalDate, checkoutDate))
+            .map((assignment) => {
+              const assignedBed = allBeds.find((bed) => bed.id === assignment.bedId);
+              return assignedBed ? `${assignedBed.dormName} / ${assignedBed.bedId}` : "";
+            })
+            .filter((label, index, labels) => label && labels.indexOf(label) === index);
+          linkedBookingDetails[String(checkin.id)] = {
+            id: matched.booking.id,
+            persons: matched.booking.persons,
+            roomType: matched.booking.roomType || "",
+            reference: matched.booking.bookingRef || reference,
+            source: matched.booking.platform || matched.booking.source || "booking",
+            plannedBedLabels,
+            matchMethod: matched.matchMethod,
+          };
+        }
       }
       return NextResponse.json({ beds: bedsArr, unassigned: unassignedArr, linkedBookingDetails, role });
     }

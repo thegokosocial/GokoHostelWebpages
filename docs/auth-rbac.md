@@ -136,7 +136,7 @@ Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), M
 | deleteBooking | `canDeleteBooking` |
 | users, audit, backup, settings, stats, health, rate scrape, initDorms… | admin_only |
 
-Dashboard checkout rows show room status from a matched booking and food status from active check-in orders. Room matching is read-only and prefers the current bed/date booking assignment, then the check-in booking reference, then a unique normalized phone or guest-name match; unlinked legacy guests are shown as room `not_linked`. An overall clear state is shown only when a room is linked and both room and food balances are clear.
+Dashboard checkout rows show room status from a matched booking and food status from active check-in orders. Room matching is read-only and prefers the current bed/date booking assignment, then the check-in booking reference, then a unique normalized phone or guest-name match with overlapping stay dates; planned room/bed labels are displayed separately and do not change physical occupancy or payment state. Unlinked legacy guests are shown as room `not_linked`. An overall clear state is shown only when a room is linked and both room and food balances are clear.
 
 For `add`, `addPast`, and `update`, any non-Indian nationality must use `idType=passport` and include a stored visa document link. The Admin Records UI prompts for visa uploads; self-check-in enforces the same rule through its public validation flow. Indian guests may use Aadhaar, Driving Licence, or Passport.
 

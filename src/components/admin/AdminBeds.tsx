@@ -149,7 +149,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
   const { showError } = useAdminToast();
   const [beds, setBeds] = useState<BedRow[]>([]);
   const [unassigned, setUnassigned] = useState<string[][]>([]);
-  const [linkedBookingDetails, setLinkedBookingDetails] = useState<Record<string, { id: number; persons: number; roomType: string; reference: string }>>({});
+  const [linkedBookingDetails, setLinkedBookingDetails] = useState<Record<string, { id: number; persons: number; roomType: string; reference: string; source: string; plannedBedLabels: string[]; matchMethod: "reference" | "phone" | "name" }>>({});
   const [loading, setLoading] = useState(true);
   const [loadingBedIdx, setLoadingBedIdx] = useState<number | null>(null);
   const [selectedDorm, setSelectedDorm] = useState<string | null>(null);
@@ -184,7 +184,11 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         const data = await res.json();
         setBeds((data.beds || []).map(parseBedRow));
         setUnassigned(data.unassigned || []);
-        setLinkedBookingDetails(data.linkedBookingDetails || {});
+        const bookingDetails = data.linkedBookingDetails || {};
+        setLinkedBookingDetails(Object.fromEntries(Object.entries(bookingDetails).map(([key, value]) => [key, {
+          ...(value as object),
+          plannedBedLabels: Array.isArray((value as { plannedBedLabels?: unknown }).plannedBedLabels) ? (value as { plannedBedLabels: string[] }).plannedBedLabels : [],
+        }] )) as Record<string, { id: number; persons: number; roomType: string; reference: string; source: string; plannedBedLabels: string[]; matchMethod: "reference" | "phone" | "name" }>);
       }
     } finally { setLoading(false); }
   };
@@ -375,7 +379,10 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
                 <div>
                   <span className="font-medium text-brand-green-dark">{guest[3]}</span>
                   <span className="ml-2 text-xs text-brand-green-dark/50">{guest[6]} days · {guest[7]}</span>
-                  {linkedBookingDetails[guest[15]] && <span className="ml-2 text-xs text-blue-700 dark:text-blue-400">Online booking · {linkedBookingDetails[guest[15]].roomType || "room type not specified"} · {linkedBookingDetails[guest[15]].persons} person{linkedBookingDetails[guest[15]].persons === 1 ? "" : "s"}</span>}
+                  {linkedBookingDetails[guest[15]] && <span className="ml-2 text-xs text-blue-700 dark:text-blue-400">
+                    Planned booking · {linkedBookingDetails[guest[15]].roomType || "room type not specified"} · {linkedBookingDetails[guest[15]].persons} person{linkedBookingDetails[guest[15]].persons === 1 ? "" : "s"}
+                    {linkedBookingDetails[guest[15]].plannedBedLabels.length > 0 && ` · ${linkedBookingDetails[guest[15]].plannedBedLabels.join(", ")}`}
+                  </span>}
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => void openGuestCheckout(guest)}
@@ -440,7 +447,7 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         <div className="mt-4 rounded-xl border-2 border-brand-green bg-brand-green/[0.04] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0 truncate font-medium text-brand-green">Assigning bed to: <strong>{assigningGuest[3]}</strong> ({assigningGuest[6]} days)
-              {linkedBookingDetails[assigningGuest[15]] && <span className="ml-2 text-xs font-normal text-blue-700 dark:text-blue-400">Online booking: {linkedBookingDetails[assigningGuest[15]].roomType || "room type not specified"} · booking bed is informational only</span>}
+              {linkedBookingDetails[assigningGuest[15]] && <span className="ml-2 text-xs font-normal text-blue-700 dark:text-blue-400">Planned booking: {linkedBookingDetails[assigningGuest[15]].roomType || "room type not specified"}{linkedBookingDetails[assigningGuest[15]].plannedBedLabels.length > 0 ? ` · ${linkedBookingDetails[assigningGuest[15]].plannedBedLabels.join(", ")}` : ""} · planned only</span>}
             </div>
             <button type="button" onClick={() => setAssigningGuest(null)} className="text-sm text-brand-green-dark/60 hover:text-brand-red">Cancel</button>
           </div>

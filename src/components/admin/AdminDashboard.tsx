@@ -37,7 +37,7 @@ export function AdminDashboard({
   const [todayCheckouts, setTodayCheckouts] = useState<{
     name: string; contact: string; bedId: string; dorm: string; bedIdx: number; expectedCheckout: string;
     pendingTab: number; paidTotal: number; totalOrders: number; pendingOrders: number; checkinId: number | null;
-    roomStatus: "pending" | "clear" | "not_linked"; roomDue: number | null;
+    roomStatus: "pending" | "clear" | "not_linked"; roomDue: number | null; plannedRoomType: string; plannedBedLabels: string[];
   }[]>([]);
   const [todayBookings, setTodayBookings] = useState<{
     id: number; guestName: string; platform: string; bookingRef: string; checkinDate: string; checkoutDate: string;
@@ -74,7 +74,11 @@ export function AdminDashboard({
         setTodayCheckins(data.todayCheckins || []);
         setTodayCompletedCheckinCount(Number(data.todayCompletedCheckinCount) || 0);
         setTodayExpectedCheckinCount(Number(data.todayExpectedCheckinCount) || 0);
-        setTodayCheckouts(data.todayCheckouts || []);
+        setTodayCheckouts((data.todayCheckouts || []).map((checkout: typeof todayCheckouts[number]) => ({
+          ...checkout,
+          plannedRoomType: checkout.plannedRoomType || "",
+          plannedBedLabels: Array.isArray(checkout.plannedBedLabels) ? checkout.plannedBedLabels : [],
+        })));
         setTodayBookings(data.todayBookings || []);
         setTodayBookingCount(Number(data.todayBookingCount) || 0);
         setTodayCancellationCount(Number(data.todayCancellationCount) || 0);
@@ -442,6 +446,7 @@ export function AdminDashboard({
                         <span className="inline-flex items-center gap-1 rounded-md bg-green-50 dark:bg-green-950 px-2 py-1 text-xs font-semibold text-green-700 dark:text-green-400"><CheckCircleIcon className="h-3 w-3" />Food: All clear</span>
                       )}
                       {co.roomStatus === "clear" && co.pendingTab <= 0 && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 dark:bg-emerald-950 px-2 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400"><CheckCircleIcon className="h-3 w-3" />All clear</span>}
+                      {(co.plannedRoomType || co.plannedBedLabels.length > 0) && <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 dark:bg-blue-950 px-2 py-1 text-xs font-semibold text-blue-700 dark:text-blue-400">Planned: {co.plannedRoomType || "room"}{co.plannedBedLabels.length > 0 ? ` · ${co.plannedBedLabels.join(", ")}` : ""}</span>}
                     </div>
                     {co.contact && (
                       <a
