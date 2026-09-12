@@ -188,6 +188,8 @@ IOUs live in `split_*` (Cloudflare-only). Hostel cash hits `expenses` only when 
 
 The Unassigned picker sends the current `bookingId` when loading and assigning beds. The availability query excludes only that booking's own temporary OTA hold; holds from other unassigned OTA bookings remain protected. This allows an existing failed OTA booking to be completed once capacity is available.
 
+The Booking Calendar and Inventory UI show the held bucket only when the visible range contains an active unassigned OTA hold; zero-held ranges omit it without changing the backend calculation.
+
 1. `developing.md` + this file + `overview.md`
 2. `architecture.md` + `decisions.md` + `interactions.md`
 3. `auth-rbac.md` + `api-map.md`

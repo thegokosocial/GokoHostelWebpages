@@ -576,6 +576,13 @@ describe("Booking calendar UI permissions match the API keys", () => {
     const selector = readFile("src/components/admin/booking-dashboard/DateRangeSelector.tsx");
     expect(selector).toContain("[dateRange.startDate, dateRange.endDate]");
   });
+
+  it("shows the held legend and bucket only when the visible range has a hold", () => {
+    const grid = readFile("src/components/admin/booking-dashboard/BookingCalendarGrid.tsx");
+    expect(grid).toContain("const hasHeld = useMemo");
+    expect(grid).toContain("Nightly totals: online / walk-in / blocked{hasHeld ?");
+    expect(grid).toContain("{hasHeld && <span className=\"text-zinc-600");
+  });
 });
 
 describe("Booking calendar: off-screen stays after Unassigned assign", () => {

@@ -88,6 +88,10 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
 
   const dates = useMemo(() => generateDates(rangeStart, rangeDays), [rangeStart, rangeDays]);
   const endDate = useMemo(() => addCalendarDays(rangeStart, rangeDays), [rangeStart, rangeDays]);
+  const hasHeld = useMemo(
+    () => data?.unassignedOta?.some((hold) => dates.includes(hold.date) && hold.rooms > 0) ?? false,
+    [data, dates],
+  );
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -202,8 +206,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           <span className="font-medium text-emerald-700 dark:text-emerald-400">walk-in</span>
           <span className="mx-0.5">/</span>
           <span className="font-medium text-orange-700 dark:text-orange-400">blocked</span>
-          <span className="mx-0.5">/</span>
-          <span className="font-medium text-zinc-600 dark:text-zinc-300">held</span>
+          {hasHeld && <><span className="mx-0.5">/</span><span className="font-medium text-zinc-600 dark:text-zinc-300">held</span></>}
         </span>
       </div>
 
@@ -237,7 +240,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           {["occupancy", "available", "sold"].map((stat) => (
             <div key={stat} className="flex border-b border-brand-mist/50 bg-slate-50 dark:bg-zinc-800/60">
               <div className="sticky left-0 z-10 w-[160px] shrink-0 border-r border-brand-mist bg-slate-50 px-3 py-1.5 text-[11px] font-medium capitalize text-brand-green-dark/50 dark:bg-zinc-800 dark:text-zinc-500">
-                {stat === "occupancy" ? "Occupancy %" : stat === "available" ? "Available" : "Booked / held"}
+                {stat === "occupancy" ? "Occupancy %" : stat === "available" ? "Available" : hasHeld ? "Booked / held" : "Booked"}
               </div>
               {dates.map((date) => {
                 const { isToday, isWeekend } = formatDateShort(date);
@@ -290,7 +293,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                           overridden && "underline decoration-dotted decoration-blue-400",
                         )}
                         style={{ width: colWidth }}
-                        title={`${online} online (OTA) · ${offline} walk-in · ${blocked} blocked${unassignedOta > 0 ? ` · ${unassignedOta} unassigned OTA` : ""}${overridden ? " · Override active" : ""}`}
+                        title={`${online} online (OTA) · ${offline} walk-in · ${blocked} blocked${hasHeld ? ` · ${unassignedOta} unassigned OTA` : ""}${overridden ? " · Override active" : ""}`}
                       >
                         <span className="tabular-nums">
                           <span className="text-sky-700 dark:text-sky-400">{online}</span>
@@ -298,8 +301,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                           <span className="text-emerald-700 dark:text-emerald-400">{offline}</span>
                           <span className="text-muted-foreground/40">/</span>
                           <span className="text-orange-700 dark:text-orange-400">{blocked}</span>
-                          <span className="text-muted-foreground/40">/</span>
-                          <span className="text-zinc-600 dark:text-zinc-300">{unassignedOta}</span>
+                          {hasHeld && <><span className="text-muted-foreground/40">/</span><span className="text-zinc-600 dark:text-zinc-300">{unassignedOta}</span></>}
                         </span>
                         {overridden && <EditIcon className="ml-0.5 inline h-2.5 w-2.5 text-blue-400" />}
                       </button>

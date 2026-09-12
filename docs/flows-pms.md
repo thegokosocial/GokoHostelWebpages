@@ -124,6 +124,8 @@ Inbound webhook `POST /api/aiosell/reservations`:
 
 The Unassigned picker and its `assignBeds` write pass the current `bookingId` to `getAvailableBedsForRange`. This excludes only that booking's own temporary OTA hold, allowing a previously failed OTA booking to use its reserved online capacity. Holds belonging to other unassigned OTA bookings remain unavailable.
 
+Booking Calendar and Inventory hide the held legend/count column when the visible date range has no active unassigned OTA hold; the backend reservation remains active.
+
 Every Aiosell hop writes `channel_sync_log` (Management → Logs → PMS). `logPmsCall` in `src/lib/pmsLog.ts` — never throws. Payloads stored as sent (no PII redact). Bodies capped at 32KB. The card shows an **operation** line from `summarizePmsLog` in `src/lib/pmsLogSummary.ts` (display only; Aiosell bodies unchanged). **Do not** import `pmsLog.ts` from `ManagementLogs` — that module `import()`s D1 queries. Push inventory/rates/restrictions: `executive 30 Aug 10 → 9` by diffing this request against the previous **successful** log of the same kind (`inventory` matches `inventory (auto)`). No previous overlapping cell → `executive 30 Aug → 9` (do not invent a from). Pull reservation: `Book · SAN… · 2 executive · 31 Aug–1 Sep` — inventory remaining is **not** on the webhook. Repeated same-code rooms collapse to sold units (`6 suite`, not `3 suite + 3 suite` × 6). Fetch/no-show: one-line. Caps at 6 lines + `+N more`. Full restriction snapshots collapse defaults to `open`; 1-key auto patches still show `stopSell` / `stopSell off`.
 
 | Direction | Type | What |

@@ -216,6 +216,8 @@ describe("Inventory grid: availability and occupancy workflows", () => {
   it("matches the source occupancy formula (blocked exclusive-end, cancelled ignored, override wins)", () => {
     expect(ui).toContain("computeNightAvailability");
     expect(ui).toContain("unassignedOtaOnNight");
+    expect(ui).toContain("const hasHeld = useMemo");
+    expect(ui).toContain("{hasHeld &&");
     expect(ui).toContain("OTA");
     expect(ui).toContain("walk-in");
     expect(ui).toContain("blocked</span>");
