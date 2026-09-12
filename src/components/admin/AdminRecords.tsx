@@ -201,11 +201,25 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
   const refresh = () => loadTab(currentTab);
 
   const deleteRow = async (rowIndex: number) => {
-    if (!confirm("Delete this entry and its documents?")) return;
+    const row = rows[rowIndex];
+    const rowId = parseInt(row[17] || "0", 10);
+    let warning = "Delete this entry and its documents?";
+    try {
+      const infoRes = await apiCall({ action: "getDeleteInfo", rowId });
+      if (infoRes.ok) {
+        const info = await infoRes.json();
+        const orders = Array.isArray(info.orders) ? info.orders : [];
+        if (orders.length > 0) {
+          const summary = orders.map((order: { orderNumber?: string; total?: number; status?: string }) =>
+            `${order.orderNumber || "order"} · ₹${Number(order.total || 0)} · ${order.status || "unknown"}`
+          ).join("\n");
+          warning = `This guest has ${orders.length} food order${orders.length === 1 ? "" : "s"}:\n\n${summary}\n\nDeleting the record will keep the food order history but detach it from this guest. Continue?`;
+        }
+      }
+    } catch {}
+    if (!confirm(warning)) return;
     setLoading(true);
     try {
-      const row = rows[rowIndex];
-      const rowId = parseInt(row[17] || "0", 10);
       const driveFileIds: string[] = [];
       [row[14], row[15]].forEach((cell) => {
         if (cell) cell.split(" | ").forEach((url) => {

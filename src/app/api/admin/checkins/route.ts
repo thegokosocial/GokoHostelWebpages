@@ -18,7 +18,7 @@ import { activeCheckinIdsForContact, getPendingFoodTab } from "@/lib/foodTabDb";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
-  getCheckinsByMonth, getActiveCheckins, addCheckin, updateCheckin, deleteCheckin, getCheckinMonths, markVibeMatched,
+  getCheckinsByMonth, getActiveCheckins, addCheckin, updateCheckin, deleteCheckin, getCheckinDeleteInfo, getCheckinMonths, markVibeMatched,
   getAllBeds, getBedById, updateBedStatus, assignPhysicalBed, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
     const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
       list: "canViewRecords", add: "canAddCheckin", addPast: "admin_only",
       update: "canEditRecords", delete: "canDeleteRecords",
+      getDeleteInfo: "canDeleteRecords",
       verifyCheckin: "canViewRecords", getFormCData: "canViewRecords",
       reExtractFormC: "admin_only", updateFormCData: "admin_only",
       getDashboard: "canViewDashboard", markVibeMatched: "canViewDashboard",
@@ -139,6 +140,12 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Check-in Records ---
+
+    if (action === "getDeleteInfo") {
+      const { rowId } = rest;
+      if (!isValidId(rowId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      return NextResponse.json({ orders: await getCheckinDeleteInfo(rowId) });
+    }
 
     if (action === "list" || !action) {
       const tabName = month || getMonthKey();

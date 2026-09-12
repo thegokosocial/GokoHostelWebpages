@@ -125,12 +125,15 @@ Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), M
 | addPast, reExtractFormC, updateFormCData | admin_only |
 | update | `canEditRecords` |
 | delete | `canDeleteRecords` |
+| getDeleteInfo | `canDeleteRecords` |
 | getDashboard, markVibeMatched | `canViewDashboard` |
 | checkoutBed, checkoutGuest, undoCheckout, getPendingFoodTab | `canCheckout` **or** `canViewDashboard` |
 | getBeds | `canViewBeds` **or** `canViewTimeline` |
 | getBedHistory | `canViewBeds` |
 | assignBed, unassignBed, changeBed | `canAssignBed` **or** `canViewBeds`; physical bed assignment is independent of online booking-bed assignment, so a checked-in online guest uses the normal Beds flow and may take any physically available slot; assignment targets the check-in identity |
 | markClean | `canMarkClean` |
+
+Before deletion, Records checks linked food orders using `getDeleteInfo` and shows their order numbers, totals, and statuses. Deleting a check-in preserves historical food orders and physical bed rows by clearing their nullable `checkinId` references before deleting the check-in record.
 | getBookings, getUpcomingBookings, updateBookingStatus | `canViewBookings` |
 | addBooking | `canAddBooking` |
 | deleteBooking | `canDeleteBooking` |

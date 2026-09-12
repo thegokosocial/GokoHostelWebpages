@@ -46,6 +46,9 @@ export async function markVibeMatched(id: number) {
 
 export async function deleteCheckin(id: number) {
   const db = getDb();
+  // Preserve history while removing nullable references to the parent row.
+  await db.update(beds).set({ checkinId: null }).where(eq(beds.checkinId, id));
+  await db.update(foodOrders).set({ checkinId: null }).where(eq(foodOrders.checkinId, id));
   return db.delete(checkins).where(eq(checkins.id, id));
 }
 
@@ -980,6 +983,17 @@ export async function getGuestAllFoodOrders(checkinId: number) {
   return db.select().from(foodOrders)
     .where(eq(foodOrders.checkinId, checkinId))
     .orderBy(desc(foodOrders.createdAt));
+}
+
+export async function getCheckinDeleteInfo(checkinId: number) {
+  const orders = await getGuestAllFoodOrders(checkinId);
+  return orders.map((order) => ({
+    orderNumber: order.orderNumber,
+    total: order.total,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    createdAt: order.createdAt,
+  }));
 }
 
 export async function getFoodOrderHistory(limit = 100, offset = 0) {
