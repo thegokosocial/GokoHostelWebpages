@@ -80,7 +80,7 @@ function parseFormCDate(value: unknown): Date | null {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : null;
 }
 
-function formCSubmissionGuardrails(data: Record<string, any>, row: string[]): string[] {
+function formCSubmissionGuardrails(data: Record<string, any>): string[] {
   const p = data.extractedPassport || {};
   const v = data.extractedVisa || {};
   const missing = [
@@ -101,9 +101,6 @@ function formCSubmissionGuardrails(data: Record<string, any>, row: string[]): st
   if (visaIssue && visaIssue > today) issues.push("Visa issue date is in the future.");
   if (visaExpiry && visaExpiry <= today) issues.push("Visa has expired.");
   if (visaIssue && visaExpiry && visaIssue >= visaExpiry) issues.push("Visa issue date must be before expiry.");
-  const indiaPhone = String(row[5] || "").replace(/\D/g, "");
-  const homePhone = String(data.homeCountryPhone || "").replace(/\D/g, "");
-  if (indiaPhone && homePhone && indiaPhone === homePhone) issues.push("India and home-country phone numbers are identical; confirm the correct number.");
   return issues;
 }
 
@@ -1649,7 +1646,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                   type="button"
                   disabled={frroSubmitting}
                   onClick={async () => {
-                    const guardrailIssues = formCSubmissionGuardrails(formCPopup.data, formCPopup.row);
+                    const guardrailIssues = formCSubmissionGuardrails(formCPopup.data);
                     if (guardrailIssues.length > 0) {
                       setFrroStatus(`Cannot submit: ${guardrailIssues.join(" ")}`);
                       return;

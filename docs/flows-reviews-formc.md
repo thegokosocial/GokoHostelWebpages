@@ -31,6 +31,7 @@ Admin actions: `listAskReview`, `sendWhatsApp`, `listResponses`, `getAnalytics`,
 ## Form C
 
 Foreign check-in stores `form_c_data` JSON (MRZ + visa OCR, `parsePassportData.ts`) as a recoverable draft with a persistent `draftId` and `status: draft`. Records → Form C popup shows the draft ID, extracted details, and a review-and-submit action. A successful FRRO run changes the stored status to `submitted` and keeps the application ID/history. Incorrect application-history entries can be removed from Goko by an admin; this does not delete anything at FRRO. `reExtractFormC` / `updateFormCData` / `removeFormCSubmission` = admin_only.
+The same phone number may be used for India and the home country when the guest has no local Indian number.
 
 ```mermaid
 sequenceDiagram

@@ -353,6 +353,7 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(records).toContain('aria-label={showFrroPassword ? "Hide FRRO password" : "Show FRRO password"}');
     expect(records).toContain("Delete incorrect entry");
     expect(records).toContain("formCSubmissionGuardrails");
+    expect(records).not.toContain("India and home-country phone numbers are identical");
     expect(route).toContain("removeFormCSubmission: \"admin_only\"");
   });
 
