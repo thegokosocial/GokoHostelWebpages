@@ -11,7 +11,7 @@ This is possible. For example, one booking for five people can link to five self
 ## What the system does today
 
 - Self check-in requires a booking platform.
-- Booking ID is required for Booking.com, Agoda, MakeMyTrip, Hostelworld, and Airbnb.
+- Booking platform is required, but Booking ID is optional for every platform. When Offline booking or Walk-in is selected, a GOKO-style ID is generated and stored on the check-in record instead.
 - Booking ID is not requested for Offline booking or Walk-in. A GOKO-style ID is generated and stored on the check-in record instead.
 - The stored check-in `booking_id` is text. It is not a database relationship to `bookings.id`.
 - Each person can submit a separate self-check-in with their own phone number. “Number of persons” is still only an aggregate form value and must not be used to decide which submitted records belong to the booking.

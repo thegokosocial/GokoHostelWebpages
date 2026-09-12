@@ -249,9 +249,58 @@ function MultiDocUpload({
   );
 }
 
+function driveFileId(link: string): string | null {
+  try {
+    const url = new URL(link);
+    const pathMatch = url.pathname.match(/\/d\/([^/]+)/);
+    return pathMatch?.[1] || url.searchParams.get("id");
+  } catch {
+    return null;
+  }
+}
+
 function driveThumb(link: string): string | null {
-  const m = link.match(/\/d\/([^/]+)\//);
-  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w200` : null;
+  const fileId = driveFileId(link);
+  return fileId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w400` : null;
+}
+
+function PreviousDocumentPreview({
+  link,
+  label,
+  index,
+}: {
+  link: string;
+  label: string;
+  index: number;
+}) {
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const thumb = driveThumb(link);
+  const canOpen = /^https?:\/\//i.test(link);
+  const previewSrc = thumb && previewAttempt < 2 ? `${thumb}&retry=${previewAttempt}` : null;
+
+  const card = previewSrc ? (
+    <img
+      src={previewSrc}
+      alt={`${label} ${index + 1}`}
+      className="h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft dark:shadow-none"
+      onError={() => setPreviewAttempt((attempt) => Math.min(attempt + 1, 2))}
+    />
+  ) : (
+    <div className="flex h-24 w-24 flex-col items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 px-1 text-center shadow-soft dark:shadow-none">
+      <span className="text-[10px] text-brand-green-dark/70">
+        {canOpen ? "Preview unavailable" : `${label} on file`}
+      </span>
+      {canOpen && <span className="mt-1 text-[10px] font-medium text-brand-green">Open document ↗</span>}
+    </div>
+  );
+
+  return canOpen ? (
+    <a href={link} target="_blank" rel="noreferrer" aria-label={`Open ${label} ${index + 1}`}>
+      {card}
+    </a>
+  ) : (
+    card
+  );
 }
 
 type LookupData = {
@@ -337,12 +386,10 @@ export function SelfCheckinForm() {
   const nationality = watch("nationality");
   const idType = watch("idType");
   const bookingPlatform = watch("bookingPlatform");
-  const bookingId = watch("bookingId");
   const numberOfPersons = watch("numberOfPersons");
   const stayingDays = watch("stayingDays");
   const firstName = watch("firstName");
   const lastName = watch("lastName");
-  const needsBookingId = bookingPlatform && bookingPlatform !== "Offline booking" && bookingPlatform !== "Walk-in";
 
   useEffect(() => {
     if (isForeignNationality(nationality) && idType !== "passport") {
@@ -908,26 +955,18 @@ export function SelfCheckinForm() {
               <p className="mt-1 text-xs text-brand-red">{errors.bookingPlatform.message}</p>
             )}
           </div>
-          {needsBookingId && (
-            <div>
-              <Label htmlFor="bookingId">Booking ID <span className="text-brand-red">*</span></Label>
+          <div>
+              <Label htmlFor="bookingId">Booking ID <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
               <Input
                 id="bookingId"
                 placeholder="e.g. 4829173650"
                 {...register("bookingId")}
-                className={cn(
-                  errors.bookingId && "border-brand-red",
-                  returnGuest && !bookingId && "border-amber-400 ring-2 ring-amber-100"
-                )}
+                className={cn(errors.bookingId && "border-brand-red")}
               />
-              {returnGuest && !bookingId && !errors.bookingId && (
-                <p className="mt-1 text-xs font-medium text-amber-600">Please fill in for this visit</p>
-              )}
               {errors.bookingId && (
                 <p className="mt-1 text-xs text-brand-red">{errors.bookingId.message}</p>
               )}
-            </div>
-          )}
+          </div>
         </div>
 
         {/* Name */}
@@ -1138,20 +1177,7 @@ export function SelfCheckinForm() {
             </Label>
             <div className="mb-2 flex flex-wrap gap-3">
               {prevIdCardLink.split(" | ").map((link, i) => {
-                const thumb = driveThumb(link);
-                return thumb ? (
-                  <img
-                    key={i}
-                    src={thumb}
-                    alt={`Previous ID ${i + 1}`}
-                    className="h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft dark:shadow-none"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                  />
-                ) : (
-                  <div key={i} className="flex h-24 w-24 items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 shadow-soft dark:shadow-none">
-                    <span className="text-[10px] text-brand-green-dark/60">ID on file</span>
-                  </div>
-                );
+                return <PreviousDocumentPreview key={i} link={link} label="Previous ID" index={i} />;
               })}
             </div>
             <p className="text-xs text-brand-green-dark/50">
@@ -1181,20 +1207,7 @@ export function SelfCheckinForm() {
             </Label>
             <div className="mb-2 flex flex-wrap gap-3">
               {prevVisaLink.split(" | ").map((link, i) => {
-                const thumb = driveThumb(link);
-                return thumb ? (
-                  <img
-                    key={i}
-                    src={thumb}
-                    alt={`Previous Visa ${i + 1}`}
-                    className="h-24 w-24 rounded-xl border border-brand-mist object-cover shadow-soft dark:shadow-none"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                  />
-                ) : (
-                  <div key={i} className="flex h-24 w-24 items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 shadow-soft dark:shadow-none">
-                    <span className="text-[10px] text-brand-green-dark/60">Visa on file</span>
-                  </div>
-                );
+                return <PreviousDocumentPreview key={i} link={link} label="Previous visa" index={i} />;
               })}
             </div>
             <p className="text-xs text-brand-green-dark/50">

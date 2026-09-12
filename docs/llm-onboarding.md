@@ -63,7 +63,7 @@ New Booking / Unassigned chips: `tagBedsForPicker` offers `min(online)+min(offli
 | idx | field |
 |-----|--------|
 | 0–10 | submittedAt … emergencyPhone |
-| 11–12 | bookingPlatform, bookingId |
+| 11–12 | bookingPlatform (required), bookingId (optional) |
 | 13–16 | idType, idCardLink, visaLink, verified |
 | 17 | numeric id (string) |
 | 18–19 | status, checkedOutAt |

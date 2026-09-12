@@ -27,6 +27,15 @@ describe("check-in nationality ID rules", () => {
     expect(isForeignNationality("France")).toBe(true);
   });
 
+  it("requires a booking platform but allows an optional booking ID", () => {
+    const withoutBookingId = checkinSchema.safeParse({ ...baseCheckin, nationality: "India", idType: "aadhaar", bookingPlatform: "Booking.com", bookingId: "" });
+    expect(withoutBookingId.success).toBe(true);
+
+    const withoutPlatform = checkinSchema.safeParse({ ...baseCheckin, nationality: "India", idType: "aadhaar", bookingPlatform: undefined, bookingId: "" });
+    expect(withoutPlatform.success).toBe(false);
+    if (!withoutPlatform.success) expect(withoutPlatform.error.issues.some((issue) => issue.path[0] === "bookingPlatform")).toBe(true);
+  });
+
   it("allows all supported ID types for Indian guests", () => {
     for (const idType of ["aadhaar", "driving_licence", "passport"] as const) {
       expect(checkinSchema.safeParse({ ...baseCheckin, nationality: "India", visaImages: [], idType }).success).toBe(true);

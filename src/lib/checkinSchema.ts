@@ -161,21 +161,6 @@ export const checkinSchema = z
       path: ["emergencyPhone"],
     }
   )
-  .refine(
-    (data) => {
-      if (
-        data.bookingPlatform &&
-        data.bookingPlatform !== "Offline booking" &&
-        data.bookingPlatform !== "Walk-in"
-      ) {
-        return !!data.bookingId && data.bookingId.trim().length > 0;
-      }
-      return true;
-    },
-    {
-      message: "Booking ID is required for this platform",
-      path: ["bookingId"],
-    }
-  );
+  ;
 
 export type CheckinFormData = z.infer<typeof checkinSchema>;

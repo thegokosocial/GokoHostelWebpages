@@ -230,6 +230,27 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     return BARE_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
   }
 
+  it("keeps booking platform required while showing booking ID as optional", () => {
+    const form = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinForm.tsx"), "utf-8");
+    const schema = fs.readFileSync(path.join(ROOT, "src/lib/checkinSchema.ts"), "utf-8");
+    expect(form).toContain("Booking ID <span className=\"text-xs font-normal text-muted-foreground\">(optional)</span>");
+    expect(form).not.toContain("Booking ID <span className=\"text-brand-red\">*</span>");
+    expect(schema).not.toContain("Booking ID is required for this platform");
+  });
+
+  it("shows returning guests a usable previous ID preview", () => {
+    const form = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinForm.tsx"), "utf-8");
+    expect(form).toContain("function driveFileId");
+    expect(form).toContain('url.searchParams.get("id")');
+    expect(form).toContain("PreviousDocumentPreview");
+    expect(form).toContain("previewAttempt < 2");
+    expect(form).toContain("Math.min(attempt + 1, 2)");
+    expect(form).toContain('target="_blank"');
+    expect(form).toContain('Preview unavailable');
+    expect(form).toContain("setPrevIdCardLink(d.idCardLink || \"\")");
+    expect(form).toContain("setPrevVisaLink(d.visaLink || \"\")");
+  });
+
   it("keeps the Welcome heading on the server page and ssr:false on the island only", () => {
     const page = fs.readFileSync(path.join(ROOT, "src/app/self-checkin/page.tsx"), "utf-8");
     const island = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinFormIsland.tsx"), "utf-8");
