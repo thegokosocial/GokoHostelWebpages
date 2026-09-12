@@ -172,7 +172,7 @@ IOUs live in `split_*` (Cloudflare-only). Hostel cash hits `expenses` only when 
 | Timeline | `AdminTimeline` | checkins `getBeds` |
 | Inventory | `InventoryRatePlan` | `/api/admin/inventory` |
 | Records | `AdminRecords` | checkins list/add/update… |
-| Food Orders | `AdminFoodOrders` | `/api/admin/food-orders` + kitchen |
+| Food Orders | `AdminFoodOrders` | `/api/admin/food-orders` + kitchen (including per-stage bulk advance controls) |
 | Accounts | `AdminExpenditure` | `/api/admin/expenses` (Food + Room Revenue) |
 | Splits | `AdminSplits` | `/api/admin/splits` (not `useAdminApi`) |
 | Reviews | `AdminReviews` | `/api/admin/reviews` |

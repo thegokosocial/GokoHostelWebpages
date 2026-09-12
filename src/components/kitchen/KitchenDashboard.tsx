@@ -153,6 +153,7 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
   const [rejectReason, setRejectReason] = useState("Out of stock");
   const [rejectCustom, setRejectCustom] = useState("");
   const [rejectLoading, setRejectLoading] = useState(false);
+  const [bulkUpdatingStatus, setBulkUpdatingStatus] = useState<string | null>(null);
   const [btSupported, setBtSupported] = useState(false);
 
   // Edit mode state
@@ -275,6 +276,20 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
         prev.map((o) => (o.id === orderId ? { ...o, status } : o))
       );
     } catch {}
+  };
+
+  const updateAllStatuses = async (ordersInStage: Order[], status: "preparing" | "ready" | "served") => {
+    if (ordersInStage.length === 0 || bulkUpdatingStatus) return;
+    setBulkUpdatingStatus(status);
+    try {
+      const data = await api("updateStatusBulk", { orderIds: ordersInStage.map((order) => order.id), status });
+      if (!data.success) throw new Error(data.error || "Bulk status update failed");
+      await fetchOrders();
+    } catch (err: any) {
+      if (err?.message !== "Unauthorized") showError("Could not update all orders", "Please try again.");
+    } finally {
+      setBulkUpdatingStatus(null);
+    }
   };
 
   const toggleAvailability = async (menuItemId: number, currentlyAvailable: number) => {
@@ -836,6 +851,9 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
             color="amber"
             actionLabel="START PREPARING"
             actionColor="bg-emerald-600 hover:bg-emerald-500 text-white"
+            bulkActionLabel="START ALL"
+            onBulkAction={() => updateAllStatuses(placedOrders, "preparing")}
+            bulkActionDisabled={bulkUpdatingStatus !== null}
             onAction={(id) => updateStatus(id, "preparing")}
             onRejectItem={(orderId, item) =>
               setRejectModal({ orderId, orderItemId: item.id, itemName: item.itemName })
@@ -862,6 +880,9 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
             color="blue"
             actionLabel="MARK READY"
             actionColor="bg-blue-600 hover:bg-blue-500 text-white"
+            bulkActionLabel="MARK ALL READY"
+            onBulkAction={() => updateAllStatuses(preparingOrders, "ready")}
+            bulkActionDisabled={bulkUpdatingStatus !== null}
             onAction={(id) => updateStatus(id, "ready")}
             onRejectItem={(orderId, item) =>
               setRejectModal({ orderId, orderItemId: item.id, itemName: item.itemName })
@@ -887,6 +908,9 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
             color="emerald"
             actionLabel="MARK SERVED"
             actionColor="bg-gray-700 hover:bg-gray-600 text-white"
+            bulkActionLabel="MARK ALL SERVED"
+            onBulkAction={() => updateAllStatuses(readyOrders, "served")}
+            bulkActionDisabled={bulkUpdatingStatus !== null}
             onAction={(id) => updateStatus(id, "served")}
             onRejectItem={(orderId, item) =>
               setRejectModal({ orderId, orderItemId: item.id, itemName: item.itemName })
@@ -917,6 +941,9 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
               color="amber"
               actionLabel="START PREPARING"
               actionColor="bg-emerald-600 hover:bg-emerald-500 text-white"
+              bulkActionLabel="START ALL"
+              onBulkAction={() => updateAllStatuses(placedOrders, "preparing")}
+              bulkActionDisabled={bulkUpdatingStatus !== null}
               onAction={(id) => updateStatus(id, "preparing")}
               onRejectItem={(orderId, item) =>
                 setRejectModal({ orderId, orderItemId: item.id, itemName: item.itemName })
@@ -945,6 +972,9 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
               color="blue"
               actionLabel="MARK READY"
               actionColor="bg-blue-600 hover:bg-blue-500 text-white"
+              bulkActionLabel="MARK ALL READY"
+              onBulkAction={() => updateAllStatuses(preparingOrders, "ready")}
+              bulkActionDisabled={bulkUpdatingStatus !== null}
               onAction={(id) => updateStatus(id, "ready")}
               onRejectItem={(orderId, item) =>
                 setRejectModal({ orderId, orderItemId: item.id, itemName: item.itemName })
@@ -972,6 +1002,9 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
               color="emerald"
               actionLabel="MARK SERVED"
               actionColor="bg-gray-700 hover:bg-gray-600 text-white"
+              bulkActionLabel="MARK ALL SERVED"
+              onBulkAction={() => updateAllStatuses(readyOrders, "served")}
+              bulkActionDisabled={bulkUpdatingStatus !== null}
               onAction={(id) => updateStatus(id, "served")}
               onRejectItem={(orderId, item) =>
                 setRejectModal({ orderId, orderItemId: item.id, itemName: item.itemName })
@@ -1091,6 +1124,9 @@ function OrderColumn({
   color,
   actionLabel,
   actionColor,
+  bulkActionLabel,
+  onBulkAction,
+  bulkActionDisabled,
   onAction,
   onRejectItem,
   onUpdateQuantity,
@@ -1114,6 +1150,9 @@ function OrderColumn({
   color: "amber" | "blue" | "emerald";
   actionLabel: string;
   actionColor: string;
+  bulkActionLabel: string;
+  onBulkAction: () => void;
+  bulkActionDisabled: boolean;
   onAction: (orderId: number) => void;
   onRejectItem: (orderId: number, item: OrderItem) => void;
   onUpdateQuantity: (orderId: number, item: OrderItem, delta: number) => void;
@@ -1159,14 +1198,24 @@ function OrderColumn({
         className={`mb-3 flex items-center justify-between rounded-xl px-4 py-2.5 shadow-sm dark:shadow-none ${headerBg}`}
       >
         <span className="text-sm font-bold">{title}</span>
-        <motion.span
-          key={orders.length}
-          initial={{ scale: 1.3 }}
-          animate={{ scale: 1 }}
-          className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${badgeBg}`}
-        >
-          {orders.length}
-        </motion.span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onBulkAction}
+            disabled={orders.length === 0 || bulkActionDisabled}
+            className="rounded-md bg-white/80 px-2 py-1 text-[10px] font-bold text-gray-700 shadow-sm transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-black/20 dark:text-gray-200 dark:hover:bg-black/30"
+          >
+            {bulkActionLabel}
+          </button>
+          <motion.span
+            key={orders.length}
+            initial={{ scale: 1.3 }}
+            animate={{ scale: 1 }}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${badgeBg}`}
+          >
+            {orders.length}
+          </motion.span>
+        </div>
       </div>
 
       <div className="space-y-3">

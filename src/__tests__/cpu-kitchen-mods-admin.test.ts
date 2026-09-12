@@ -194,6 +194,45 @@ describe("Kitchen listOrders modification-count query", () => {
   });
 });
 
+describe("Kitchen bulk status workflow", () => {
+  beforeEach(() => {
+    for (const fn of Object.values(kitchenMocks)) fn.mockReset();
+    kitchenMocks.authenticateKitchen.mockResolvedValue({ role: "staff", displayName: "Cook" });
+  });
+
+  it("rejects transitions that do not advance exactly one kitchen stage", async () => {
+    const res = await POST(req({ password: "ok", action: "updateStatusBulk", orderIds: [1], status: "cancelled" }));
+    expect(res.status).toBe(400);
+    expect(kitchenMocks.getFoodOrderById).not.toHaveBeenCalled();
+    expect(kitchenMocks.updateFoodOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("updates unique orders still in the expected stage and skips stale orders", async () => {
+    kitchenMocks.getFoodOrderById.mockImplementation(async (id: number) =>
+      id === 1 ? { id, status: "preparing" } : { id, status: "ready" },
+    );
+
+    const res = await POST(req({
+      password: "ok",
+      action: "updateStatusBulk",
+      orderIds: [1, 1, 2],
+      status: "ready",
+    }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(kitchenMocks.updateFoodOrderStatus).toHaveBeenCalledTimes(1);
+    expect(kitchenMocks.updateFoodOrderStatus).toHaveBeenCalledWith(1, "ready");
+    expect(json.data).toEqual({ updated: 1, skipped: 1 });
+  });
+
+  it("validates the bulk payload before reading or mutating orders", async () => {
+    const res = await POST(req({ password: "ok", action: "updateStatusBulk", orderIds: [1, "2"], status: "served" }));
+    expect(res.status).toBe(400);
+    expect(kitchenMocks.getFoodOrderById).not.toHaveBeenCalled();
+    expect(kitchenMocks.updateFoodOrderStatus).not.toHaveBeenCalled();
+  });
+});
+
 describe("Admin bookings shell source-scan", () => {
   it("logs in with action auth, fills inventory/bookings viewport, and client-loads BookingDashboard", () => {
     const adminPage = readFile("src/app/admin/page.tsx");
@@ -221,5 +260,13 @@ describe("Admin bookings shell source-scan", () => {
   it("keeps SiteShell off marketing errors and on the root error page", () => {
     expect(readFile("src/app/(marketing)/error.tsx")).not.toContain("SiteShell");
     expect(readFile("src/app/error.tsx")).toContain("SiteShell");
+  });
+
+  it("renders one guarded bulk action for each kitchen stage", () => {
+    const kitchen = readFile("src/components/kitchen/KitchenDashboard.tsx");
+    expect(kitchen.match(/bulkActionLabel="START ALL"/g)).toHaveLength(2);
+    expect(kitchen.match(/bulkActionLabel="MARK ALL READY"/g)).toHaveLength(2);
+    expect(kitchen.match(/bulkActionLabel="MARK ALL SERVED"/g)).toHaveLength(2);
+    expect(readFile("src/app/api/food/kitchen/route.ts")).toContain('action === "updateStatusBulk"');
   });
 });

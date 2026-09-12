@@ -92,7 +92,7 @@ Manual/offline/walk-in bookings can use `editReservation` to update guest name, 
 
 **Food orders:** `listOrders`, `getOrderDetails`, `getOrderModifications`, `getActiveGuests`, `getGuestsWithTabs`, `getGuestTab`, `getGuestAllOrders`, `getWalkinOrders`, `getCombinedBill`, `getMenu`, `updateOrderStatus`, `placeOrderForGuest`, `voidItem`, `updateItemQuantity`, `reassignOrder`, `markOrderPaid`, `updatePaymentDetails`, `applyDiscount`, `removeDiscount`, `cleanupOldOrders`. Online/split payments accept `onlineAccountId` and `receiptId`; their online portion creates an automatic bank receipt for reconciliation.
 
-**Kitchen:** `listOrders`, `updateStatus`, `toggleItemAvailability`, `rejectItem`, `updateItemQuantity`, `addItemToOrder`, `toggleBusy`, `getMenuItems`, `getOrderModifications`.
+**Kitchen:** `listOrders`, `updateStatus`, `updateStatusBulk` (stage-level transitions for all currently matching orders: placed → preparing, preparing → ready, or ready → served), `toggleItemAvailability`, `rejectItem`, `updateItemQuantity`, `addItemToOrder`, `toggleBusy`, `getMenuItems`, `getOrderModifications`.
 
 **Expenses:** `addExpense`, `listExpenses`, `getMyExpenses`, `updateExpense`, `deleteExpense`, `getFoodRevenue`, `getRoomRevenue`, `getDailyLedger`, `addDailyIncome`, `deleteDailyIncome`, `getReconciliation`, `saveReconciliation`, `undoReconciliation`, `adjustOpeningBalance`. `getRoomRevenue` is `canViewFoodBills`; rows by `checkinDate` in range + occupied-for-revenue.
 

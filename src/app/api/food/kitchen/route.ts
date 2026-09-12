@@ -109,6 +109,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === "updateStatusBulk") {
+      const { orderIds, status } = rest;
+      if (!Array.isArray(orderIds) || orderIds.length === 0 || !status) {
+        return NextResponse.json({ error: "Missing orderIds or status" }, { status: 400 });
+      }
+
+      const validTransitions: Record<string, string> = {
+        preparing: "placed",
+        ready: "preparing",
+        served: "ready",
+      };
+      const expectedStatus = validTransitions[status];
+      if (!expectedStatus || orderIds.some((id) => !Number.isInteger(id))) {
+        return NextResponse.json({ error: "Invalid bulk status request" }, { status: 400 });
+      }
+
+      const uniqueOrderIds = [...new Set(orderIds as number[])];
+      let updated = 0;
+      for (const orderId of uniqueOrderIds) {
+        const order = await getFoodOrderById(orderId);
+        if (order?.status !== expectedStatus) continue;
+        await updateFoodOrderStatus(orderId, status);
+        updated++;
+      }
+
+      return NextResponse.json({ success: true, data: { updated, skipped: uniqueOrderIds.length - updated } });
+    }
+
     if (action === "toggleItemAvailability") {
       const { menuItemId, isAvailable } = rest;
       if (menuItemId === undefined || isAvailable === undefined) {

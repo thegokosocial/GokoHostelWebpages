@@ -179,4 +179,4 @@ Entire route: `canManageAccountSettings` (or legacy `canManageAccounts`) or admi
 
 Check-in, food menu/order/status/bills, `/api/site`, `/api/media`, `/api/settings`, `/api/validate-id`, review token page, Aiosell webhook (provider auth, not staff password).
 
-Kitchen is staff-passworded but not full admin RBAC.
+Kitchen is staff-passworded but not full admin RBAC. Its `updateStatusBulk` action only permits the forward stage transitions placed → preparing, preparing → ready, and ready → served; it skips orders that have moved out of the requested stage so stale screens cannot move them backward or across stages.
