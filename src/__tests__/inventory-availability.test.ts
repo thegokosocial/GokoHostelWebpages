@@ -251,6 +251,24 @@ describe("bedsFreeToBlock: hide booked and already-blocked", () => {
   });
 });
 
+describe("tagBedsForPicker pool allocation", () => {
+  it("does not let occupied units consume the remaining offline slot", () => {
+    const beds = Array.from({ length: 6 }, (_, i) => ({
+      id: i + 1, dormId: 16, bedId: `FEM-${i + 1}`, type: "Bunk",
+    }));
+    const physical = [beds[3]];
+    const assignments = [...beds.slice(0, 3), ...beds.slice(4)].map((bed) => ({
+      bedId: bed.id, dormId: 16, checkinDate: "2026-09-12", checkoutDate: "2026-09-13", status: "assigned",
+    }));
+    const tagged = tagBedsForPicker(physical, [], beds, ["2026-09-12"], [], assignments, [
+      { dormId: 16, date: "2026-09-12", onlineAvailable: 0 },
+    ]);
+    expect(tagged.map((bed) => [bed.bedId, bed.pool])).toEqual([
+      ["FEM-4", "offline"],
+    ]);
+  });
+});
+
 describe("pickInventoryOverride", () => {
   it("prefers the dorm-wide (null channel) row over a channel-specific one", () => {
     const picked = pickInventoryOverride(
