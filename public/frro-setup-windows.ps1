@@ -15,6 +15,9 @@ else { New-Item -ItemType Directory -Force -Path (Split-Path $targetDir) | Out-N
 
 Set-Location $targetDir
 npm install
+npm install --prefix scripts
+Set-Location (Join-Path $targetDir "scripts")
 npx playwright install chromium
+Set-Location $targetDir
 Write-Host "FRRO desktop helper is ready. Keep this window open while using Review & Submit (Desktop)."
 npm run frro:server

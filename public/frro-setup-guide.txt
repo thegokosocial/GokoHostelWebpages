@@ -35,7 +35,7 @@ Linux note
 ========================================
 
 If Chromium reports missing system libraries on Ubuntu/Debian, run:
-   cd ~/Downloads/GokoWeb && npx playwright install-deps chromium
+   cd ~/Downloads/GokoWeb/scripts && npx playwright install-deps chromium
 
 ========================================
 SETUP - Windows

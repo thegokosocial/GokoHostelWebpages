@@ -23,6 +23,7 @@ fi
 
 cd "$target_dir"
 npm install
-npx playwright install chromium
+npm install --prefix scripts
+(cd scripts && npx playwright install chromium)
 echo "FRRO desktop helper is ready. Keep this terminal open while using Review & Submit (Desktop)."
 npm run frro:server
