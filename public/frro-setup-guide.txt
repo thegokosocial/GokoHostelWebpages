@@ -21,61 +21,38 @@ PREREQUISITES
    Download from: https://git-scm.com
 
 ========================================
-SETUP - macOS
+SETUP - macOS / Linux (automated)
 ========================================
 
-# Open Terminal and run:
-
-git clone https://github.com/thegokosocial/GokoHostelWebpages.git ~/Downloads/GokoWeb
-cd ~/Downloads/GokoWeb/scripts
-npm init -y && npm install playwright express cors sharp
-npx playwright install chromium
-echo 'alias frro="cd ~/Downloads/GokoWeb && npx tsx scripts/frro-server.ts"' >> ~/.zshrc
-source ~/.zshrc
-
-# To start the server, type:
-frro
+1. Download "macOS/Linux setup" from the Form C window.
+2. Open Terminal and run the downloaded file, for example:
+   bash ~/Downloads/frro-setup-macos-linux.sh
+3. It clones/updates GokoWeb, installs dependencies and Chromium, then starts
+   the helper. Keep that Terminal window open.
 
 ========================================
-SETUP - Linux (Ubuntu/Debian)
+Linux note
 ========================================
 
-# Open Terminal and run:
-
-git clone https://github.com/thegokosocial/GokoHostelWebpages.git ~/GokoWeb
-cd ~/GokoWeb/scripts
-npm init -y && npm install playwright express cors sharp
-npx playwright install chromium
-npx playwright install-deps chromium
-echo 'alias frro="cd ~/GokoWeb && npx tsx scripts/frro-server.ts"' >> ~/.bashrc
-source ~/.bashrc
-
-# To start the server, type:
-frro
+If Chromium reports missing system libraries on Ubuntu/Debian, run:
+   cd ~/Downloads/GokoWeb && npx playwright install-deps chromium
 
 ========================================
 SETUP - Windows
 ========================================
 
-# Open PowerShell and run:
-
-git clone https://github.com/thegokosocial/GokoHostelWebpages.git C:\GokoWeb
-cd C:\GokoWeb\scripts
-npm init -y && npm install playwright express cors sharp
-npx playwright install chromium
-
-# Add shortcut (paste this into PowerShell):
-echo 'function frro { cd C:\GokoWeb; npx tsx scripts/frro-server.ts }' >> $PROFILE
-
-# Close and reopen PowerShell, then type:
-frro
+1. Download "Windows setup" from the Form C window.
+2. Open PowerShell and run the downloaded file, for example:
+   powershell -ExecutionPolicy Bypass -File .\frro-setup-windows.ps1
+3. It clones/updates GokoWeb, installs dependencies and Chromium, then starts
+   the helper. Keep that PowerShell window open.
 
 ========================================
 HOW TO USE
 ========================================
 
-1. Open terminal and type: frro
-   (Server starts at http://localhost:3456)
+1. Run the platform setup script once. It starts the server at
+   http://localhost:3456; keep its terminal window open.
 
 2. In the admin panel, open a foreign guest's Form C
 
@@ -108,7 +85,6 @@ Error: "Login timed out"
 
 Fields not filling:
   → Check terminal for "NOT FOUND" messages
-  → Use "Mobile: Copy Script" as alternative
-  → Or fill manually using the Edit view in Form C modal
+   → Correct the details in the Edit view in the Form C modal and run again
 
 ========================================

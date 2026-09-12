@@ -11,6 +11,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "frro:server": "tsx scripts/frro-server.ts",
     "analyze": "ANALYZE=true next build",
     "cf:build": "BUILD_VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo unknown) opennextjs-cloudflare build",
     "preview:cf": "opennextjs-cloudflare build && opennextjs-cloudflare preview",

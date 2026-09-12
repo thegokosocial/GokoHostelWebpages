@@ -1768,7 +1768,11 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               <div className="text-center text-[10px] text-brand-green-dark/50">
                 <span>Desktop automation only</span>
                 <span className="mx-2">·</span>
-                <a href="/frro-setup-guide.txt" download className="font-medium text-brand-green underline hover:text-brand-green-dark">Download Desktop Setup Guide</a>
+                <a href="/frro-setup-guide.txt" download className="font-medium text-brand-green underline hover:text-brand-green-dark">Setup guide</a>
+                <span className="mx-1">·</span>
+                <a href="/frro-setup-macos-linux.sh" download className="font-medium text-brand-green underline hover:text-brand-green-dark">macOS/Linux setup</a>
+                <span className="mx-1">·</span>
+                <a href="/frro-setup-windows.ps1" download className="font-medium text-brand-green underline hover:text-brand-green-dark">Windows setup</a>
               </div>
 
               <button type="button" onClick={() => setFrroSettingsOpen(!frroSettingsOpen)} className="w-full text-left text-xs font-medium text-brand-green-dark/60 hover:text-brand-green-dark">

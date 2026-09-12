@@ -354,6 +354,8 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(records).toContain("Delete incorrect entry");
     expect(records).toContain("formCSubmissionGuardrails");
     expect(records).not.toContain("India and home-country phone numbers are identical");
+    expect(records).toContain("frro-setup-macos-linux.sh");
+    expect(records).toContain("frro-setup-windows.ps1");
     expect(route).toContain("removeFormCSubmission: \"admin_only\"");
   });
 
