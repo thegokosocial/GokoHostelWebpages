@@ -277,6 +277,40 @@ describe("pickOnlineBedsForChannelRooms", () => {
 });
 
 describe("autoAssignOnlineChannelBeds", () => {
+  it("assigns a mixed OTA booking when its own temporary hold is excluded", async () => {
+    const mixedMappings = [
+      { dormId: 13, channelRoomCode: "dorm-1---double-bed", dormName: "Dorm 1 - double bed", isActive: 1 },
+      { dormId: 16, channelRoomCode: "female-dorm", dormName: "Female dorm", isActive: 1 },
+    ];
+    const tagged = [
+      { id: 101, dormId: 13, pool: "online" as const, bedId: "DOR-1", dormName: "Dorm 1 - double bed", type: "Double" },
+      { id: 102, dormId: 13, pool: "online" as const, bedId: "DOR-2", dormName: "Dorm 1 - double bed", type: "Double" },
+      { id: 106, dormId: 16, pool: "online" as const, bedId: "FEM-6", dormName: "Female dorm", type: "Bunk" },
+    ];
+    const assigned: Array<{ bedId: number; dormId: number }> = [];
+    const result = await autoAssignOnlineChannelBeds({
+      bookingId: 201,
+      needs: [
+        { roomCode: "dorm-1---double-bed", count: 2, units: 1 },
+        { roomCode: "female-dorm", count: 1, units: 1 },
+      ],
+      mappings: mixedMappings,
+      tagged,
+      assignBed: async (pick) => {
+        assigned.push(pick);
+        return true;
+      },
+      unassignAll: async () => { assigned.length = 0; },
+    });
+
+    expect(result).toMatchObject({ assigned: 3 });
+    expect(assigned).toEqual([
+      { bedId: 101, dormId: 13 },
+      { bedId: 102, dormId: 13 },
+      { bedId: 106, dormId: 16 },
+    ]);
+  });
+
   it("rolls back if the second person-bed fails to write", async () => {
     const assigned: number[] = [];
     const result = await autoAssignOnlineChannelBeds({
