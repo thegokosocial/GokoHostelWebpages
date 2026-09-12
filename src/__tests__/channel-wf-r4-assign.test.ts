@@ -291,8 +291,7 @@ describe("Source-read: Unassigned cannot POST extra beds", () => {
     expect(unassigned).toContain("disabled={selectedBeds.length !== need || busy || loadingBeds}");
     expect(unassigned).toContain("{picked}/{quota}");
     expect(unassigned).toContain("Other rooms (overflow)");
-    expect(unassigned).toContain('action: "getAvailableBeds", checkinDate, checkoutDate }');
-    expect(unassigned).not.toContain("bookingId: booking.id");
+    expect(unassigned).toContain('action: "getAvailableBeds", checkinDate, checkoutDate, bookingId: booking.id }');
     expect(dashboard).toContain('handleBookingAction("cancelBooking", bookingId)');
   });
 

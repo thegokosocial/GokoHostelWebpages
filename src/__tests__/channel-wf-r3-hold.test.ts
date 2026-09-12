@@ -273,23 +273,19 @@ describe("Source-read: online-only release, cancelled filter, webhook vs Unassig
     expect(autoAssignFn).not.toMatch(/getAvailableBedsForRange\(checkin, co\)\s*;/);
   });
 
-  it("staff Unassigned getAvailableBeds payload does not pass bookingId", () => {
+  it("staff Unassigned getAvailableBeds payload passes bookingId", () => {
     const payload = unassignedUi.match(/payload: Record<string, unknown> = \{[^}]+\}/)?.[0] ?? "";
     expect(payload).toContain('action: "getAvailableBeds"');
     expect(payload).toContain("checkinDate, checkoutDate");
-    expect(payload).not.toContain("bookingId");
-    expect(unassignedUi).not.toContain("bookingId: booking.id");
-    expect(unassignedUi).not.toContain("bookingId: assigningId");
-    expect(unassignedUi).not.toContain("excludeBookingId");
+    expect(payload).toContain("bookingId: booking.id");
   });
 
-  it("admin getAvailableBeds forwards body.bookingId; Unassigned omits it so the 4th arg is undefined", () => {
+  it("admin getAvailableBeds forwards body.bookingId for the Unassigned picker", () => {
     expect(getAvailableBedsAction).toContain("const { checkinDate, checkoutDate, bookingId } = body");
     expect(getAvailableBedsAction).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
   });
 
-  it("assignTaggedBeds tags without excluding the booking (staff leftover stays offline)", () => {
-    expect(assignTagged).toContain("getAvailableBedsForRange(checkinDate, checkoutDate)");
-    expect(assignTagged).not.toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
+  it("assignTaggedBeds excludes the current booking so its own hold can be completed", () => {
+    expect(assignTagged).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
   });
 });

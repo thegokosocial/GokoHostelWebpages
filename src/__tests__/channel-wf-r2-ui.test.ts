@@ -68,14 +68,12 @@ describe("Round 2 Unassigned UI: reject copy, labels, assign leftover, calendar 
     expect(panel).toContain("role === \"admin\" || role === \"manager\"");
   });
 
-  it("getAvailableBeds payload has no bookingId", () => {
+  it("getAvailableBeds payload includes the current bookingId", () => {
     expect(unassigned).toContain('action: "getAvailableBeds"');
     expect(unassigned).toContain(
-      '{ password, action: "getAvailableBeds", checkinDate, checkoutDate }',
+      '{ password, action: "getAvailableBeds", checkinDate, checkoutDate, bookingId: booking.id }',
     );
-    expect(unassigned).not.toContain("bookingId: booking.id");
-    expect(unassigned).not.toContain("excludeBookingId");
-    expect(unassigned).not.toMatch(/getAvailableBeds[\s\S]{0,200}bookingId/);
+    expect(unassigned).toContain("bookingId: booking.id");
   });
 
   it("offline leftover chips are green and labelled off", () => {

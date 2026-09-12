@@ -82,7 +82,7 @@ export function UnassignedBookings({
     setLoadingBeds(true);
     setSelectedBeds([]);
     setBedsError("");
-    const payload: Record<string, unknown> = { password, action: "getAvailableBeds", checkinDate, checkoutDate };
+    const payload: Record<string, unknown> = { password, action: "getAvailableBeds", checkinDate, checkoutDate, bookingId: booking.id };
     if (username) payload.username = username;
     let cancelled = false;
     (async () => {

@@ -572,8 +572,7 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(unassigned).toContain("requestedDormIds");
     expect(dashboard).toContain('canReject={role === "admin" || role === "manager"}');
     expect(dashboard).toContain("handleBookingAction(\"cancelBooking\", bookingId)");
-    expect(unassigned).toContain('action: "getAvailableBeds", checkinDate, checkoutDate }');
-    expect(unassigned).not.toContain("bookingId: booking.id");
+    expect(unassigned).toContain('action: "getAvailableBeds", checkinDate, checkoutDate, bookingId: booking.id }');
     const selector = readFile("src/components/admin/booking-dashboard/DateRangeSelector.tsx");
     expect(selector).toContain("[dateRange.startDate, dateRange.endDate]");
   });
@@ -658,7 +657,7 @@ describe("Unassigned bookings: same availability as New Booking", () => {
 
   it("loads beds for the booking stay via getAvailableBeds, not calendar occupancy", () => {
     expect(unassigned).toContain('action: "getAvailableBeds"');
-    expect(unassigned).not.toContain("bookingId: booking.id");
+    expect(unassigned).toContain("bookingId: booking.id");
     expect(unassigned).toContain("exclusiveEndDate");
     expect(unassigned).not.toContain("!bed.isBlocked");
     expect(unassigned).toContain("bedsError");

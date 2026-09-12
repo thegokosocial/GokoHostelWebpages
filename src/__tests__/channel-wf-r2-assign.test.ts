@@ -312,13 +312,11 @@ describe("Source-read: Unassigned getAvailableBeds vs webhook excludeBookingId",
   const reservations = readFileSync("src/app/api/aiosell/reservations/route.ts", "utf8");
   const bookingsRoute = readFileSync("src/app/api/admin/bookings/route.ts", "utf8");
 
-  it("Unassigned getAvailableBeds payload does not pass bookingId (keeps own OTA hold)", () => {
+  it("Unassigned getAvailableBeds payload passes bookingId to release its own hold", () => {
     const payload = unassigned.match(/payload: Record<string, unknown> = \{[^}]+\}/)?.[0] ?? "";
     expect(payload).toContain('action: "getAvailableBeds"');
     expect(payload).toContain("checkinDate, checkoutDate");
-    expect(payload).not.toContain("bookingId");
-    expect(unassigned).not.toContain("bookingId: booking.id");
-    expect(unassigned).not.toContain("bookingId: assigningId");
+    expect(payload).toContain("bookingId: booking.id");
   });
 
   it("webhook auto-assign passes excludeBookingId so the new row can take its held online slots", () => {
@@ -330,10 +328,9 @@ describe("Source-read: Unassigned getAvailableBeds vs webhook excludeBookingId",
     expect(fn).not.toMatch(/getAvailableBedsForRange\(checkin, co\)\s*;/);
   });
 
-  it("assignTaggedBeds tags from the picker without excluding the booking, and rolls back by bed ids", () => {
+  it("assignTaggedBeds excludes the current booking hold and rolls back by bed ids", () => {
     const helper = bookingsRoute.match(/async function assignTaggedBeds[\s\S]*?\nfunction assignFailed/)?.[0] ?? "";
-    expect(helper).toContain("getAvailableBedsForRange(checkinDate, checkoutDate)");
-    expect(helper).not.toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
+    expect(helper).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
     expect(helper).toContain("inventoryPool: p.pool");
     expect(helper).toContain("unassignBookingBedsByBedIds(bookingId, written)");
   });

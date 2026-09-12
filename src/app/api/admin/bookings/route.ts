@@ -197,7 +197,7 @@ async function assignTaggedBeds(
   checkoutDate: string,
   actingUser: string,
 ): Promise<{ labels: string[]; pools: InventoryPool[]; dormIds: number[] }> {
-  const tagged = await getAvailableBedsForRange(checkinDate, checkoutDate);
+  const tagged = await getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId);
   const byId = new Map(tagged.map((b) => [b.id, b]));
   const prepared: { bedId: number; dormId: number; dormName: string; bedLabel: string; pool: InventoryPool; tagPool: InventoryPool }[] = [];
   for (const bedId of bedIds) {

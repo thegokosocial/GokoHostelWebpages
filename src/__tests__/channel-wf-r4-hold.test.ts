@@ -408,14 +408,12 @@ describe("Source-read: excludeBookingId, room count vs persons, Aiosell rooms[]"
     expect(roomCountSql).not.toContain("persons");
   });
 
-  it("webhook tryAutoAssignChannelBeds passes excludeBookingId; Unassigned getAvailableBeds does not", () => {
+  it("webhook and Unassigned paths pass the correct current booking id", () => {
     expect(autoAssignFn).toContain("getAvailableBedsForRange(checkin, co, undefined, bookingId)");
     expect(autoAssignFn).toContain("refreshTagged: loadTagged");
     const payload = unassignedUi.match(/payload: Record<string, unknown> = \{[^}]+\}/)?.[0] ?? "";
     expect(payload).toContain('action: "getAvailableBeds"');
-    expect(payload).not.toContain("bookingId");
-    expect(unassignedUi).not.toContain("bookingId: booking.id");
-    expect(unassignedUi).not.toContain("bookingId: assigningId");
+    expect(payload).toContain("bookingId: booking.id");
     expect(bookingsRoute).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
   });
 
