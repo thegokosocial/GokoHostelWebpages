@@ -582,8 +582,10 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(grid).toContain("const hasHeld = useMemo");
     expect(grid).toContain("useEffect(() => {");
     expect(grid).toContain("setDetail(null);");
-    expect(grid).toContain("const showDetail = detail && (!detail.hadHold || detailHasCurrentHold);");
+    expect(grid).toContain("const detailIsHoldMessage = detail?.message.includes(\"unassigned OTA\") ?? false;");
     expect(grid).toContain("snap.unassignedOta > 0 ? ` · ${snap.unassignedOta} held`");
+    expect(grid).toContain('detail?.message.includes("unassigned OTA")');
+    expect(grid).toContain("(!detailIsHoldMessage || detailHasCurrentHold)");
     expect(grid).toContain("Nightly totals: online / walk-in / blocked{hasHeld ?");
     expect(grid).toContain("{hasHeld && <span className=\"text-zinc-600");
   });

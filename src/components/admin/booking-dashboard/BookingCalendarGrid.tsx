@@ -60,7 +60,8 @@ export function BookingCalendarGrid({
   const detailHasCurrentHold = detail
     ? (dorms.find((dorm) => dorm.id === detail.dormId)?.availability?.[detail.date]?.unassignedOta || 0) > 0
     : false;
-  const showDetail = detail && (!detail.hadHold || detailHasCurrentHold);
+  const detailIsHoldMessage = detail?.message.includes("unassigned OTA") ?? false;
+  const showDetail = detail && (!detailIsHoldMessage || detailHasCurrentHold);
   const hasHeld = useMemo(
     () => dorms.some((dorm) => dates.some((date) => (dorm.availability?.[date]?.unassignedOta || 0) > 0)),
     [dorms, dates],
