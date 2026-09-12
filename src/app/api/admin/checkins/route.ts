@@ -620,14 +620,6 @@ export async function POST(req: NextRequest) {
           tab.pendingOrders += part.pendingOrders;
         }
         const checkinId = matchedIds[matchedIds.length - 1];
-        const assignedBookings = currentAssignments
-          .filter((assignment) => assignment.bedId === b.id && assignment.checkoutDate === b.expectedCheckout)
-          .map((assignment) => bookingById.get(assignment.bookingId))
-          .filter((booking): booking is (typeof allBookings)[number] => {
-            if (!booking) return false;
-            return !["cancelled", "no_show"].includes(booking.status);
-          });
-        const activeAssignedBooking = assignedBookings.find((booking) => booking.status === "checked_in") || assignedBookings[0];
         const linkedByCheckin = [...matchedIds].reverse().map((id) => bookingByCheckinId.get(id)).find(Boolean);
         const phone = normalizedPhone(b.guestContact);
         const phoneMatches = phone
@@ -637,7 +629,7 @@ export async function POST(req: NextRequest) {
         const nameMatches = name
           ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedName(booking.guestName) === name && datesOverlap(booking.checkinDate, booking.checkoutDate || addCalendarDays(booking.checkinDate, 1), b.checkinDate, b.expectedCheckout))
           : [];
-        const linkedBooking = activeAssignedBooking || linkedByCheckin || (phoneMatches.length === 1 ? phoneMatches[0] : null) || (nameMatches.length === 1 ? nameMatches[0] : null);
+        const linkedBooking = linkedByCheckin || (phoneMatches.length === 1 ? phoneMatches[0] : null) || (nameMatches.length === 1 ? nameMatches[0] : null);
         const roomDue = linkedBooking ? stayDueAtHotel(linkedBooking.paymentStatus, linkedBooking.amountTotal, linkedBooking.amountPaid) : null;
         const plannedBedLabels = linkedBooking
           ? currentAssignments

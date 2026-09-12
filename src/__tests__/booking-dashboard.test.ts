@@ -284,13 +284,14 @@ describe("Dashboard booking activity", () => {
     expect(dashboardRoute).toContain("roomDue");
     expect(dashboardRoute).toContain("b.checkinId ? [b.checkinId]");
     expect(dashboardRoute).toContain('eq(bookingBedAssignments.status, "assigned")');
-    expect(dashboardRoute).toContain("assignment.bedId === b.id");
     expect(dashboardRoute).toContain("lte(bookingBedAssignments.checkinDate, today)");
     expect(dashboardRoute).not.toContain("gte(bookingBedAssignments.checkoutDate, today)");
     expect(dashboardRoute).toContain("normalizedPhone(booking.contact) === phone");
     expect(dashboardRoute).toContain("normalizedName(booking.guestName) === name");
     expect(dashboardRoute).toContain("phoneMatches.length === 1");
     expect(dashboardRoute).toContain("nameMatches.length === 1");
+    expect(dashboardRoute).not.toContain("const activeAssignedBooking");
+    expect(dashboardRoute).toContain("const linkedBooking = linkedByCheckin ||");
     expect(dashboardRoute).toContain("plannedRoomType");
     expect(dashboardRoute).toContain("plannedBedLabels");
     expect(dashboardRoute).toContain("datesOverlap(item.checkinDate");
