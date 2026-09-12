@@ -580,6 +580,9 @@ describe("Booking calendar UI permissions match the API keys", () => {
   it("shows the held legend and bucket only when the visible range has a hold", () => {
     const grid = readFile("src/components/admin/booking-dashboard/BookingCalendarGrid.tsx");
     expect(grid).toContain("const hasHeld = useMemo");
+    expect(grid).toContain("useEffect(() => {");
+    expect(grid).toContain("setDetail(null);");
+    expect(grid).toContain("snap.unassignedOta > 0 ? ` · ${snap.unassignedOta} held`");
     expect(grid).toContain("Nightly totals: online / walk-in / blocked{hasHeld ?");
     expect(grid).toContain("{hasHeld && <span className=\"text-zinc-600");
   });

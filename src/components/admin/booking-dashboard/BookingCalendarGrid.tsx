@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon, ChevronRightIcon, BanIcon } from "lucide-react";
 import { BookingTile } from "./BookingTile";
@@ -54,6 +54,9 @@ export function BookingCalendarGrid({
   }, [assignments]);
 
   const [detail, setDetail] = useState<string | null>(null);
+  useEffect(() => {
+    setDetail(null);
+  }, [dorms, dates]);
   const hasHeld = useMemo(
     () => dorms.some((dorm) => dates.some((date) => (dorm.availability?.[date]?.unassignedOta || 0) > 0)),
     [dorms, dates],
@@ -172,7 +175,7 @@ export function BookingCalendarGrid({
                   {dates.map((date) => {
                     const snap = dorm.availability?.[date];
                     const message = snap
-                      ? `${dorm.name} · ${date}: ${snap.online} online / OTA · ${snap.offline} walk-in · ${snap.blocked} blocked${hasHeld ? ` · ${snap.unassignedOta} held` : ""} · ${snap.assigned} occupied${snap.total > 0 && snap.blocked === snap.total ? " — Fully blocked" : snap.unassignedOta > 0 && snap.available === 0 ? " — Remaining bed(s) held for unassigned OTA" : snap.online === 0 && snap.offline > 0 ? " — No online availability — walk-in available" : snap.available === 0 ? " — No availability" : ""}`
+                      ? `${dorm.name} · ${date}: ${snap.online} online / OTA · ${snap.offline} walk-in · ${snap.blocked} blocked${snap.unassignedOta > 0 ? ` · ${snap.unassignedOta} held` : ""} · ${snap.assigned} occupied${snap.total > 0 && snap.blocked === snap.total ? " — Fully blocked" : snap.unassignedOta > 0 && snap.available === 0 ? " — Remaining bed(s) held for unassigned OTA" : snap.online === 0 && snap.offline > 0 ? " — No online availability — walk-in available" : snap.available === 0 ? " — No availability" : ""}`
                       : `${dorm.name} · ${date}: Availability unavailable`;
                     return <button key={date} type="button" title={message} aria-label={message} onClick={() => setDetail(message)}
                       className="shrink-0 border-r border-border text-[10px] tabular-nums focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600"
