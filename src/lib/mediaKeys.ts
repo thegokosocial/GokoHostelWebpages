@@ -1,6 +1,6 @@
 export const MEDIA_URL_PREFIX = "/api/media/";
 
-const KEY_RE = /^[a-z0-9]+(?:\/[a-zA-Z0-9._-]+)+$/;
+const KEY_RE = /^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)+$/;
 
 export function isMediaUrl(url: string): boolean {
   return url.startsWith(MEDIA_URL_PREFIX);

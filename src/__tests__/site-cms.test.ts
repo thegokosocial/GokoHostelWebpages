@@ -43,6 +43,7 @@ describe("media keys", () => {
   it("accepts generated upload keys", () => {
     expect(isSafeMediaKey("events/2026-08-28-abcd1234.jpg")).toBe(true);
     expect(isSafeMediaKey("heroes/2026-08-28-abcd1234.jpg")).toBe(true);
+    expect(isSafeMediaKey("quick-links/2026-08-28-abcd1234.jpg")).toBe(true);
     expect(isSafeMediaKey("../secret")).toBe(false);
     expect(isSafeMediaKey("events/../../etc/passwd")).toBe(false);
     expect(isSafeMediaKey("/events/foo.jpg")).toBe(false);
@@ -51,6 +52,7 @@ describe("media keys", () => {
     expect(mediaUrlToKey("/api/media/%")).toBe(null);
     expect(sanitizeSiteImageUrl("/images/a.jpg")).toBe("/images/a.jpg");
     expect(sanitizeSiteImageUrl("/api/media/events/2026-08-28-abcd1234.jpg")).toBe("/api/media/events/2026-08-28-abcd1234.jpg");
+    expect(sanitizeSiteImageUrl("/api/media/quick-links/2026-08-28-abcd1234.jpg")).toBe("/api/media/quick-links/2026-08-28-abcd1234.jpg");
     expect(sanitizeSiteImageUrl("https://evil.example/x.jpg")).toBe("");
     expect(sanitizeSiteImageUrl("/images/%2e%2e/secret.jpg")).toBe("");
     expect(sanitizeSiteImageUrl("/legacy-images/foo%20bar.webp")).toBe("/legacy-images/foo%20bar.webp");

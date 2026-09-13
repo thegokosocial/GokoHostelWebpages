@@ -35,7 +35,7 @@ sequenceDiagram
   UI->>UI: saveEvents / addEvent JSON
 ```
 
-Public GET `/api/media/{key}` always `Content-Type: image/jpeg`, long cache. Safe key regex; no `..`.
+Public GET `/api/media/{key}` preserves the stored image content type and uses a long cache. Safe media keys allow hyphenated folder names such as `quick-links`, while rejecting `..` and unsafe path traversal.
 
 GC: `countMediaUrlRefs` via SQL `instr`. Delete R2 only if ref count 0. `discardMedia` for abandoned uploads.
 
