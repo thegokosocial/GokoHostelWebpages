@@ -438,6 +438,24 @@ describe("Bookings calendar and rates workflows", () => {
     expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({ noShowPmsStatus: "sent" }));
   });
 
+  it("falls back to the legacy CM id when Aiosell rejects the booking reference with 500", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { platform: "booking.com", bookingRef: "BK-500", cmBookingId: "CM-FOUND", checkinDate: "2026-09-01", checkoutDate: "2026-09-03" },
+      assignments: [{ status: "assigned", dormId: 3 }],
+    });
+    q.getChannelConfig.mockResolvedValue({ isActive: 1, hotelCode: "H", pmsId: "P", apiBaseUrl: "http://x", apiUsername: "u", apiPassword: "p" });
+    q.pushNoShow
+      .mockResolvedValueOnce({ success: false, message: 'HTTP 500: {"success":false,"message":"Failed to mark noshow"}' })
+      .mockResolvedValueOnce({ success: true });
+
+    const res = await POST(req({ password: "x", action: "markNoShow", bookingId: 5 }));
+
+    expect(res.status).toBe(200);
+    expect(q.pushNoShow).toHaveBeenNthCalledWith(1, expect.anything(), "BK-500");
+    expect(q.pushNoShow).toHaveBeenNthCalledWith(2, expect.anything(), "CM-FOUND");
+    expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({ noShowPmsStatus: "sent" }));
+  });
+
   it("retries only the failed Aiosell notification without releasing inventory again", async () => {
     q.getBookingDetail.mockResolvedValue({
       booking: { status: "no_show", noShowPmsStatus: "failed", platform: "booking.com", cmBookingId: "CM-RETRY" },

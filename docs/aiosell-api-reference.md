@@ -163,7 +163,7 @@ Expected success message: `Noshow Marked Successfully`.
 
 GokoWeb sends the documented `hotelCode`, `bookingId`, and `channel` fields. The
 dashboard uses the inbound OTA `bookingId` stored as `bookingRef`, with a legacy
-`cmBookingId` fallback only when Aiosell returns HTTP 404.
+`cmBookingId` fallback when Aiosell rejects the first identifier.
 
 ### Channel multiplier
 

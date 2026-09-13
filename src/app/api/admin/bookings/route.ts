@@ -185,7 +185,10 @@ async function syncBookingNoShow(bookingId: number, booking: { platform?: string
     let result;
     for (const [index, candidate] of bookingIds.entries()) {
       result = await pushNoShow(aiosellConfig, candidate);
-      if (result.success || index === bookingIds.length - 1 || !/^HTTP 404\b/.test(result.message || "")) break;
+      // Aiosell has returned both 404 and 500 for an identifier it cannot
+      // resolve. Try the alternate stored identifier before recording a
+      // permanent failure; the vendor endpoint is idempotent for a match.
+      if (result.success || index === bookingIds.length - 1) break;
     }
     if (!result?.success) throw new Error(result?.message || "Aiosell rejected the no-show update");
     await updateBookingFull(bookingId, { noShowPmsStatus: "sent", noShowPmsError: "", noShowPmsAttemptedAt: attemptedAt });
