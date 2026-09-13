@@ -51,7 +51,7 @@ function apiErrorDetails(response: Response, data: Record<string, any>, action: 
 
 const ALL_BOOKINGS_PAGE_SIZE = 50;
 const ALL_BOOKING_STATUSES: Array<BookingStatus | "all"> = [
-  "all", "received", "checked_in", "checked_out", "hold", "no_show", "cancelled", "modified",
+  "all", "received", "checked_in", "checked_out", "hold", "guest_declined", "no_show", "cancelled", "modified",
 ];
 
 

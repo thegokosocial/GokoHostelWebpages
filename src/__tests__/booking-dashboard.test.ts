@@ -245,6 +245,7 @@ describe("Booking Dashboard: markNoShow Logic", () => {
     const section = noShowSection![0];
 
     expect(section).toContain('status: "no_show"');
+    expect(section).toContain('"guest_declined"');
   });
 
   it("calls pushNoShow for Booking.com channel ids stored as booking.com or booking_com", () => {

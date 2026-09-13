@@ -1,5 +1,5 @@
 import type { CalendarNightStatus, NightAvailability } from "@/lib/inventoryAvailability";
-export type BookingStatus = "received" | "checked_in" | "checked_out" | "hold" | "no_show" | "cancelled" | "modified";
+export type BookingStatus = "received" | "checked_in" | "checked_out" | "hold" | "guest_declined" | "no_show" | "cancelled" | "modified";
 
 export type BookingPlatform = "booking_com" | "makemytrip" | "goibibo" | "hostelworld" | "booking_engine" | "walkin" | "direct" | "channel_manager";
 

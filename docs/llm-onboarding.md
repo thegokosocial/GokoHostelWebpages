@@ -43,6 +43,8 @@ There is **no OpenAPI**. There is **no middleware.ts**.
 
 ### 1. Two occupancy systems
 
+Booking.com guest-declined workflow: `releaseForNoShow` keeps the OTA reservation active, changes only the local row to `guest_declined`, unassigns beds, removes the OTA hold, and pushes released Aiosell inventory. `markNoShow` is allowed after the check-in date and `retryNoShow` handles a failed Aiosell notification.
+
 | | Physical beds | Calendar PMS |
 |--|---------------|--------------|
 | Tables | `beds.status` | `bookings` + `booking_bed_assignments` |

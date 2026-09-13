@@ -543,7 +543,7 @@ describe("Round 4 edges: hold action leftovers", () => {
       status: "hold",
       holdExpiresAt: "2026-09-01T00:00:00.000Z",
     });
-    expect(holdSql).toContain("NOT IN ('cancelled', 'checked_out', 'no_show')");
+    expect(holdSql).toContain("NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')");
     expect(holdSql).not.toContain("'hold'");
   });
 

@@ -55,7 +55,7 @@ function stayCheckout(checkinDate: string, checkoutDate?: string | null): string
 }
 
 function stayClosed(status?: string | null): boolean {
-  return status === "checked_out" || status === "no_show" || status === "cancelled";
+  return status === "checked_out" || status === "no_show" || status === "cancelled" || status === "guest_declined";
 }
 
 function isBookingDotCom(platform?: string | null): boolean {
@@ -285,6 +285,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   moveRoom: "canAddBooking",
   assignGuest: "canAddBooking",
   cancelBooking: "canDeleteBooking",
+  releaseForNoShow: "canDeleteBooking",
   markNoShow: "canDeleteBooking",
   retryNoShow: "canDeleteBooking",
   hold: "canDeleteBooking",
@@ -343,7 +344,7 @@ export async function POST(req: NextRequest) {
     if (action === "getAllBookings") {
       const { startDate, endDate, page, pageSize, status, query } = body;
       if (!startDate || !endDate) return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
-      const validStatuses = new Set(["received", "checked_in", "checked_out", "hold", "no_show", "cancelled", "modified"]);
+      const validStatuses = new Set(["received", "checked_in", "checked_out", "hold", "guest_declined", "no_show", "cancelled", "modified"]);
       const requestedStatus = typeof status === "string" && status !== "all" ? status : undefined;
       if (requestedStatus && !validStatuses.has(requestedStatus)) {
         return NextResponse.json({ error: "Invalid booking status" }, { status: 400 });
@@ -1223,6 +1224,45 @@ export async function POST(req: NextRequest) {
 
     // --- No Show ---
 
+    if (action === "releaseForNoShow") {
+      const { bookingId } = body;
+      if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+
+      const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (detail.booking.source !== "channel_manager" || !isBookingDotCom(detail.booking.platform)) {
+        return NextResponse.json({ error: "This workflow is only available for Booking.com channel bookings" }, { status: 409 });
+      }
+      if (detail.booking.status !== "received" && detail.booking.status !== "hold") {
+        return NextResponse.json({ error: "Only open bookings can be released for later no-show" }, { status: 409 });
+      }
+
+      const dates = bookingDateRange(detail.booking.checkinDate, detail.booking.checkoutDate);
+      const dormIds = await affectedDormIds(detail);
+      const before = await otaFingerprint(dormIds, dates);
+      const claimed = await transitionBookingStatus(bookingId, ["received", "hold"], { status: "guest_declined" });
+      if (!claimed) return NextResponse.json({ error: "Booking was already changed by another user" }, { status: 409 });
+
+      await unassignBookingBeds(bookingId);
+      await addBookingHistoryEntry({
+        bookingId,
+        action: "Guest Declined Stay",
+        details: `Beds released; retain Booking.com reservation for later no-show by ${actingUser}`,
+        performedBy: actingUser,
+      });
+
+      const inventory = await pushIfOtaChanged(before, dormIds, dates).catch((error) => ({ attempted: true, accepted: false, message: error?.message || "Aiosell inventory push failed" }));
+      if (inventoryWarning(inventory)) await dispatchPush({
+        title: "Inventory Sync Failed",
+        body: "Guest-declined stay saved, but channel availability needs attention",
+        url: "/admin?section=management",
+        eventId: `inventory-guest-declined-${bookingId}`,
+        tag: "inventory-sync-failure",
+        category: "operations",
+      });
+      return NextResponse.json({ success: true, warning: inventoryWarning(inventory) });
+    }
+
     if (action === "retryNoShow") {
       const { bookingId } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
@@ -1240,14 +1280,18 @@ export async function POST(req: NextRequest) {
 
       const detail = await getBookingDetail(bookingId);
       if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-      if ((detail.booking.status || "received") !== "received") return NextResponse.json({ error: "Only received bookings can be marked no-show" }, { status: 409 });
-      if (detail.booking.checkinDate > todayIST()) return NextResponse.json({ error: "A booking can be marked no-show on its check-in date or later" }, { status: 409 });
+      const status = detail.booking.status || "received";
+      if (status !== "received" && status !== "guest_declined") return NextResponse.json({ error: "Only open or guest-declined bookings can be marked no-show" }, { status: 409 });
+      const today = todayIST();
+      if (detail.booking.checkinDate > today || (status === "guest_declined" && detail.booking.checkinDate >= today)) {
+        return NextResponse.json({ error: "A guest-declined booking can be marked no-show only after its check-in date" }, { status: 409 });
+      }
 
       const dates = bookingDateRange(detail.booking.checkinDate, detail.booking.checkoutDate);
       const dormIds = await affectedDormIds(detail);
       const before = await otaFingerprint(dormIds, dates);
 
-      const claimed = await transitionBookingStatus(bookingId, ["received"], { status: "no_show" });
+      const claimed = await transitionBookingStatus(bookingId, ["received", "guest_declined"], { status: "no_show" });
       if (!claimed) return NextResponse.json({ error: "Booking was already changed by another user" }, { status: 409 });
       await unassignBookingBeds(bookingId);
       const noShowWarning = await syncBookingNoShow(bookingId, detail.booking);

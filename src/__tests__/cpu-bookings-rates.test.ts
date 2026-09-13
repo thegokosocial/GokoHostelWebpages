@@ -758,6 +758,68 @@ describe("Bookings calendar and rates workflows", () => {
     expect(pushIfOtaChanged).toHaveBeenCalled();
   });
 
+  it("releases a Booking.com stay for later no-show without cancelling the OTA reservation", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        checkinDate: "2026-09-05",
+        checkoutDate: "2026-09-06",
+        status: "received",
+        source: "channel_manager",
+        platform: "booking_com",
+        roomType: "female-dorm",
+      },
+      assignments: [{ id: 11, status: "assigned", dormId: 3, bedId: 7 }],
+    });
+
+    const res = await POST(req({ password: "x", action: "releaseForNoShow", bookingId: 42 }));
+
+    expect(res.status).toBe(200);
+    expect(q.transitionBookingStatus).toHaveBeenCalledWith(42, ["received", "hold"], { status: "guest_declined" });
+    expect(q.unassignBookingBeds).toHaveBeenCalledWith(42);
+    expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "Guest Declined Stay" }));
+    expect(pushIfOtaChanged).toHaveBeenCalled();
+  });
+
+  it("allows a guest-declined Booking.com stay to become no-show only after check-in date", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        checkinDate: "2026-09-12",
+        checkoutDate: "2026-09-13",
+        status: "guest_declined",
+        source: "channel_manager",
+        platform: "booking_com",
+        bookingRef: "BK-DECLINED",
+      },
+      assignments: [],
+    });
+    q.getChannelConfig.mockResolvedValue({ isActive: true, hotelCode: "HOTEL", pmsId: "PMS", apiBaseUrl: "https://live.aiosell.com", apiUsername: "u", apiPassword: "p" });
+    q.pushNoShow.mockResolvedValue({ success: true, message: "ok" });
+
+    const res = await POST(req({ password: "x", action: "markNoShow", bookingId: 42 }));
+
+    expect(res.status).toBe(200);
+    expect(q.transitionBookingStatus).toHaveBeenCalledWith(42, ["received", "guest_declined"], { status: "no_show" });
+    expect(q.pushNoShow).toHaveBeenCalledWith(expect.objectContaining({ pmsId: "PMS" }), "BK-DECLINED");
+  });
+
+  it("does not mark a guest-declined stay no-show on its check-in date", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        checkinDate: todayIST(),
+        checkoutDate: "2026-09-14",
+        status: "guest_declined",
+        source: "channel_manager",
+        platform: "booking_com",
+      },
+      assignments: [],
+    });
+
+    const res = await POST(req({ password: "x", action: "markNoShow", bookingId: 42 }));
+
+    expect(res.status).toBe(409);
+    expect(q.transitionBookingStatus).not.toHaveBeenCalled();
+  });
+
   it("claims a full cancellation once, so a concurrent retry cannot release or push twice", async () => {
     q.getBookingDetail.mockResolvedValue({
       booking: { checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual" },

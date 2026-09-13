@@ -270,7 +270,7 @@ export async function POST(req: NextRequest) {
       db.select({ month: sql<string>`strftime('%Y-%m', ${expenses.createdAt}, '+05:30')`, total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)`, count: sql<number>`COUNT(*)` }).from(expenses).where(and(...expenseWhere)).groupBy(sql`strftime('%Y-%m', ${expenses.createdAt}, '+05:30')`).orderBy(sql`strftime('%Y-%m', ${expenses.createdAt}, '+05:30')`),
       db.select({ date: sql<string>`date(${expenses.createdAt}, '+05:30')`, total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` }).from(expenses).where(and(...expenseWhere)).groupBy(sql`date(${expenses.createdAt}, '+05:30')`).orderBy(sql`date(${expenses.createdAt}, '+05:30')`),
       db.select({ id: beds.id, isBlocked: beds.isBlocked }).from(beds),
-      db.select({ bedId: bookingBedAssignments.bedId, checkinDate: bookingBedAssignments.checkinDate, checkoutDate: bookingBedAssignments.checkoutDate }).from(bookingBedAssignments).innerJoin(bookings, eq(bookingBedAssignments.bookingId, bookings.id)).where(and(...assignmentWhere, sql`${bookings.status} NOT IN ('cancelled', 'no_show')`)),
+      db.select({ bedId: bookingBedAssignments.bedId, checkinDate: bookingBedAssignments.checkinDate, checkoutDate: bookingBedAssignments.checkoutDate }).from(bookingBedAssignments).innerJoin(bookings, eq(bookingBedAssignments.bookingId, bookings.id)).where(and(...assignmentWhere, sql`${bookings.status} NOT IN ('cancelled', 'guest_declined', 'no_show')`)),
       getBlockRows(),
     ]);
 

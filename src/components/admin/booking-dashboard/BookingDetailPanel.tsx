@@ -217,6 +217,9 @@ export function BookingDetailPanel({
     && (hasPermission(role, permissions, "canAddBooking") || hasPermission(role, permissions, "canCheckIn"));
   const collectedHint = formatCurrency(booking.amountPaid || 0);
   const canEditBooking = booking.source === "manual" && hasPermission(role, permissions, "canAddBooking");
+  const canReleaseForNoShow = booking.source === "channel_manager"
+    && (booking.platform || "").toLowerCase().replace(/[._\s-]/g, "") === "bookingcom"
+    && hasPermission(role, permissions, "canDeleteBooking");
 
   return (
     <>
@@ -483,6 +486,22 @@ export function BookingDetailPanel({
                   Cancel
                 </Button>
               )}
+            {(booking.status === "received" || booking.status === "hold") && canReleaseForNoShow && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmAction({
+                  action: "releaseForNoShow",
+                  title: "Guest Declined Stay",
+                  description: `Release the bed for ${booking.guestName} while keeping the Booking.com reservation active? You can mark it no-show after the check-in date passes.`,
+                  variant: "default",
+                  confirmLabel: "Release bed",
+                })}
+                disabled={busy}
+              >
+                Release for No-show
+              </Button>
+            )}
             {booking.status === "checked_in" && canCancelStay && (
               <Button
                 size="sm"
@@ -494,7 +513,9 @@ export function BookingDetailPanel({
                 Cancel
               </Button>
             )}
-            {booking.status === "received" && booking.checkinDate <= getHostelToday() && hasPermission(role, permissions, "canDeleteBooking") && (
+            {(booking.status === "received" || booking.status === "guest_declined")
+              && (booking.status === "guest_declined" ? booking.checkinDate < getHostelToday() : booking.checkinDate <= getHostelToday())
+              && hasPermission(role, permissions, "canDeleteBooking") && (
               <Button
                 size="sm"
                 variant="outline"

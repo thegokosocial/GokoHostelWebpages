@@ -250,8 +250,8 @@ describe("Source-read: online-only release, cancelled filter, webhook vs Unassig
   });
 
   it("cancelled / checked_out / no_show stays are excluded from both hold queries", () => {
-    expect(roomCountSql).toContain("NOT IN ('cancelled', 'checked_out', 'no_show')");
-    expect(holdsSql).toContain("NOT IN ('cancelled', 'checked_out', 'no_show')");
+    expect(roomCountSql).toContain("NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')");
+    expect(holdsSql).toContain("NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')");
   });
 
   it("release is booking-level NOT EXISTS (any online assignment drops the whole hold, including mixed rooms)", () => {

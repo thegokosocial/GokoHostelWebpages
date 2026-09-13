@@ -616,7 +616,7 @@ export async function getAvailabilitySnapshot(startDate: string, endDate: string
       rawData: bookings.rawData,
     }).from(bookings).where(and(
       eq(bookings.source, "channel_manager"),
-      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'no_show')`,
+      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')`,
       lte(bookings.checkinDate, endDate),
       sql`(
         CASE
@@ -1841,7 +1841,7 @@ export async function getUnassignedBookings() {
   return dbRead(() => {
     const db = getDb();
     return db.select().from(bookings).where(
-      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'no_show')
+      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')
         AND NOT EXISTS (
           SELECT 1 FROM ${bookingBedAssignments}
           WHERE ${bookingBedAssignments.bookingId} = ${bookings.id}
@@ -1864,7 +1864,7 @@ export async function getUnassignedOtaRoomCountForDorm(dormId: number, date: str
   }).from(bookings).where(
     and(
       eq(bookings.source, "channel_manager"),
-      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'no_show')`,
+      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')`,
       lte(bookings.checkinDate, date),
       sql`(
         CASE
@@ -1904,7 +1904,7 @@ export async function getUnassignedOtaHoldsForRange(
   }).from(bookings).where(
     and(
       eq(bookings.source, "channel_manager"),
-      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'no_show')`,
+      sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')`,
       sql`${bookings.checkinDate} < ${endExclusive}`,
       sql`(
         CASE

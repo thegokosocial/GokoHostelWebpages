@@ -381,7 +381,7 @@ async function handleModifyBooking(payload: ReservationPayload) {
     payload.checkout || existing.checkoutDate || undefined,
   );
 
-  const closed = existing.status === "checked_out" || existing.status === "no_show" || existing.status === "cancelled";
+  const closed = existing.status === "checked_out" || existing.status === "no_show" || existing.status === "cancelled" || existing.status === "guest_declined";
   const newCheckin = payload.checkin || existing.checkinDate;
   const newCheckout = exclusiveEndDate(newCheckin, payload.checkout || existing.checkoutDate);
   let moveDates = !closed && !!newCheckin && !!newCheckout;
@@ -472,7 +472,7 @@ async function handleCancelBooking(payload: ReservationPayload) {
   if (existing.status === "cancelled") {
     return respondSuccess("Reservation already cancelled");
   }
-  if (existing.status === "checked_out" || existing.status === "no_show") {
+  if (existing.status === "checked_out" || existing.status === "no_show" || existing.status === "guest_declined") {
     return respondSuccess("Reservation already closed");
   }
 
@@ -522,7 +522,7 @@ async function handleCancelBooking(payload: ReservationPayload) {
 async function realignAssignments(bookingId: number, newCheckin: string, newCheckout: string): Promise<boolean> {
   const detail = await getBookingDetail(bookingId);
   const status = detail?.booking?.status;
-  if (status === "checked_out" || status === "no_show" || status === "cancelled") return false;
+  if (status === "checked_out" || status === "no_show" || status === "cancelled" || status === "guest_declined") return false;
   const assigned = (detail?.assignments || []).filter((a) => a.status === "assigned");
   if (assigned.length === 0) return true;
   const same = assigned.every((a) => a.checkinDate === newCheckin && a.checkoutDate === newCheckout);

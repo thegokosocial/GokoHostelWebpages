@@ -571,6 +571,8 @@ export function AdminDashboard({
                       "rounded-md px-1.5 py-0.5 text-[10px] font-semibold capitalize",
                       booking.status === "cancelled" || booking.status === "no_show"
                         ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400"
+                        : booking.status === "guest_declined"
+                          ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
                         : "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400",
                     )}>{booking.status.replaceAll("_", " ")}</span>
                   </div>
