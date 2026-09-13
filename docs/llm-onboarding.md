@@ -119,7 +119,7 @@ UI/settings: `food_kannada_kitchen_print`, `food_kannada_kitchen_display`.
 |-----|--------|--------|
 | `gokoAdminSession` | localStorage | **raw** `{ password, username }` if Remember me |
 | `kitchen_pw` | sessionStorage | raw kitchen password |
-| `gokoFoodCart` / `gokoFoodPhone` | localStorage | guest food |
+| `gokoFoodCart` / `gokoFoodPhone` | localStorage | guest food; selected-category browsing uses a vertical category rail and does not change cart persistence |
 | `goko.splits.lastGroupId` | localStorage | last Splits group with ≥1 human |
 
 ### 7. PWA failover

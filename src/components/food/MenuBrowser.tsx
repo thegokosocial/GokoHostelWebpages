@@ -78,6 +78,13 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     setCuratedFilter(null);
   };
 
+  const selectCategory = (categoryId: number) => {
+    setSelectedCategory(categoryId);
+    setSearchQuery("");
+    setDietFilter("all");
+    setCuratedFilter(null);
+  };
+
   usePanelHistory(selectedCategory !== null, closeCategory);
 
   const sortedCategories = useMemo(
@@ -161,7 +168,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
               variants={{ hidden: { opacity: 0, y: 16, scale: 0.95 }, visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.35, ease: [0.33, 1, 0.68, 1] } } }}
               whileTap={{ scale: 0.96 }}
               whileHover={{ scale: 1.03, y: -2 }}
-              onClick={() => setSelectedCategory(cat.id)}
+              onClick={() => selectCategory(cat.id)}
               className="flex flex-col items-center gap-2 rounded-2xl border border-gray-100 dark:border-border bg-white dark:bg-card p-5 shadow-sm dark:shadow-none transition-shadow hover:border-brand-green/30 hover:shadow-lg dark:hover:shadow-none"
             >
               <span className="text-3xl">{cat.icon}</span>
@@ -187,40 +194,63 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="px-4 pb-24"
+      className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 px-3 pb-24 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4 sm:px-4"
     >
-      <div className="mb-4 flex items-center gap-3">
+      <nav aria-label="Food categories" className="self-start">
         <button
           type="button"
           onClick={closeCategory}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 dark:bg-muted text-gray-600 dark:text-foreground transition hover:bg-gray-200 dark:hover:bg-accent"
+          className="mb-3 flex w-full items-center justify-center gap-1 rounded-xl bg-gray-100 px-2 py-2 text-xs font-semibold text-gray-600 transition hover:bg-gray-200 dark:bg-muted dark:text-foreground dark:hover:bg-accent"
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
+          Menu
         </button>
-        <div>
-          <h2 className="text-lg font-bold text-gray-800 dark:text-foreground">
+        <div className="sticky top-3 max-h-[calc(100vh-6rem)] space-y-1 overflow-y-auto pr-1">
+          {sortedCategories.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              aria-current={cat.id === selectedCategory ? "page" : undefined}
+              onClick={() => selectCategory(cat.id)}
+              className={cat.id === selectedCategory
+                ? "flex w-full flex-col items-center gap-1 rounded-xl bg-brand-green px-1 py-2 text-center text-white shadow-sm sm:px-2"
+                : "flex w-full flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-gray-500 transition-colors hover:bg-brand-green/10 hover:text-brand-green dark:text-gray-400 dark:hover:bg-brand-green/20 sm:px-2"}
+            >
+              <span className="text-xl leading-none sm:text-2xl">{cat.icon}</span>
+              <span className="line-clamp-2 text-[10px] font-semibold leading-tight sm:text-xs">{cat.name}</span>
+              {cat.nameKannada && (
+                <span className="line-clamp-1 text-[9px] leading-tight opacity-80">{cat.nameKannada}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <div className="min-w-0">
+        <div className="mb-2">
+          <h2 className="truncate text-lg font-bold text-gray-800 dark:text-foreground">
             {currentCategory?.icon} {currentCategory?.name}
           </h2>
           {currentCategory?.nameKannada && (
-            <p className="text-xs text-gray-500">{currentCategory.nameKannada}</p>
+            <p className="truncate text-xs text-gray-500">{currentCategory.nameKannada}</p>
           )}
         </div>
-      </div>
 
-      {/* Search */}
-      <div className="mb-3 relative">
+        {/* Search */}
+        <div className="relative mb-3">
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search dishes…"
-          className="w-full rounded-xl border border-gray-200 dark:border-border bg-gray-50 dark:bg-muted px-4 py-2.5 pr-9 text-sm dark:text-foreground outline-none transition-all duration-200 focus:border-brand-green focus:bg-white dark:focus:bg-accent focus-visible:goko-focus focus:shadow-sm dark:focus:shadow-none"
+          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 pr-9 text-sm outline-none transition-all duration-200 focus:border-brand-green focus:bg-white focus-visible:goko-focus focus:shadow-sm dark:border-border dark:bg-muted dark:text-foreground dark:focus:bg-accent dark:focus:shadow-none"
         />
         <AnimatePresence>
           {searchQuery && (
             <motion.button
+              type="button"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
@@ -313,7 +343,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
             No items found
           </motion.p>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
             {filteredItems.map((item) => {
               const tags = parseTags(item.tags);
               const isUnavailable = item.isAvailable !== 1 || item.price <= 0;
@@ -329,14 +359,14 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   whileTap={isUnavailable ? undefined : { scale: 0.98 }}
-                  className={`flex gap-3 rounded-2xl border bg-white dark:bg-card p-3 shadow-sm dark:shadow-none transition-all duration-200 ${
+                  className={`flex flex-col rounded-2xl border bg-white dark:bg-card p-3 shadow-sm dark:shadow-none transition-all duration-200 ${
                     isUnavailable
                       ? "border-gray-100 dark:border-border opacity-50"
                       : "border-gray-100 dark:border-border hover:border-brand-green/30 hover:shadow-lg dark:hover:shadow-none"
                   }`}
                 >
                   {/* Image */}
-                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-[#1c1c1c]">
+                  <div className="h-28 w-full shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-[#1c1c1c]">
                     {imageSrc ? (
                       <img
                         src={imageSrc}
@@ -360,7 +390,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                   </div>
 
                   {/* Content */}
-                  <div className="flex min-w-0 flex-1 flex-col justify-between">
+                  <div className="flex min-w-0 flex-1 flex-col justify-between pt-2">
                     <div>
                       <h3 className="text-sm font-semibold text-gray-800 dark:text-foreground leading-tight">
                         {item.name}
@@ -475,6 +505,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
           </div>
         )}
       </AnimatePresence>
+      </div>
     </motion.div>
   );
 }

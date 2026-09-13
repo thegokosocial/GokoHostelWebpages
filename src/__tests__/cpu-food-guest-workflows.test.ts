@@ -382,4 +382,13 @@ describe("food-order CPU/SSR split", () => {
     expect(page).not.toContain("left-1/2");
     expect(page).not.toContain("-translate-x-1/2");
   });
+
+  it("keeps the home category view and adds a selected-category rail for guests", () => {
+    const menu = readFile("src/components/food/MenuBrowser.tsx");
+    expect(menu).toContain('aria-label="Food categories"');
+    expect(menu).toContain('aria-current={cat.id === selectedCategory ? "page" : undefined}');
+    expect(menu).toContain("grid-cols-[5rem_minmax(0,1fr)]");
+    expect(menu).toContain("min-[420px]:grid-cols-2");
+    expect(menu).toContain("onClick={() => selectCategory(cat.id)}");
+  });
 });

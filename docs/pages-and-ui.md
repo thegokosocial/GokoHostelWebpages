@@ -32,7 +32,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → Stayflexi URL
 | Path | Role | Auth |
 |------|------|------|
 | `/self-checkin` | ID check-in; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
-| `/food-order` | Menu + cart | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
+| `/food-order` | Menu + cart; after selecting a category, the guest menu keeps the sorted category list in a vertical left rail beside the filtered dish grid; the home category-card view is unchanged | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
 | `/my-bills` | Food bills | phone; back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
