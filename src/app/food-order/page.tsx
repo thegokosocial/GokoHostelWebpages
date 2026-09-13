@@ -430,7 +430,7 @@ export default function FoodOrderPage() {
         </motion.div>
       )}
 
-      <div className="mx-auto max-w-lg pb-8 pt-8">
+      <div className={`mx-auto w-full pb-8 ${view === "menu" ? "max-w-7xl pt-2" : "max-w-lg pt-8"}`}>
         <AnimatePresence mode="wait">
           {view === "phone" && (
             <motion.div
@@ -480,45 +480,51 @@ export default function FoodOrderPage() {
               exit={{ opacity: 0, x: -50 }}
             >
               {/* Header */}
-              <div className="mb-4 px-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mb-2 px-3 sm:mb-4 sm:px-4">
+                <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <h1 className="text-lg font-bold text-brand-green">
+                    <h1 className="truncate text-base font-bold text-brand-green sm:text-lg">
                       {guestInfo?.name?.trim()
                         ? `Hi, ${guestInfo.name.trim().split(" ")[0]}! 👋`
                         : "Welcome! 👋"}
                     </h1>
                     {guestInfo?.roomInfo && (
-                      <p className="text-sm text-brand-green-dark/70">{guestInfo.roomInfo}</p>
+                      <p className="truncate text-xs text-brand-green-dark/70 sm:text-sm">{guestInfo.roomInfo}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+                  <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                     <Link
+                      title="My Bills"
                       href={`/my-bills?phone=${encodeURIComponent(guestInfo?.phone || savedPhone || "")}`}
-                      className="flex items-center gap-1.5 rounded-xl bg-brand-green/10 px-3 py-2 text-sm font-medium text-brand-green transition hover:bg-brand-green/15"
+                      className="flex items-center gap-1.5 rounded-xl bg-brand-green/10 px-2.5 py-2 text-xs font-medium text-brand-green transition hover:bg-brand-green/15 sm:px-3 sm:text-sm"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                       </svg>
-                      My Bills
+                      <span className="hidden sm:inline">My Bills</span>
                     </Link>
                     {guestInfo?.guestType === "hostel" && pastOrders.length > 0 && (
                       <button
+                        title="My Orders"
                         onClick={() => setShowMyOrders(true)}
-                        className="flex items-center gap-1.5 rounded-xl bg-brand-green/10 px-3 py-2 text-sm font-medium text-brand-green transition hover:bg-brand-green/15"
+                        className="flex items-center gap-1.5 rounded-xl bg-brand-green/10 px-2.5 py-2 text-xs font-medium text-brand-green transition hover:bg-brand-green/15 sm:px-3 sm:text-sm"
                       >
-                        My Orders
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5h6m-8 4h10m-10 4h6m-6 4h6M5 5h.01M5 9h.01M5 13h.01M5 17h.01" />
+                        </svg>
+                        <span className="hidden sm:inline">My Orders</span>
                       </button>
                     )}
                     <button
                       type="button"
+                      title="Logout"
                       onClick={handleLogout}
-                      className="flex items-center gap-1.5 rounded-xl bg-gray-100 dark:bg-muted px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 transition hover:bg-gray-200 dark:hover:bg-accent"
+                      className="flex items-center gap-1.5 rounded-xl bg-gray-100 dark:bg-muted px-2.5 py-2 text-xs font-medium text-gray-600 dark:text-gray-400 transition hover:bg-gray-200 dark:hover:bg-accent sm:px-3 sm:text-sm"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                       </svg>
-                      Logout
+                      <span className="hidden sm:inline">Logout</span>
                     </button>
                   </div>
                 </div>

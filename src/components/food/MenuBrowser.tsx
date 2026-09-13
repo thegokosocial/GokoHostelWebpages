@@ -194,7 +194,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="grid h-[calc(100dvh-10rem)] min-h-[30rem] grid-cols-[5rem_minmax(0,1fr)] gap-3 overflow-hidden px-3 pb-2 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4 sm:px-4"
+      className="grid h-[calc(100dvh-7.5rem)] min-h-[26rem] grid-cols-[5rem_minmax(0,1fr)] gap-2 overflow-hidden px-3 pb-2 sm:h-[calc(100dvh-8.5rem)] sm:min-h-[30rem] sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4 sm:px-4"
     >
       <nav aria-label="Food categories" className="min-h-0 overflow-y-auto overscroll-contain pr-1">
         <button
@@ -229,8 +229,8 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       </nav>
 
       <div className="flex min-h-0 min-w-0 flex-col">
-        <div className="mb-2">
-          <h2 className="truncate text-lg font-bold text-gray-800 dark:text-foreground">
+        <div className="mb-1">
+          <h2 className="truncate text-base font-bold text-gray-800 dark:text-foreground sm:text-lg">
             {currentCategory?.icon} {currentCategory?.name}
           </h2>
           {currentCategory?.nameKannada && (
@@ -239,7 +239,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
         </div>
 
         {/* Search */}
-        <div className="relative mb-3 shrink-0">
+        <div className="relative mb-2 shrink-0">
         <input
           type="text"
           value={searchQuery}
@@ -264,7 +264,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       </div>
 
       {/* Diet filter */}
-      <div className="mb-2 flex shrink-0 flex-wrap gap-2">
+      <div className="mb-1 flex shrink-0 flex-wrap gap-1.5 sm:mb-2 sm:gap-2">
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setDietFilter("all")}
@@ -360,14 +360,14 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   whileTap={isUnavailable ? undefined : { scale: 0.98 }}
-                  className={`flex flex-col rounded-2xl border bg-white dark:bg-card p-3 shadow-sm dark:shadow-none transition-all duration-200 ${
+                  className={`flex flex-col rounded-2xl border bg-white dark:bg-card p-2 shadow-sm dark:shadow-none transition-all duration-200 sm:p-3 ${
                     isUnavailable
                       ? "border-gray-100 dark:border-border opacity-50"
                       : "border-gray-100 dark:border-border hover:border-brand-green/30 hover:shadow-lg dark:hover:shadow-none"
                   }`}
                 >
                   {/* Image */}
-                  <div className="h-28 w-full shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-[#1c1c1c]">
+                  <div className="h-20 w-full shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-[#1c1c1c] sm:h-28">
                     {imageSrc ? (
                       <img
                         src={imageSrc}
@@ -391,16 +391,16 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                   </div>
 
                   {/* Content */}
-                  <div className="flex min-w-0 flex-1 flex-col justify-between pt-2">
+                  <div className="flex min-w-0 flex-1 flex-col justify-between pt-1.5 sm:pt-2">
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-800 dark:text-foreground leading-tight">
+                      <h3 className="text-[13px] font-semibold leading-tight text-gray-800 dark:text-foreground sm:text-sm">
                         {item.name}
                       </h3>
                       {item.nameKannada && (
-                        <p className="text-xs text-gray-500">{item.nameKannada}</p>
+                        <p className="line-clamp-1 text-[11px] text-gray-500 sm:text-xs">{item.nameKannada}</p>
                       )}
                       {item.description && (
-                        <p className="mt-0.5 line-clamp-2 text-xs text-gray-400">
+                        <p className="mt-0.5 line-clamp-1 text-[11px] text-gray-400 sm:line-clamp-2 sm:text-xs">
                           {item.description}
                         </p>
                       )}
@@ -423,7 +423,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                             return (
                               <span
                                 key={tag}
-                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${classes}`}
+                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium sm:px-2 sm:text-xs ${classes}`}
                               >
                                 {display}
                               </span>
@@ -433,9 +433,9 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                       )}
                     </div>
 
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-1">
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 sm:mt-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-gray-800 dark:text-foreground">
+                        <span className="text-[13px] font-bold text-gray-800 dark:text-foreground sm:text-sm">
                           {isUnavailable ? (
                             <span className="text-gray-400">Unavailable</span>
                           ) : (
@@ -460,7 +460,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                               exit={{ scale: 0.9, opacity: 0 }}
                               whileTap={{ scale: 0.92 }}
                               onClick={() => handleAdd(item)}
-                              className="goko-gradient-cta rounded-lg px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm dark:shadow-none transition-shadow hover:shadow-md dark:hover:shadow-none"
+                              className="goko-gradient-cta rounded-lg px-2.5 py-2 text-xs font-semibold text-white shadow-sm transition-shadow hover:shadow-md dark:shadow-none sm:px-3.5 sm:py-2.5 sm:text-sm"
                             >
                               Add
                             </motion.button>
@@ -469,12 +469,12 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                               key="stepper"
                               initial={{ scale: 0.9, opacity: 0 }}
                               animate={{ scale: 1, opacity: 1 }}
-                              className="flex items-center gap-2 rounded-lg border border-brand-green/25 dark:border-brand-green/40 bg-brand-green/10 dark:bg-brand-green/20 px-1.5 py-0.5"
+                              className="flex items-center gap-0.5 rounded-lg border border-brand-green/25 bg-brand-green/10 px-0.5 py-0.5 dark:border-brand-green/40 dark:bg-brand-green/20 sm:gap-2 sm:px-1.5"
                             >
                               <motion.button
                                 whileTap={{ scale: 0.85 }}
                                 onClick={() => onRemoveFromCart(item.id)}
-                                className="flex h-10 w-10 items-center justify-center rounded-md text-brand-green transition-colors hover:bg-brand-green/10"
+                                className="flex h-8 w-8 items-center justify-center rounded-md text-brand-green transition-colors hover:bg-brand-green/10 sm:h-10 sm:w-10"
                               >
                                 −
                               </motion.button>
@@ -489,7 +489,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                               <motion.button
                                 whileTap={{ scale: 0.85 }}
                                 onClick={() => handleAdd(item)}
-                                className="flex h-10 w-10 items-center justify-center rounded-md text-brand-green transition-colors hover:bg-brand-green/10"
+                                className="flex h-8 w-8 items-center justify-center rounded-md text-brand-green transition-colors hover:bg-brand-green/10 sm:h-10 sm:w-10"
                               >
                                 +
                               </motion.button>
