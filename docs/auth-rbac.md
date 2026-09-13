@@ -121,6 +121,9 @@ Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), M
 | Actions | Perm |
 |---------|------|
 | list, verifyCheckin, getFormCData | `canViewRecords` |
+| getBookingResolutionData | `canAddBooking` **or** `canViewRecords` |
+| searchBookingsForCheckin | `canAddBooking` |
+| linkBookingToCheckin, markCheckinNoBookingNeeded | `canAddBooking` |
 | add | `canAddCheckin` |
 | addPast, reExtractFormC, updateFormCData, removeFormCSubmission | admin_only |
 | update | `canEditRecords` |
@@ -140,6 +143,8 @@ Before deletion, Records checks linked food orders using `getDeleteInfo` and sho
 | users, audit, backup, settings, stats, health, rate scrape, initDorms… | admin_only |
 
 Dashboard checkout rows show room status from a matched booking and food status from active check-in orders. Room matching is read-only and identity-first: it uses the check-in booking reference, then a unique normalized phone or guest-name match with overlapping stay dates. A physical bed’s booking assignment is never used as an identity match; planned room/bed labels are displayed separately and do not change physical occupancy or payment state. Unlinked legacy guests are shown as room `not_linked`. An overall clear state is shown only when a room is linked and both room and food balances are clear.
+
+Active `Walk-in` and `Offline booking` check-ins with no exact or unique identity/date booking match show a Records resolution prompt to users with `canAddBooking`. The prompt supports creating a booking from the check-in, linking a selected existing booking, or permanently marking no booking needed. Resolution state is stored on the check-in and is synced; creating a booking preserves the self-check-in reference as the manual booking reference and reuses the existing booking/inventory/Aiosell path.
 
 For `add`, `addPast`, and `update`, any non-Indian nationality must use `idType=passport` and include a stored visa document link. The Admin Records UI prompts for visa uploads; self-check-in enforces the same rule through its public validation flow. Indian guests may use Aadhaar, Driving Licence, or Passport.
 

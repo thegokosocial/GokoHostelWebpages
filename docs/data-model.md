@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts` — **52** `sqliteTable`s. Applied SQL: `migrations/0001_initial.sql` … `0050_bed_checkin_identity.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
+**Git-safe.** Schema: `src/db/schema.ts` — **52** `sqliteTable`s. Applied SQL: `migrations/0001_initial.sql` … `0052_walkin_checkin_booking_resolution.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 
@@ -28,7 +28,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 
 | Table | Role |
 |-------|------|
-| `checkins` | Guest register. `status` active / checked_out. `verified` yes/pending/no/spoof_warning. Drive URLs in `id_card_link`, `visa_link`. |
+| `checkins` | Guest register. `status` active / checked_out. `verified` yes/pending/no/spoof_warning. Drive URLs in `id_card_link`, `visa_link`. Walk-in/offline booking reconciliation uses `booking_resolution`, `booking_linked_ref`, and resolution audit fields. |
 | `dorms` | Named rooms. Unique `name`. |
 | `beds` | Physical bed. `status` available / occupied / cleanup. Denormalized guest fields and `checkin_id` when occupied. `is_blocked`. `checkin_id` is independent from booking-bed assignments. |
 | `bed_history` | Append-only assign/checkout/clean/swap. |

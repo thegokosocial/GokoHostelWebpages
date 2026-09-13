@@ -52,7 +52,7 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 | `beds` | `AdminBeds` | checkins beds | `canViewBeds` |
 | `timeline` | `AdminTimeline` | checkins `getBeds` | `canViewTimeline` |
 | `inventory` | `InventoryRatePlan` | `/api/admin/inventory` | `canManageInventory` |
-| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads; Form C review/submission is desktop-only and credentials have a password visibility toggle | `canViewRecords` |
+| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads; active unmatched Walk-in/Offline check-ins with `canAddBooking` can create a reviewed booking, link an existing booking, or mark no booking needed; Form C review/submission is desktop-only and credentials have a password visibility toggle | `canViewRecords` |
 | `foodOrders` | `AdminFoodOrders` | `/api/admin/food-orders` + kitchen (including per-stage bulk advance controls) | `canViewFoodOrders` |
 | `expenditure` | `AdminExpenditure` | `/api/admin/expenses` | `canViewAccounts` |
 | `splits` | `AdminSplits` | `/api/admin/splits` | `canViewSplits` — **omitted on Pi** |

@@ -16,6 +16,7 @@ import { checkinIdsMatchingContact } from "@/lib/foodTab";
 import { getReconciliationStatus } from "@/lib/reconciliation";
 import { activeCheckinIdsForContact, getPendingFoodTab } from "@/lib/foodTabDb";
 import { dedupeCheckins } from "@/lib/checkinDuplicate";
+import { bookingReference, getCheckinBookingMatch, isWalkinBookingCheckin } from "@/lib/bookingResolution";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
@@ -24,7 +25,7 @@ import {
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
   getAllStats, incrementStat, getMonthKey,
-  getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking,
+  getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking, searchBookings, getCheckinById,
   createRateScrape, getLatestRateScrape, getRateScrapeById, updateRateScrape,
   getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
   addAuditEntry, getAuditEntries, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
@@ -111,6 +112,9 @@ export async function POST(req: NextRequest) {
       list: "canViewRecords", add: "canAddCheckin", addPast: "admin_only",
       update: "canEditRecords", delete: "canDeleteRecords",
       getDeleteInfo: "canDeleteRecords",
+      getBookingResolutionData: ["canAddBooking", "canViewRecords"],
+      searchBookingsForCheckin: "canAddBooking",
+      linkBookingToCheckin: "canAddBooking", markCheckinNoBookingNeeded: "canAddBooking",
       verifyCheckin: "canViewRecords", getFormCData: "canViewRecords",
       reExtractFormC: "admin_only", updateFormCData: "admin_only", removeFormCSubmission: "admin_only",
       getDashboard: "canViewDashboard", markVibeMatched: "canViewDashboard",
@@ -160,7 +164,71 @@ export async function POST(req: NextRequest) {
         (r as any).dob || "", String((r as any).vibeMatched || 0), (r as any).dobFromId || "",
       ]);
       const months = await getCheckinMonths();
-      return NextResponse.json({ rows, role, tabs: months, currentTab: tabName, permissions });
+      const allBookings = await getAllBookings();
+      const bookingResolutions: Record<string, { state: string; match?: { id: number; reference: string; guestName: string; checkinDate: string; checkoutDate: string; platform: string; method: string } }> = {};
+      for (const checkin of dbRows) {
+        if (!isWalkinBookingCheckin(checkin) || checkin.bookingResolution !== "pending") continue;
+        const match = getCheckinBookingMatch(checkin, allBookings);
+        bookingResolutions[String(checkin.id)] = match
+          ? { state: "matched", match: { id: match.booking.id, reference: bookingReference(match.booking), guestName: match.booking.guestName, checkinDate: match.booking.checkinDate, checkoutDate: match.booking.checkoutDate || addCalendarDays(match.booking.checkinDate, 1), platform: match.booking.platform || "", method: match.method } }
+          : { state: "pending" };
+      }
+      return NextResponse.json({ rows, role, tabs: months, currentTab: tabName, permissions, bookingResolutions });
+    }
+
+    if (action === "getBookingResolutionData") {
+      const checkinId = Number(rest.checkinId);
+      if (!isValidId(checkinId)) return NextResponse.json({ error: "Invalid check-in ID" }, { status: 400 });
+      const checkin = await getCheckinById(checkinId);
+      if (!checkin || !isWalkinBookingCheckin(checkin) || checkin.bookingResolution !== "pending") {
+        return NextResponse.json({ error: "This check-in is no longer pending" }, { status: 409 });
+      }
+      const allBookings = await getAllBookings();
+      const match = getCheckinBookingMatch(checkin, allBookings);
+      return NextResponse.json({
+        checkin: {
+          id: checkin.id, name: checkin.name, contact: checkin.contact, persons: Math.max(1, Number(checkin.persons) || 1),
+          checkinDate: checkin.arrivalDate, checkoutDate: addCalendarDays(checkin.arrivalDate, Math.max(1, Number(checkin.stayingDays) || 1)),
+          bookingRef: checkin.bookingId || "", platform: checkin.bookingPlatform || "", comingFrom: checkin.comingFrom || "",
+          nationality: checkin.nationality || "", emergencyName: checkin.emergencyName || "", emergencyPhone: checkin.emergencyPhone || "",
+          idType: checkin.idType || "", idCardLink: checkin.idCardLink || "", visaLink: checkin.visaLink || "", verified: checkin.verified || "pending",
+        },
+        autoMatch: match ? { id: match.booking.id, reference: bookingReference(match.booking), method: match.method } : null,
+      });
+    }
+
+    if (action === "searchBookingsForCheckin") {
+      const query = typeof rest.query === "string" ? rest.query.trim() : "";
+      if (query.length < 4) return NextResponse.json({ error: "Query must be at least 4 characters" }, { status: 400 });
+      return NextResponse.json({ bookings: await searchBookings(query) });
+    }
+
+    if (action === "linkBookingToCheckin") {
+      const checkinId = Number(rest.checkinId);
+      const bookingId = Number(rest.bookingId);
+      if (!isValidId(checkinId) || !isValidId(bookingId)) return NextResponse.json({ error: "Invalid check-in or booking ID" }, { status: 400 });
+      const checkin = await getCheckinById(checkinId);
+      const bookingRows = await getDb().select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+      const booking = bookingRows[0];
+      if (!checkin || !isWalkinBookingCheckin(checkin) || checkin.bookingResolution !== "pending") return NextResponse.json({ error: "This check-in is no longer pending" }, { status: 409 });
+      if (!booking || ["cancelled", "no_show"].includes(booking.status)) return NextResponse.json({ error: "Booking is not available for linking" }, { status: 400 });
+      const reference = bookingReference(booking);
+      if (!reference) return NextResponse.json({ error: "Booking has no stable reference" }, { status: 400 });
+      const now = new Date().toISOString();
+      await updateCheckin(checkinId, { bookingResolution: "linked", bookingLinkedRef: reference, bookingResolutionAt: now, bookingResolutionBy: actingUser });
+      await addAuditEntry({ username: actingUser, action: "checkin_booking_linked", target: `${checkin.name} → ${reference}` });
+      return NextResponse.json({ success: true, bookingId, reference });
+    }
+
+    if (action === "markCheckinNoBookingNeeded") {
+      const checkinId = Number(rest.checkinId);
+      if (!isValidId(checkinId)) return NextResponse.json({ error: "Invalid check-in ID" }, { status: 400 });
+      const checkin = await getCheckinById(checkinId);
+      if (!checkin || !isWalkinBookingCheckin(checkin) || checkin.bookingResolution !== "pending") return NextResponse.json({ error: "This check-in is no longer pending" }, { status: 409 });
+      const now = new Date().toISOString();
+      await updateCheckin(checkinId, { bookingResolution: "no_booking_needed", bookingResolutionAt: now, bookingResolutionBy: actingUser });
+      await addAuditEntry({ username: actingUser, action: "checkin_no_booking_needed", target: `${checkin.name} (id:${checkinId})` });
+      return NextResponse.json({ success: true });
     }
 
     if (action === "add") {
@@ -610,7 +678,8 @@ export async function POST(req: NextRequest) {
       const bookingById = new Map(allBookings.map((booking) => [booking.id, booking]));
       const bookingByCheckinId = new Map<number, (typeof allBookings)[number]>();
       for (const checkin of activeCheckins) {
-        const bookingId = checkin.bookingId ? bookingByReference.get(String(checkin.bookingId).trim()) : undefined;
+        const reference = checkin.bookingLinkedRef || checkin.bookingId;
+        const bookingId = reference ? bookingByReference.get(String(reference).trim()) : undefined;
         const booking = bookingId ? bookingById.get(bookingId) : undefined;
         if (booking) bookingByCheckinId.set(checkin.id, booking);
       }
@@ -852,7 +921,7 @@ export async function POST(req: NextRequest) {
 
       const linkedBookingDetails: Record<string, { id: number; persons: number; roomType: string; reference: string; source: string; plannedBedLabels: string[]; matchMethod: "reference" | "phone" | "name" }> = {};
       for (const checkin of unassignedCheckins) {
-        const reference = String(checkin.bookingId || "").trim();
+        const reference = String(checkin.bookingLinkedRef || checkin.bookingId || "").trim();
         const checkoutDate = addCalendarDays(checkin.arrivalDate, Math.max(1, Number(checkin.stayingDays) || 1));
         const candidates = allBookings.filter((item) =>
           !["cancelled", "no_show"].includes(item.status) &&

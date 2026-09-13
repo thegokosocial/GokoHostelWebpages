@@ -22,6 +22,11 @@ import type { CalendarDorm, DateRange } from "./types";
 
 type AvailableUnit = { key: string; label: string; dormId: number; dormName: string; type: "Double" | "Bed"; capacity: number; bedIds: number[]; pool?: "online" | "offline" | "block" };
 type ReceiptAccount = { id: number; name: string; nickname: string };
+export type CheckinBookingPrefill = {
+  id: number; name: string; contact: string; persons: number; checkinDate: string; checkoutDate: string;
+  bookingRef: string; platform: string; comingFrom: string; nationality: string; emergencyName: string; emergencyPhone: string;
+  idType: string; idCardLink: string; visaLink: string; verified: string;
+};
 
 const DISCOUNT_REASONS = ["Complimentary", "Staff Stay", "Loyalty Guest", "Service Issue", "Manager Discount", "Other"];
 const QUICK_PERCENTS = [5, 10, 15, 20, 25, 50, 100];
@@ -33,6 +38,7 @@ export function CreateBookingModal({
   onCreated,
   password,
   username,
+  initialCheckin,
 }: {
   dorms: CalendarDorm[];
   dateRange: DateRange;
@@ -40,21 +46,22 @@ export function CreateBookingModal({
   onCreated: () => Promise<void>;
   password: string;
   username?: string;
+  initialCheckin?: CheckinBookingPrefill | null;
 }) {
   const { showError, showSuccess } = useAdminToast();
   const [submitting, setSubmitting] = useState(false);
 
-  const [guestName, setGuestName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [guestName, setGuestName] = useState(initialCheckin?.name || "");
+  const [phone, setPhone] = useState(initialCheckin?.contact || "");
   const [email, setEmail] = useState("");
   const [checkinDate, setCheckinDate] = useState(() => {
     const today = todayIST();
-    return dateRange.startDate > today ? dateRange.startDate : today;
+    return initialCheckin?.checkinDate || (dateRange.startDate > today ? dateRange.startDate : today);
   });
   const [checkoutDate, setCheckoutDate] = useState(() => {
     const today = todayIST();
     const start = dateRange.startDate > today ? dateRange.startDate : today;
-    return addCalendarDays(start, 1);
+    return initialCheckin?.checkoutDate || addCalendarDays(start, 1);
   });
   const [platform, setPlatform] = useState<"walkin" | "booking_engine">("walkin");
   const [nightlyRate, setNightlyRate] = useState(500);
@@ -75,6 +82,10 @@ export function CreateBookingModal({
   const [receiptAccounts, setReceiptAccounts] = useState<ReceiptAccount[]>([]);
   const [receiptAccountId, setReceiptAccountId] = useState("");
   const [loadingReceiptAccounts, setLoadingReceiptAccounts] = useState(false);
+
+  useEffect(() => {
+    if (initialCheckin) setPersons(String(initialCheckin.persons || 1));
+  }, [initialCheckin]);
 
   const nights = useMemo(() => getNights(checkinDate, checkoutDate), [checkinDate, checkoutDate]);
   const pricing = useMemo(() => {
@@ -185,6 +196,7 @@ export function CreateBookingModal({
       const payload: Record<string, unknown> = {
         password,
         action: "createBooking",
+        ...(initialCheckin ? { checkinId: initialCheckin.id } : {}),
         guestName: guestName.trim(),
         contact: phone.trim(),
         email: email.trim(),
@@ -293,6 +305,16 @@ export function CreateBookingModal({
                 </div>
               </div>
             </div>
+            {initialCheckin && (
+              <div className="rounded-lg border border-brand-mist bg-brand-sand/20 p-3 text-xs text-brand-green-dark/70">
+                <p className="font-semibold text-brand-green-dark">Self-check-in details</p>
+                <p className="mt-1">{initialCheckin.platform} · {initialCheckin.nationality || "Nationality not provided"} · ID: {initialCheckin.idType || "not provided"} · Verification: {initialCheckin.verified}</p>
+                <p className="mt-1">From: {initialCheckin.comingFrom || "—"} · Emergency: {initialCheckin.emergencyName || "—"} {initialCheckin.emergencyPhone || ""}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[...(initialCheckin.idCardLink || "").split(" | "), ...(initialCheckin.visaLink || "").split(" | ")].filter((url) => url.startsWith("http")).map((url, index) => <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="text-brand-green underline">View document {index + 1}</a>)}
+                </div>
+              </div>
+            )}
 
             {/* Dates */}
             <div className="grid grid-cols-2 gap-3">
@@ -354,6 +376,7 @@ export function CreateBookingModal({
                 <button
                   type="button"
                   onClick={() => setPlatform("booking_engine")}
+                  disabled={Boolean(initialCheckin)}
                   className={cn(
                     "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                     platform === "booking_engine"

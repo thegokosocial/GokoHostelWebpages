@@ -1841,13 +1841,13 @@ describe("Bulk availability workflows", () => {
         { id: 2, dormId: 8, bedId: "EXE-2", type: "Bunk" },
         { id: 3, dormId: 8, bedId: "EXE-3", type: "Bunk" },
       ],
-      [{ bedId: 1, dormId: 8, checkinDate: "2026-09-12", checkoutDate: "2026-09-13", inventoryPool: "online" }],
-      [{ bedId: 2, dormId: 8, startDate: "2026-09-12", endDate: "2026-09-13" }],
+      [{ bedId: 1, dormId: 8, checkinDate: "2026-09-19", checkoutDate: "2026-09-20", inventoryPool: "online" }],
+      [{ bedId: 2, dormId: 8, startDate: "2026-09-19", endDate: "2026-09-20" }],
       [],
     ] as never);
     const res = await post({
       password: "x", action: "bulkSetAvailability", preview: true, dormIds: [8],
-      startDate: "2026-09-12", endDate: "2026-09-12", mode: "set", onlineRemaining: 0,
+      startDate: "2026-09-19", endDate: "2026-09-19", mode: "set", onlineRemaining: 0,
     });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -1880,7 +1880,7 @@ describe("Bulk availability workflows", () => {
     ] as never);
     const res = await post({
       password: "x", action: "bulkSetAvailability", preview: true, dormIds: [8, 9],
-      startDate: "2026-09-12", endDate: "2026-09-13", mode: "set", onlineRemaining: 4,
+      startDate: "2026-09-19", endDate: "2026-09-20", mode: "set", onlineRemaining: 4,
     });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -1909,18 +1909,18 @@ describe("Bulk availability workflows", () => {
         { id: 1, dormId: 8, bedId: "EXE-1", type: "Bunk" },
         { id: 2, dormId: 8, bedId: "EXE-2", type: "Bunk" },
       ],
-      [{ bedId: 1, dormId: 8, checkinDate: "2026-09-12", checkoutDate: "2026-09-13", inventoryPool: "online" }],
+      [{ bedId: 1, dormId: 8, checkinDate: "2026-09-19", checkoutDate: "2026-09-20", inventoryPool: "online" }],
       [],
       [],
     ] as never);
     const res = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
-      startDate: "2026-09-12", endDate: "2026-09-12", mode: "set", onlineRemaining: 0,
+      startDate: "2026-09-19", endDate: "2026-09-19", mode: "set", onlineRemaining: 0,
     });
     expect(res.status).toBe(200);
     expect((await res.json()).updated).toBe(1);
     expect(queryMocks.upsertInventoryOverride).toHaveBeenCalledWith(expect.objectContaining({
-      dormId: 8, date: "2026-09-12", onlineAvailable: 1, offlineAvailable: null,
+      dormId: 8, date: "2026-09-19", onlineAvailable: 1, offlineAvailable: null,
     }));
     expect(triggerInventoryPush).toHaveBeenCalledOnce();
     expect(queryMocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "INVENTORY_AVAILABILITY_BULK_UPDATED" }));
@@ -1930,7 +1930,7 @@ describe("Bulk availability workflows", () => {
     queryMocks.getAllDorms.mockResolvedValue([{ id: 8, name: "Executive" }, { id: 9, name: "Dorm" }]);
     const res = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8, 9],
-      startDate: "2026-09-12", endDate: "2026-09-13", dayFilter: [6, 0], mode: "set", onlineRemaining: 4,
+      startDate: "2026-09-19", endDate: "2026-09-20", dayFilter: [6, 0], mode: "set", onlineRemaining: 4,
     });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -1938,7 +1938,7 @@ describe("Bulk availability workflows", () => {
     expect(body.capped).toBe(4);
     expect(body.unmappedDormIds).toEqual([9]);
     expect(queryMocks.upsertInventoryOverride).toHaveBeenCalledTimes(4);
-    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-12", "2026-09-13"], [8, 9]);
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-19", "2026-09-20"], [8, 9]);
     expect(queryMocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({
       details: expect.stringContaining('"dayFilter":[6,0]'),
     }));
@@ -1947,16 +1947,16 @@ describe("Bulk availability workflows", () => {
   it("clears only default overrides and does not write when validation fails", async () => {
     const clear = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
-      startDate: "2026-09-12", endDate: "2026-09-12", mode: "clear",
+      startDate: "2026-09-19", endDate: "2026-09-19", mode: "clear",
     });
     expect(clear.status).toBe(200);
-    expect(queryMocks.deleteInventoryOverride).toHaveBeenCalledWith({ dormId: 8, channelId: null, date: "2026-09-12" });
+    expect(queryMocks.deleteInventoryOverride).toHaveBeenCalledWith({ dormId: 8, channelId: null, date: "2026-09-19" });
     expect(queryMocks.upsertInventoryOverride).not.toHaveBeenCalled();
 
     queryMocks.deleteInventoryOverride.mockClear();
     const invalid = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
-      startDate: "2026-09-10", endDate: "2026-09-12", mode: "set", onlineRemaining: -1,
+      startDate: "2026-09-17", endDate: "2026-09-19", mode: "set", onlineRemaining: -1,
     });
     expect(invalid.status).toBe(400);
     expect(queryMocks.deleteInventoryOverride).not.toHaveBeenCalled();
@@ -1964,7 +1964,7 @@ describe("Bulk availability workflows", () => {
 
     const invalidDays = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
-      startDate: "2026-09-12", endDate: "2026-09-12", dayFilter: ["6"], mode: "clear",
+      startDate: "2026-09-19", endDate: "2026-09-19", dayFilter: ["6"], mode: "clear",
     });
     expect(invalidDays.status).toBe(400);
     expect(queryMocks.deleteInventoryOverride).not.toHaveBeenCalled();
@@ -1976,13 +1976,13 @@ describe("Bulk availability workflows", () => {
       .mockRejectedValueOnce(new Error("write failed"));
     const res = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
-      startDate: "2026-09-12", endDate: "2026-09-13", mode: "set", onlineRemaining: 1,
+      startDate: "2026-09-19", endDate: "2026-09-20", mode: "set", onlineRemaining: 1,
     });
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.partial).toBe(true);
     expect(body.updated).toBe(1);
-    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-12"], [8]);
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-19"], [8]);
     expect(queryMocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "INVENTORY_AVAILABILITY_BULK_UPDATED" }));
   });
 
@@ -1990,7 +1990,7 @@ describe("Bulk availability workflows", () => {
     vi.mocked(triggerInventoryPush).mockResolvedValue({ attempted: true, accepted: false, message: "PMS rejected the room code" });
     const res = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
-      startDate: "2026-09-12", endDate: "2026-09-12", mode: "set", onlineRemaining: 1,
+      startDate: "2026-09-19", endDate: "2026-09-19", mode: "set", onlineRemaining: 1,
     });
     expect(res.status).toBe(200);
     const body = await res.json();

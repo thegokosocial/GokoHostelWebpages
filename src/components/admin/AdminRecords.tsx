@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, EyeIcon, EyeOffIcon, PowerIcon } from "lucide-react";
+import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, EyeIcon, EyeOffIcon, PowerIcon, LinkIcon, CalendarPlusIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
@@ -109,7 +109,9 @@ function isUsableFrroApplicationId(value: unknown): value is string {
   return Boolean(id) && !/^(saved|your)$/i.test(id) && !/check\s+frro|application\s+id/i.test(id);
 }
 
-export function AdminRecords({ password, username, role, permissions = {} }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean> }) {
+type BookingResolution = { state: string; match?: { id: number; reference: string; guestName: string; checkinDate: string; checkoutDate: string; platform: string; method: string } };
+
+export function AdminRecords({ password, username, role, permissions = {}, onNavigate }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; onNavigate?: (section: "bookings", opts?: { checkinId?: number }) => void }) {
   const { apiCall } = useAdminApi(password, username);
   const { showError, showSuccess } = useAdminToast();
   const [rows, setRows] = useState<string[][]>([]);
@@ -169,6 +171,11 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
   const [showDobInRecords, setShowDobInRecords] = useState(false);
   const [viewMode, setViewMode] = useState<"card" | "table">(() => typeof window !== "undefined" && window.innerWidth < 1024 ? "card" : "table");
   const [expandedCard, setExpandedCard] = useState<number | null>(null);
+  const [bookingResolutions, setBookingResolutions] = useState<Record<string, BookingResolution>>({});
+  const [bookingLinkPopup, setBookingLinkPopup] = useState<{ checkinId: number; guestName: string } | null>(null);
+  const [bookingSearch, setBookingSearch] = useState("");
+  const [bookingSearchResults, setBookingSearchResults] = useState<any[]>([]);
+  const [bookingSearchLoading, setBookingSearchLoading] = useState(false);
   const editFormRef = useRef<HTMLDivElement>(null);
   const scrollBackId = useRef<string | null>(null);
 
@@ -221,6 +228,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
         const data = await res.json();
         const allRows: string[][] = data.rows || [];
         setRows(allRows.filter((r) => r.some((cell) => cell && cell.trim() !== "")));
+        setBookingResolutions(data.bookingResolutions || {});
         const hiddenTabs = ["CheckIns", "Settings", "Dorms", "BedHistory", "ApiStats"];
         setTabs((data.tabs || []).filter((t: string) => !hiddenTabs.includes(t)));
         setCurrentTab(data.currentTab || "");
@@ -245,6 +253,33 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
   }, []);
 
   const refresh = () => loadTab(currentTab);
+
+  const markNoBookingNeeded = async (checkinId: number) => {
+    if (!confirm("Mark this stay as no booking needed?")) return;
+    const res = await apiCall({ action: "markCheckinNoBookingNeeded", checkinId });
+    if (res.ok) { showSuccess("Booking prompt dismissed"); refresh(); }
+    else showError("Could not dismiss booking prompt", (await res.json().catch(() => ({}))).error);
+  };
+
+  const openBookingLink = async (checkinId: number, guestName: string) => {
+    setBookingLinkPopup({ checkinId, guestName }); setBookingSearch(guestName); setBookingSearchResults([]);
+    if (guestName.trim().length < 4) return;
+    setBookingSearchLoading(true);
+    try { const res = await apiCall({ action: "searchBookingsForCheckin", query: guestName.trim() }); setBookingSearchResults(res.ok ? ((await res.json()).bookings || []) : []); } finally { setBookingSearchLoading(false); }
+  };
+
+  const searchBookingsForLink = async () => {
+    if (bookingSearch.trim().length < 4) return;
+    setBookingSearchLoading(true);
+    try { const res = await apiCall({ action: "searchBookingsForCheckin", query: bookingSearch.trim() }); setBookingSearchResults(res.ok ? ((await res.json()).bookings || []) : []); } finally { setBookingSearchLoading(false); }
+  };
+
+  const linkExistingBooking = async (bookingId: number) => {
+    if (!bookingLinkPopup) return;
+    const res = await apiCall({ action: "linkBookingToCheckin", checkinId: bookingLinkPopup.checkinId, bookingId });
+    if (res.ok) { setBookingLinkPopup(null); showSuccess("Booking linked"); refresh(); }
+    else showError("Could not link booking", (await res.json().catch(() => ({}))).error);
+  };
 
   const deleteRow = async (rowIndex: number) => {
     const row = rows[rowIndex];
@@ -1066,8 +1101,15 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                       </div>
 
                       {/* Actions */}
-                      {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords")) && (
+                      {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && (
                         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-brand-mist pt-2">
+                          {hasPermission(role, permissions, "canAddBooking") && bookingResolutions[String(checkinId)]?.state === "pending" && (
+                            <>
+                              <button type="button" onClick={() => onNavigate?.("bookings", { checkinId })} className="flex items-center gap-1 rounded-lg bg-brand-green px-2 py-1 text-[10px] font-medium text-white hover:bg-brand-green/90"><CalendarPlusIcon className="h-3 w-3" /> Create booking</button>
+                              <button type="button" onClick={() => openBookingLink(checkinId, row[3] || "Guest")} className="flex items-center gap-1 rounded-lg bg-blue-50 dark:bg-blue-950 px-2 py-1 text-[10px] font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100"><LinkIcon className="h-3 w-3" /> Link existing</button>
+                              <button type="button" onClick={() => markNoBookingNeeded(checkinId)} className="rounded-lg bg-brand-sand px-2 py-1 text-[10px] font-medium text-brand-green-dark/70 hover:bg-brand-green/10">No booking needed</button>
+                            </>
+                          )}
                           {isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") && (
                             <button type="button" onClick={() => openFormC(origIdx, row)} className="flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 px-2 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50">
                               <FileTextIcon className="h-3 w-3" /> Form C
@@ -1115,7 +1157,7 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
               {CHECKIN_COLUMNS.map((col, ci) => ci === 0 ? null : (
                 <th key={col} className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
               ))}
-              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords")) && <th className="px-3 py-3 text-xs font-bold uppercase">Actions</th>}
+              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && <th className="px-3 py-3 text-xs font-bold uppercase">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -1228,9 +1270,16 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
                       </td>
                     );
                   })}
-                  {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords")) && (
+                  {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && (
                     <td className="px-3 py-3">
                       <div className="flex gap-1">
+                        {hasPermission(role, permissions, "canAddBooking") && bookingResolutions[String(parseInt(row[17] || "0", 10))]?.state === "pending" && (
+                          <>
+                            <button type="button" title="Create booking" onClick={() => onNavigate?.("bookings", { checkinId: parseInt(row[17] || "0", 10) })} className="flex h-8 w-8 items-center justify-center rounded-lg text-brand-green hover:bg-brand-green/[0.06]"><CalendarPlusIcon className="h-4 w-4" /></button>
+                            <button type="button" title="Link existing booking" onClick={() => openBookingLink(parseInt(row[17] || "0", 10), row[3] || "Guest")} className="flex h-8 w-8 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50"><LinkIcon className="h-4 w-4" /></button>
+                            <button type="button" title="No booking needed" onClick={() => markNoBookingNeeded(parseInt(row[17] || "0", 10))} className="rounded-lg px-2 text-[10px] text-brand-green-dark/60 hover:bg-brand-sand">Dismiss</button>
+                          </>
+                        )}
                         {isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") && (
                           <button type="button" onClick={() => openFormC(origIdx, row)}
                             className="flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 px-2 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50">
@@ -1256,6 +1305,27 @@ export function AdminRecords({ password, username, role, permissions = {} }: { p
           </tbody>
         </table>
       </div>}
+
+      {bookingLinkPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setBookingLinkPopup(null)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-lift dark:bg-card" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div><h3 className="font-display text-lg font-bold text-brand-green-dark">Link existing booking</h3><p className="text-xs text-brand-green-dark/60">Choose the booking for {bookingLinkPopup.guestName}.</p></div>
+              <button type="button" onClick={() => setBookingLinkPopup(null)}><XIcon className="h-5 w-5 text-brand-green-dark/50" /></button>
+            </div>
+            <div className="mt-4 flex gap-2"><Input value={bookingSearch} onChange={(event) => setBookingSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchBookingsForLink(); }} placeholder="Name, phone, or booking reference" /><Button type="button" onClick={searchBookingsForLink} disabled={bookingSearchLoading || bookingSearch.trim().length < 4}>{bookingSearchLoading ? "..." : "Search"}</Button></div>
+            <div className="mt-4 max-h-72 space-y-2 overflow-y-auto">
+              {bookingSearchResults.map((booking) => (
+                <button key={booking.id} type="button" onClick={() => void linkExistingBooking(booking.id)} className="w-full rounded-lg border border-brand-mist p-3 text-left hover:bg-brand-sand/40">
+                  <div className="flex items-center justify-between gap-2"><span className="font-medium text-brand-green-dark">{booking.guestName}</span><span className="text-xs text-brand-green-dark/60">{booking.bookingRef || booking.gokoBookingId || `#${booking.id}`}</span></div>
+                  <div className="mt-1 text-xs text-brand-green-dark/60">{booking.checkinDate} → {booking.checkoutDate || "next day"} · {booking.platform} · {booking.status}</div>
+                </button>
+              ))}
+              {!bookingSearchLoading && bookingSearchResults.length === 0 && <p className="py-6 text-center text-xs text-brand-green-dark/50">Search for a booking to link.</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Manual verification popup */}
       {verifyPopup && (

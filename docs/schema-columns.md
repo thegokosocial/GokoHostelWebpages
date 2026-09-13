@@ -6,7 +6,7 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 
 | Table | Columns |
 |-------|---------|
-| `checkins` | 29 |
+| `checkins` | 33 |
 | `dorms` | 7 |
 | `beds` | 17 |
 | `bed_history` | 10 |
@@ -84,6 +84,10 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `form_c_data` | text | default "" |
 | `booking_platform` | text | default "" |
 | `booking_id` | text | default "" |
+| `booking_resolution` | text | default "pending" |
+| `booking_linked_ref` | text | default "" |
+| `booking_resolution_at` | text | default "" |
+| `booking_resolution_by` | text | default "" |
 | `dob` | text | default "" |
 | `dob_from_id` | text | default "" |
 | `vibe_matched` | integer | NOT NULL default 0 |

@@ -23,6 +23,7 @@ import {
   getChannelConfig, getSetting, setSetting,
   getRoomTypeMappings, getRatePlanMappings, getAllDailyRates,
   deactivateBedBlocksByBedIds, shortenAssignedCheckout,
+  getCheckinById, updateCheckin, getBookingByRef,
 } from "@/db/queries";
 import { todayIST } from "@/lib/utils";
 import { isStayPayMethod, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
@@ -580,7 +581,20 @@ export async function POST(req: NextRequest) {
     // --- Create ---
 
     if (action === "createBooking") {
-      const { guestName, contact, email, checkinDate, checkoutDate, platform, nightlyRate, specialRequests, bedIds, persons, unitRates, discountPercent, discountAmount, discountReason, advanceAmount, advancePaymentMethod, advanceOnlineAccountId } = body;
+      const { guestName, contact, email, checkinDate, checkoutDate, platform, nightlyRate, specialRequests, bedIds, persons, unitRates, discountPercent, discountAmount, discountReason, advanceAmount, advancePaymentMethod, advanceOnlineAccountId, checkinId } = body;
+      const sourceCheckinId = Number(checkinId);
+      const sourceCheckin = Number.isInteger(sourceCheckinId) && sourceCheckinId > 0 ? await getCheckinById(sourceCheckinId) : null;
+      if (checkinId !== undefined && (!sourceCheckin || sourceCheckin.status !== "active" || !["Walk-in", "Offline booking"].includes(sourceCheckin.bookingPlatform || "") || sourceCheckin.bookingResolution !== "pending")) {
+        return NextResponse.json({ error: "This check-in is no longer pending" }, { status: 409 });
+      }
+      if (sourceCheckin?.bookingId) {
+        const existing = await getBookingByRef(sourceCheckin.bookingId);
+        if (existing && !["cancelled", "no_show"].includes(existing.status)) {
+          const now = new Date().toISOString();
+          await updateCheckin(sourceCheckin.id, { bookingResolution: "created", bookingLinkedRef: sourceCheckin.bookingId, bookingResolutionAt: now, bookingResolutionBy: actingUser });
+          return NextResponse.json({ success: true, bookingId: existing.id, existing: true });
+        }
+      }
       if (!guestName || !checkinDate || !checkoutDate) {
         return NextResponse.json({ error: "guestName, checkinDate, checkoutDate required" }, { status: 400 });
       }
@@ -621,6 +635,7 @@ export async function POST(req: NextRequest) {
         if (selectionError) return NextResponse.json({ error: selectionError }, { status: 400 });
       }
       const src = platform || "walkin";
+      if (sourceCheckin && src !== "walkin") return NextResponse.json({ error: "A check-in booking must remain a walk-in booking" }, { status: 400 });
       const taxPercent = await loadBookingTaxPercent();
       const gross = (nightlyRate || 0) * nights * (explicitUnitPricing ? 1 : unitsCount);
       const discount = src === "walkin"
@@ -652,6 +667,7 @@ export async function POST(req: NextRequest) {
         contact: contact || "",
         email: email || "",
         platform: src,
+        bookingRef: sourceCheckin?.bookingId || "",
         checkinDate,
         checkoutDate,
         persons: guestCount,
@@ -734,6 +750,10 @@ export async function POST(req: NextRequest) {
           eventId: `booking-created-${newBookingId}`,
           category: "booking",
         });
+        if (sourceCheckin) {
+          const now = new Date().toISOString();
+          await updateCheckin(sourceCheckin.id, { bookingResolution: "created", bookingLinkedRef: sourceCheckin.bookingId || "", bookingResolutionAt: now, bookingResolutionBy: actingUser });
+        }
       }
 
       return NextResponse.json({ success: true, bookingId: newBookingId });

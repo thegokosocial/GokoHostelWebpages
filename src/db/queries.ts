@@ -19,6 +19,12 @@ export async function getCheckinsByMonth(month: string) {
   });
 }
 
+export async function getCheckinById(id: number) {
+  const db = getDb();
+  const rows = await db.select().from(checkins).where(eq(checkins.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
 export async function addCheckin(data: {
   submittedAt: string; arrivalDate: string; arrivalTime: string; name: string;
   persons: string; contact: string; stayingDays: string; comingFrom: string;

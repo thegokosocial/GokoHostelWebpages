@@ -8,7 +8,7 @@ import { BookingCalendarGrid } from "./BookingCalendarGrid";
 import { BookingTableView } from "./BookingTableView";
 import { BookingSearchBar } from "./BookingSearchBar";
 import { BookingDetailPanel } from "./BookingDetailPanel";
-import { CreateBookingModal } from "./CreateBookingModal";
+import { CreateBookingModal, type CheckinBookingPrefill } from "./CreateBookingModal";
 import { UnassignedBookings } from "./UnassignedBookings";
 import { DateRangeSelector } from "./DateRangeSelector";
 import { getDateRange, getHostelToday, rangeCoveringStay, STATUS_LABELS } from "./utils";
@@ -62,6 +62,8 @@ export function BookingDashboard({
   permissions = {},
   initialBookingId,
   onInitialBookingConsumed,
+  initialCheckinId,
+  onInitialCheckinConsumed,
 }: {
   password: string;
   username?: string;
@@ -69,6 +71,8 @@ export function BookingDashboard({
   permissions?: Record<string, boolean>;
   initialBookingId?: number | null;
   onInitialBookingConsumed?: () => void;
+  initialCheckinId?: number | null;
+  onInitialCheckinConsumed?: () => void;
 }) {
   const { apiCall } = useBookingApi(password, username);
   const { showError, showSuccess, showInfo } = useAdminToast();
@@ -94,6 +98,7 @@ export function BookingDashboard({
   const [externalDetail, setExternalDetail] = useState<{ booking: DashboardBooking; assignments: BedAssignment[] } | null>(null);
   const openingInitialBookingId = useRef<number | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [initialCheckin, setInitialCheckin] = useState<CheckinBookingPrefill | null>(null);
   const [showUnassigned, setShowUnassigned] = useState(false);
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [whatsAppTemplates, setWhatsAppTemplates] = useState<BookingWhatsAppTemplate[]>([]);
@@ -135,6 +140,22 @@ export function BookingDashboard({
     openingInitialBookingId.current = initialBookingId;
     void openBooking(initialBookingId).finally(() => onInitialBookingConsumed?.());
   }, [initialBookingId, onInitialBookingConsumed, openBooking]);
+
+  useEffect(() => {
+    if (!initialCheckinId) return;
+    let cancelled = false;
+    (async () => {
+      const payload: Record<string, unknown> = { password, username, action: "getBookingResolutionData", checkinId: initialCheckinId };
+      const res = await fetchWithRetry("/api/admin/checkins", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (cancelled) return;
+      if (!res.ok) { showError((await res.json().catch(() => ({}))).error || "Check-in is no longer pending"); onInitialCheckinConsumed?.(); return; }
+      const data = await res.json();
+      setInitialCheckin(data.checkin || null);
+      setShowCreateModal(true);
+      onInitialCheckinConsumed?.();
+    })().catch(() => { if (!cancelled) { showError("Network error loading check-in"); onInitialCheckinConsumed?.(); } });
+    return () => { cancelled = true; };
+  }, [initialCheckinId, onInitialCheckinConsumed, password, showError, username]);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -585,13 +606,15 @@ export function BookingDashboard({
         <CreateBookingModal
           dorms={dorms}
           dateRange={dateRange}
-          onClose={() => setShowCreateModal(false)}
+          onClose={() => { setShowCreateModal(false); setInitialCheckin(null); }}
           onCreated={async () => {
             setShowCreateModal(false);
+            setInitialCheckin(null);
             await loadData(true);
           }}
           password={password}
           username={username}
+          initialCheckin={initialCheckin}
         />
       )}
     </div>

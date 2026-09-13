@@ -34,7 +34,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | Route | Auth | Purpose |
 |-------|------|---------|
 | `/api/food/kitchen` | `authenticateKitchen` | Queue, status, mods, busy, menu |
-| `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape); foreign record add/update requires passport and visa |
+| `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape); foreign record add/update requires passport and visa; booking-resolution actions support active unmatched walk-in/offline check-ins |
 | `/api/admin/bookings` | per-action map | Calendar PMS |
 | `/api/admin/inventory` | `canManageInventory` | Grid, blocks, rates, channels |
 | `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |
@@ -67,6 +67,8 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 ## `/api/admin/checkins` actions
 
 `auth` (returns role+permissions, no extra perm). `changeMyPassword` is **not** in `ACTION_PERMISSIONS` → `actionAllowed(undefined)` = allowed for any authenticated user.
+
+Booking resolution actions: `getBookingResolutionData` returns server-validated check-in prefill data; `searchBookingsForCheckin` searches candidates; `linkBookingToCheckin` links a stable booking reference; `markCheckinNoBookingNeeded` dismisses the prompt. These actions require `canAddBooking` except the read action, which also permits `canViewRecords`.
 
 The `getDeleteInfo` action (same `canDeleteRecords` permission as `delete`) returns linked food-order summaries so the Records UI can warn an admin before deletion. The `delete` action then detaches nullable physical-bed and food-order `checkinId` references before deleting a check-in, preserving those historical rows while satisfying the database foreign-key constraint.
 
