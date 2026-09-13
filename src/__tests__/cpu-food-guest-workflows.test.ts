@@ -388,12 +388,14 @@ describe("food-order CPU/SSR split", () => {
     const menu = readFile("src/components/food/MenuBrowser.tsx");
     expect(menu).toContain('aria-label="Food categories"');
     expect(menu).toContain('aria-current={cat.id === selectedCategory ? "page" : undefined}');
-    expect(menu).toContain("grid-cols-[5rem_minmax(0,1fr)]");
+    expect(menu).toContain("grid-cols-[4.25rem_minmax(0,1fr)]");
     expect(menu).toContain("grid grid-cols-2 gap-2 sm:gap-3");
     expect(menu).toContain("onClick={() => selectCategory(cat.id)}");
     expect(menu).toContain("h-[calc(100dvh-7.5rem)]");
     expect(menu).toContain("overflow-y-auto overscroll-contain");
     expect(menu).toContain("min-h-0 flex-1 overflow-y-auto");
+    expect(menu).not.toContain("{item.description}");
+    expect(menu).toContain("flex-nowrap gap-1 overflow-x-auto");
     expect(page).toContain('view === "menu" ? "max-w-7xl pt-2"');
     expect(page).toContain('className="hidden sm:inline"');
   });
