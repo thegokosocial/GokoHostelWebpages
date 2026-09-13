@@ -194,7 +194,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="grid h-[calc(100dvh-7.5rem)] min-h-[26rem] grid-cols-[4.25rem_minmax(0,1fr)] gap-1.5 overflow-hidden px-2 pb-2 sm:h-[calc(100dvh-8.5rem)] sm:min-h-[30rem] sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3 sm:px-3"
+      className="grid h-[calc(100dvh-6.5rem)] min-h-[26rem] grid-cols-[4.25rem_minmax(0,1fr)] gap-1.5 overflow-hidden px-2 pb-0 sm:h-[calc(100dvh-7.5rem)] sm:min-h-[30rem] sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3 sm:px-3"
     >
       <nav aria-label="Food categories" className="min-h-0 overflow-y-auto overscroll-contain pr-1">
         <button
@@ -229,23 +229,14 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       </nav>
 
       <div className="flex min-h-0 min-w-0 flex-col">
-        <div className="mb-1">
-          <h2 className="truncate text-sm font-bold text-gray-800 dark:text-foreground sm:text-base">
-            {currentCategory?.icon} {currentCategory?.name}
-          </h2>
-          {currentCategory?.nameKannada && (
-            <p className="truncate text-[11px] text-gray-500">{currentCategory.nameKannada}</p>
-          )}
-        </div>
-
         {/* Search */}
-        <div className="relative mb-1.5 shrink-0">
+        <div className="relative mb-1 shrink-0">
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search dishes…"
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 pr-8 text-xs outline-none transition-all duration-200 focus:border-brand-green focus:bg-white focus-visible:goko-focus focus:shadow-sm dark:border-border dark:bg-muted dark:text-foreground dark:focus:bg-accent dark:focus:shadow-none sm:text-sm"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 pr-7 text-[11px] outline-none transition-all duration-200 focus:border-brand-green focus:bg-white focus-visible:goko-focus focus:shadow-sm dark:border-border dark:bg-muted dark:text-foreground dark:focus:bg-accent dark:focus:shadow-none sm:px-3 sm:py-2 sm:text-xs"
         />
         <AnimatePresence>
           {searchQuery && (
@@ -333,7 +324,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       )}
 
       {/* Items grid */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-14">
         <AnimatePresence mode="popLayout">
           {filteredItems.length === 0 ? (
             <motion.p
@@ -360,14 +351,14 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   whileTap={isUnavailable ? undefined : { scale: 0.98 }}
-                  className={`flex flex-col rounded-2xl border bg-white dark:bg-card p-2 shadow-sm dark:shadow-none transition-all duration-200 sm:p-3 ${
+                  className={`flex flex-col rounded-xl border bg-white dark:bg-card p-1.5 shadow-sm dark:shadow-none transition-all duration-200 sm:rounded-2xl sm:p-2.5 ${
                     isUnavailable
                       ? "border-gray-100 dark:border-border opacity-50"
                       : "border-gray-100 dark:border-border hover:border-brand-green/30 hover:shadow-lg dark:hover:shadow-none"
                   }`}
                 >
                   {/* Image */}
-                  <div className="h-16 w-full shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-[#1c1c1c] sm:h-24 sm:rounded-xl">
+                  <div className="h-14 w-full shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-[#1c1c1c] sm:h-20 sm:rounded-xl">
                     {imageSrc ? (
                       <img
                         src={imageSrc}
@@ -391,17 +382,17 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                   </div>
 
                   {/* Content */}
-                  <div className="flex min-w-0 flex-1 flex-col justify-between pt-1.5 sm:pt-2">
+                  <div className="flex min-w-0 flex-1 flex-col justify-between pt-1 sm:pt-1.5">
                     <div>
-                      <h3 className="text-[13px] font-semibold leading-tight text-gray-800 dark:text-foreground sm:text-sm">
+                      <h3 className="text-xs font-semibold leading-tight text-gray-800 dark:text-foreground sm:text-sm">
                         {item.name}
                       </h3>
                       {item.nameKannada && (
-                        <p className="line-clamp-1 text-[11px] text-gray-500 sm:text-xs">{item.nameKannada}</p>
+                        <p className="line-clamp-1 text-[10px] text-gray-500 sm:text-xs">{item.nameKannada}</p>
                       )}
                       {/* Tags */}
                       {tags.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
+                        <div className="mt-0.5 flex flex-wrap gap-0.5">
                           {tags.map((tag) => {
                             const lc = tag.toLowerCase();
                             let classes = "bg-gray-100 dark:bg-[#1c1c1c] text-gray-600 dark:text-gray-400";
@@ -418,7 +409,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                             return (
                               <span
                                 key={tag}
-                                className={`whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium sm:px-2 sm:text-xs ${classes}`}
+                                className={`whitespace-nowrap rounded-full px-1 py-0.5 text-[9px] font-medium sm:px-2 sm:text-xs ${classes}`}
                               >
                                 {display}
                               </span>
@@ -428,9 +419,9 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                       )}
                     </div>
 
-                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 sm:mt-2">
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-0.5 sm:mt-1.5">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-gray-800 dark:text-foreground sm:text-sm">
+                        <span className="text-[11px] font-bold text-gray-800 dark:text-foreground sm:text-sm">
                           {isUnavailable ? (
                             <span className="text-gray-400">Unavailable</span>
                           ) : (
@@ -455,7 +446,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                               exit={{ scale: 0.9, opacity: 0 }}
                               whileTap={{ scale: 0.92 }}
                               onClick={() => handleAdd(item)}
-                              className="goko-gradient-cta rounded-lg px-2 py-2 text-[11px] font-semibold text-white shadow-sm transition-shadow hover:shadow-md dark:shadow-none sm:px-3.5 sm:py-2.5 sm:text-sm"
+                              className="goko-gradient-cta rounded-lg px-2 py-1.5 text-[10px] font-semibold text-white shadow-sm transition-shadow hover:shadow-md dark:shadow-none sm:px-3 sm:py-2 sm:text-xs"
                             >
                               Add
                             </motion.button>

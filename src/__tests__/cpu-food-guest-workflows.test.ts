@@ -391,12 +391,13 @@ describe("food-order CPU/SSR split", () => {
     expect(menu).toContain("grid-cols-[4.25rem_minmax(0,1fr)]");
     expect(menu).toContain("grid grid-cols-2 gap-2 sm:gap-3");
     expect(menu).toContain("onClick={() => selectCategory(cat.id)}");
-    expect(menu).toContain("h-[calc(100dvh-7.5rem)]");
+    expect(menu).toContain("h-[calc(100dvh-6.5rem)]");
+    expect(menu).toContain("pb-14");
     expect(menu).toContain("overflow-y-auto overscroll-contain");
     expect(menu).toContain("min-h-0 flex-1 overflow-y-auto");
     expect(menu).not.toContain("{item.description}");
     expect(menu).toContain("flex-nowrap gap-1 overflow-x-auto");
-    expect(page).toContain('view === "menu" ? "max-w-7xl pt-2"');
+    expect(page).toContain('view === "menu" ? "max-w-7xl pb-0 pt-1"');
     expect(page).toContain('className="hidden sm:inline"');
   });
 });

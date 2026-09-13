@@ -430,7 +430,7 @@ export default function FoodOrderPage() {
         </motion.div>
       )}
 
-      <div className={`mx-auto w-full pb-8 ${view === "menu" ? "max-w-7xl pt-2" : "max-w-lg pt-8"}`}>
+      <div className={`mx-auto w-full ${view === "menu" ? "max-w-7xl pb-0 pt-1" : "max-w-lg pb-8 pt-8"}`}>
         <AnimatePresence mode="wait">
           {view === "phone" && (
             <motion.div
@@ -480,16 +480,16 @@ export default function FoodOrderPage() {
               exit={{ opacity: 0, x: -50 }}
             >
               {/* Header */}
-              <div className="mb-2 px-3 sm:mb-4 sm:px-4">
+              <div className="mb-1 px-3 sm:mb-3 sm:px-4">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <h1 className="truncate text-base font-bold text-brand-green sm:text-lg">
+                    <h1 className="truncate text-sm font-bold text-brand-green sm:text-base">
                       {guestInfo?.name?.trim()
                         ? `Hi, ${guestInfo.name.trim().split(" ")[0]}! 👋`
                         : "Welcome! 👋"}
                     </h1>
                     {guestInfo?.roomInfo && (
-                      <p className="truncate text-xs text-brand-green-dark/70 sm:text-sm">{guestInfo.roomInfo}</p>
+                      <p className="truncate text-[10px] text-brand-green-dark/70 sm:text-xs">{guestInfo.roomInfo}</p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1 sm:gap-2">
@@ -577,23 +577,23 @@ export default function FoodOrderPage() {
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setView("cart")}
-          className="goko-gradient-cta fixed bottom-6 inset-x-4 z-50 mx-auto flex w-max max-w-full items-center gap-3 rounded-2xl px-6 py-4 shadow-2xl"
+          className="goko-gradient-cta fixed bottom-3 inset-x-3 z-50 mx-auto flex w-max max-w-full items-center gap-2 rounded-xl px-4 py-2.5 shadow-2xl"
         >
           <div className="relative">
-            <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
             </svg>
             <motion.span
               key={cartCount}
               initial={{ scale: 1.5 }}
               animate={{ scale: 1 }}
-              className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-brand-green"
+              className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-bold text-brand-green"
             >
               {cartCount}
             </motion.span>
           </div>
-          <span className="text-sm font-bold text-white">View Cart</span>
-          <span className="text-sm font-medium text-white/80">
+          <span className="text-xs font-bold text-white">View Cart</span>
+          <span className="text-xs font-medium text-white/80">
             ₹{Math.round(cart.reduce((s, c) => s + c.price * c.quantity, 0) / 100)}
           </span>
         </motion.button>
