@@ -170,10 +170,10 @@ describe("PMS outbound workflows (mocked Aiosell HTTP)", () => {
     await pushNoShow(CFG, "CM-789", "booking_com");
     const log = lastLog();
     expect(log.type).toBe("noshow");
-    expect(log.url).toBe("https://live.aiosell.com/api/v2/cm/noshow");
+    expect(log.url).toBe("https://live.aiosell.com/api/v2/cm/marknoshow/goko-pms");
     expect(log.recordsAffected).toBe(1);
     const req = JSON.parse(log.requestPayload as string);
-    expect(req).toEqual({ hotelId: "GOKO-001", bookingId: "CM-789", partner: "booking.com" });
+    expect(req).toEqual({ hotelCode: "GOKO-001", bookingId: "CM-789", channel: "booking.com" });
   });
 
   it("HTTP 502 logs failed with status and response snippet", async () => {

@@ -366,13 +366,13 @@ export async function pushRateRestrictions(
 export async function pushNoShow(
   config: AiosellConfig,
   bookingId: string,
-  _partner?: string,
+  partner = "booking.com",
 ): Promise<AiosellResponse> {
-  const url = `${config.apiBaseUrl}/api/v2/cm/noshow`;
+  const url = `${config.apiBaseUrl}/api/v2/cm/marknoshow/${encodeURIComponent(config.pmsId)}`;
   return aiosellFetch(url, config, {
-    hotelId: config.hotelCode,
+    hotelCode: config.hotelCode,
     bookingId,
-    partner: "booking.com",
+    channel: partner === "booking_com" ? "booking.com" : partner,
   }, { type: "noshow", recordsAffected: 1 });
 }
 

@@ -376,6 +376,8 @@ describe("Booking dashboard: all-status table view", () => {
     expect(calendarFn).toContain("status} != 'cancelled'");
     expect(tableFn).toContain("checkinDate} <= ${endDate}");
     expect(tableFn).toContain("checkoutDate} > ${startDate}");
+    expect(tableFn).toContain("status} IN ('checked_out', 'no_show', 'cancelled')");
+    expect(tableFn).toContain("checkoutDate} >= ${startDate}");
     expect(tableFn).not.toContain("status} != 'cancelled'");
   });
 

@@ -125,7 +125,7 @@ The admin Bookings dashboard has three presentation scopes:
 
 - `Calendar`: uses `getCalendarData` and intentionally excludes cancelled bookings from calendar occupancy tiles.
 - `Table`: shows the current calendar-range operational rows.
-- `All Bookings`: uses `getAllBookings`, includes every booking status, filters by stays overlapping the selected date range, supports status and guest/reference/contact search, and paginates the result. Refresh reloads both calendar and All Bookings data, while newer filter responses supersede older ones. Selecting a row opens the same `BookingDetailPanel` as the calendar/table views.
+- `All Bookings`: uses `getAllBookings`, includes every booking status, filters by stays overlapping the selected date range, and keeps closed (`checked_out` / `no_show` / `cancelled`) rows visible through their checkout day, supports status and guest/reference/contact search, and paginates the result. Refresh reloads both calendar and All Bookings data, while newer filter responses supersede older ones. Selecting a row opens the same `BookingDetailPanel` as the calendar/table views.
 
 The All Bookings read path requires `canViewBookings` and does not change booking status, bed assignment, inventory, or calendar availability behavior.
 

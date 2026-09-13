@@ -161,10 +161,9 @@ POST {base}/marknoshow/{pms}
 Documented channel values include `booking.com` and `gommt` (Goibibo/MakeMyTrip).
 Expected success message: `Noshow Marked Successfully`.
 
-**Compatibility warning:** GokoWeb currently sends `POST {base}/noshow` with
-`hotelId`, `bookingId`, and `partner: "booking.com"`. That is a materially different,
-older/live contract and must not be "fixed" from this document alone. Verify the
-contract with Aiosell or a sandbox call, then change code and tests together.
+GokoWeb sends the documented `hotelCode`, `bookingId`, and `channel` fields. The
+dashboard uses the inbound OTA `bookingId` stored as `bookingRef`, with a legacy
+`cmBookingId` fallback only when Aiosell returns HTTP 404.
 
 ### Channel multiplier
 
