@@ -390,7 +390,7 @@ describe("Bookings calendar and rates workflows", () => {
 
   it("markNoShow notifies Aiosell when the webhook stored platform as booking.com", async () => {
     q.getBookingDetail.mockResolvedValue({
-      booking: { platform: "booking.com", cmBookingId: "CM-1", checkinDate: "2026-09-01", checkoutDate: "2026-09-03" },
+      booking: { platform: "booking.com", bookingRef: "BK-1", cmBookingId: "CM-1", checkinDate: "2026-09-01", checkoutDate: "2026-09-03" },
       assignments: [{ status: "assigned", dormId: 3 }],
     });
     q.getChannelConfig.mockResolvedValue({
@@ -400,7 +400,7 @@ describe("Bookings calendar and rates workflows", () => {
     const res = await POST(req({ password: "x", action: "markNoShow", bookingId: 5 }));
     expect(res.status).toBe(200);
     expect(q.unassignBookingBeds).toHaveBeenCalledWith(5);
-    expect(q.pushNoShow).toHaveBeenCalledWith(expect.objectContaining({ hotelCode: "H" }), "CM-1");
+    expect(q.pushNoShow).toHaveBeenCalledWith(expect.objectContaining({ hotelCode: "H" }), "BK-1");
     expect(pushIfOtaChanged).toHaveBeenCalled();
     expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({ noShowPmsStatus: "sent", noShowPmsError: "" }));
     expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({ bookingId: 5, action: "Marked No-Show" }));
@@ -420,6 +420,22 @@ describe("Bookings calendar and rates workflows", () => {
     expect(q.unassignBookingBeds).toHaveBeenCalledWith(5);
     expect(pushIfOtaChanged).toHaveBeenCalledTimes(1);
     expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({ noShowPmsStatus: "failed", noShowPmsError: "unknown booking" }));
+  });
+
+  it("falls back to the legacy CM id when Aiosell cannot find the booking reference", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { platform: "booking.com", bookingRef: "BK-404", cmBookingId: "CM-FOUND", checkinDate: "2026-09-01", checkoutDate: "2026-09-03" },
+      assignments: [{ status: "assigned", dormId: 3 }],
+    });
+    q.getChannelConfig.mockResolvedValue({ isActive: 1, hotelCode: "H", pmsId: "P", apiBaseUrl: "http://x", apiUsername: "u", apiPassword: "p" });
+    q.pushNoShow
+      .mockResolvedValueOnce({ success: false, message: 'HTTP 404: {"error":"Not Found"}' })
+      .mockResolvedValueOnce({ success: true });
+    const res = await POST(req({ password: "x", action: "markNoShow", bookingId: 5 }));
+    expect(res.status).toBe(200);
+    expect(q.pushNoShow).toHaveBeenNthCalledWith(1, expect.anything(), "BK-404");
+    expect(q.pushNoShow).toHaveBeenNthCalledWith(2, expect.anything(), "CM-FOUND");
+    expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({ noShowPmsStatus: "sent" }));
   });
 
   it("retries only the failed Aiosell notification without releasing inventory again", async () => {

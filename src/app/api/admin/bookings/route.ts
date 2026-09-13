@@ -164,23 +164,29 @@ function inventoryWarning(result: InventorySyncResult | void): string | undefine
   return result.accepted ? undefined : result.message || "Aiosell did not confirm the inventory update";
 }
 
-async function syncBookingNoShow(bookingId: number, booking: { platform?: string | null; cmBookingId?: string | null }): Promise<string | undefined> {
+async function syncBookingNoShow(bookingId: number, booking: { platform?: string | null; bookingRef?: string | null; cmBookingId?: string | null }): Promise<string | undefined> {
   const attemptedAt = new Date().toISOString();
-  if (!isBookingDotCom(booking.platform) || !booking.cmBookingId) {
+  const bookingIds = [booking.bookingRef, booking.cmBookingId].filter((id, index, ids): id is string => Boolean(id) && ids.indexOf(id) === index);
+  if (!isBookingDotCom(booking.platform) || bookingIds.length === 0) {
     await updateBookingFull(bookingId, { noShowPmsStatus: "not_required", noShowPmsError: "", noShowPmsAttemptedAt: attemptedAt });
     return;
   }
   try {
     const config = await getChannelConfig();
     if (!config || !config.isActive) throw new Error("Aiosell channel manager is not active");
-    const result = await pushNoShow({
+    const aiosellConfig = {
       hotelCode: config.hotelCode,
       pmsId: config.pmsId,
       apiBaseUrl: config.apiBaseUrl,
       apiUsername: config.apiUsername,
       apiPassword: config.apiPassword,
-    }, booking.cmBookingId);
-    if (!result.success) throw new Error(result.message || "Aiosell rejected the no-show update");
+    };
+    let result;
+    for (const [index, candidate] of bookingIds.entries()) {
+      result = await pushNoShow(aiosellConfig, candidate);
+      if (result.success || index === bookingIds.length - 1 || !/^HTTP 404\b/.test(result.message || "")) break;
+    }
+    if (!result?.success) throw new Error(result?.message || "Aiosell rejected the no-show update");
     await updateBookingFull(bookingId, { noShowPmsStatus: "sent", noShowPmsError: "", noShowPmsAttemptedAt: attemptedAt });
     return;
   } catch (error: any) {
@@ -1201,7 +1207,7 @@ export async function POST(req: NextRequest) {
       const { bookingId } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
       const detail = await getBookingDetail(bookingId);
-      if (!detail || detail.booking.status !== "no_show" || detail.booking.noShowPmsStatus !== "failed" || !isBookingDotCom(detail.booking.platform) || !detail.booking.cmBookingId) {
+      if (!detail || detail.booking.status !== "no_show" || detail.booking.noShowPmsStatus !== "failed" || !isBookingDotCom(detail.booking.platform) || (!detail.booking.bookingRef && !detail.booking.cmBookingId)) {
         return NextResponse.json({ error: "No failed Booking.com no-show update to retry" }, { status: 409 });
       }
       const warning = await syncBookingNoShow(bookingId, detail.booking);

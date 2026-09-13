@@ -58,7 +58,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | `/api/auth/google/callback` | Google | Stores refresh token |
 | `/api/aiosell/push-inventory` | user auth | Manual inventory push |
 | `/api/aiosell/push-rates` | user auth | Manual rates |
-| `/api/aiosell/push-noshow` | user auth | Manual Booking.com no-show (`bookingId` only; sends `hotelId`, `bookingId`, `partner: "booking.com"`) |
+| `/api/aiosell/push-noshow` | user auth | Manual Booking.com no-show (`bookingId` only; sends `hotelId`, `bookingId`, `partner: "booking.com"`). Dashboard no-show uses the inbound OTA `bookingId` stored as `bookingRef`, with a legacy `cmBookingId` fallback on Aiosell HTTP 404. |
 | `/api/aiosell/push-inventory-restrictions` | user auth | Restrictions |
 | `/api/aiosell/fetch` | user auth | Pull from Aiosell. `type=reservation` also ingest-creates missing Goko bookings (`ingested: { imported, skipped, refs }`). Skips existing refs (including cancelled), `action: "cancel"` snapshots of unknown refs, and snapshots whose `hotelCode` ≠ config. |
 
