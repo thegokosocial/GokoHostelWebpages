@@ -194,9 +194,9 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 px-3 pb-24 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4 sm:px-4"
+      className="grid h-[calc(100dvh-10rem)] min-h-[30rem] grid-cols-[5rem_minmax(0,1fr)] gap-3 overflow-hidden px-3 pb-2 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4 sm:px-4"
     >
-      <nav aria-label="Food categories" className="self-start">
+      <nav aria-label="Food categories" className="min-h-0 overflow-y-auto overscroll-contain pr-1">
         <button
           type="button"
           onClick={closeCategory}
@@ -207,7 +207,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
           </svg>
           Menu
         </button>
-        <div className="sticky top-3 max-h-[calc(100vh-6rem)] space-y-1 overflow-y-auto pr-1">
+        <div className="space-y-1">
           {sortedCategories.map((cat) => (
             <button
               key={cat.id}
@@ -228,7 +228,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
         </div>
       </nav>
 
-      <div className="min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-col">
         <div className="mb-2">
           <h2 className="truncate text-lg font-bold text-gray-800 dark:text-foreground">
             {currentCategory?.icon} {currentCategory?.name}
@@ -239,7 +239,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
         </div>
 
         {/* Search */}
-        <div className="relative mb-3">
+        <div className="relative mb-3 shrink-0">
         <input
           type="text"
           value={searchQuery}
@@ -264,7 +264,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       </div>
 
       {/* Diet filter */}
-      <div className="mb-2 flex flex-wrap gap-2">
+      <div className="mb-2 flex shrink-0 flex-wrap gap-2">
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => setDietFilter("all")}
@@ -304,7 +304,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
 
       {/* Curated filter chips */}
       {(hasChefSpecial || hasGokoSpecial) && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex shrink-0 flex-wrap gap-2">
           {hasChefSpecial && (
             <button
               onClick={() => setCuratedFilter(curatedFilter === "chef-special" ? null : "chef-special")}
@@ -333,17 +333,18 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       )}
 
       {/* Items grid */}
-      <AnimatePresence mode="popLayout">
-        {filteredItems.length === 0 ? (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="py-8 text-center text-sm text-gray-500"
-          >
-            No items found
-          </motion.p>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+        <AnimatePresence mode="popLayout">
+          {filteredItems.length === 0 ? (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="py-8 text-center text-sm text-gray-500"
+            >
+              No items found
+            </motion.p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {filteredItems.map((item) => {
               const tags = parseTags(item.tags);
               const isUnavailable = item.isAvailable !== 1 || item.price <= 0;
@@ -502,9 +503,10 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                 </motion.div>
               );
             })}
-          </div>
-        )}
-      </AnimatePresence>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
       </div>
     </motion.div>
   );

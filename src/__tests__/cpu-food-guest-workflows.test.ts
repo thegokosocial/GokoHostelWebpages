@@ -388,7 +388,10 @@ describe("food-order CPU/SSR split", () => {
     expect(menu).toContain('aria-label="Food categories"');
     expect(menu).toContain('aria-current={cat.id === selectedCategory ? "page" : undefined}');
     expect(menu).toContain("grid-cols-[5rem_minmax(0,1fr)]");
-    expect(menu).toContain("min-[420px]:grid-cols-2");
+    expect(menu).toContain("grid grid-cols-2 gap-2 sm:gap-3");
     expect(menu).toContain("onClick={() => selectCategory(cat.id)}");
+    expect(menu).toContain("h-[calc(100dvh-10rem)]");
+    expect(menu).toContain("overflow-y-auto overscroll-contain");
+    expect(menu).toContain("min-h-0 flex-1 overflow-y-auto");
   });
 });
