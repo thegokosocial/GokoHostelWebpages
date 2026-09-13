@@ -1765,7 +1765,13 @@ export async function getBookingTableData(
     const query = options.query?.trim();
     const overlap = [
       sql`${bookings.checkinDate} <= ${endDate}`,
-      sql`${bookings.checkoutDate} > ${startDate}`,
+      or(
+        sql`${bookings.checkoutDate} > ${startDate}`,
+        and(
+          sql`${bookings.status} IN ('checked_out', 'no_show', 'cancelled')`,
+          sql`(${bookings.checkoutDate} IS NULL OR ${bookings.checkoutDate} = '' OR ${bookings.checkoutDate} >= ${startDate})`,
+        ),
+      ),
       query
         ? sql`(${bookings.guestName} LIKE ${`%${query}%`} OR ${bookings.bookingRef} LIKE ${`%${query}%`} OR ${bookings.contact} LIKE ${`%${query}%`})`
         : undefined,
