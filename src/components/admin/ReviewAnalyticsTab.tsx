@@ -78,24 +78,24 @@ export function ReviewAnalyticsTab({ password, username, onNavigateToResponses }
     <div className="space-y-4">
       {/* Filters */}
       <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-3 sm:p-4">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap sm:gap-3">
           <input
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="rounded-md border border-brand-mist px-2 py-1.5 text-xs"
+            className="min-w-0 w-full rounded-md border border-brand-mist px-2 py-1.5 text-xs sm:w-auto"
           />
-          <span className="text-xs text-brand-green-dark/50">to</span>
+          <span className="hidden text-xs text-brand-green-dark/50 sm:inline">to</span>
           <input
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="rounded-md border border-brand-mist px-2 py-1.5 text-xs"
+            className="min-w-0 w-full rounded-md border border-brand-mist px-2 py-1.5 text-xs sm:w-auto"
           />
           <select
             value={propertyFilter}
             onChange={(e) => setPropertyFilter(e.target.value)}
-            className="rounded-md border border-brand-mist px-2 py-1.5 text-xs"
+            className="col-span-2 min-w-0 w-full rounded-md border border-brand-mist px-2 py-1.5 text-xs sm:col-span-1 sm:w-auto"
           >
             <option value="">All Properties</option>
             <option value="goko_hostel">Goko Hostel</option>
@@ -104,7 +104,7 @@ export function ReviewAnalyticsTab({ password, username, onNavigateToResponses }
           <button
             type="button"
             onClick={loadAnalytics}
-            className="ml-auto rounded-lg p-2 text-brand-green-dark/60 hover:bg-brand-green/[0.06]"
+            className="justify-self-end rounded-lg p-2 text-brand-green-dark/60 hover:bg-brand-green/[0.06] sm:ml-auto"
             title="Refresh"
           >
             <RefreshCwIcon className="h-4 w-4" />
@@ -156,7 +156,7 @@ export function ReviewAnalyticsTab({ password, username, onNavigateToResponses }
               const pct = (count / maxAreaCount) * 100;
               return (
                 <div key={area} className="flex items-center gap-2">
-                  <span className="w-28 text-xs font-medium text-brand-green-dark/70 truncate">{area}</span>
+                  <span className="min-w-0 w-28 truncate text-xs font-medium text-brand-green-dark/70">{area}</span>
                   <div className="flex-1 h-5 rounded-full bg-gray-100 dark:bg-[#1c1c1c] overflow-hidden">
                     <div className="h-full rounded-full bg-red-400 transition-all" style={{ width: `${pct}%` }} />
                   </div>
