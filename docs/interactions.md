@@ -290,7 +290,7 @@ sequenceDiagram
   end
 ```
 
-Admin upload: crop JPEG → `POST /api/admin/website/upload` → R2 → save JSON with `/api/media/...` URLs. Pi: tab hidden, API 403, migrator skips `0035`.
+Admin upload: choose a JPEG/PNG/WebP → `POST /api/admin/website/upload` → R2 → save JSON with `/api/media/...` URLs. The Links & QRs editor keeps upload errors visible and disables Save until a failed preview is replaced. Pi: tab hidden, API 403, migrator skips `0035`.
 
 ---
 
