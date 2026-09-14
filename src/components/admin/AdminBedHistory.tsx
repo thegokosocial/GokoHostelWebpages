@@ -124,7 +124,7 @@ export function AdminBedHistory({ password, username, role }: { password: string
       </div>
 
       {/* Table */}
-      <div className="mt-6 overflow-visible rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
+      <div className="isolate mt-6 overflow-x-clip rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <table className="w-full min-w-[700px] text-left text-sm">
           <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">

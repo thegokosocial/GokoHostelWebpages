@@ -316,7 +316,7 @@ function AuditTrail({
         <span className="ml-auto self-center text-xs text-brand-green-dark/50">{filtered.length} entries</span>
       </div>
 
-      <div className="overflow-visible rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-sm dark:shadow-none">
+      <div className="isolate overflow-x-clip rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-sm dark:shadow-none">
         <table className="w-full min-w-[700px] text-left text-sm">
           <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">

@@ -906,7 +906,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
 
             {/* Table View */}
             {itemViewMode === "table" && (
-              <div className="mt-4 overflow-visible rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
+              <div className="isolate mt-4 overflow-x-clip rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
                 <table className="w-full min-w-[800px] text-left text-sm">
                   <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
                     <tr className="border-b border-brand-mist bg-brand-sand/50">

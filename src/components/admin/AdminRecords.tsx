@@ -637,7 +637,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
   }
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Check-in Records</h2>
         <div className="flex flex-wrap gap-2">
@@ -1190,14 +1190,14 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
       )}
 
       {/* Table */}
-      {viewMode === "table" && <div className="mt-6 overflow-visible rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
+      {viewMode === "table" && <div className="isolate mt-6 min-h-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <table className="w-full min-w-[1000px] text-left text-sm">
-          <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
+          <thead className="sticky top-0 z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
               {CHECKIN_COLUMNS.map((col, ci) => ci === 0 ? null : (
-                <th key={col} className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
+                <th key={col} className="sticky top-0 z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
               ))}
-              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && <th className="sticky top-[4.5rem] z-20 bg-brand-sand px-3 py-3 text-xs font-bold uppercase">Actions</th>}
+              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && <th className="sticky top-0 z-20 bg-brand-sand px-3 py-3 text-xs font-bold uppercase">Actions</th>}
             </tr>
           </thead>
           <tbody>

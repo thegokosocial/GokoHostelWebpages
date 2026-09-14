@@ -381,6 +381,8 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
   });
 
   it("keeps sticky admin table headers attached to the main scroll container", () => {
+    const adminPage = fs.readFileSync(path.join(ROOT, "src/app/admin/page.tsx"), "utf-8");
+    expect(adminPage).toContain('section === "records"');
     const files = [
       "AdminRecords.tsx",
       "AdminBookings.tsx",
@@ -394,7 +396,14 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     ];
     for (const file of files) {
       const source = fs.readFileSync(path.join(ROOT, "src/components/admin", file), "utf-8");
-      expect(source).toContain("sticky top-[4.5rem]");
+      if (file === "AdminRecords.tsx") {
+        expect(source).toContain("sticky top-0");
+        expect(source).toContain("min-h-0 flex-1 overflow-auto");
+      } else {
+        expect(source).toContain("sticky top-[4.5rem]");
+        expect(source).toContain("overflow-x-clip");
+      }
+      expect(source).not.toContain("overflow-visible");
       expect(source).not.toMatch(/overflow-x-auto[\s\S]{0,300}<table/);
     }
   });

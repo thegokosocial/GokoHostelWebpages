@@ -69,7 +69,7 @@ export function BookingTableView({
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-white dark:bg-card">
-      <div className="overflow-visible">
+      <div className="overflow-x-clip">
         <table className="w-full text-xs">
           <thead className="sticky top-[4.5rem] z-20 bg-white dark:bg-card">
             <tr className="border-b border-border bg-muted/50">
