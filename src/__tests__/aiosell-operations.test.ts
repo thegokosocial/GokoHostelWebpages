@@ -1151,6 +1151,16 @@ describe("Push inventory route modes", () => {
     expect(q.clearAllDirtyInventory).toHaveBeenCalled();
   });
 
+  it("keeps manual push successful when local dirty cleanup fails", async () => {
+    q.getDirtyInventory.mockResolvedValue([{ id: 9, dormId: 8, date: "2026-09-05" }]);
+    q.clearDirtyInventory.mockRejectedValue(new Error("cleanup failed"));
+    const res = await pushInventoryPOST(jsonReq("http://localhost/api/aiosell/push-inventory", adminBody({
+      startDate: "2026-09-05", endDate: "2026-09-05",
+    })));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ cleanupPending: true });
+  });
+
   it("returns 502 when Aiosell rejects the update", async () => {
     pushInventory.mockResolvedValue({ success: false, message: "hotel not found" });
     const res = await pushInventoryPOST(jsonReq("http://localhost/api/aiosell/push-inventory", adminBody({

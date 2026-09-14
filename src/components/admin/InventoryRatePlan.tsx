@@ -201,7 +201,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           <RefreshCwIcon className={cn("h-4 w-4", loading && "animate-spin")} />
         </Button>
         <span className="text-[10px] text-muted-foreground">
-          Cells: <span className="font-medium text-sky-700 dark:text-sky-400">OTA</span>
+          Sales pools (not connectivity): <span className="font-medium text-sky-700 dark:text-sky-400">OTA</span>
           <span className="mx-0.5">/</span>
           <span className="font-medium text-emerald-700 dark:text-emerald-400">walk-in</span>
           <span className="mx-0.5">/</span>

@@ -2450,7 +2450,12 @@ export async function getDirtyInventory() {
 export async function clearDirtyInventory(ids: number[]) {
   if (ids.length === 0) return;
   const db = getDb();
-  return db.delete(inventoryDirty).where(inArray(inventoryDirty.id, ids));
+  // Keep the IN list below SQLite/D1's bind-variable limit. A full 30-day
+  // sync can otherwise push hundreds of rows and fail after Aiosell accepted
+  // the inventory update, leaving the same dirty rows queued forever.
+  for (let start = 0; start < ids.length; start += 50) {
+    await db.delete(inventoryDirty).where(inArray(inventoryDirty.id, ids.slice(start, start + 50)));
+  }
 }
 
 export async function clearAllDirtyInventory() {

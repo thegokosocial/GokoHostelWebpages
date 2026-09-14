@@ -96,19 +96,25 @@ export async function POST(req: NextRequest) {
     // Aiosell can return HTTP success while rejecting one or more room codes.
     // Keep the dirty entries so staff can correct the mapping and retry.
     const accepted = result.success && !(result.warnings?.length);
+    let cleanupPending = false;
     if (accepted) {
       await updateChannelSyncTime();
-      if (useDirty) {
-        const toClear = dirtyEntries.filter((d) => mappedDormIds.has(d.dormId)).map((d) => d.id);
-        if (toClear.length > 0) await clearDirtyInventory(toClear);
-      } else if (fullSync) {
-        await clearAllDirtyInventory();
-      } else {
-        const dirty = await getDirtyInventory();
-        const pushedDormIds = new Set(activeMappings.map((m) => m.dormId));
-        const pushedDates = new Set(updates.map((u) => u.startDate));
-        const toClear = dirty.filter((d) => pushedDormIds.has(d.dormId) && pushedDates.has(d.date)).map((d) => d.id);
-        if (toClear.length > 0) await clearDirtyInventory(toClear);
+      try {
+        if (useDirty) {
+          const toClear = dirtyEntries.filter((d) => mappedDormIds.has(d.dormId)).map((d) => d.id);
+          if (toClear.length > 0) await clearDirtyInventory(toClear);
+        } else if (fullSync) {
+          await clearAllDirtyInventory();
+        } else {
+          const dirty = await getDirtyInventory();
+          const pushedDormIds = new Set(activeMappings.map((m) => m.dormId));
+          const pushedDates = new Set(updates.map((u) => u.startDate));
+          const toClear = dirty.filter((d) => pushedDormIds.has(d.dormId) && pushedDates.has(d.date)).map((d) => d.id);
+          if (toClear.length > 0) await clearDirtyInventory(toClear);
+        }
+      } catch (error: any) {
+        cleanupPending = true;
+        console.error("Inventory dirty cleanup failed:", error?.message);
       }
     }
 
@@ -127,6 +133,7 @@ export async function POST(req: NextRequest) {
       warnings: result.warnings,
       inventoryPushed: updates.reduce((sum, u) => sum + u.rooms.length, 0),
       mode,
+      ...(cleanupPending ? { cleanupPending: true, cleanupMessage: "Aiosell accepted inventory; local retry queue cleanup is pending" } : {}),
     });
   } catch (error: any) {
     console.error("Push inventory error:", error?.message);

@@ -56,7 +56,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | `/api/push` | varies | Web push subscribe / send |
 | `/api/auth/google/start` | admin password query/gate | OAuth start |
 | `/api/auth/google/callback` | Google | Stores refresh token |
-| `/api/aiosell/push-inventory` | user auth | Manual inventory push |
+| `/api/aiosell/push-inventory` | user auth | Manual inventory push; successful remote pushes clear matching dirty inventory rows in bind-safe batches so large full-sync queues remain retryable without SQLite/D1 variable-limit failures. If remote acceptance succeeds but local cleanup fails, the response remains successful with `cleanupPending: true` and the rows remain retryable |
 | `/api/aiosell/push-rates` | user auth | Manual rates |
 | `/api/aiosell/push-noshow` | user auth | Manual Booking.com no-show (`bookingId` only; sends `hotelCode`, `bookingId`, `channel: "booking.com"` to `/api/v2/cm/marknoshow/{pmsId}`). Dashboard no-show uses the inbound OTA `bookingId` stored as `bookingRef`, with a legacy `cmBookingId` fallback on Aiosell HTTP 404. |
 | `/api/aiosell/push-inventory-restrictions` | user auth | Restrictions |
@@ -112,7 +112,7 @@ Booking creation also exposes `getRoomReceiptAccounts` (`canAddBooking` or `canC
 
 **Sync:** `heartbeat` (GET-ish via POST), `status`, `sync`, `pull`, `push`, `getConflicts`, `resolveConflict`, `resolveAll`, `getSyncLog`, `setPrimary`, `toggleAutoSync`, `backfillSyncIds`, `toggleFailover`, `getFailoverStatus`, `setPiLocalUrl`, `resetAndReseed`, `shutdownPi`, `deployUpdate`, `restartCloudflared`.
 
-**Aiosell webhook payload.action:** `book` (no inventory push), `modify` (no push), `cancel` (unassign beds **then** `triggerInventoryPush`). Each webhook POST is a `channel_sync_log` row `direction=pull` `type=reservation` (Management → Logs → PMS). Outbound Aiosell HTTP is logged in the same table via `aiosellFetch`.
+**Aiosell webhook payload.action:** `book` (no inventory push), `modify` (no push), `cancel` (unassign beds **then** `triggerInventoryPush`). Inbound OTA assignments use the `online` inventory pool; manual/walk-in leftover assignments use `offline` and remain internal. Each webhook POST is a `channel_sync_log` row `direction=pull` `type=reservation` (Management → Logs → PMS). Outbound Aiosell HTTP is logged in the same table via `aiosellFetch`.
 
 ---
 

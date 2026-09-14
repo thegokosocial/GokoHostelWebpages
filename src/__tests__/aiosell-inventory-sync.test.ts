@@ -219,6 +219,17 @@ describe("triggerInventoryPush", () => {
     expect(queryMocks.clearDirtyInventory).toHaveBeenCalledWith([1]);
   });
 
+  it("keeps remote success when local dirty cleanup fails", async () => {
+    queryMocks.getDirtyInventory.mockResolvedValue([{ id: 1, dormId: 8, date: "2026-09-05" }]);
+    queryMocks.clearDirtyInventory.mockRejectedValue(new Error("cleanup failed"));
+
+    await expect(triggerInventoryPush(["2026-09-05"], 8)).resolves.toMatchObject({
+      attempted: true,
+      accepted: true,
+      message: expect.stringMatching(/Aiosell accepted inventory/i),
+    });
+  });
+
   it("logs inventory (auto) when push throws", async () => {
     queryMocks.getChannelConfig.mockRejectedValue(new Error("boom"));
     await triggerInventoryPush(["2026-09-05"]);

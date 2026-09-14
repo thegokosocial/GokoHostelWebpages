@@ -147,7 +147,20 @@ export async function triggerInventoryPush(affectedDates?: string[], affectedDor
       const pushedDormIds = new Set(activeMappings.map((m) => m.dormId));
       const pushedDates = new Set(dates);
       const toClear = dirty.filter((d) => pushedDormIds.has(d.dormId) && pushedDates.has(d.date)).map((d) => d.id);
-      if (toClear.length > 0) await clearDirtyInventory(toClear);
+      if (toClear.length > 0) {
+        try {
+          await clearDirtyInventory(toClear);
+        } catch (error: any) {
+          // Aiosell already accepted the payload. Keep dirty rows for retry,
+          // but do not misreport the remote success as a failed push.
+          console.error("Inventory dirty cleanup failed:", error?.message);
+          return {
+            attempted: true,
+            accepted: true,
+            message: "Aiosell accepted inventory; local retry queue cleanup is pending",
+          };
+        }
+      }
     }
     return { attempted: true, accepted, message: accepted ? undefined : (warning || result.message || "Aiosell did not confirm the inventory update") };
   } catch (error: any) {
