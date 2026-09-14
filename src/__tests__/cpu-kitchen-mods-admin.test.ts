@@ -238,7 +238,7 @@ describe("Admin bookings shell source-scan", () => {
     const adminPage = readFile("src/app/admin/page.tsx");
     expect(adminPage).toContain('action: "auth"');
     expect(adminPage).not.toMatch(/action: "list"/);
-    expect(adminPage).toMatch(/fillViewport = section === "inventory" \|\| section === "bookings"/);
+    expect(adminPage).toMatch(/fillViewport = section === "inventory"/);
     expect(adminPage).toMatch(/fillViewport \? "h-dvh" : "min-h-screen"/);
     expect(adminPage).not.toMatch(/framer-motion/);
     expect(adminPage).toMatch(/const BookingDashboard = dynamic\([\s\S]*ssr:\s*false/);

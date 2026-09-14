@@ -398,13 +398,18 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
       const source = fs.readFileSync(path.join(ROOT, "src/components/admin", file), "utf-8");
       if (file === "AdminRecords.tsx") {
         expect(source).toContain("sticky top-0");
-        expect(source).toContain("min-h-0 flex-1 overflow-auto");
+        expect(source).toContain("overflow-x-auto overflow-y-visible");
+      } else if (file === "booking-dashboard/BookingTableView.tsx") {
+        expect(source).toContain("sticky top-[4.5rem]");
+        expect(source).toContain("overflow-x-auto overflow-y-visible");
       } else {
         expect(source).toContain("sticky top-[4.5rem]");
         expect(source).toContain("overflow-x-clip");
       }
       expect(source).not.toContain("overflow-visible");
-      expect(source).not.toMatch(/overflow-x-auto[\s\S]{0,300}<table/);
+      if (file !== "AdminRecords.tsx" && file !== "booking-dashboard/BookingTableView.tsx") {
+        expect(source).not.toMatch(/overflow-x-auto[\s\S]{0,300}<table/);
+      }
     }
   });
 

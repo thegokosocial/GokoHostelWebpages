@@ -126,7 +126,7 @@ describe("Inventory grid: sticky + colour structure", () => {
   it("fills leftover viewport height instead of a magic 9rem, and skips y-transform on inventory", () => {
     expect(ui).not.toMatch(/100dvh-9rem/);
     expect(ui).toMatch(/h-full min-h-0 flex-1/);
-    expect(adminPage).toMatch(/fillViewport = section === "inventory" \|\| section === "bookings"/);
+    expect(adminPage).toMatch(/fillViewport = section === "inventory"/);
     expect(adminPage).toMatch(/fillViewport \? "h-dvh" : "min-h-screen"/);
     expect(adminPage).toMatch(/fillViewport && "flex h-full min-h-0 flex-1 flex-col"/);
     const overflowAt = ui.indexOf("overflow-auto");

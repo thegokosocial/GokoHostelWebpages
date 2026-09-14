@@ -488,7 +488,7 @@ export function BookingDashboard({
           onToggleDorm={handleToggleDorm}
         />
       ) : view === "table" ? (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="overflow-x-auto overflow-y-visible overscroll-x-contain">
           <BookingTableView
             bookings={bookings}
             assignments={assignments}
@@ -497,7 +497,7 @@ export function BookingDashboard({
           />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="overflow-x-auto overflow-y-visible overscroll-x-contain">
           <div className="mb-3 flex flex-col gap-2 rounded-xl border border-border bg-white p-3 dark:bg-card sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-foreground">All booking statuses</p>

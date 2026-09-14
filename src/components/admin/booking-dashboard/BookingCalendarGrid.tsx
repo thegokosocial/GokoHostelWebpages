@@ -92,7 +92,7 @@ export function BookingCalendarGrid({
         <button type="button" className="ml-auto underline" onClick={() => setDetail(null)}>Dismiss</button>
       </div>}
     </div>
-    <div className="isolate min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-border bg-white dark:bg-card">
+    <div className="isolate overflow-x-auto overflow-y-visible overscroll-x-contain rounded-xl border border-border bg-white dark:bg-card">
       <div className="inline-flex min-w-full">
           {/* Sticky left column: dorm/bed labels */}
           <div className="sticky left-0 z-20 w-[140px] shrink-0 border-r border-border bg-white dark:bg-card">

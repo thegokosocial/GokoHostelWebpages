@@ -277,7 +277,7 @@ function AdminPageInner() {
     return true;
   });
 
-  const fillViewport = section === "inventory" || section === "bookings" || section === "records";
+  const fillViewport = section === "inventory";
 
   return (
     <section className={cn(
