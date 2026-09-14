@@ -146,4 +146,4 @@ Every Aiosell hop writes `channel_sync_log` (Management → Logs → PMS). `logP
 Stayflexi is **only** the public Book now URL (`hotel_id=30819`), not this inventory loop.
 # Walk-in check-in reconciliation
 
-Records can reconcile an active Walk-in or Offline check-in that has no booking row. Staff with `canAddBooking` may create a reviewed manual booking using the check-in reference, link an existing booking by stable reference, or mark the stay as no booking needed. Created bookings use the existing assignment and Aiosell inventory path.
+Records can reconcile an active Walk-in or Offline check-in that has no booking row. Staff with `canAddBooking` may create a reviewed manual booking using the check-in reference, link an existing booking by stable reference, or mark the stay as no booking needed. Created bookings use the existing assignment path; Aiosell inventory is updated only when at least one selected bed is in the `online` pool. `offline` and `block` assignments remain internal tracking.

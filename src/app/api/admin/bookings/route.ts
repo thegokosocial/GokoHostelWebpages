@@ -713,7 +713,7 @@ export async function POST(req: NextRequest) {
           if (bed) dormIds.push(bed.dormId);
         }
         const before = await otaFingerprint(dormIds, dates);
-        const { labels } = await assignTaggedBeds(newBookingId, selectedIds, checkinDate, checkoutDate, actingUser);
+        const { labels, pools } = await assignTaggedBeds(newBookingId, selectedIds, checkinDate, checkoutDate, actingUser);
         const failed = assignFailed(selectedIds, labels);
         if (failed) {
           await unassignBookingBeds(newBookingId);
@@ -724,7 +724,9 @@ export async function POST(req: NextRequest) {
           });
           return NextResponse.json({ error: failed, bookingId: newBookingId }, { status: 409 });
         }
-        await pushIfOtaChanged(before, dormIds, dates).catch(() => {});
+        if (pools.some((pool) => pool === "online")) {
+          await pushIfOtaChanged(before, dormIds, dates).catch(() => {});
+        }
       }
 
       if (advance > 0 && advancePaymentMethod === "online" && advanceAccountId) {
@@ -840,7 +842,7 @@ export async function POST(req: NextRequest) {
         if (bed) dormIds.push(bed.dormId);
       }
       const before = fromChannel ? "" : await otaFingerprint(dormIds, dates);
-      const { labels } = await assignTaggedBeds(
+      const { labels, pools } = await assignTaggedBeds(
         bookingId, bedIds, checkinDate, checkoutDate, actingUser,
       );
 
@@ -856,7 +858,9 @@ export async function POST(req: NextRequest) {
         performedBy: actingUser,
       });
 
-      await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
+      if (pools.some((pool) => pool === "online")) {
+        await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
+      }
       return NextResponse.json({ success: true, assigned: labels });
     }
 

@@ -535,6 +535,7 @@ describe("Wiring", () => {
     expect(route).toContain("assignTaggedBeds");
     expect(route).toContain('status: "cancelled"');
     expect(route).toContain("pushIfOtaChanged");
+    expect(route).toContain('if (pools.some((pool) => pool === "online"))');
     expect(route).toContain("occupiedNights");
     expect(sync).toContain("getOnlineAssignmentCountForDorm");
     expect(sync).toContain("getUnassignedOtaRoomCountForDorm");
