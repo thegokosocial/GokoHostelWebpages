@@ -219,9 +219,9 @@ export function AdminBookings({ password, username, role, permissions = {} }: { 
           </select>
           <span className="ml-auto text-xs text-brand-green-dark/50">{filtered.length} bookings</span>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-visible">
           <table className="w-full min-w-[800px] text-left text-sm">
-            <thead className="sticky top-[4.5rem] z-20">
+            <thead className="sticky top-0 z-20">
               <tr className="border-b border-brand-mist bg-brand-sand/50">
                 <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Guest</th>
                 <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Platform</th>

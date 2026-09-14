@@ -48,11 +48,11 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 | `section` | Component | API | Perm (non-admin) |
 |-----------|-----------|-----|------------------|
 | `dashboard` | `AdminDashboard` | checkins `getDashboard`; checkout rows show separate room/food status and use active bed-booking assignments, booking references, then unique phone/name matches for room status; check-ins, checkouts, unpaid stays, and bookings use bounded scrollable lists | `canViewDashboard` |
-| `bookings` | `booking-dashboard/` | `/api/admin/bookings`; nightly summaries show online, walk-in, blocked, and held-for-unassigned-OTA units; booking table headings remain visible while scrolling | `canViewBookings` |
+| `bookings` | `booking-dashboard/` | `/api/admin/bookings`; nightly summaries show online, walk-in, blocked, and held-for-unassigned-OTA units; booking table headings remain pinned to the top of their scroll container | `canViewBookings` |
 | `beds` | `AdminBeds` | checkins beds | `canViewBeds` |
 | `timeline` | `AdminTimeline` | checkins `getBeds` | `canViewTimeline` |
 | `inventory` | `InventoryRatePlan` | `/api/admin/inventory` | `canManageInventory` |
-| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads; active unmatched Walk-in/Offline check-ins with `canAddBooking` can create a reviewed booking, link an existing booking, or mark no booking needed; Form C review/submission is desktop-only and credentials have a password visibility toggle; current/previous month quick filters and custom arrival-date range selection; table column headings remain visible while scrolling | `canViewRecords` |
+| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads; active unmatched Walk-in/Offline check-ins with `canAddBooking` can create a reviewed booking, link an existing booking, or mark no booking needed; Form C review/submission is desktop-only and credentials have a password visibility toggle; current/previous month quick filters and custom arrival-date range selection; table column headings remain pinned to the top of their scroll container | `canViewRecords` |
 | `foodOrders` | `AdminFoodOrders` | `/api/admin/food-orders` + kitchen (including per-stage bulk advance controls) | `canViewFoodOrders` |
 | `expenditure` | `AdminExpenditure` | `/api/admin/expenses` | `canViewAccounts` |
 | `splits` | `AdminSplits` | `/api/admin/splits` | `canViewSplits` — **omitted on Pi** |

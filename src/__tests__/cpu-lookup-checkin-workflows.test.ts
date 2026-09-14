@@ -371,6 +371,34 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(route).toContain("removeFormCSubmission: \"admin_only\"");
   });
 
+  it("switches Records cleanly between custom and quick month date filters", () => {
+    const records = fs.readFileSync(path.join(ROOT, "src/components/admin/AdminRecords.tsx"), "utf-8");
+    expect(records).toContain('setActiveRange(null);\n    setRangeStart("");\n    setRangeEnd("");\n    loadTab(month);');
+    expect(records).toContain("const requestId = ++recordsRequestId.current;");
+    expect(records).toContain("if (requestId !== recordsRequestId.current) return;");
+    expect(records).toContain("if (requestId === recordsRequestId.current) setLoading(false);");
+    expect(records).toContain("setActiveRange({ start: rangeStart, end: rangeEnd });");
+  });
+
+  it("keeps sticky admin table headers attached to the main scroll container", () => {
+    const files = [
+      "AdminRecords.tsx",
+      "AdminBookings.tsx",
+      "AdminBedHistory.tsx",
+      "AdminBillRecords.tsx",
+      "AdminFoodBill.tsx",
+      "AdminMenuManagement.tsx",
+      "AdminRoomRevenue.tsx",
+      "ManagementAudit.tsx",
+      "booking-dashboard/BookingTableView.tsx",
+    ];
+    for (const file of files) {
+      const source = fs.readFileSync(path.join(ROOT, "src/components/admin", file), "utf-8");
+      expect(source).toContain("sticky top-0");
+      expect(source).not.toMatch(/overflow-x-auto[\s\S]{0,300}<table/);
+    }
+  });
+
   it("keeps the Welcome heading on the server page and ssr:false on the island only", () => {
     const page = fs.readFileSync(path.join(ROOT, "src/app/self-checkin/page.tsx"), "utf-8");
     const island = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinFormIsland.tsx"), "utf-8");

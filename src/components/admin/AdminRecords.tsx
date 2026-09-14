@@ -181,6 +181,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
   const [bookingSearchLoading, setBookingSearchLoading] = useState(false);
   const editFormRef = useRef<HTMLDivElement>(null);
   const scrollBackId = useRef<string | null>(null);
+  const recordsRequestId = useRef(0);
 
   const openUploadPopup = (origIdx: number, type: "id" | "visa", guestName: string, nationality: string) => {
     setUploadIdType(type === "id" && isForeignNationality(nationality) ? "passport" : "");
@@ -222,6 +223,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
   const clearFilters = () => { setSearchQuery(""); setSortField(null); setSortDir("desc"); };
 
   const loadTab = async (tab?: string, startDate?: string, endDate?: string) => {
+    const requestId = ++recordsRequestId.current;
     setExpandedCard(null);
     setEditIndex(null);
     setLoading(true);
@@ -229,6 +231,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
       const res = await apiCall({ action: "list", ...(startDate && endDate ? { startDate, endDate } : { month: tab }) });
       if (res.ok) {
         const data = await res.json();
+        if (requestId !== recordsRequestId.current) return;
         const allRows: string[][] = data.rows || [];
         setRows(allRows.filter((r) => r.some((cell) => cell && cell.trim() !== "")));
         setBookingResolutions(data.bookingResolutions || {});
@@ -236,7 +239,9 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
         setTabs((data.tabs || []).filter((t: string) => !hiddenTabs.includes(t)));
         setCurrentTab(data.currentTab || "");
       }
-    } finally { setLoading(false); }
+    } finally {
+      if (requestId === recordsRequestId.current) setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -269,7 +274,12 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
     setActiveRange({ start: rangeStart, end: rangeEnd });
     loadTab(undefined, rangeStart, rangeEnd);
   };
-  const selectMonth = (month: string) => { setActiveRange(null); loadTab(month); };
+  const selectMonth = (month: string) => {
+    setActiveRange(null);
+    setRangeStart("");
+    setRangeEnd("");
+    loadTab(month);
+  };
 
   const markNoBookingNeeded = async (checkinId: number) => {
     if (!confirm("Mark this stay as no booking needed?")) return;
@@ -648,28 +658,32 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
       </div>
 
       {/* Quick month filters and custom date range */}
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        {[currentMonth, previousMonth].map((tab) => (
+      <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-brand-mist bg-white/80 p-2 shadow-sm dark:bg-card sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex items-center gap-1 rounded-xl bg-brand-sand/60 p-1" aria-label="Quick date ranges">
+          {[currentMonth, previousMonth].map((tab) => (
             <button key={tab} type="button" onClick={() => selectMonth(tab)}
-              className={cn("relative rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
-                tab === currentTab ? "text-white" : "bg-white dark:bg-card text-brand-green-dark/70 hover:bg-brand-green/[0.06]"
+              className={cn("relative rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors",
+                tab === currentTab ? "text-white" : "text-brand-green-dark/70 hover:bg-white/80 dark:hover:bg-background"
               )}>
               {tab === currentTab && (
-                <motion.span layoutId="records-month-pill" className="absolute inset-0 rounded-full bg-brand-green" transition={{ type: "spring", stiffness: 400, damping: 30 }} />
+                <motion.span layoutId="records-month-pill" className="absolute inset-0 rounded-lg bg-brand-green shadow-sm" transition={{ type: "spring", stiffness: 400, damping: 30 }} />
               )}
               <span className="relative z-10">{tab}</span>
             </button>
-        ))}
-        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-brand-mist bg-white/70 px-2 py-1.5 dark:bg-card">
+          ))}
+        </div>
+        <div className="flex flex-1 flex-wrap items-end gap-2 rounded-xl border border-brand-mist/80 bg-brand-sand/30 p-2">
+          <span className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-brand-green-dark/55">Custom range</span>
           <div>
-            <Label className="text-[10px] text-brand-green-dark/60">From</Label>
-            <Input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} className="h-8 w-[135px] text-xs" aria-label="Records start date" />
+            <Label className="sr-only">From</Label>
+            <Input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} className="h-9 w-[145px] bg-white text-xs dark:bg-card" aria-label="Records start date" />
           </div>
+          <span className="pb-2 text-xs text-brand-green-dark/45" aria-hidden="true">to</span>
           <div>
-            <Label className="text-[10px] text-brand-green-dark/60">To</Label>
-            <Input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} className="h-8 w-[135px] text-xs" aria-label="Records end date" />
+            <Label className="sr-only">To</Label>
+            <Input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} className="h-9 w-[145px] bg-white text-xs dark:bg-card" aria-label="Records end date" />
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={applyDateRange} disabled={loading}>Apply</Button>
+          <Button type="button" variant="outline" size="sm" className="h-9 bg-white dark:bg-card" onClick={applyDateRange} disabled={loading}>Apply</Button>
         </div>
       </div>
 
@@ -1176,9 +1190,9 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
       )}
 
       {/* Table */}
-      {viewMode === "table" && <div className="mt-6 overflow-x-auto rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
+      {viewMode === "table" && <div className="mt-6 overflow-visible rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <table className="w-full min-w-[1000px] text-left text-sm">
-          <thead className="sticky top-[4.5rem] z-20">
+          <thead className="sticky top-0 z-20">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
               {CHECKIN_COLUMNS.map((col, ci) => ci === 0 ? null : (
                 <th key={col} className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
