@@ -1192,12 +1192,12 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
       {/* Table */}
       {viewMode === "table" && <div className="mt-6 overflow-visible rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <table className="w-full min-w-[1000px] text-left text-sm">
-          <thead className="sticky top-0 z-20">
+          <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
               {CHECKIN_COLUMNS.map((col, ci) => ci === 0 ? null : (
-                <th key={col} className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
+                <th key={col} className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
               ))}
-              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && <th className="bg-brand-sand px-3 py-3 text-xs font-bold uppercase">Actions</th>}
+              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && <th className="sticky top-[4.5rem] z-20 bg-brand-sand px-3 py-3 text-xs font-bold uppercase">Actions</th>}
             </tr>
           </thead>
           <tbody>

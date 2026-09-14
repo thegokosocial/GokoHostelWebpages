@@ -394,7 +394,7 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     ];
     for (const file of files) {
       const source = fs.readFileSync(path.join(ROOT, "src/components/admin", file), "utf-8");
-      expect(source).toContain("sticky top-0");
+      expect(source).toContain("sticky top-[4.5rem]");
       expect(source).not.toMatch(/overflow-x-auto[\s\S]{0,300}<table/);
     }
   });

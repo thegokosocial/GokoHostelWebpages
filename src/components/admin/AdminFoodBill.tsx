@@ -200,17 +200,17 @@ export function AdminFoodBill({
               </h4>
               <div className="mt-3 overflow-visible rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
                 <table className="w-full min-w-[900px] text-left text-sm">
-                  <thead className="sticky top-0 z-20 bg-brand-sand/95">
+                  <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
                     <tr className="border-b border-brand-mist bg-brand-sand/50">
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Guest Name</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Contact</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Room/Bed</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Orders</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Total Spent</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Discount</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Cash</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Online</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Unpaid</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Guest Name</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Contact</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Room/Bed</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Orders</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Total Spent</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Discount</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Cash</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Online</th>
+                      <th className="sticky top-[4.5rem] z-20 whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Unpaid</th>
                     </tr>
                   </thead>
                   <tbody>
