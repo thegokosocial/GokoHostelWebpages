@@ -365,6 +365,15 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(route).toContain("stayNights(b.startDate, b.endDate)");
   });
 
+  it("audits every inventory, rate, and restriction mutation", () => {
+    for (const action of [
+      "CHANNEL_CREATED", "CHANNEL_UPDATED", "CHANNEL_DELETED", "BED_TYPE_CONFIG_CREATED", "BED_TYPE_CONFIG_UPDATED",
+      "BEDS_BLOCKED", "BEDS_UNBLOCKED", "INVENTORY_OVERRIDE_UPDATED", "INVENTORY_AVAILABILITY_BULK_UPDATED",
+      "CHANNEL_RATE_UPDATED", "RATE_UPDATED", "RATES_BULK_UPDATED", "RATES_BULK_ADJUSTED", "RESTRICTIONS_BULK_UPDATED",
+    ]) expect(route).toContain(`"${action}"`);
+    expect(route).toContain("recordInventoryAudit");
+  });
+
   it("Set Rates multi-selects rate plans grouped by room", () => {
     expect(ui).toContain("setRateRpIds");
     expect(ui).not.toMatch(/\bsetRateRpId\b/);

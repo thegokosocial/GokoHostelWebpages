@@ -402,12 +402,16 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
       } else if (file === "booking-dashboard/BookingTableView.tsx") {
         expect(source).toContain("sticky top-[4.5rem]");
         expect(source).toContain("overflow-x-auto overflow-y-visible");
+      } else if (file === "ManagementAudit.tsx") {
+        expect(source).toContain("overflow-x-auto overflow-y-visible overscroll-x-contain");
+        expect(source).toContain("min-w-[700px]");
+        expect(source).toContain("formatAuditDetails");
       } else {
         expect(source).toContain("sticky top-[4.5rem]");
         expect(source).toContain("overflow-x-clip");
       }
       expect(source).not.toContain("overflow-visible");
-      if (file !== "AdminRecords.tsx" && file !== "booking-dashboard/BookingTableView.tsx") {
+      if (file !== "AdminRecords.tsx" && file !== "booking-dashboard/BookingTableView.tsx" && file !== "ManagementAudit.tsx") {
         expect(source).not.toMatch(/overflow-x-auto[\s\S]{0,300}<table/);
       }
     }

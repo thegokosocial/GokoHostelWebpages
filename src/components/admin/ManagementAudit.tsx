@@ -229,6 +229,24 @@ function csvValue(value: string): string {
   return `"${String(value || "").replace(/"/g, '""')}"`;
 }
 
+function formatAuditDetails(details: string): string {
+  if (!details) return "";
+  try {
+    const parsed: unknown = JSON.parse(details);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return details;
+    return Object.entries(parsed as Record<string, unknown>)
+      .filter(([, value]) => value !== null && value !== undefined && value !== "")
+      .map(([key, value]) => {
+        const label = key.replace(/([a-z])([A-Z])/g, "$1 $2");
+        const rendered = typeof value === "object" ? JSON.stringify(value) : String(value);
+        return `${label}: ${rendered}`;
+      })
+      .join(" · ");
+  } catch {
+    return details;
+  }
+}
+
 function AuditTrail({
   loadEntries,
   filePrefix,
@@ -316,7 +334,7 @@ function AuditTrail({
         <span className="ml-auto self-center text-xs text-brand-green-dark/50">{filtered.length} entries</span>
       </div>
 
-      <div className="isolate overflow-x-clip rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-sm dark:shadow-none">
+      <div className="isolate overflow-x-auto overflow-y-visible overscroll-x-contain rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-sm dark:shadow-none">
         <table className="w-full min-w-[700px] text-left text-sm">
           <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
@@ -339,7 +357,7 @@ function AuditTrail({
                     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", auditActionClass(entry.action))}>{entry.action}</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-brand-green-dark/80">{entry.target}</td>
-                  <td className="max-w-[260px] truncate px-4 py-3 text-xs text-brand-green-dark/50" title={entry.details}>{entry.details}</td>
+                  <td className="max-w-[360px] truncate px-4 py-3 text-xs text-brand-green-dark/50" title={entry.details}>{formatAuditDetails(entry.details)}</td>
                 </tr>
               ))
             )}

@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       const { id, name, code, isActive } = params;
       if (!name || !code) return NextResponse.json({ error: "name and code required" }, { status: 400 });
       await upsertChannel({ id, name, code, isActive });
+      await recordInventoryAudit(actingUser, id ? "CHANNEL_UPDATED" : "CHANNEL_CREATED", `${name} (${code})`, { id: id ?? null, isActive: isActive ?? 1 });
       const data = await getChannels();
       return NextResponse.json({ success: true, channels: data });
     }
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
       const { id } = params;
       if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
       await deleteChannel(id);
+      await recordInventoryAudit(actingUser, "CHANNEL_DELETED", `channel:${id}`);
       return NextResponse.json({ success: true });
     }
 
@@ -90,6 +92,7 @@ export async function POST(req: NextRequest) {
       const { id, dormId, bedType, maxOccupancy, extraPersonAllowed } = params;
       if (!dormId || !bedType) return NextResponse.json({ error: "dormId and bedType required" }, { status: 400 });
       await upsertBedTypeConfig({ id, dormId, bedType, maxOccupancy: maxOccupancy ?? 1, extraPersonAllowed: extraPersonAllowed ?? 0 });
+      await recordInventoryAudit(actingUser, id ? "BED_TYPE_CONFIG_UPDATED" : "BED_TYPE_CONFIG_CREATED", `dorm:${dormId}`, { id: id ?? null, bedType, maxOccupancy: maxOccupancy ?? 1, extraPersonAllowed: extraPersonAllowed ?? 0 });
       const data = await getBedTypeConfigs();
       return NextResponse.json({ success: true, configs: data });
     }
@@ -126,6 +129,7 @@ export async function POST(req: NextRequest) {
       }
       const dates = stayNights(startDate, endDate);
       if (dates.length > 0) await triggerInventoryPush(dates, dormId).catch(() => {});
+      await recordInventoryAudit(actingUser, "BEDS_BLOCKED", `dorm:${dormId}`, { bedIds, startDate, endDate, reason: reason || "", count: bedIds.length });
       return NextResponse.json({ success: true, blocked: bedIds.length });
     }
 
@@ -162,6 +166,7 @@ export async function POST(req: NextRequest) {
       if (pushDates && pushDates.length > 0) {
         await triggerInventoryPush(pushDates, pushDormId).catch(() => {});
       }
+      await recordInventoryAudit(actingUser, "BEDS_UNBLOCKED", blockIds?.length ? `blocks:${blockIds.join(",")}` : `dorm:${pushDormId ?? "multiple"}`, { blockIds: blockIds || [], bedIds: bedIds || [], startDate: startDate || null, endDate: endDate || null });
       return NextResponse.json({ success: true });
     }
 
@@ -170,6 +175,7 @@ export async function POST(req: NextRequest) {
       if (!dormId || !date) return NextResponse.json({ error: "dormId and date required" }, { status: 400 });
       await upsertInventoryOverride({ dormId, channelId: channelId || null, date, onlineAvailable, offlineAvailable, overriddenBy: actingUser });
       await triggerInventoryPush([date], dormId).catch(() => {});
+      await recordInventoryAudit(actingUser, "INVENTORY_OVERRIDE_UPDATED", `dorm:${dormId} ${date}`, { channelId: channelId || null, onlineAvailable: onlineAvailable ?? null, offlineAvailable: offlineAvailable ?? null });
       return NextResponse.json({ success: true });
     }
 
@@ -348,6 +354,7 @@ export async function POST(req: NextRequest) {
       const { ratePlanId, channelId, date, adult1Rate, adult2Rate, childRate, infantRate, extraPersonRate } = params;
       if (!ratePlanId || !channelId || !date) return NextResponse.json({ error: "ratePlanId, channelId, date required" }, { status: 400 });
       await upsertChannelRate({ ratePlanId, channelId, date, adult1Rate, adult2Rate, childRate, infantRate, extraPersonRate, updatedBy: actingUser });
+      await recordInventoryAudit(actingUser, "CHANNEL_RATE_UPDATED", `ratePlan:${ratePlanId} ${date}`, { channelId, adult1Rate, adult2Rate, childRate, infantRate, extraPersonRate });
       return NextResponse.json({ success: true });
     }
 
@@ -371,6 +378,7 @@ export async function POST(req: NextRequest) {
         updatedBy: actingUser,
       });
       await triggerRatePush([date], [ratePlanId]).catch(() => {});
+      await recordInventoryAudit(actingUser, "RATE_UPDATED", `ratePlan:${ratePlanId} ${date}`, { rate: rate ?? existing?.rate ?? 0, adult1Rate, adult2Rate, childRate, infantRate, extraPersonRate, stopSell, minimumStay, maximumStay, closeOnArrival, closeOnDeparture });
       return NextResponse.json({ success: true });
     }
 
@@ -411,6 +419,7 @@ export async function POST(req: NextRequest) {
       }
       // Channel-only rates live in channel_rates; triggerRatePush reads daily_rates.
       if (!channelId) await triggerRatePush(filteredDates, ids).catch(() => {});
+      await recordInventoryAudit(actingUser, "RATES_BULK_UPDATED", `ratePlans:${ids.join(",")}`, { channelId: channelId || null, dates: filteredDates, updated: count, dayFilter: dayFilter || null });
       return NextResponse.json({ success: true, updated: count });
     }
 
@@ -461,6 +470,7 @@ export async function POST(req: NextRequest) {
         }
       }
       await triggerRatePush(filteredDates, ratePlanIds).catch(() => {});
+      await recordInventoryAudit(actingUser, "RATES_BULK_ADJUSTED", `ratePlans:${ratePlanIds.join(",")}`, { startDate, endDate, dates: filteredDates, dayFilter: dayFilter || null, direction, value, type, updated: count });
       return NextResponse.json({ success: true, updated: count });
     }
 
@@ -508,6 +518,7 @@ export async function POST(req: NextRequest) {
         }
       }
       await triggerRestrictionPush(filteredDates, ratePlanIds, patch).catch(() => {});
+      await recordInventoryAudit(actingUser, "RESTRICTIONS_BULK_UPDATED", `ratePlans:${ratePlanIds.join(",")}`, { startDate, endDate, dates: filteredDates, dayFilter: dayFilter || null, restrictionType, value, updated: count });
       return NextResponse.json({ success: true, updated: count });
     }
 
@@ -548,7 +559,7 @@ async function recordBulkAvailabilityAudit(
   sync: { attempted: boolean; accepted: boolean; message?: string } | void,
   partial: boolean,
 ) {
-  await addAuditEntry({
+  await Promise.resolve(addAuditEntry({
     username,
     action: "INVENTORY_AVAILABILITY_BULK_UPDATED",
     target: dormIds.join(","),
@@ -564,5 +575,14 @@ async function recordBulkAvailabilityAudit(
       partial,
       sync: sync ? { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } : null,
     }),
-  }).catch(() => {});
+  })).catch(() => {});
+}
+
+async function recordInventoryAudit(username: string, action: string, target: string, details?: Record<string, unknown>) {
+  await Promise.resolve(addAuditEntry({
+    username,
+    action,
+    target,
+    details: details ? JSON.stringify(details) : "",
+  })).catch(() => {});
 }
