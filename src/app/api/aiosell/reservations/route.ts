@@ -296,6 +296,24 @@ async function tryAutoAssignChannelBeds(
     details: `${result.reason || "No online beds in requested room type"}. Assign offline beds or reject.`,
     performedBy: "channel_manager",
   });
+  if (result.reason?.startsWith("no online beds left in ")) {
+    const stay = notificationStayDates(checkin, checkout);
+    const room = result.reason.replace("no online beds left in ", "");
+    await addBookingHistoryEntry({
+      bookingId,
+      action: "OTA Inventory Reconciliation Warning",
+      details: `Inbound OTA booking accepted, but local online inventory had no sellable bed for ${stay}. Verify the channel mapping, online pool, and Aiosell availability before assigning an offline bed.`,
+      performedBy: "channel_manager",
+    });
+    await dispatchPush({
+      title: "OTA Inventory Reconciliation Needed",
+      body: `${notificationFirstName(channelGuestName(payload.guest))} · ${stay} · Aiosell accepted the booking but local online inventory is empty for ${room}.`,
+      url: "/admin?section=inventory",
+      eventId: `ota-inventory-reconciliation-${bookingId}`,
+      category: "operations",
+      renotify: true,
+    });
+  }
   await dispatchPush({
     title: "Booking Needs Bed Assignment",
     body: `${notificationFirstName(channelGuestName(payload.guest))} · ${payload.checkin || checkin} · ${result.reason || "No matching online bed"}`,

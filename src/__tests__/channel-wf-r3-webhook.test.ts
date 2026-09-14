@@ -141,6 +141,24 @@ describe("Round 3 webhook modify shrink / 0+0 / overflow / retry skip-list / can
     triggerInventoryPush.mockResolvedValue(undefined);
   });
 
+  it("alerts when an accepted OTA booking has no local online bed", async () => {
+    const res = await reservationsPOST(req(bookPayload({ bookingId: "BK-RECON-1" })));
+
+    expect(res.status).toBe(200);
+    expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 42,
+      action: "OTA Inventory Reconciliation Warning",
+      performedBy: "channel_manager",
+    }));
+    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({
+      title: "OTA Inventory Reconciliation Needed",
+      url: "/admin?section=inventory",
+      eventId: "ota-inventory-reconciliation-42",
+      category: "operations",
+      renotify: true,
+    }));
+  });
+
   it("modify occupancy 2→1 reseats to 1 online bed and does not push", async () => {
     q.getBookingByRef.mockResolvedValue(existingRow({
       persons: 2,

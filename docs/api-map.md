@@ -112,7 +112,7 @@ Booking creation also exposes `getRoomReceiptAccounts` (`canAddBooking` or `canC
 
 **Sync:** `heartbeat` (GET-ish via POST), `status`, `sync`, `pull`, `push`, `getConflicts`, `resolveConflict`, `resolveAll`, `getSyncLog`, `setPrimary`, `toggleAutoSync`, `backfillSyncIds`, `toggleFailover`, `getFailoverStatus`, `setPiLocalUrl`, `resetAndReseed`, `shutdownPi`, `deployUpdate`, `restartCloudflared`.
 
-**Aiosell webhook payload.action:** `book` (no inventory push), `modify` (no push), `cancel` (unassign beds **then** `triggerInventoryPush`). Inbound OTA assignments use the `online` inventory pool; manual/walk-in leftover assignments use `offline` and remain internal. Each webhook POST is a `channel_sync_log` row `direction=pull` `type=reservation` (Management → Logs → PMS). Outbound Aiosell HTTP is logged in the same table via `aiosellFetch`.
+**Aiosell webhook payload.action:** `book` (no inventory push), `modify` (no push), `cancel` (unassign beds **then** `triggerInventoryPush`). Inbound OTA assignments use the `online` inventory pool; manual/walk-in leftover assignments use `offline` and remain internal. If Aiosell accepts a booking while the mapped local online pool has no sellable bed, the webhook records an `OTA Inventory Reconciliation Warning` and sends an Operations alert; staff must verify the mapping, online pool, and Aiosell availability before assigning an offline bed. Each webhook POST is a `channel_sync_log` row `direction=pull` `type=reservation` (Management → Logs → PMS). Outbound Aiosell HTTP is logged in the same table via `aiosellFetch`.
 
 ---
 
