@@ -32,7 +32,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → Stayflexi URL
 | Path | Role | Auth |
 |------|------|------|
 | `/self-checkin` | ID check-in; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
-| `/food-order` | Menu + cart; after selecting a category, the guest menu keeps the sorted category list in a vertical left rail beside the filtered dish grid; the home category-card view is unchanged | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
+| `/food-order` | Menu + cart; after selecting a category, the guest menu keeps the sorted category list in an independently scrollable vertical left rail beside a dish pane whose item list scrolls independently; the home category-card view is unchanged | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
 | `/my-bills` | Food bills | phone; back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
@@ -52,7 +52,7 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 | `beds` | `AdminBeds` | checkins beds | `canViewBeds` |
 | `timeline` | `AdminTimeline` | checkins `getBeds` | `canViewTimeline` |
 | `inventory` | `InventoryRatePlan` | `/api/admin/inventory` | `canManageInventory` |
-| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads; active unmatched Walk-in/Offline check-ins with `canAddBooking` can create a reviewed booking, link an existing booking, or mark no booking needed; Form C review/submission is desktop-only and credentials have a password visibility toggle | `canViewRecords` |
+| `records` | `AdminRecords` | checkins list/add/…; delete confirmation shows linked food orders, then preserves their history and bed rows; foreign add/past records prompt for passport + visa uploads; active unmatched Walk-in/Offline check-ins with `canAddBooking` can create a reviewed booking, link an existing booking, or mark no booking needed; Form C review/submission is desktop-only and credentials have a password visibility toggle; current/previous month quick filters and custom arrival-date range selection; table column headings remain visible while scrolling | `canViewRecords` |
 | `foodOrders` | `AdminFoodOrders` | `/api/admin/food-orders` + kitchen (including per-stage bulk advance controls) | `canViewFoodOrders` |
 | `expenditure` | `AdminExpenditure` | `/api/admin/expenses` | `canViewAccounts` |
 | `splits` | `AdminSplits` | `/api/admin/splits` | `canViewSplits` — **omitted on Pi** |
@@ -77,7 +77,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `health` | `ManagementHealth` | admin only | |
 | `history` | `AdminBedHistory` | management access | visible to non-admin |
 | `rates` | `AdminCheckRates` | management access | competitor scrape; visible |
-| `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | `/api/admin/food` per-action map |
+| `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | `/api/admin/food` per-action map; Menu Items can be searched live by English/Kannada item or category name |
 | `website` | `AdminWebsite` | admin only | CMS; Cloudflare only |
 | `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | `/api/admin/food` |
 | `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |

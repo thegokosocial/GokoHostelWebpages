@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { authenticateUser, getCheckinsByMonth, getMonthKey, getSystemLogs } = vi.hoisted(() => ({
+const { authenticateUser, getCheckinsByMonth, getCheckinsByDateRange, getMonthKey, getSystemLogs } = vi.hoisted(() => ({
   authenticateUser: vi.fn(),
   getCheckinsByMonth: vi.fn(),
+  getCheckinsByDateRange: vi.fn(),
   getMonthKey: vi.fn(() => "2026-08"),
   getSystemLogs: vi.fn(),
 }));
@@ -20,6 +21,7 @@ vi.mock("@/lib/aiosellSync", () => ({ triggerInventoryPush: vi.fn() }));
 vi.mock("@/db", () => ({ getDb: vi.fn() }));
 vi.mock("@/db/queries", () => ({
   getCheckinsByMonth,
+  getCheckinsByDateRange,
   getActiveCheckins: vi.fn(),
   addCheckin: vi.fn(),
   updateCheckin: vi.fn(),
@@ -86,6 +88,7 @@ describe("Checkins auth-vs-list workflows", () => {
   beforeEach(() => {
     authenticateUser.mockReset();
     getCheckinsByMonth.mockReset();
+    getCheckinsByDateRange.mockReset();
     getSystemLogs.mockReset();
     getMonthKey.mockReturnValue("2026-08");
   });
@@ -126,6 +129,21 @@ describe("Checkins auth-vs-list workflows", () => {
     const listRes = await POST(req({ password: "x", action: "list", month: "2026-08" }));
     expect(listRes.status).toBe(200);
     expect(getCheckinsByMonth).toHaveBeenCalledWith("2026-08");
+  });
+
+  it("loads an inclusive arrival-date range for records", async () => {
+    authenticateUser.mockResolvedValue({ role: "staff", displayName: "Rec", permissions: { canViewRecords: true } });
+    getCheckinsByDateRange.mockResolvedValue([]);
+    const res = await POST(req({ password: "x", action: "list", startDate: "2026-08-01", endDate: "2026-08-31" }));
+    expect(res.status).toBe(200);
+    expect(getCheckinsByDateRange).toHaveBeenCalledWith("2026-08-01", "2026-08-31");
+  });
+
+  it("rejects an incomplete or inverted records date range", async () => {
+    authenticateUser.mockResolvedValue({ role: "staff", displayName: "Rec", permissions: { canViewRecords: true } });
+    const res = await POST(req({ password: "x", action: "list", startDate: "2026-09-01", endDate: "2026-08-31" }));
+    expect(res.status).toBe(400);
+    expect(getCheckinsByDateRange).not.toHaveBeenCalled();
   });
 
   it("rejects non-passport IDs for foreign admin records", async () => {

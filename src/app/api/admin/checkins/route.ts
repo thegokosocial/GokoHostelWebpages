@@ -20,7 +20,7 @@ import { bookingReference, getCheckinBookingMatch, isWalkinBookingCheckin } from
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
-  getCheckinsByMonth, getActiveCheckins, addCheckin, updateCheckin, deleteCheckin, getCheckinDeleteInfo, getCheckinMonths, markVibeMatched,
+  getCheckinsByMonth, getCheckinsByDateRange, getActiveCheckins, addCheckin, updateCheckin, deleteCheckin, getCheckinDeleteInfo, getCheckinMonths, markVibeMatched,
   getAllBeds, getBedById, updateBedStatus, assignPhysicalBed, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { password, action, month, username, ...rest } = body;
+    const { password, action, month, startDate, endDate, username, ...rest } = body;
 
     const authResult = await authenticateUser(password, username);
     if (!authResult) {
@@ -153,8 +153,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "list" || !action) {
-      const tabName = month || getMonthKey();
-      const dbRows = await getCheckinsByMonth(tabName);
+      const hasDateRange = Boolean(startDate || endDate);
+      if (hasDateRange && (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || "") || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || "") || startDate > endDate)) {
+        return NextResponse.json({ error: "A valid start and end date are required" }, { status: 400 });
+      }
+      const tabName = hasDateRange ? "RANGE" : (month || getMonthKey());
+      const dbRows = hasDateRange
+        ? await getCheckinsByDateRange(startDate as string, endDate as string)
+        : await getCheckinsByMonth(tabName);
       const rows = dbRows.map((r) => [
         r.submittedAt, r.arrivalDate, r.arrivalTime, r.name, r.persons,
         r.contact, r.stayingDays, r.comingFrom, r.nationality, r.emergencyName,

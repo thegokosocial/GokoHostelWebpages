@@ -4,6 +4,8 @@
 
 Menu/settings admin: `/api/admin/food` uses `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory`, and `canManageFoodSettings`. Admin bypasses all permissions.
 
+Management → Menu → Menu Items includes a live search field. Typing filters the current category selection by English item name, Kannada item name, or category name; the same results appear in card and table views.
+
 ---
 
 ## Guest

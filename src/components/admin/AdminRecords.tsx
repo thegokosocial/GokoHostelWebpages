@@ -146,6 +146,9 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
   const [editIdFiles, setEditIdFiles] = useState<File[]>([]);
   const [editVisaFiles, setEditVisaFiles] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+  const [activeRange, setActiveRange] = useState<{ start: string; end: string } | null>(null);
   const [sortField, setSortField] = useState<"date" | "place" | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [verifyPopup, setVerifyPopup] = useState<{ origIdx: number; row: string[] } | null>(null);
@@ -218,12 +221,12 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
   const hasActiveFilters = searchQuery.trim() !== "" || sortField !== null;
   const clearFilters = () => { setSearchQuery(""); setSortField(null); setSortDir("desc"); };
 
-  const loadTab = async (tab?: string) => {
+  const loadTab = async (tab?: string, startDate?: string, endDate?: string) => {
     setExpandedCard(null);
     setEditIndex(null);
     setLoading(true);
     try {
-      const res = await apiCall({ action: "list", month: tab });
+      const res = await apiCall({ action: "list", ...(startDate && endDate ? { startDate, endDate } : { month: tab }) });
       if (res.ok) {
         const data = await res.json();
         const allRows: string[][] = data.rows || [];
@@ -252,7 +255,21 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
     })();
   }, []);
 
-  const refresh = () => loadTab(currentTab);
+  const refresh = () => activeRange ? loadTab(undefined, activeRange.start, activeRange.end) : loadTab(currentTab);
+
+  const getMonthLabel = (date: Date) => `${date.toLocaleString("en-US", { month: "long" }).toUpperCase()}-${date.getFullYear()}`;
+  const currentMonth = getMonthLabel(new Date());
+  const previousMonthDate = new Date();
+  previousMonthDate.setDate(1);
+  previousMonthDate.setMonth(previousMonthDate.getMonth() - 1);
+  const previousMonth = getMonthLabel(previousMonthDate);
+  const applyDateRange = () => {
+    if (!rangeStart || !rangeEnd) { showError("Select both start and end dates"); return; }
+    if (rangeStart > rangeEnd) { showError("Start date must be on or before end date"); return; }
+    setActiveRange({ start: rangeStart, end: rangeEnd });
+    loadTab(undefined, rangeStart, rangeEnd);
+  };
+  const selectMonth = (month: string) => { setActiveRange(null); loadTab(month); };
 
   const markNoBookingNeeded = async (checkinId: number) => {
     if (!confirm("Mark this stay as no booking needed?")) return;
@@ -630,11 +647,10 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
         </div>
       </div>
 
-      {/* Month tabs */}
-      {tabs.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {tabs.map((tab) => (
-            <button key={tab} type="button" onClick={() => loadTab(tab)}
+      {/* Quick month filters and custom date range */}
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        {[currentMonth, previousMonth].map((tab) => (
+            <button key={tab} type="button" onClick={() => selectMonth(tab)}
               className={cn("relative rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
                 tab === currentTab ? "text-white" : "bg-white dark:bg-card text-brand-green-dark/70 hover:bg-brand-green/[0.06]"
               )}>
@@ -643,9 +659,19 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
               )}
               <span className="relative z-10">{tab}</span>
             </button>
-          ))}
+        ))}
+        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-brand-mist bg-white/70 px-2 py-1.5 dark:bg-card">
+          <div>
+            <Label className="text-[10px] text-brand-green-dark/60">From</Label>
+            <Input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} className="h-8 w-[135px] text-xs" aria-label="Records start date" />
+          </div>
+          <div>
+            <Label className="text-[10px] text-brand-green-dark/60">To</Label>
+            <Input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} className="h-8 w-[135px] text-xs" aria-label="Records end date" />
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={applyDateRange} disabled={loading}>Apply</Button>
         </div>
-      )}
+      </div>
 
       {/* Search and filters */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1152,12 +1178,12 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
       {/* Table */}
       {viewMode === "table" && <div className="mt-6 overflow-x-auto rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <table className="w-full min-w-[1000px] text-left text-sm">
-          <thead>
+          <thead className="sticky top-[4.5rem] z-20">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
               {CHECKIN_COLUMNS.map((col, ci) => ci === 0 ? null : (
-                <th key={col} className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
+                <th key={col} className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>
               ))}
-              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && <th className="px-3 py-3 text-xs font-bold uppercase">Actions</th>}
+              {(hasPermission(role, permissions, "canEditRecords") || hasPermission(role, permissions, "canDeleteRecords") || hasPermission(role, permissions, "canAddBooking")) && <th className="bg-brand-sand px-3 py-3 text-xs font-bold uppercase">Actions</th>}
             </tr>
           </thead>
           <tbody>

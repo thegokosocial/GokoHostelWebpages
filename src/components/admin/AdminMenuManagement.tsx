@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import {
   PlusIcon, Trash2Icon, PencilIcon, CheckIcon, XIcon,
   ChevronDownIcon, ToggleLeftIcon, ToggleRightIcon, PackagePlusIcon,
-  LayoutListIcon, TableIcon,
+  LayoutListIcon, TableIcon, SearchIcon,
 } from "lucide-react";
 import { hasPermission, type Role } from "./types";
 import { useAdminToast } from "@/components/admin/AdminToast";
@@ -133,6 +133,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
   const [addStockItemId, setAddStockItemId] = useState<number | null>(null);
   const [addStockQty, setAddStockQty] = useState("");
   const [itemViewMode, setItemViewMode] = useState<"card" | "table">(() => typeof window !== "undefined" && window.innerWidth < 1024 ? "card" : "table");
+  const [itemSearch, setItemSearch] = useState("");
   const [expandedItemCard, setExpandedItemCard] = useState<number | null>(null);
   const scrollBackCatId = useRef<number | null>(null);
   const scrollBackItemId = useRef<number | null>(null);
@@ -402,9 +403,14 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
     } finally { setSaving(false); }
   };
 
-  const filteredItems = selectedCategoryId
-    ? items.filter((i) => i.categoryId === selectedCategoryId)
-    : items;
+  const normalizedItemSearch = itemSearch.trim().toLocaleLowerCase();
+  const filteredItems = items.filter((item) => {
+    if (selectedCategoryId && item.categoryId !== selectedCategoryId) return false;
+    if (!normalizedItemSearch) return true;
+    return [item.name, item.nameKannada, item.categoryName].some((value) =>
+      value.toLocaleLowerCase().includes(normalizedItemSearch)
+    );
+  });
 
   if (loading) return <AdminLoading message="Loading menu..." />;
 
@@ -556,6 +562,16 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
             )}
           </div>
           <div className="flex items-center gap-2">
+            <div className="relative w-full sm:w-56">
+              <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-green-dark/40" />
+              <Input
+                value={itemSearch}
+                onChange={(e) => setItemSearch(e.target.value)}
+                placeholder="Search menu items..."
+                aria-label="Search menu items"
+                className="h-9 pl-8 text-xs"
+              />
+            </div>
             {selectedCategoryId && canToggleAvailability && (
               <>
                 <Button type="button" variant="outline" size="sm" onClick={() => bulkToggle(selectedCategoryId, true)} disabled={saving}>
@@ -769,7 +785,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
           <p className="mt-4 py-6 text-center text-sm text-brand-green-dark/50">Add a category first to manage items.</p>
         ) : filteredItems.length === 0 ? (
           <p className="mt-4 py-6 text-center text-sm text-brand-green-dark/50">
-            {selectedCategoryId ? "No items in this category." : "No menu items yet."}
+            {itemSearch.trim() ? "No menu items match your search." : selectedCategoryId ? "No items in this category." : "No menu items yet."}
           </p>
         ) : (
           <>

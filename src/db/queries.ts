@@ -19,6 +19,15 @@ export async function getCheckinsByMonth(month: string) {
   });
 }
 
+export async function getCheckinsByDateRange(startDate: string, endDate: string) {
+  return dbRead(() => {
+    const db = getDb();
+    return db.select().from(checkins)
+      .where(and(gte(checkins.arrivalDate, startDate), lte(checkins.arrivalDate, endDate)))
+      .orderBy(desc(checkins.id));
+  });
+}
+
 export async function getCheckinById(id: number) {
   const db = getDb();
   const rows = await db.select().from(checkins).where(eq(checkins.id, id)).limit(1);

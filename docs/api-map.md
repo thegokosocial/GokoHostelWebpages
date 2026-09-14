@@ -34,7 +34,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | Route | Auth | Purpose |
 |-------|------|---------|
 | `/api/food/kitchen` | `authenticateKitchen` | Queue, status, mods, busy, menu |
-| `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape); foreign record add/update requires passport and visa; booking-resolution actions support active unmatched walk-in/offline check-ins |
+| `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape); records list supports month or inclusive arrival-date range; foreign record add/update requires passport and visa; booking-resolution actions support active unmatched walk-in/offline check-ins |
 | `/api/admin/bookings` | per-action map | Calendar PMS |
 | `/api/admin/inventory` | `canManageInventory` | Grid, blocks, rates, channels |
 | `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |
