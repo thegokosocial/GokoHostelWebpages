@@ -71,13 +71,13 @@ export function BookingTableView({
     <div className="overflow-hidden rounded-xl border border-border bg-white dark:bg-card">
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead>
+          <thead className="sticky top-0 z-20">
             <tr className="border-b border-border bg-muted/50">
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}
                   className={cn(
-                    "cursor-pointer select-none px-3 py-2.5 text-left font-medium text-muted-foreground transition-colors hover:text-foreground",
+                    "cursor-pointer select-none bg-white px-3 py-2.5 text-left font-medium text-muted-foreground transition-colors hover:text-foreground dark:bg-card",
                     col.className,
                   )}
                   onClick={() => toggleSort(col.key)}
@@ -92,7 +92,7 @@ export function BookingTableView({
                   </div>
                 </th>
               ))}
-              <th className="hidden md:table-cell px-3 py-2.5 text-left font-medium text-muted-foreground">Beds</th>
+              <th className="hidden bg-white px-3 py-2.5 text-left font-medium text-muted-foreground dark:bg-card md:table-cell">Beds</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">

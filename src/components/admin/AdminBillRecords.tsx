@@ -280,7 +280,7 @@ export function AdminBillRecords({
       {/* Table View */}
       {viewMode === "table" && <div className="mt-4 overflow-x-auto rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <table className="w-full min-w-[800px] text-left text-sm">
-          <thead>
+          <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
               <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Date</th>
               <th className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Category</th>

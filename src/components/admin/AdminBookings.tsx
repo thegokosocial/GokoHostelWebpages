@@ -221,15 +221,15 @@ export function AdminBookings({ password, username, role, permissions = {} }: { 
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
-            <thead>
+            <thead className="sticky top-[4.5rem] z-20">
               <tr className="border-b border-brand-mist bg-brand-sand/50">
-                <th className="px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Guest</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Platform</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Check-in</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Check-out</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Room</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Status</th>
-                <th className="px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Actions</th>
+                <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Guest</th>
+                <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Platform</th>
+                <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Check-in</th>
+                <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Check-out</th>
+                <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Room</th>
+                <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Status</th>
+                <th className="bg-brand-sand px-4 py-3 text-xs font-bold uppercase text-brand-green-dark/70">Actions</th>
               </tr>
             </thead>
             <tbody>

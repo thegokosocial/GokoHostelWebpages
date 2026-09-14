@@ -126,7 +126,7 @@ export function AdminBedHistory({ password, username, role }: { password: string
       {/* Table */}
       <div className="mt-6 overflow-x-auto rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <table className="w-full min-w-[700px] text-left text-sm">
-          <thead>
+          <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
               {HISTORY_COLUMNS.map((col) => (
                 <th key={col} className="whitespace-nowrap px-4 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{col}</th>

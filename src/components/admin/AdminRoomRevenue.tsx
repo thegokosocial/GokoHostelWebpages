@@ -132,7 +132,7 @@ export function AdminRoomRevenue({
               <h4 className="mt-8 font-display text-base font-bold text-brand-green-dark">Stay-wise Breakdown</h4>
               <div className="mt-3 overflow-x-auto rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
                 <table className="w-full min-w-[1100px] text-left text-sm">
-                  <thead>
+                  <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
                     <tr className="border-b border-brand-mist bg-brand-sand/50">
                       {["Guest", "Dates", "Status", "Method", "Billed", "Cash in", "Online in", "Unpaid", "Refund", "Cash out", "Online out"].map((h) => (
                         <th key={h} className="whitespace-nowrap px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{h}</th>
