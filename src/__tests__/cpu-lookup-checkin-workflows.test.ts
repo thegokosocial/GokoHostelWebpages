@@ -400,7 +400,7 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
         expect(source).toContain("sticky top-0");
         expect(source).toContain("overflow-x-auto overflow-y-visible");
       } else if (file === "booking-dashboard/BookingTableView.tsx") {
-        expect(source).toContain("sticky top-[4.5rem]");
+        expect(source).toContain("sticky top-0");
         expect(source).toContain("overflow-x-auto overflow-y-visible");
       } else if (file === "ManagementAudit.tsx") {
         expect(source).toContain("overflow-x-auto overflow-y-visible overscroll-x-contain");
