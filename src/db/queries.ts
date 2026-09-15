@@ -5,11 +5,12 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
-import { auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
+import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import { INVENTORY_AUDIT_ACTION_PREFIXES } from "@/lib/inventoryAudit";
+import type { AuditReferenceMaps } from "@/lib/auditPresentation";
 
 // --- Check-ins ---
 
@@ -362,30 +363,70 @@ export async function addAuditEntry(data: {
   });
 }
 
-export async function getAuditEntries(limit = 500) {
+export async function getAuditEntries(limit = 500, dateFrom?: string, dateTo?: string) {
   const db = getDb();
+  const bounds = auditDateBounds(await getAuditRetentionCutoff(), dateFrom, dateTo);
   const inventoryActionFilter = or(...INVENTORY_AUDIT_ACTION_PREFIXES.map((prefix) => like(auditLog.action, `${prefix}%`)));
-  return db.select().from(auditLog).where(not(inventoryActionFilter!)).orderBy(desc(auditLog.id)).limit(limit);
+  return db.select().from(auditLog).where(and(
+    not(inventoryActionFilter!),
+    gte(auditLog.timestamp, bounds.start),
+    ...(bounds.end ? [lte(auditLog.timestamp, bounds.end)] : []),
+  )).orderBy(desc(auditLog.id)).limit(limit);
 }
 
-export async function getInventoryAuditEntries(limit = 500) {
+export async function getInventoryAuditEntries(limit = 500, dateFrom?: string, dateTo?: string) {
   const db = getDb();
+  const bounds = auditDateBounds(await getAuditRetentionCutoff(), dateFrom, dateTo);
   const inventoryActionFilter = or(...INVENTORY_AUDIT_ACTION_PREFIXES.map((prefix) => like(auditLog.action, `${prefix}%`)));
-  return db.select().from(auditLog).where(inventoryActionFilter).orderBy(desc(auditLog.id)).limit(limit);
+  return db.select().from(auditLog).where(and(
+    inventoryActionFilter,
+    gte(auditLog.timestamp, bounds.start),
+    ...(bounds.end ? [lte(auditLog.timestamp, bounds.end)] : []),
+  )).orderBy(desc(auditLog.id)).limit(limit);
+}
+
+/** Small, bounded lookup maps used to make legacy audit targets readable without N+1 queries. */
+export async function getAuditPresentationContext(): Promise<AuditReferenceMaps> {
+  try {
+    const db = getDb();
+    const [dormRows, bedRows, channelRows, ratePlanRows] = await Promise.all([
+      db.select({ id: dorms.id, name: dorms.name }).from(dorms),
+      db.select({ id: beds.id, bedId: beds.bedId, dormName: dorms.name }).from(beds).innerJoin(dorms, eq(beds.dormId, dorms.id)),
+      db.select({ id: channels.id, name: channels.name }).from(channels),
+      db.select({ id: ratePlanMapping.id, name: ratePlanMapping.ratePlanName, dormName: roomTypeMapping.dormName, code: ratePlanMapping.ratePlanCode })
+        .from(ratePlanMapping)
+        .innerJoin(roomTypeMapping, eq(ratePlanMapping.roomMappingId, roomTypeMapping.id)),
+    ]);
+    return {
+      dormNames: Object.fromEntries(dormRows.map((row) => [String(row.id), row.name])),
+      bedNames: Object.fromEntries(bedRows.map((row) => [String(row.id), `${row.dormName} · ${row.bedId}`])),
+      channelNames: Object.fromEntries(channelRows.map((row) => [String(row.id), row.name])),
+      ratePlanNames: Object.fromEntries(ratePlanRows.map((row) => [String(row.id), `${row.dormName} · ${row.name || row.code}`])),
+    };
+  } catch {
+    return {};
+  }
 }
 
 export async function getAuditEntriesBefore(cutoff: string) {
   const db = getDb();
   const general = await db.select({ id: auditLog.id }).from(auditLog).where(lt(auditLog.timestamp, cutoff));
   const bookings = await db.select({ id: bookingHistory.id }).from(bookingHistory).where(lt(bookingHistory.performedAt, cutoff));
-  return { auditLog: general.length, bookingHistory: bookings.length, total: general.length + bookings.length };
+  const attendance = await db.select({ id: employeeAttendanceHistory.id }).from(employeeAttendanceHistory).where(lt(employeeAttendanceHistory.performedAt, cutoff));
+  return { auditLog: general.length, bookingHistory: bookings.length, attendanceHistory: attendance.length, total: general.length + bookings.length + attendance.length };
 }
 
 export async function deleteAuditEntriesBefore(cutoff: string) {
   const db = getDb();
   const general = await db.delete(auditLog).where(lt(auditLog.timestamp, cutoff)).returning({ id: auditLog.id });
   const bookings = await db.delete(bookingHistory).where(lt(bookingHistory.performedAt, cutoff)).returning({ id: bookingHistory.id });
-  return { auditLog: general.length, bookingHistory: bookings.length, total: general.length + bookings.length };
+  const attendance = await db.delete(employeeAttendanceHistory).where(lt(employeeAttendanceHistory.performedAt, cutoff)).returning({ id: employeeAttendanceHistory.id });
+  return { auditLog: general.length, bookingHistory: bookings.length, attendanceHistory: attendance.length, total: general.length + bookings.length + attendance.length };
+}
+
+export async function getAuditRetentionCutoff() {
+  const configured = await getSetting("audit_retention_months");
+  return auditRetentionCutoff(normalizeAuditRetentionMonths(configured || DEFAULT_AUDIT_RETENTION_MONTHS));
 }
 
 export async function getAuditRetention() {
@@ -1230,57 +1271,6 @@ export async function getExpenseMonths(): Promise<string[]> {
   const db = getDb();
   const rows = await db.selectDistinct({ month: expenses.createdMonth }).from(expenses).orderBy(desc(expenses.createdMonth));
   return rows.map((r) => r.month);
-}
-
-// --- Data Retention / Cleanup ---
-
-export async function getOrdersForCleanup() {
-  const db = getDb();
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  // Hostel guests: checkin is checked_out AND checked_out_at > 7 days ago
-  const hostelOrders = await db
-    .select({ id: foodOrders.id })
-    .from(foodOrders)
-    .innerJoin(checkins, eq(foodOrders.checkinId, checkins.id))
-    .where(
-      and(
-        eq(checkins.status, "checked_out"),
-        sql`${checkins.checkedOutAt} != ''`,
-        sql`${checkins.checkedOutAt} < ${sevenDaysAgo}`
-      )
-    );
-
-  // Walk-in guests: created > 7 days ago AND served/cancelled
-  const walkinOrders = await db
-    .select({ id: foodOrders.id })
-    .from(foodOrders)
-    .where(
-      and(
-        eq(foodOrders.guestType, "walkin"),
-        sql`${foodOrders.createdAt} < ${sevenDaysAgo}`,
-        sql`(${foodOrders.status} = 'served' OR ${foodOrders.status} = 'cancelled')`
-      )
-    );
-
-  const allIds = [...hostelOrders.map((r) => r.id), ...walkinOrders.map((r) => r.id)];
-  return [...new Set(allIds)];
-}
-
-export async function deleteOrderItemsByOrderIds(orderIds: number[]) {
-  if (orderIds.length === 0) return 0;
-  const db = getDb();
-  const result = await db.delete(foodOrderItems).where(inArray(foodOrderItems.orderId, orderIds));
-  return sqliteWriteCount(result);
-}
-
-export async function deleteOrdersByIds(orderIds: number[]) {
-  if (orderIds.length === 0) return 0;
-  const db = getDb();
-  await db.delete(orderModifications).where(inArray(orderModifications.orderId, orderIds));
-  await db.delete(foodOrderItems).where(inArray(foodOrderItems.orderId, orderIds));
-  const result = await db.delete(foodOrders).where(inArray(foodOrders.id, orderIds));
-  return sqliteWriteCount(result);
 }
 
 // --- Review Funnel ---
@@ -2169,8 +2159,9 @@ export async function getBookingHistoryEntries(bookingId: number) {
 }
 
 /** Recent lifecycle events for the Management audit view, enriched with booking context. */
-export async function getBookingAuditEntries(limit = 500) {
+export async function getBookingAuditEntries(limit = 500, dateFrom?: string, dateTo?: string) {
   const db = getDb();
+  const bounds = auditDateBounds(await getAuditRetentionCutoff(), dateFrom, dateTo);
   return db.select({
     id: bookingHistory.id,
     bookingId: bookingHistory.bookingId,
@@ -2187,6 +2178,10 @@ export async function getBookingAuditEntries(limit = 500) {
   })
     .from(bookingHistory)
     .leftJoin(bookings, eq(bookingHistory.bookingId, bookings.id))
+    .where(and(
+      gte(bookingHistory.performedAt, bounds.start),
+      ...(bounds.end ? [lte(bookingHistory.performedAt, bounds.end)] : []),
+    ))
     .orderBy(desc(bookingHistory.id))
     .limit(limit);
 }

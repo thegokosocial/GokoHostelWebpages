@@ -385,7 +385,8 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(audit).toContain('filePrefix="inventory-audit-log"');
     expect(checkins).toContain('getInventoryAuditLog: "canViewAudit"');
     expect(checkins).toContain("getInventoryAuditEntries");
-    expect(queries).toContain("where(not(inventoryActionFilter!))");
+    expect(queries).toContain("not(inventoryActionFilter!)");
+    expect(queries).toContain("gte(auditLog.timestamp, bounds.start)");
     expect(queries).toContain("export async function getInventoryAuditEntries");
     expect(isInventoryAuditAction("INVENTORY_AVAILABILITY_BULK_UPDATED")).toBe(true);
     expect(isInventoryAuditAction("RATES_BULK_ADJUSTED")).toBe(true);

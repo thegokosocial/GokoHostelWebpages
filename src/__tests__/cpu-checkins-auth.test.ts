@@ -10,6 +10,7 @@ const { authenticateUser, getCheckinsByMonth, getCheckinsByDateRange, getMonthKe
 }));
 const getAuditEntries = vi.hoisted(() => vi.fn());
 const getInventoryAuditEntries = vi.hoisted(() => vi.fn());
+const getAuditPresentationContext = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
 
 vi.mock("@/lib/auth", () => ({
   authenticateUser,
@@ -64,6 +65,7 @@ vi.mock("@/db/queries", () => ({
   addAuditEntry: vi.fn(),
   getAuditEntries,
   getInventoryAuditEntries,
+  getAuditPresentationContext,
   addSystemLog: vi.fn(),
   getSystemLogs,
   createReviewRequest: vi.fn(),
@@ -95,6 +97,8 @@ describe("Checkins auth-vs-list workflows", () => {
     getSystemLogs.mockReset();
     getAuditEntries.mockReset();
     getInventoryAuditEntries.mockReset();
+    getAuditPresentationContext.mockReset();
+    getAuditPresentationContext.mockResolvedValue({});
     getMonthKey.mockReturnValue("2026-08");
   });
 

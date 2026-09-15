@@ -349,7 +349,7 @@ export async function POST(req: NextRequest) {
         const sync = partialDates.length > 0
           ? await triggerInventoryPush(partialDates, partialDormIds).catch(() => undefined)
           : undefined;
-        await recordBulkAvailabilityAudit(actingUser, mode, dormIds, filteredDates, normalizedDayFilter, requestedValue, applied, sync, true);
+        await recordBulkAvailabilityAudit(actingUser, mode, dormIds, filteredDates, normalizedDayFilter, requestedValue, applied, sync, true, dormNameById);
         return NextResponse.json({
           success: false,
           partial: applied.length > 0,
@@ -367,7 +367,7 @@ export async function POST(req: NextRequest) {
         await markInventoryDirty(dormId, affectedDates).catch(() => {});
       }
       const sync = requireSyncResult(await triggerInventoryPush(affectedDates, affectedDormIds));
-      await recordBulkAvailabilityAudit(actingUser, mode, dormIds, filteredDates, normalizedDayFilter, requestedValue, applied, sync, false);
+      await recordBulkAvailabilityAudit(actingUser, mode, dormIds, filteredDates, normalizedDayFilter, requestedValue, applied, sync, false, dormNameById);
 
       return NextResponse.json({
         success: true,
@@ -610,6 +610,7 @@ async function recordBulkAvailabilityAudit(
   applied: Array<{ dormId: number; date: string; capped: boolean }>,
   sync: { attempted: boolean; accepted: boolean; queued?: boolean; message?: string } | void,
   partial: boolean,
+  dormNameById: Map<number, string>,
 ) {
   await Promise.resolve(addAuditEntry({
     username,
@@ -618,6 +619,9 @@ async function recordBulkAvailabilityAudit(
     details: JSON.stringify({
       mode,
       dormIds,
+      dormNames: dormIds.map((id) => dormNameById.get(id) || `Dorm ${id}`),
+      startDate: dates[0] || null,
+      endDate: dates[dates.length - 1] || null,
       dateCount: dates.length,
       dayFilter,
       cellCount: dormIds.length * dates.length,

@@ -30,6 +30,7 @@ import { isStayPayMethod, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayR
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { getPendingFoodTab } from "@/lib/foodTabDb";
 import { dispatchPush, notificationFirstName, notificationDate, notificationStayDates } from "@/lib/pushNotify";
+import { presentAuditEntry } from "@/lib/auditPresentation";
 import {
   BOOKING_TAX_SETTING,
   bookingDiscountRupees,
@@ -562,7 +563,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "getBookingAuditLog") {
-      const history = await getBookingAuditEntries();
+      const history = await getBookingAuditEntries(500, body.dateFrom, body.dateTo);
       const entries = history.map((entry) => {
         const reference = entry.gokoBookingId || entry.bookingRef || `Booking #${entry.bookingId}`;
         const target = `${reference} · ${entry.guestName || "Unknown guest"}`;
@@ -570,14 +571,14 @@ export async function POST(req: NextRequest) {
           ? `Stay ${entry.checkinDate}${entry.checkoutDate ? ` → ${entry.checkoutDate}` : ""}`
           : "";
         const context = [entry.platform, stay].filter(Boolean).join(" · ");
-        return {
+        return presentAuditEntry({
           id: entry.id,
           timestamp: entry.performedAt,
           username: entry.performedBy || "system",
           action: entry.action,
           target,
           details: [entry.details, context].filter(Boolean).join(" · "),
-        };
+        });
       });
       return NextResponse.json({ entries });
     }

@@ -21,7 +21,8 @@ CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lin
 | `rbac.test.ts` | Permission maps |
 | `splits.test.ts` / `splits-wiring.test.ts` | Split math (incl. equal-with-Goko infer) + Pi/nav/edit wiring |
 | `stock-operations.test.ts` | Decrement / restore |
-| `data-cleanup.test.ts` | Cleanup, ledger unique |
+| `data-cleanup.test.ts` | Daily-ledger uniqueness |
+| `audit-retention.test.ts` / `audit-presentation.test.ts` | Global retention/date bounds, friendly audit rendering, full table wrapping, and removal of destructive food-order cleanup |
 | `site-cms.test.ts` / `website-cms-api.test.ts` | CMS |
 | `aiosell-webhook.test.ts` | Reservation parse (`book` / `modify` / `cancel`) |
 | `aiosell-operations.test.ts` | Webhook auth variants, book/modify/cancel combos, fetch reservation ingest, push-inventory modes (ranged / dirty / fullSync), push-rates + fetch + noshow + inv-restriction aggregation, Channel Manager CRUD. `pah` true/`false`/omitted → `pay_at_hotel`/`prepaid`/`unknown` |

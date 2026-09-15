@@ -2755,11 +2755,8 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [guestTypeFilter, setGuestTypeFilter] = useState("");
-  const [phoneFilter, setPhoneFilter] = useState("");
+  const [searchFilter, setSearchFilter] = useState("");
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
-  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
-  const [cleanupBusy, setCleanupBusy] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState("");
   const [btSupported, setBtSupported] = useState(false);
   const [printing, setPrinting] = useState<number | null>(null);
   const [modHistoryOrder, setModHistoryOrder] = useState<number | null>(null);
@@ -2791,12 +2788,12 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { action: "listOrders", limit: 100 };
+      const params: any = { action: "listOrders", limit: 100, auditHistory: true };
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       if (statusFilter) params.status = statusFilter;
       if (guestTypeFilter) params.guestType = guestTypeFilter;
-      if (phoneFilter) params.phone = phoneFilter;
+      if (searchFilter) params.search = searchFilter;
       if (!statusFilter && !dateFrom) params.status = "all_history";
 
       const res = await apiCall(params);
@@ -2807,7 +2804,7 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
     } finally {
       setLoading(false);
     }
-  }, [apiCall, dateFrom, dateTo, statusFilter, guestTypeFilter, phoneFilter]);
+  }, [apiCall, dateFrom, dateTo, statusFilter, guestTypeFilter, searchFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2822,70 +2819,9 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
     })();
   }, [apiCall]);
 
-  const handleCleanup = async () => {
-    setCleanupBusy(true);
-    setCleanupResult("");
-    try {
-      const res = await apiCall({ action: "cleanupOldOrders" });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setCleanupResult(`Cleaned ${data.ordersCleanedCount} orders, deleted ${data.itemsDeletedCount} item records.`);
-        await load();
-      } else {
-        setCleanupResult(data.error || "Cleanup failed");
-      }
-    } catch {
-      setCleanupResult("Network error during cleanup");
-    } finally {
-      setCleanupBusy(false);
-      setShowCleanupConfirm(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-display text-lg font-bold text-brand-green-dark">Order History</h3>
-        <button
-          type="button"
-          onClick={() => setShowCleanupConfirm(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-red-200 dark:border-red-800 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950"
-        >
-          <XIcon className="h-3.5 w-3.5" />
-          Cleanup Old Orders
-        </button>
-      </div>
-
-      {showCleanupConfirm && (
-        <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4">
-          <p className="text-sm text-red-800 dark:text-red-300">
-            This will delete item details for orders older than 1 week (checked-out hostel guests and completed walk-in orders). Order summaries will be kept. Continue?
-          </p>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={handleCleanup}
-              disabled={cleanupBusy}
-              className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {cleanupBusy ? "Cleaning..." : "Yes, Cleanup"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCleanupConfirm(false)}
-              className="rounded-lg border border-brand-mist px-4 py-1.5 text-xs font-medium text-brand-green-dark/70 hover:bg-brand-sand"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {cleanupResult && (
-        <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-3 text-sm text-brand-green-dark">
-          {cleanupResult}
-        </div>
-      )}
+      <h3 className="font-display text-lg font-bold text-brand-green-dark">Order History</h3>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 rounded-xl border border-brand-mist bg-white dark:bg-card p-3">
@@ -2917,8 +2853,8 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
           </select>
         </div>
         <div>
-          <label className="mb-0.5 block text-xs text-brand-green-dark/60">Phone</label>
-          <input type="tel" value={phoneFilter} onChange={(e) => setPhoneFilter(e.target.value)} placeholder="Search by phone" className="rounded border border-brand-mist px-2 py-1 text-sm w-full sm:w-36" />
+          <label className="mb-0.5 block text-xs text-brand-green-dark/60">Search</label>
+          <input type="search" value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Order, guest, phone, room" className="w-full rounded border border-brand-mist px-2 py-1 text-sm sm:w-52" />
         </div>
       </div>
 

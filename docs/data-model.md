@@ -34,7 +34,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `bed_history` | Append-only assign/checkout/clean/swap. |
 | `bookings` | OTA + manual + Aiosell. Amounts in **rupees** (food is paise). `goko_booking_id`, `cm_booking_id`. Desk collect: `payment_method` cash/online/split, `cash_received`, `change_given`. Prepaid check-in copies `amount_paid` = total as online. Cancel-after-check-in refund: `amount_refunded` (does **not** reduce `amount_paid`), `refund_method`, `refund_cash`. |
 | `booking_bed_assignments` | Date-range bed hold. `inventory_pool` online/offline/block. |
-| `booking_history` | Booking audit. |
+| `booking_history` | Booking audit. The global audit-retention policy bounds Audit-tab reads and manual cleanup. |
 
 ### Food
 
@@ -42,7 +42,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 |-------|------|
 | `menu_categories` | Sections, Kannada name, `discount_exempt`. |
 | `menu_items` | Price paise, tags JSON, stock. |
-| `food_orders` | Header. Unique `order_number`, unique `idempotency_key`. |
+| `food_orders` | Header. Unique `order_number`, unique `idempotency_key`. Operational rows are preserved; the Audit-tab history view applies the global audit-retention cutoff without deleting orders. |
 | `food_order_items` | Snapshot name/price. `status` active/voided. |
 | `order_modifications` | Kitchen/admin change log. |
 
@@ -53,6 +53,8 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `accounts` | Cash/bank. `opening_balance` paise. |
 | `vendors` | Directory. |
 | `employees` | Salary paise + frequency. |
+| `employee_attendance` | Current per-day attendance state. |
+| `employee_attendance_history` | Attendance audit events; Audit-tab reads and manual audit cleanup follow the global retention policy. |
 | `salary_payments` | Plus auto `expenses` row. |
 | `expenses` | Bills. Drive links. `created_month`. |
 | `daily_income` | Manual income; `source_detail` labels Other entries. Also retains legacy `food_revenue_auto`. |
@@ -99,7 +101,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 |-------|------|
 | `settings` | Key-value (OAuth tokens, food hours, `image_validation`, `primary_server`). |
 | `users` | Staff. |
-| `audit_log` | Who did what. |
+| `audit_log` | Who did what. Raw action, target, and details are retained; the Management Audit API adds friendly presentation fields and bounded reference-name enrichment without changing the table schema. |
 | `system_logs` | App errors/events. Last 30 days kept (pruned on insert and list). |
 | `api_stats` | Vision/Drive counters by month. |
 | `rate_scrapes` | Competitor scrape jobs. |

@@ -8,6 +8,8 @@ import { permissionEnabled } from "@/lib/actionPermissions";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { calculateEmployeePayroll } from "@/lib/employeeAttendance";
 import { monthEnd, type AttendanceStatus } from "@/lib/employeeAttendanceUtils";
+import { getAuditRetentionCutoff } from "@/db/queries";
+import { auditDateBounds } from "@/lib/auditRetention";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -33,11 +35,13 @@ export async function POST(req: NextRequest) {
 
     if (action === "getAuditHistory") {
       const month = String(body.month || "");
-      if (!MONTH_RE.test(month)) return NextResponse.json({ error: "Valid month required" }, { status: 400 });
-      const start = `${month}-01`;
-      const end = monthEnd(month);
+      if (month && !MONTH_RE.test(month)) return NextResponse.json({ error: "Valid month required" }, { status: 400 });
+      const bounds = auditDateBounds(await getAuditRetentionCutoff(), body.dateFrom, body.dateTo);
+      const conditions = [gte(employeeAttendanceHistory.performedAt, bounds.start)];
+      if (bounds.end) conditions.push(lte(employeeAttendanceHistory.performedAt, bounds.end));
+      if (month) conditions.push(gte(employeeAttendanceHistory.date, `${month}-01`), lte(employeeAttendanceHistory.date, monthEnd(month)));
       const [historyRows, employeeRows] = await Promise.all([
-        db.select().from(employeeAttendanceHistory).where(and(gte(employeeAttendanceHistory.date, start), lte(employeeAttendanceHistory.date, end))).orderBy(desc(employeeAttendanceHistory.performedAt)).limit(100),
+        db.select().from(employeeAttendanceHistory).where(and(...conditions)).orderBy(desc(employeeAttendanceHistory.performedAt)).limit(500),
         db.select({ id: employees.id, name: employees.name }).from(employees),
       ]);
       const names = new Map(employeeRows.map((employee) => [employee.id, employee.name]));

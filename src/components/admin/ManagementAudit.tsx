@@ -6,7 +6,8 @@ import { AdminLoading } from "./AdminLoading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronDownIcon, DownloadIcon, LayoutListIcon, Loader2Icon, Settings2Icon, TableIcon, Trash2Icon } from "lucide-react";
-import { cn, localDateStr, todayIST } from "@/lib/utils";
+import { cn, localDateStr } from "@/lib/utils";
+import { auditActionLabel, formatAuditDetails, presentAuditEntry } from "@/lib/auditPresentation";
 import { OrderHistory } from "./AdminFoodOrders";
 import type { Role } from "./types";
 
@@ -19,6 +20,9 @@ type AuditEntry = {
   action: string;
   target: string;
   details: string;
+  displayAction?: string;
+  displayTarget?: string;
+  displayDetails?: string;
 };
 
 type AuditRetentionState = {
@@ -26,7 +30,7 @@ type AuditRetentionState = {
   months: number;
   totalMonths: number;
   cutoff: string;
-  eligible: { auditLog: number; bookingHistory: number; total: number };
+  eligible: { auditLog: number; bookingHistory: number; attendanceHistory: number; total: number };
 };
 
 export function ManagementAudit({ password, username, role }: { password: string; username?: string; role: Role }) {
@@ -89,18 +93,20 @@ export function ManagementAudit({ password, username, role }: { password: string
   );
 }
 
+type AuditDateFilters = { dateFrom?: string; dateTo?: string };
+
 function RoomAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
-  const loadEntries = useCallback(() => apiCall({ action: "getAuditLog" }), [apiCall]);
+  const loadEntries = useCallback((filters: AuditDateFilters) => apiCall({ action: "getAuditLog", ...filters }), [apiCall]);
   return <AuditTrail loadEntries={loadEntries} filePrefix="audit-log" />;
 }
 
 function InventoryAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
-  const loadEntries = useCallback(() => apiCall({ action: "getInventoryAuditLog" }), [apiCall]);
+  const loadEntries = useCallback((filters: AuditDateFilters) => apiCall({ action: "getInventoryAuditLog", ...filters }), [apiCall]);
   return <AuditTrail loadEntries={loadEntries} filePrefix="inventory-audit-log" emptyMessage="No inventory audit entries yet" />;
 }
 
 function BookingAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
-  const loadEntries = useCallback(() => apiCall({ action: "getBookingAuditLog" }), [apiCall]);
+  const loadEntries = useCallback((filters: AuditDateFilters) => apiCall({ action: "getBookingAuditLog", ...filters }), [apiCall]);
   return <AuditTrail loadEntries={loadEntries} filePrefix="booking-audit-log" emptyMessage="No booking audit entries yet" />;
 }
 
@@ -135,9 +141,8 @@ function attendanceHistoryToAuditEntry(entry: AttendanceHistoryEntry): AuditEntr
 }
 
 function AttendanceAuditTrail({ password, username }: { password: string; username?: string }) {
-  const [month, setMonth] = useState(todayIST().slice(0, 7));
-  const loadEntries = useCallback(async () => {
-    const payload: Record<string, string> = { password, action: "getAuditHistory", month };
+  const loadEntries = useCallback(async (filters: AuditDateFilters) => {
+    const payload: Record<string, string> = { password, action: "getAuditHistory", ...filters };
     if (username) payload.username = username;
     const response = await fetch("/api/admin/attendance", {
       method: "POST",
@@ -150,17 +155,9 @@ function AttendanceAuditTrail({ password, username }: { password: string; userna
       status: response.status,
       headers: { "Content-Type": "application/json" },
     });
-  }, [month, password, username]);
+  }, [password, username]);
 
-  return (
-    <div className="space-y-3">
-      <label className="block w-fit text-xs font-medium text-brand-green-dark/70">
-        Month
-        <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="mt-1 h-9 w-40 bg-white text-xs dark:bg-card" aria-label="Attendance audit month" />
-      </label>
-      <AuditTrail loadEntries={loadEntries} filePrefix="attendance-audit-log" emptyMessage="No attendance audit entries for this month" />
-    </div>
-  );
+  return <AuditTrail loadEntries={loadEntries} filePrefix="attendance-audit-log" emptyMessage="No attendance audit entries yet" />;
 }
 
 function AuditRetentionControls({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
@@ -297,30 +294,12 @@ function csvValue(value: string): string {
   return `"${String(value || "").replace(/"/g, '""')}"`;
 }
 
-function formatAuditDetails(details: string): string {
-  if (!details) return "";
-  try {
-    const parsed: unknown = JSON.parse(details);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return details;
-    return Object.entries(parsed as Record<string, unknown>)
-      .filter(([, value]) => value !== null && value !== undefined && value !== "")
-      .map(([key, value]) => {
-        const label = key.replace(/([a-z])([A-Z])/g, "$1 $2");
-        const rendered = typeof value === "object" ? JSON.stringify(value) : String(value);
-        return `${label}: ${rendered}`;
-      })
-      .join(" · ");
-  } catch {
-    return details;
-  }
-}
-
 function AuditTrail({
   loadEntries,
   filePrefix,
   emptyMessage = "No audit entries yet",
 }: {
-  loadEntries: () => Promise<Response>;
+  loadEntries: (filters: AuditDateFilters) => Promise<Response>;
   filePrefix: string;
   emptyMessage?: string;
 }) {
@@ -329,21 +308,23 @@ function AuditTrail({
   const [search, setSearch] = useState("");
   const [filterAction, setFilterAction] = useState("");
   const [filterUser, setFilterUser] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [viewMode, setViewMode] = useState<"records" | "table">(() => typeof window !== "undefined" && window.innerWidth < 1024 ? "records" : "table");
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const loadAudit = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await loadEntries();
+      const res = await loadEntries({ ...(dateFrom ? { dateFrom } : {}), ...(dateTo ? { dateTo } : {}) });
       if (res.ok) {
         const data = await res.json();
-        setEntries(data.entries || []);
+        setEntries((data.entries || []).map((entry: AuditEntry) => entry.displayAction ? entry : presentAuditEntry(entry)));
       }
     } finally {
       setLoading(false);
     }
-  }, [loadEntries]);
+  }, [dateFrom, dateTo, loadEntries]);
 
   useEffect(() => {
     void loadAudit();
@@ -352,7 +333,7 @@ function AuditTrail({
   const filtered = entries.filter((entry) => {
     if (search) {
       const query = search.toLowerCase();
-      const searchable = [entry.username, entry.target, entry.action, entry.details].join(" ").toLowerCase();
+      const searchable = [entry.username, entry.target, entry.action, entry.details, entry.displayAction, entry.displayTarget, entry.displayDetails].join(" ").toLowerCase();
       if (!searchable.includes(query)) return false;
     }
     if (filterAction && entry.action !== filterAction) return false;
@@ -393,9 +374,17 @@ function AuditTrail({
 
       <div className="flex flex-wrap gap-3">
         <Input placeholder="Search..." value={search} onChange={(event) => setSearch(event.target.value)} className="w-full sm:w-48" />
+        <label className="text-xs text-brand-green-dark/60">
+          From
+          <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} className="mt-0.5 h-9 w-40 bg-white text-xs dark:bg-card" aria-label="Audit from date" />
+        </label>
+        <label className="text-xs text-brand-green-dark/60">
+          To
+          <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} className="mt-0.5 h-9 w-40 bg-white text-xs dark:bg-card" aria-label="Audit to date" />
+        </label>
         <select value={filterAction} onChange={(event) => setFilterAction(event.target.value)} className="rounded-md border border-input bg-background px-3 py-2 text-xs">
           <option value="">All actions</option>
-          {allActions.map((action) => <option key={action} value={action}>{action}</option>)}
+          {allActions.map((action) => <option key={action} value={action}>{auditActionLabel(action)}</option>)}
         </select>
         <select value={filterUser} onChange={(event) => setFilterUser(event.target.value)} className="rounded-md border border-input bg-background px-3 py-2 text-xs">
           <option value="">All users</option>
@@ -447,9 +436,9 @@ function AuditTrail({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs text-brand-green-dark/60">{new Date(entry.timestamp).toLocaleString()}</span>
                         <span className="text-xs font-medium text-brand-green-dark">{entry.username}</span>
-                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", auditActionClass(entry.action))}>{entry.action}</span>
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", auditActionClass(entry.action))}>{entry.displayAction || auditActionLabel(entry.action)}</span>
                       </div>
-                      <p className="mt-1 truncate text-sm text-brand-green-dark/80">{entry.target || "—"}</p>
+                      <p className="mt-1 truncate text-sm text-brand-green-dark/80">{entry.displayTarget || entry.target || "—"}</p>
                     </div>
                     <ChevronDownIcon className={cn("mt-1 h-4 w-4 shrink-0 text-brand-green-dark/40 transition-transform", isExpanded && "rotate-180")} />
                   </button>
@@ -457,9 +446,9 @@ function AuditTrail({
                     <div className="border-t border-brand-mist px-3 pb-3 pt-2 text-xs text-brand-green-dark/70">
                       <p><span className="font-medium text-brand-green-dark/50">Time:</span> {new Date(entry.timestamp).toLocaleString()}</p>
                       <p className="mt-1"><span className="font-medium text-brand-green-dark/50">User:</span> {entry.username}</p>
-                      <p className="mt-1"><span className="font-medium text-brand-green-dark/50">Action:</span> {entry.action}</p>
-                      <p className="mt-1 break-words"><span className="font-medium text-brand-green-dark/50">Target:</span> {entry.target || "—"}</p>
-                      <p className="mt-1 break-words"><span className="font-medium text-brand-green-dark/50">Details:</span> {formatAuditDetails(entry.details) || "—"}</p>
+                      <p className="mt-1"><span className="font-medium text-brand-green-dark/50">Action:</span> {entry.displayAction || auditActionLabel(entry.action)}</p>
+                      <p className="mt-1 break-words"><span className="font-medium text-brand-green-dark/50">Target:</span> {entry.displayTarget || entry.target || "—"}</p>
+                      <p className="mt-1 break-words"><span className="font-medium text-brand-green-dark/50">Details:</span> {entry.displayDetails || formatAuditDetails(entry.details) || "—"}</p>
                     </div>
                   )}
                 </div>
@@ -488,10 +477,10 @@ function AuditTrail({
                   <td className="whitespace-nowrap px-4 py-3 text-xs text-brand-green-dark/70">{new Date(entry.timestamp).toLocaleString()}</td>
                   <td className="px-4 py-3 text-xs font-medium text-brand-green-dark">{entry.username}</td>
                   <td className="px-4 py-3">
-                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", auditActionClass(entry.action))}>{entry.action}</span>
+                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", auditActionClass(entry.action))}>{entry.displayAction || auditActionLabel(entry.action)}</span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-brand-green-dark/80">{entry.target}</td>
-                  <td className="max-w-[360px] truncate px-4 py-3 text-xs text-brand-green-dark/50" title={entry.details}>{formatAuditDetails(entry.details)}</td>
+                  <td className="min-w-[180px] whitespace-normal break-words px-4 py-3 align-top text-xs text-brand-green-dark/80">{entry.displayTarget || entry.target || "—"}</td>
+                  <td className="min-w-[320px] whitespace-normal break-words px-4 py-3 align-top text-xs text-brand-green-dark/50">{entry.displayDetails || formatAuditDetails(entry.details) || "—"}</td>
                 </tr>
               ))
             )}

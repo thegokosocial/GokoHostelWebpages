@@ -25,9 +25,6 @@ import {
   addAuditEntry,
   getUserByUsername,
   getSetting,
-  getOrdersForCleanup,
-  deleteOrderItemsByOrderIds,
-  deleteOrdersByIds,
   decrementStock,
   restoreStock,
   addStock,
@@ -35,6 +32,7 @@ import {
   updateFoodOrderItemQuantity,
   deleteFoodOrderItem,
   getMenuItemCategoryExemptions,
+  getAuditRetentionCutoff,
 } from "@/db/queries";
 import { parseFoodCheckoutGraceDays, foodTaxPercent } from "@/lib/foodLookup";
 import { normalizePhone } from "@/lib/phoneUtils";
@@ -42,9 +40,10 @@ import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { getDb } from "@/db";
 import { foodOrders, foodOrderItems, checkins, orderModifications } from "@/db/schema";
-import { eq, and, sql, desc, inArray } from "drizzle-orm";
+import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { dispatchPush, notificationFirstName, notificationFoodItems } from "@/lib/pushNotify";
+import { auditDateBounds } from "@/lib/auditRetention";
 
 export async function POST(req: NextRequest) {
   try {
@@ -70,7 +69,6 @@ export async function POST(req: NextRequest) {
       reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
       applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
-      cleanupOldOrders: "admin_only",
     };
 
     const gate = actionAllowed(role, permissions, ACTION_PERMISSIONS[action]);
@@ -96,15 +94,15 @@ export async function POST(req: NextRequest) {
 
     switch (action) {
       case "listOrders": {
-        const { status, dateFrom, dateTo, guestType, phone, limit: rawLimit } = rest;
+        const { status, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit } = rest;
         const limitNum = Math.min(Number(rawLimit) || 50, 200);
 
         const db = getDb();
-        const modCountMap = await getModCountMap();
 
-        if (status === "active" || (!status && !dateFrom)) {
+        if (status === "active" || (!auditHistory && !status && !dateFrom)) {
           const orders = await getActiveFoodOrders();
-          const itemsMap = await getFoodOrderItemsBatch(orders.map((o) => o.id));
+          const orderIds = orders.map((o) => o.id);
+          const [itemsMap, modCountMap] = await Promise.all([getFoodOrderItemsBatch(orderIds), getModCountMap(orderIds)]);
           const withItems = orders.map((o) => ({
             ...o,
             hasModifications: (modCountMap.get(o.id) || 0) > 0,
@@ -119,12 +117,27 @@ export async function POST(req: NextRequest) {
         if (dateFrom) conditions.push(sql`${foodOrders.createdAt} >= ${dateFrom}`);
         if (dateTo) conditions.push(sql`${foodOrders.createdAt} <= ${dateTo + "T23:59:59"}`);
         if (phone) conditions.push(sql`${foodOrders.guestPhone} LIKE ${"%" + phone + "%"}`);
+        if (search) {
+          const pattern = `%${String(search).trim()}%`;
+          conditions.push(or(
+            like(foodOrders.orderNumber, pattern),
+            like(foodOrders.guestName, pattern),
+            like(foodOrders.guestPhone, pattern),
+            like(foodOrders.roomInfo, pattern),
+          ));
+        }
+        if (auditHistory) {
+          const bounds = auditDateBounds(await getAuditRetentionCutoff(), dateFrom, dateTo);
+          conditions.push(gte(foodOrders.createdAt, bounds.start));
+          if (bounds.end) conditions.push(lte(foodOrders.createdAt, bounds.end));
+        }
 
         const orders = conditions.length > 0
           ? await db.select().from(foodOrders).where(and(...conditions)).orderBy(desc(foodOrders.createdAt)).limit(limitNum)
           : await db.select().from(foodOrders).orderBy(desc(foodOrders.createdAt)).limit(limitNum);
 
-        const itemsMap = await getFoodOrderItemsBatch(orders.map((o) => o.id));
+        const orderIds = orders.map((o) => o.id);
+        const [itemsMap, modCountMap] = await Promise.all([getFoodOrderItemsBatch(orderIds), getModCountMap(orderIds)]);
         const withItems = orders.map((o) => ({
           ...o,
           hasModifications: (modCountMap.get(o.id) || 0) > 0,
@@ -740,29 +753,6 @@ export async function POST(req: NextRequest) {
           hasModifications: (modCountMap.get(o.id) || 0) > 0,
         }));
         return NextResponse.json({ role, orders: withItems });
-      }
-
-      case "cleanupOldOrders": {
-        const orderIds = await getOrdersForCleanup();
-        if (orderIds.length === 0) {
-          return NextResponse.json({ success: true, role, ordersCleanedCount: 0, ordersDeletedCount: 0 });
-        }
-
-        const ordersDeleted = await deleteOrdersByIds(orderIds);
-
-        await addAuditEntry({
-          username: actorName,
-          action: "food_cleanup",
-          target: `orders:${orderIds.length}`,
-          details: `Fully deleted ${ordersDeleted} orders (items + modifications + order rows)`,
-        });
-
-        return NextResponse.json({
-          success: true,
-          role,
-          ordersCleanedCount: orderIds.length,
-          ordersDeletedCount: ordersDeleted,
-        });
       }
 
       case "getOrderModifications": {

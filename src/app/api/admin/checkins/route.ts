@@ -28,10 +28,11 @@ import {
   getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking, searchBookings, getCheckinById,
   createRateScrape, getLatestRateScrape, getRateScrapeById, updateRateScrape,
   getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
-  addAuditEntry, getAuditEntries, getInventoryAuditEntries, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
+  addAuditEntry, getAuditEntries, getInventoryAuditEntries, getAuditPresentationContext, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
+import { presentAuditEntry } from "@/lib/auditPresentation";
 import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 
@@ -1293,13 +1294,13 @@ export async function POST(req: NextRequest) {
     // --- Audit & Logs ---
 
     if (action === "getAuditLog") {
-      const entries = await getAuditEntries();
-      return NextResponse.json({ entries });
+      const [entries, context] = await Promise.all([getAuditEntries(500, rest.dateFrom, rest.dateTo), getAuditPresentationContext()]);
+      return NextResponse.json({ entries: entries.map((entry) => presentAuditEntry({ ...entry, target: entry.target || "", details: entry.details || "" }, context)) });
     }
 
     if (action === "getInventoryAuditLog") {
-      const entries = await getInventoryAuditEntries();
-      return NextResponse.json({ entries });
+      const [entries, context] = await Promise.all([getInventoryAuditEntries(500, rest.dateFrom, rest.dateTo), getAuditPresentationContext()]);
+      return NextResponse.json({ entries: entries.map((entry) => presentAuditEntry({ ...entry, target: entry.target || "", details: entry.details || "" }, context)) });
     }
 
     if (action === "getAuditRetention") {
@@ -1337,9 +1338,9 @@ export async function POST(req: NextRequest) {
         username: actingUser,
         action: "audit_retention_cleanup",
         target: `before ${retention.cutoff}`,
-        details: `${deleted.auditLog} general and ${deleted.bookingHistory} booking audit entries deleted`,
+        details: `${deleted.auditLog} general, ${deleted.bookingHistory} booking, and ${deleted.attendanceHistory} attendance audit entries deleted`,
       });
-      return NextResponse.json({ ...retention, deleted, eligible: { auditLog: 0, bookingHistory: 0, total: 0 } });
+      return NextResponse.json({ ...retention, deleted, eligible: { auditLog: 0, bookingHistory: 0, attendanceHistory: 0, total: 0 } });
     }
 
     if (action === "getSystemLogs") {

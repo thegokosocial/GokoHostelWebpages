@@ -18,3 +18,16 @@ export function auditRetentionParts(months: number): { years: number; months: nu
   const totalMonths = normalizeAuditRetentionMonths(months);
   return { years: Math.floor(totalMonths / 12), months: totalMonths % 12, totalMonths };
 }
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Clamp an optional UI date range to the configured retention window (IST). */
+export function auditDateBounds(cutoff: string, dateFrom?: unknown, dateTo?: unknown): { start: string; end?: string } {
+  const requestedStart = typeof dateFrom === "string" && DATE_RE.test(dateFrom)
+    ? new Date(`${dateFrom}T00:00:00+05:30`).toISOString()
+    : cutoff;
+  const end = typeof dateTo === "string" && DATE_RE.test(dateTo)
+    ? new Date(`${dateTo}T23:59:59.999+05:30`).toISOString()
+    : undefined;
+  return { start: requestedStart > cutoff ? requestedStart : cutoff, ...(end ? { end } : {}) };
+}

@@ -42,7 +42,6 @@ const FOOD_ORDERS_PERMISSIONS: Record<string, ActionPerm> = {
   reassignOrder: ["canPlaceOrders", "canViewFoodOrders"],
   markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
   applyDiscount: "canMarkPaid", removeDiscount: "canMarkPaid",
-  cleanupOldOrders: "admin_only",
 };
 
 const EXPENSES_PERMISSIONS: Record<string, ActionPerm> = {
@@ -380,9 +379,6 @@ describe("RBAC: All admin-only actions are accounted for", () => {
     expect(CHECKINS_PERMISSIONS["deleteUser"]).toBe("admin_only");
   });
 
-  it("cleanup is admin-only", () => {
-    expect(FOOD_ORDERS_PERMISSIONS["cleanupOldOrders"]).toBe("admin_only");
-  });
 });
 
 describe("Check-in lookup contract", () => {

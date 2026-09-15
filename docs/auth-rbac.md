@@ -144,6 +144,8 @@ Before deletion, Records checks linked food orders using `getDeleteInfo` and sho
 | system/PMS log reads (`getSystemLogs`, `getSyncLogs`) | `canViewLogs` |
 | users, audit retention, backup, settings, stats, health, rate scrape, initDorms… | admin_only |
 
+Audit presentation fields are read-only enrichments; they do not change the `canViewAudit` requirement or grant access to any additional data.
+
 ### `/api/admin/attendance`
 
 `getAuditHistory` is a history-only read for the Management → Audit → Attendance tab and uses `canViewAudit`; it does not return payroll or attendance-calendar data. `getMonth`, `getPayroll`, and attendance/policy mutations remain restricted to admin or the existing manager `canManageAttendance` flow.
@@ -169,7 +171,7 @@ All actions: `canManageInventory`. Bulk actions write the local mutation, then w
 
 ### `/api/admin/food-orders`
 
-View list/tabs: `canViewFoodOrders`. Place/void/qty: `canPlaceOrders` or view. Pay/discount: `canMarkPaid`. cleanupOldOrders: admin_only.
+View list/tabs: `canViewFoodOrders`. Place/void/qty: `canPlaceOrders` or view. Pay/discount: `canMarkPaid`. The former destructive `cleanupOldOrders` action is retired; the Audit tab applies global retention as a read boundary while preserving food-order records.
 
 ### `/api/admin/expenses`
 
