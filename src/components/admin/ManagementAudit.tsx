@@ -5,7 +5,7 @@ import { useAdminApi } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DownloadIcon, Loader2Icon, Settings2Icon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, DownloadIcon, LayoutListIcon, Loader2Icon, Settings2Icon, TableIcon, Trash2Icon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { OrderHistory } from "./AdminFoodOrders";
 import type { Role } from "./types";
@@ -261,6 +261,8 @@ function AuditTrail({
   const [search, setSearch] = useState("");
   const [filterAction, setFilterAction] = useState("");
   const [filterUser, setFilterUser] = useState("");
+  const [viewMode, setViewMode] = useState<"records" | "table">(() => typeof window !== "undefined" && window.innerWidth < 1024 ? "records" : "table");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const loadAudit = useCallback(async () => {
     setLoading(true);
@@ -331,9 +333,73 @@ function AuditTrail({
           <option value="">All users</option>
           {allUsers.map((user) => <option key={user} value={user}>{user}</option>)}
         </select>
-        <span className="ml-auto self-center text-xs text-brand-green-dark/50">{filtered.length} entries</span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-brand-green-dark/50">{filtered.length} entries</span>
+          <div className="flex rounded-lg border border-brand-mist bg-white p-0.5 dark:bg-card" aria-label="Audit log view">
+            <button
+              type="button"
+              onClick={() => setViewMode("records")}
+              className={cn("rounded-md p-1.5 transition-colors", viewMode === "records" ? "bg-brand-green text-white" : "text-brand-green-dark/50 hover:bg-brand-sand")}
+              title="Records view"
+              aria-label="Records view"
+              aria-pressed={viewMode === "records"}
+            >
+              <LayoutListIcon className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              className={cn("rounded-md p-1.5 transition-colors", viewMode === "table" ? "bg-brand-green text-white" : "text-brand-green-dark/50 hover:bg-brand-sand")}
+              title="Table view"
+              aria-label="Table view"
+              aria-pressed={viewMode === "table"}
+            >
+              <TableIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
 
+      {viewMode === "records" ? (
+        <div className="space-y-2">
+          {filtered.length === 0 ? (
+            <p className="rounded-2xl border border-brand-mist bg-white py-12 text-center text-brand-green-dark/50 dark:bg-card">{emptyMessage}</p>
+          ) : (
+            filtered.slice(0, 200).map((entry) => {
+              const isExpanded = expandedId === entry.id;
+              return (
+                <div key={entry.id} className="rounded-xl border border-brand-mist bg-white shadow-sm transition-shadow hover:shadow-soft dark:bg-card dark:shadow-none">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : entry.id)}
+                    className="flex w-full items-start justify-between gap-3 p-3 text-left"
+                    aria-expanded={isExpanded}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-brand-green-dark/60">{new Date(entry.timestamp).toLocaleString()}</span>
+                        <span className="text-xs font-medium text-brand-green-dark">{entry.username}</span>
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", auditActionClass(entry.action))}>{entry.action}</span>
+                      </div>
+                      <p className="mt-1 truncate text-sm text-brand-green-dark/80">{entry.target || "—"}</p>
+                    </div>
+                    <ChevronDownIcon className={cn("mt-1 h-4 w-4 shrink-0 text-brand-green-dark/40 transition-transform", isExpanded && "rotate-180")} />
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-brand-mist px-3 pb-3 pt-2 text-xs text-brand-green-dark/70">
+                      <p><span className="font-medium text-brand-green-dark/50">Time:</span> {new Date(entry.timestamp).toLocaleString()}</p>
+                      <p className="mt-1"><span className="font-medium text-brand-green-dark/50">User:</span> {entry.username}</p>
+                      <p className="mt-1"><span className="font-medium text-brand-green-dark/50">Action:</span> {entry.action}</p>
+                      <p className="mt-1 break-words"><span className="font-medium text-brand-green-dark/50">Target:</span> {entry.target || "—"}</p>
+                      <p className="mt-1 break-words"><span className="font-medium text-brand-green-dark/50">Details:</span> {formatAuditDetails(entry.details) || "—"}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
       <div className="isolate max-w-full min-w-0 overflow-x-auto overflow-y-visible overscroll-x-contain rounded-2xl border border-brand-mist bg-white [touch-action:pan-x_pan-y] dark:bg-card shadow-sm dark:shadow-none">
         <table className="w-full min-w-[700px] text-left text-sm">
           <thead className="sticky top-0 z-20 bg-brand-sand/95">
@@ -364,6 +430,7 @@ function AuditTrail({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

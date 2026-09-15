@@ -72,7 +72,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `dorms` | `AdminSetup` | admin only | init/remove dorms/beds |
 | `users` | `ManagementUsers` | admin only | permission checkboxes |
 | `backup` | `ManagementBackup` | admin only | |
-| `audit` | `ManagementAudit` | admin only | Audit Logs includes Room/general, booking, and food audit views; Room/general and booking audit tables scroll horizontally without clipping on mobile. Inventory, channel, bed-type, rate, availability, block/unblock, and restriction mutations write structured audit entries. |
+| `audit` | `ManagementAudit` | admin only | Audit Logs includes Room/general, booking, and food audit views; Room/general and booking logs support responsive Records/Table presentation, with Records as the phone default and expandable entries, while Table preserves all columns and scrolls horizontally without clipping. Inventory, channel, bed-type, rate, availability, block/unblock, and restriction mutations write structured audit entries. |
 | `logs` | `ManagementLogs` | admin only | PMS + system; import `pmsLogSummary` not `pmsLog` |
 | `health` | `ManagementHealth` | admin only | |
 | `history` | `AdminBedHistory` | management access | visible to non-admin |

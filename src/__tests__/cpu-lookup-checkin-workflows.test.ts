@@ -406,6 +406,10 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
         expect(source).toContain("Audit Logs");
         expect(source).toContain("overflow-x-auto overflow-y-visible overscroll-x-contain");
         expect(source).toContain("touch-action:pan-x_pan-y");
+        expect(source).toContain('useState<"records" | "table">');
+        expect(source).toContain('setViewMode("records")');
+        expect(source).toContain('setViewMode("table")');
+        expect(source).toContain("aria-expanded={isExpanded}");
         expect(source).toContain("min-w-[700px]");
         expect(source).toContain("max-w-full min-w-0");
         expect(source).toContain("sticky top-0");
