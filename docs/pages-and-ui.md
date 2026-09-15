@@ -72,7 +72,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `dorms` | `AdminSetup` | admin only | init/remove dorms/beds |
 | `users` | `ManagementUsers` | admin only | permission checkboxes |
 | `backup` | `ManagementBackup` | admin only | |
-| `audit` | `ManagementAudit` | admin only | Audit Logs includes Room/general, booking, and food audit views; Room/general and booking logs support responsive Records/Table presentation, with Records as the phone default and expandable entries, while Table preserves all columns and scrolls horizontally without clipping. Inventory, channel, bed-type, rate, availability, block/unblock, and restriction mutations write structured audit entries. |
+| `audit` | `ManagementAudit` | admin only | Audit Logs includes Room/general, booking, attendance, and food audit views; Room/general, booking, and attendance logs support responsive Records/Table presentation, with Records as the phone default and expandable entries, while Table preserves all columns and scrolls horizontally without clipping. Attendance history is selected by month and uses the existing attendance read API. Inventory, channel, bed-type, rate, availability, block/unblock, and restriction mutations write structured audit entries. |
 | `logs` | `ManagementLogs` | admin only | PMS + system; import `pmsLogSummary` not `pmsLog` |
 | `health` | `ManagementHealth` | admin only | |
 | `history` | `AdminBedHistory` | management access | visible to non-admin |
@@ -83,7 +83,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | |
-| `attendance` | `ManagementAttendance` | `canManageAttendance` | |
+| `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar, and payroll summaries; admins review attendance history in Management → Audit → Attendance, while non-admin attendance managers retain the in-page history because Audit is admin-only |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |

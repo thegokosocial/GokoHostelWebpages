@@ -6,11 +6,11 @@ import { AdminLoading } from "./AdminLoading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronDownIcon, DownloadIcon, LayoutListIcon, Loader2Icon, Settings2Icon, TableIcon, Trash2Icon } from "lucide-react";
-import { cn, localDateStr } from "@/lib/utils";
+import { cn, localDateStr, todayIST } from "@/lib/utils";
 import { OrderHistory } from "./AdminFoodOrders";
 import type { Role } from "./types";
 
-type AuditSubTab = "room" | "bookings" | "food";
+type AuditSubTab = "room" | "bookings" | "food" | "attendance";
 
 type AuditEntry = {
   id: number;
@@ -56,6 +56,7 @@ export function ManagementAudit({ password, username }: { password: string; user
   const auditTabs = [
     { id: "room" as AuditSubTab, label: "Room & General" },
     { id: "bookings" as AuditSubTab, label: "Bookings" },
+    { id: "attendance" as AuditSubTab, label: "Attendance" },
     { id: "food" as AuditSubTab, label: "Food Orders" },
   ];
 
@@ -80,6 +81,7 @@ export function ManagementAudit({ password, username }: { password: string; user
 
       {subTab === "room" && <RoomAuditTrail apiCall={apiCall} />}
       {subTab === "bookings" && <BookingAuditTrail apiCall={bookingApiCall} />}
+      {subTab === "attendance" && <AttendanceAuditTrail password={password} username={username} />}
       {subTab === "food" && <OrderHistory apiCall={foodApiCall} />}
     </div>
   );
@@ -93,6 +95,65 @@ function RoomAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => P
 function BookingAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
   const loadEntries = useCallback(() => apiCall({ action: "getBookingAuditLog" }), [apiCall]);
   return <AuditTrail loadEntries={loadEntries} filePrefix="booking-audit-log" emptyMessage="No booking audit entries yet" />;
+}
+
+type AttendanceHistoryEntry = {
+  id: number;
+  employeeName: string;
+  date: string;
+  oldStatus: string;
+  newStatus: string;
+  newComment: string;
+  action: string;
+  performedBy: string;
+  performedAt: string;
+};
+
+function attendanceStatusLabel(value: string): string {
+  if (value === "full_day_leave") return "Full Day";
+  if (value === "half_day_leave") return "Half Day";
+  return "Present";
+}
+
+function attendanceHistoryToAuditEntry(entry: AttendanceHistoryEntry): AuditEntry {
+  const transition = `${attendanceStatusLabel(entry.oldStatus)} → ${attendanceStatusLabel(entry.newStatus)}`;
+  return {
+    id: entry.id,
+    timestamp: entry.performedAt,
+    username: entry.performedBy,
+    action: entry.action,
+    target: `${entry.employeeName} · ${entry.date}`,
+    details: [transition, entry.newComment ? `Comment: ${entry.newComment}` : ""].filter(Boolean).join(" · "),
+  };
+}
+
+function AttendanceAuditTrail({ password, username }: { password: string; username?: string }) {
+  const [month, setMonth] = useState(todayIST().slice(0, 7));
+  const loadEntries = useCallback(async () => {
+    const payload: Record<string, string> = { password, action: "getMonth", month };
+    if (username) payload.username = username;
+    const response = await fetch("/api/admin/attendance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) return response;
+    const data = await response.json() as { history?: AttendanceHistoryEntry[] };
+    return new Response(JSON.stringify({ entries: (data.history || []).map(attendanceHistoryToAuditEntry) }), {
+      status: response.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }, [month, password, username]);
+
+  return (
+    <div className="space-y-3">
+      <label className="block w-fit text-xs font-medium text-brand-green-dark/70">
+        Month
+        <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="mt-1 h-9 w-40 bg-white text-xs dark:bg-card" aria-label="Attendance audit month" />
+      </label>
+      <AuditTrail loadEntries={loadEntries} filePrefix="attendance-audit-log" emptyMessage="No attendance audit entries for this month" />
+    </div>
+  );
 }
 
 function AuditRetentionControls({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
