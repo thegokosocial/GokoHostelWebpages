@@ -1417,7 +1417,9 @@ export async function POST(req: NextRequest) {
       if (isOfflineMode()) {
         return NextResponse.json({ error: "Rate scraping requires internet" }, { status: 503 });
       }
-      const { city: scrapeCity, startDate: sDate, endDate: eDate, propertyType: pType, proxyUrl: pUrl } = rest;
+      const { city: scrapeCity, propertyType: pType, proxyUrl: pUrl } = rest;
+      const sDate = startDate;
+      const eDate = endDate;
       if (!scrapeCity || !sDate || !eDate) return NextResponse.json({ error: "City and dates required" }, { status: 400 });
 
       if (!process.env.GITHUB_TOKEN) {

@@ -11,6 +11,7 @@ const { authenticateUser, getCheckinsByMonth, getCheckinsByDateRange, getMonthKe
 const getAuditEntries = vi.hoisted(() => vi.fn());
 const getInventoryAuditEntries = vi.hoisted(() => vi.fn());
 const getAuditPresentationContext = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
+const createRateScrape = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth", () => ({
   authenticateUser,
@@ -53,7 +54,7 @@ vi.mock("@/db/queries", () => ({
   addBooking: vi.fn(),
   updateBookingStatus: vi.fn(),
   deleteBooking: vi.fn(),
-  createRateScrape: vi.fn(),
+  createRateScrape,
   getLatestRateScrape: vi.fn(),
   getRateScrapeById: vi.fn(),
   updateRateScrape: vi.fn(),
@@ -122,6 +123,29 @@ describe("Checkins auth-vs-list workflows", () => {
     const res = await POST(req({ password: "x", action: "list", month: "2026-08" }));
     expect(res.status).toBe(403);
     expect(getCheckinsByMonth).not.toHaveBeenCalled();
+  });
+
+  it("passes scrape dates from the request to the GitHub scraper", async () => {
+    authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    createRateScrape.mockResolvedValue({ id: 42 });
+    vi.stubEnv("GITHUB_TOKEN", "test-token");
+    vi.stubEnv("GITHUB_REPO", "example/repo");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+
+    const res = await POST(req({
+      password: "x", action: "startRateScrape", city: "Gokarna",
+      startDate: "2026-10-01", endDate: "2026-10-08", propertyType: "hostels",
+    }));
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/example/repo/actions/workflows/scrape-rates.yml/dispatches",
+      expect.objectContaining({
+        body: JSON.stringify({ ref: "main", inputs: { scrapeId: "42", city: "Gokarna", startDate: "2026-10-01", endDate: "2026-10-08", propertyType: "hostels", proxyUrl: "" } }),
+      }),
+    );
+    fetchMock.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   it("loads month rows for list after a permitted login, not for auth", async () => {
