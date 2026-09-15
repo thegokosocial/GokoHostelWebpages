@@ -10,7 +10,7 @@ import { cn, localDateStr, todayIST } from "@/lib/utils";
 import { OrderHistory } from "./AdminFoodOrders";
 import type { Role } from "./types";
 
-type AuditSubTab = "room" | "bookings" | "food" | "attendance";
+type AuditSubTab = "room" | "inventory" | "bookings" | "food" | "attendance";
 
 type AuditEntry = {
   id: number;
@@ -29,7 +29,7 @@ type AuditRetentionState = {
   eligible: { auditLog: number; bookingHistory: number; total: number };
 };
 
-export function ManagementAudit({ password, username }: { password: string; username?: string; role: Role }) {
+export function ManagementAudit({ password, username, role }: { password: string; username?: string; role: Role }) {
   const [subTab, setSubTab] = useState<AuditSubTab>("room");
   const { apiCall } = useAdminApi(password, username);
 
@@ -55,6 +55,7 @@ export function ManagementAudit({ password, username }: { password: string; user
 
   const auditTabs = [
     { id: "room" as AuditSubTab, label: "Room & General" },
+    { id: "inventory" as AuditSubTab, label: "Inventory" },
     { id: "bookings" as AuditSubTab, label: "Bookings" },
     { id: "attendance" as AuditSubTab, label: "Attendance" },
     { id: "food" as AuditSubTab, label: "Food Orders" },
@@ -62,15 +63,15 @@ export function ManagementAudit({ password, username }: { password: string; user
 
   return (
     <div className="min-w-0 space-y-4">
-      <AuditRetentionControls apiCall={apiCall} />
-      <div className="flex gap-1 rounded-lg border border-brand-mist bg-white dark:bg-card p-1">
+      {role === "admin" && <AuditRetentionControls apiCall={apiCall} />}
+      <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-brand-mist bg-white p-1 dark:bg-card">
         {auditTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setSubTab(tab.id)}
             className={cn(
-              "flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors lg:flex-none lg:py-1.5",
+              "shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors lg:py-1.5",
               subTab === tab.id ? "bg-brand-green text-white" : "text-brand-green-dark/70 hover:bg-brand-green/[0.06]",
             )}
           >
@@ -80,6 +81,7 @@ export function ManagementAudit({ password, username }: { password: string; user
       </div>
 
       {subTab === "room" && <RoomAuditTrail apiCall={apiCall} />}
+      {subTab === "inventory" && <InventoryAuditTrail apiCall={apiCall} />}
       {subTab === "bookings" && <BookingAuditTrail apiCall={bookingApiCall} />}
       {subTab === "attendance" && <AttendanceAuditTrail password={password} username={username} />}
       {subTab === "food" && <OrderHistory apiCall={foodApiCall} />}
@@ -90,6 +92,11 @@ export function ManagementAudit({ password, username }: { password: string; user
 function RoomAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
   const loadEntries = useCallback(() => apiCall({ action: "getAuditLog" }), [apiCall]);
   return <AuditTrail loadEntries={loadEntries} filePrefix="audit-log" />;
+}
+
+function InventoryAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
+  const loadEntries = useCallback(() => apiCall({ action: "getInventoryAuditLog" }), [apiCall]);
+  return <AuditTrail loadEntries={loadEntries} filePrefix="inventory-audit-log" emptyMessage="No inventory audit entries yet" />;
 }
 
 function BookingAuditTrail({ apiCall }: { apiCall: (body: Record<string, any>) => Promise<Response> }) {
@@ -130,7 +137,7 @@ function attendanceHistoryToAuditEntry(entry: AttendanceHistoryEntry): AuditEntr
 function AttendanceAuditTrail({ password, username }: { password: string; username?: string }) {
   const [month, setMonth] = useState(todayIST().slice(0, 7));
   const loadEntries = useCallback(async () => {
-    const payload: Record<string, string> = { password, action: "getMonth", month };
+    const payload: Record<string, string> = { password, action: "getAuditHistory", month };
     if (username) payload.username = username;
     const response = await fetch("/api/admin/attendance", {
       method: "POST",

@@ -45,7 +45,7 @@ vi.mock("@/lib/pmsLog", () => ({
   logPmsCall: vi.fn(),
 }));
 
-import { getDateAwareAvailability, getDateAwareAvailabilityRange, otaFingerprint, pushIfOtaChanged, triggerInventoryPush } from "@/lib/aiosellSync";
+import { getDateAwareAvailability, getDateAwareAvailabilityRange, otaFingerprint, pushIfOtaChanged, retryDirtyInventory, triggerInventoryPush } from "@/lib/aiosellSync";
 import { logPmsCall } from "@/lib/pmsLog";
 
 const CONFIG = {
@@ -156,6 +156,17 @@ describe("triggerInventoryPush", () => {
     queryMocks.getOnlineAssignmentCountForDorm.mockResolvedValue(1);
     queryMocks.getInventoryOverrideForDormDate.mockResolvedValue(null);
     queryMocks.getUnassignedOtaRoomCountForDorm.mockResolvedValue(0);
+    queryMocks.getAvailabilitySnapshot.mockImplementation(async () => {
+      const assigned = await queryMocks.getActiveAssignmentCountForDorm();
+      const online = await queryMocks.getOnlineAssignmentCountForDorm();
+      return [
+        Array.from({ length: 12 }, (_, i) => ({ id: i + 1, dormId: 8, bedId: `BED-${i + 1}`, type: "Bunk" })),
+        Array.from({ length: assigned }, (_, i) => ({ bedId: i + 1, dormId: 8, checkinDate: "2026-09-05", checkoutDate: "2026-09-06", inventoryPool: i < online ? "online" : "offline" })),
+        [],
+        [],
+        [],
+      ];
+    });
     pushInventory.mockResolvedValue({ success: true });
   });
 
@@ -219,6 +230,19 @@ describe("triggerInventoryPush", () => {
     expect(queryMocks.clearDirtyInventory).toHaveBeenCalledWith([1]);
   });
 
+  it("does not clear a dirty cell that was outside a sparse retry scope", async () => {
+    queryMocks.getDirtyInventory.mockResolvedValue([
+      { id: 1, dormId: 8, date: "2026-09-05" },
+      { id: 2, dormId: 8, date: "2026-09-06" },
+    ]);
+    await triggerInventoryPush(
+      ["2026-09-05", "2026-09-06"],
+      8,
+      [{ dormId: 8, date: "2026-09-05" }],
+    );
+    expect(queryMocks.clearDirtyInventory).toHaveBeenCalledWith([1]);
+  });
+
   it("keeps remote success when local dirty cleanup fails", async () => {
     queryMocks.getDirtyInventory.mockResolvedValue([{ id: 1, dormId: 8, date: "2026-09-05" }]);
     queryMocks.clearDirtyInventory.mockRejectedValue(new Error("cleanup failed"));
@@ -254,6 +278,17 @@ describe("pushIfOtaChanged", () => {
     queryMocks.getOnlineAssignmentCountForDorm.mockResolvedValue(1);
     queryMocks.getInventoryOverrideForDormDate.mockResolvedValue(null);
     queryMocks.getUnassignedOtaRoomCountForDorm.mockResolvedValue(0);
+    queryMocks.getAvailabilitySnapshot.mockImplementation(async () => {
+      const assigned = await queryMocks.getActiveAssignmentCountForDorm();
+      const online = await queryMocks.getOnlineAssignmentCountForDorm();
+      return [
+        Array.from({ length: 12 }, (_, i) => ({ id: i + 1, dormId: 8, bedId: `BED-${i + 1}`, type: "Bunk" })),
+        Array.from({ length: assigned }, (_, i) => ({ bedId: i + 1, dormId: 8, checkinDate: "2026-09-05", checkoutDate: "2026-09-06", inventoryPool: i < online ? "online" : "offline" })),
+        [],
+        [],
+        [],
+      ];
+    });
     pushInventory.mockResolvedValue({ success: true });
   });
 
@@ -301,5 +336,38 @@ describe("pushIfOtaChanged", () => {
     await pushIfOtaChanged("x", [], ["2026-09-05"]);
     await pushIfOtaChanged("x", [8], []);
     expect(pushInventory).not.toHaveBeenCalled();
+  });
+});
+
+describe("retryDirtyInventory", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryMocks.getChannelConfig.mockResolvedValue(CONFIG);
+    queryMocks.getRoomTypeMappings.mockResolvedValue(mappings);
+    queryMocks.markInventoryDirty.mockResolvedValue(undefined);
+    queryMocks.getDirtyInventory.mockResolvedValue([
+      { id: 1, dormId: 8, date: "2026-09-05" },
+    ]);
+    queryMocks.getAvailabilitySnapshot.mockResolvedValue([
+      Array.from({ length: 12 }, (_, i) => ({ id: i + 1, dormId: 8, bedId: `BED-${i + 1}`, type: "Bunk" })),
+      [],
+      [],
+      [],
+      [],
+    ]);
+    queryMocks.updateChannelSyncTime.mockResolvedValue(undefined);
+    queryMocks.clearDirtyInventory.mockResolvedValue(undefined);
+    pushInventory.mockResolvedValue({ success: true });
+  });
+
+  it("pushes only the dirty dorm/date cells and clears them after acceptance", async () => {
+    const result = await retryDirtyInventory();
+    expect(result).toMatchObject({ attempted: true, accepted: true });
+    expect(pushInventory.mock.calls[0][1]).toEqual([{
+      startDate: "2026-09-05",
+      endDate: "2026-09-05",
+      rooms: [{ roomCode: "executive", available: 12 }],
+    }]);
+    expect(queryMocks.clearDirtyInventory).toHaveBeenCalledWith([1]);
   });
 });

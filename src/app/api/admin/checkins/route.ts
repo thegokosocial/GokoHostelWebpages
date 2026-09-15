@@ -28,7 +28,7 @@ import {
   getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking, searchBookings, getCheckinById,
   createRateScrape, getLatestRateScrape, getRateScrapeById, updateRateScrape,
   getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
-  addAuditEntry, getAuditEntries, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
+  addAuditEntry, getAuditEntries, getInventoryAuditEntries, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
@@ -128,8 +128,8 @@ export async function POST(req: NextRequest) {
       getBookings: "canViewBookings", getUpcomingBookings: "canViewBookings",
       addBooking: "canAddBooking", updateBookingStatus: "canViewBookings", deleteBooking: "canDeleteBooking",
       getUsers: "admin_only", createUser: "admin_only", updateUser: "admin_only", deleteUser: "admin_only",
-      getAuditLog: "admin_only", getAuditRetention: "admin_only", setAuditRetention: "admin_only", cleanupAuditLog: "admin_only",
-      getSystemLogs: "admin_only", runBackup: "admin_only",
+      getAuditLog: "canViewAudit", getInventoryAuditLog: "canViewAudit", getAuditRetention: "admin_only", setAuditRetention: "admin_only", cleanupAuditLog: "admin_only",
+      getSystemLogs: "canViewLogs", runBackup: "admin_only",
       getLatestRateScrape: "admin_only", getRateScrapeStatus: "admin_only",
       startRateScrape: "admin_only", updateRateScrapeResults: "admin_only",
       backfillManagerPermissions: "admin_only",
@@ -1294,6 +1294,11 @@ export async function POST(req: NextRequest) {
 
     if (action === "getAuditLog") {
       const entries = await getAuditEntries();
+      return NextResponse.json({ entries });
+    }
+
+    if (action === "getInventoryAuditLog") {
+      const entries = await getInventoryAuditEntries();
       return NextResponse.json({ entries });
     }
 

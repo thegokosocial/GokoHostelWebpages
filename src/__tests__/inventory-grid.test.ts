@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { cn, localDateStr } from "@/lib/utils";
 import { computeNightAvailability, bedsFreeToBlock, summarizeAvailability } from "@/lib/inventoryAvailability";
+import { isInventoryAuditAction } from "@/lib/inventoryAudit";
 
 const ui = readFileSync("src/components/admin/InventoryRatePlan.tsx", "utf8");
 const adminPage = readFileSync("src/app/admin/page.tsx", "utf8");
@@ -372,6 +373,23 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
       "CHANNEL_RATE_UPDATED", "RATE_UPDATED", "RATES_BULK_UPDATED", "RATES_BULK_ADJUSTED", "RESTRICTIONS_BULK_UPDATED",
     ]) expect(route).toContain(`"${action}"`);
     expect(route).toContain("recordInventoryAudit");
+  });
+
+  it("keeps inventory audit entries separate from room and general logs", () => {
+    const audit = readFileSync("src/components/admin/ManagementAudit.tsx", "utf8");
+    const checkins = readFileSync("src/app/api/admin/checkins/route.ts", "utf8");
+    expect(audit).toContain('{ id: "inventory" as AuditSubTab, label: "Inventory" }');
+    expect(audit).toContain("max-w-full gap-1 overflow-x-auto");
+    expect(audit).toContain("shrink-0 whitespace-nowrap");
+    expect(audit).toContain('action: "getInventoryAuditLog"');
+    expect(audit).toContain('filePrefix="inventory-audit-log"');
+    expect(checkins).toContain('getInventoryAuditLog: "canViewAudit"');
+    expect(checkins).toContain("getInventoryAuditEntries");
+    expect(queries).toContain("where(not(inventoryActionFilter!))");
+    expect(queries).toContain("export async function getInventoryAuditEntries");
+    expect(isInventoryAuditAction("INVENTORY_AVAILABILITY_BULK_UPDATED")).toBe(true);
+    expect(isInventoryAuditAction("RATES_BULK_ADJUSTED")).toBe(true);
+    expect(isInventoryAuditAction("checkin_add")).toBe(false);
   });
 
   it("Set Rates multi-selects rate plans grouped by room", () => {

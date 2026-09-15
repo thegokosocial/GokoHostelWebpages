@@ -234,6 +234,7 @@ async function aiosellFetch(
         Authorization: buildAuthHeader(config),
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!response.ok) {

@@ -9,6 +9,7 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
       ["canViewRecords", "View Records"], ["canViewFoodOrders", "View Food Orders"],
       ["canViewAccounts", "View Accounts"], ["canViewSplits", "View Splits"],
       ["canViewReviews", "View Reviews"], ["canViewManagement", "View Management"],
+      ["canViewAudit", "View Audit Logs"], ["canViewLogs", "View System Logs"],
       ["canViewAnalytics", "View Analytics"], ["canViewQuickLinks", "View Links & QRs"],
     ].map(([key, label]) => ({ key, label })),
   },

@@ -18,6 +18,7 @@ import { pushInventory, pushRates, pushRateRestrictions, type AiosellConfig, typ
 export type InventorySyncResult = {
   attempted: boolean;
   accepted: boolean;
+  queued?: boolean;
   message?: string;
 };
 
@@ -83,7 +84,11 @@ export async function pushIfOtaChanged(before: string, dormIds: number[], dates:
   return { attempted: false, accepted: true };
 }
 
-export async function triggerInventoryPush(affectedDates?: string[], affectedDormId?: number | number[]): Promise<InventorySyncResult | void> {
+export async function triggerInventoryPush(
+  affectedDates?: string[],
+  affectedDormId?: number | number[],
+  affectedCells?: Array<{ dormId: number; date: string }>,
+): Promise<InventorySyncResult | void> {
   try {
     if (affectedDates && affectedDates.length === 0) return { attempted: false, accepted: true };
     const dates = affectedDates && affectedDates.length > 0
@@ -96,12 +101,14 @@ export async function triggerInventoryPush(affectedDates?: string[], affectedDor
     const affectedDormIds = affectedDormId == null
       ? []
       : [...new Set(Array.isArray(affectedDormId) ? affectedDormId : [affectedDormId])];
+    const requestedCells = affectedCells?.length
+      ? new Set(affectedCells.map((cell) => `${cell.dormId}:${cell.date}`))
+      : null;
 
     if (affectedDormIds.length > 0) {
       for (const dormId of affectedDormIds) {
-        if (mappings.some((m) => m.dormId === dormId)) {
-          await markInventoryDirty(dormId, dates).catch(() => {});
-        }
+        const dormDates = requestedCells ? dates.filter((date) => requestedCells.has(`${dormId}:${date}`)) : dates;
+        if (dormDates.length > 0 && mappings.some((m) => m.dormId === dormId)) await markInventoryDirty(dormId, dormDates).catch(() => {});
       }
     } else if (mappings.length > 0) {
       for (const m of mappings) {
@@ -119,14 +126,20 @@ export async function triggerInventoryPush(affectedDates?: string[], affectedDor
       if (activeMappings.length === 0) return { attempted: false, accepted: false, message: "No active Aiosell mapping for this dorm" };
     }
 
+    const availability = await getDateAwareAvailabilityRange(activeMappings.map((mapping) => ({
+      dormId: mapping.dormId,
+      channelRoomCode: mapping.channelRoomCode,
+      totalInventory: Number(mapping.totalInventory) || 0,
+    })), dates);
     const updates: InventoryUpdate[] = [];
     for (const date of dates) {
-      const rooms: Array<{ roomCode: string; available: number }> = [];
-      for (const mapping of activeMappings) {
-        const available = await getDateAwareAvailability(mapping.dormId, date);
-        rooms.push({ roomCode: mapping.channelRoomCode, available });
-      }
-      updates.push({ startDate: date, endDate: date, rooms });
+      const rooms = activeMappings
+        .filter((mapping) => !requestedCells || requestedCells.has(`${mapping.dormId}:${date}`))
+        .map((mapping) => ({
+          roomCode: mapping.channelRoomCode,
+          available: availability.get(`${mapping.dormId}:${date}`) ?? 0,
+        }));
+      if (rooms.length > 0) updates.push({ startDate: date, endDate: date, rooms });
     }
 
     const aiosellConfig: AiosellConfig = {
@@ -146,7 +159,11 @@ export async function triggerInventoryPush(affectedDates?: string[], affectedDor
       const dirty = await getDirtyInventory();
       const pushedDormIds = new Set(activeMappings.map((m) => m.dormId));
       const pushedDates = new Set(dates);
-      const toClear = dirty.filter((d) => pushedDormIds.has(d.dormId) && pushedDates.has(d.date)).map((d) => d.id);
+      const toClear = dirty.filter((d) =>
+        pushedDormIds.has(d.dormId)
+        && pushedDates.has(d.date)
+        && (!requestedCells || requestedCells.has(`${d.dormId}:${d.date}`))
+      ).map((d) => d.id);
       if (toClear.length > 0) {
         try {
           await clearDirtyInventory(toClear);
@@ -175,17 +192,30 @@ export async function triggerInventoryPush(affectedDates?: string[], affectedDor
   }
 }
 
+/** Retry durable dirty rows without expanding them into a full room/date matrix. */
+export async function retryDirtyInventory(): Promise<InventorySyncResult | void> {
+  const dirty = await getDirtyInventory();
+  if (dirty.length === 0) return { attempted: false, accepted: true, message: "Nothing to retry" };
+  return triggerInventoryPush(
+    [...new Set(dirty.map((row) => row.date))],
+    [...new Set(dirty.map((row) => row.dormId))],
+    dirty.map((row) => ({ dormId: row.dormId, date: row.date })),
+  );
+}
+
 function buildAiosellConfig(config: any): AiosellConfig {
   return { hotelCode: config.hotelCode, pmsId: config.pmsId, apiBaseUrl: config.apiBaseUrl, apiUsername: config.apiUsername, apiPassword: config.apiPassword };
 }
 
-export async function triggerRatePush(affectedDates: string[], affectedRatePlanIds?: number[]): Promise<void> {
+export async function triggerRatePush(affectedDates: string[], affectedRatePlanIds?: number[]): Promise<InventorySyncResult | void> {
   try {
     const config = await getChannelConfig();
-    if (!config || !config.isActive || !config.autoPushRates) return;
+    if (!config || !config.isActive || !config.autoPushRates) {
+      return { attempted: false, accepted: false, message: "Aiosell automatic rate sync is not active" };
+    }
 
     const dates = [...new Set(affectedDates)];
-    if (dates.length === 0) return;
+    if (dates.length === 0) return { attempted: false, accepted: true, message: "No rate dates to push" };
     const start = dates.sort()[0];
     const end = dates[dates.length - 1];
 
@@ -216,23 +246,27 @@ export async function triggerRatePush(affectedDates: string[], affectedRatePlanI
       if (rates.length > 0) updates.push({ startDate: date, endDate: date, rates });
     }
 
-    if (updates.length === 0) return;
+    if (updates.length === 0) return { attempted: false, accepted: true, message: "No mapped rate data to push" };
     const aiosellConfig = buildAiosellConfig(config);
     const result = await pushRates(aiosellConfig, updates, "auto");
     if (result.success) await updateChannelSyncTime();
+    return { attempted: true, accepted: result.success, message: result.success ? undefined : (result.message || "Aiosell did not confirm the rate update") };
   } catch (error: any) {
     console.error("Auto rate push failed:", error?.message);
     await logPmsCall({ direction: "push", type: "rate (auto)", status: "failed", errorMessage: `Auto-push error: ${error?.message || "Unknown"}` });
+    return { attempted: true, accepted: false, message: error?.message || "Aiosell rate push failed" };
   }
 }
 
-export async function triggerRestrictionPush(affectedDates: string[], affectedRatePlanIds?: number[], patch?: RestrictionPatch): Promise<void> {
+export async function triggerRestrictionPush(affectedDates: string[], affectedRatePlanIds?: number[], patch?: RestrictionPatch): Promise<InventorySyncResult | void> {
   try {
     const config = await getChannelConfig();
-    if (!config || !config.isActive || !config.autoPushRateRestrictions) return;
+    if (!config || !config.isActive || !config.autoPushRateRestrictions) {
+      return { attempted: false, accepted: false, message: "Aiosell automatic restriction sync is not active" };
+    }
 
     const dates = [...new Set(affectedDates)].sort();
-    if (dates.length === 0) return;
+    if (dates.length === 0) return { attempted: false, accepted: true, message: "No restriction dates to push" };
     const start = dates[0];
     const end = dates[dates.length - 1];
 
@@ -246,7 +280,7 @@ export async function triggerRestrictionPush(affectedDates: string[], affectedRa
       const mapping = mappings.find((m) => m.id === rp.roomMappingId);
       return mapping ? [{ rp, mapping }] : [];
     });
-    if (mappedPlans.length === 0) return;
+    if (mappedPlans.length === 0) return { attempted: false, accepted: false, message: "No active Aiosell rate-plan mappings" };
 
     const updates: RateRestrictionUpdate[] = [];
     const usePatch = patch && Object.keys(patch).length > 0;
@@ -285,12 +319,14 @@ export async function triggerRestrictionPush(affectedDates: string[], affectedRa
       }
     }
 
-    if (updates.length === 0) return;
+    if (updates.length === 0) return { attempted: false, accepted: true, message: "No mapped restriction data to push" };
     const aiosellConfig = buildAiosellConfig(config);
     const result = await pushRateRestrictions(aiosellConfig, updates, undefined, "auto");
     if (result.success) await updateChannelSyncTime();
+    return { attempted: true, accepted: result.success, message: result.success ? undefined : (result.message || "Aiosell did not confirm the restriction update") };
   } catch (error: any) {
     console.error("Auto restriction push failed:", error?.message);
     await logPmsCall({ direction: "push", type: "restriction (auto)", status: "failed", errorMessage: `Auto-push error: ${error?.message || "Unknown"}` });
+    return { attempted: true, accepted: false, message: error?.message || "Aiosell restriction push failed" };
   }
 }

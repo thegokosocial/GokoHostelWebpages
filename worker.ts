@@ -8,7 +8,8 @@ type WorkerContext = { waitUntil(promise: Promise<unknown>): void };
 export default {
   fetch: openNextWorker.fetch,
   async scheduled(controller: { cron: string }, env: WorkerEnv, ctx: WorkerContext) {
-    const path = controller.cron === "30 3 * * *" ? "aiosell-mappings"
+    const path = controller.cron === "*/5 * * * *" ? "aiosell-inventory"
+      : controller.cron === "30 3 * * *" ? "aiosell-mappings"
       : controller.cron === "30 4,6,8,10,12,14,16 * * *" ? "reconciliation-reminder" : null;
     if (!path) return;
     if (!env.CRON_SECRET) {

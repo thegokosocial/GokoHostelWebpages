@@ -1,6 +1,7 @@
 import { checkMappings, getMappingHealth } from "@/lib/aiosellMappingCheck";
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
+import { actionAllowed } from "@/lib/actionPermissions";
 import {
   getChannelConfig, upsertChannelConfig,
   getRoomTypeMappings, upsertRoomTypeMapping, deleteRoomTypeMapping,
@@ -23,7 +24,15 @@ export async function POST(req: NextRequest) {
     const { password, username, action } = body;
 
     const auth = await authenticateUser(password, username);
-    if (!auth || auth.role !== "admin") {
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (action === "getSyncLogs") {
+      const gate = actionAllowed(auth.role, auth.permissions || {}, "canViewLogs");
+      if (gate !== "allowed") {
+        return NextResponse.json({ error: "You don't have permission to view system logs" }, { status: 403 });
+      }
+    } else if (auth.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

@@ -563,7 +563,8 @@ describe("Wiring", () => {
 
   it("skips inventory push when unblock matches no active blocks", () => {
     const inv = readFileSync("src/app/api/admin/inventory/route.ts", "utf8");
-    expect(inv).toContain("if (pushDates && pushDates.length > 0)");
+    expect(inv).toContain("const sync = pushDates && pushDates.length > 0");
+    expect(inv).toContain('message: "No nights to push"');
   });
 
   it("clears a block only after the bed assignment succeeds", () => {

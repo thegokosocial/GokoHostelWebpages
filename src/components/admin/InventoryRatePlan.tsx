@@ -7,7 +7,7 @@ import {
   RefreshCwIcon, Loader2Icon, ChevronLeftIcon, ChevronRightIcon,
   PackageIcon, EditIcon,
 } from "lucide-react";
-import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, civilWeekday, unassignedOtaOnNight, type AvailabilitySummary, type NightAvailability } from "@/lib/inventoryAvailability";
+import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, stayNights, civilWeekday, unassignedOtaOnNight, type AvailabilitySummary, type NightAvailability } from "@/lib/inventoryAvailability";
 import type { Role } from "./types";
 
 type Props = { password: string; username?: string; role: Role; permissions: Record<string, boolean> };
@@ -47,6 +47,18 @@ type BulkAvailabilityPreview = {
   }>;
   capped: number;
   requestedOnline: number | null;
+};
+
+function filteredDatesForRetry(startDate: string, endDate: string, days: number[]): string[] {
+  return inclusiveNights(startDate, endDate).filter((date) => days.length === 0 || days.includes(civilWeekday(date)));
+}
+
+type PmsRetryPayload = {
+  syncType: "inventory" | "rates" | "restrictions";
+  dates: string[];
+  dormIds?: number[];
+  ratePlanIds?: number[];
+  patch?: Record<string, unknown>;
 };
 
 function generateDates(start: string, days: number): string[] {
@@ -789,6 +801,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   const [tab, setTab] = useState<"blockBeds" | "unblockBeds" | "availability" | "setRates" | "adjustRates" | "restrictions">("blockBeds");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string>("");
+  const [resultIsError, setResultIsError] = useState(false);
+  const [retryPayload, setRetryPayload] = useState<PmsRetryPayload | null>(null);
 
   // Block beds state
   const [blockBedIds, setBlockBedIds] = useState<number[]>([]);
@@ -961,6 +975,64 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
     setter(currentDays.includes(day) ? currentDays.filter((d) => d !== day) : [...currentDays, day]);
   };
 
+  const completePmsAction = (json: any, localMessage: string, retry: PmsRetryPayload) => {
+    onSaved();
+    if (json.sync?.accepted && json.sync?.attempted) {
+      setRetryPayload(null);
+      setResultIsError(false);
+      setResult(`${localMessage} Updated successfully and synced with PMS.`);
+      window.setTimeout(onClose, 1200);
+      return;
+    }
+    if (json.sync?.accepted) {
+      setRetryPayload(null);
+      setResultIsError(false);
+      setResult(`${localMessage} Saved locally; no mapped PMS update was required.`);
+      window.setTimeout(onClose, 1200);
+      return;
+    }
+    setRetryPayload(retry);
+    setResultIsError(true);
+    setResult(`${localMessage} Saved locally, but PMS sync failed${json.sync?.message ? `: ${json.sync.message}` : "."} Use Retry PMS sync below.`);
+  };
+
+  const retryPmsSync = async () => {
+    if (!retryPayload || saving) return;
+    const payload = retryPayload;
+    setSaving(true);
+    setResultIsError(false);
+    setResult("Retrying PMS sync…");
+    try {
+      const res = await fetch("/api/admin/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, username, action: "retryPmsSync", ...payload }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success && json.sync?.accepted && json.sync?.attempted) {
+        setRetryPayload(null);
+        setResultIsError(false);
+        setResult("Updated successfully and synced with PMS.");
+        onSaved();
+        window.setTimeout(onClose, 1200);
+      } else if (res.ok && json.success && json.sync?.accepted) {
+        setRetryPayload(null);
+        setResultIsError(false);
+        setResult("Saved locally; no mapped PMS update was required.");
+        onSaved();
+        window.setTimeout(onClose, 1200);
+      } else {
+        setResultIsError(true);
+        setResult(`PMS sync failed${json.sync?.message ? `: ${json.sync.message}` : "."} You can retry again.`);
+      }
+    } catch {
+      setResultIsError(true);
+      setResult("PMS sync could not be reached. You can retry again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const DaySelector = ({ days, setDays }: { days: number[]; setDays: (d: number[]) => void }) => (
     <div className="flex gap-1 flex-wrap">
       {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((name, i) => (
@@ -987,6 +1059,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   const handleBlockBeds = async () => {
     if (!blockBedIds.length || !blockStart || !blockExclusiveEnd) return;
     setSaving(true);
+    setResultIsError(false);
+    setResult("Updating… Saving the block and syncing with PMS.");
     try {
       const res = await fetch("/api/admin/inventory", {
         method: "POST",
@@ -994,14 +1068,24 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
         body: JSON.stringify({ password, username, action: "blockBeds", bedIds: blockBedIds, dormId: blockDormId, startDate: blockStart, endDate: blockExclusiveEnd, reason: blockReason }),
       });
       const json = await res.json();
-      setResult(json.success ? `Blocked ${json.blocked} bed(s)` : json.error);
-      if (json.success) { onSaved(); setTimeout(onClose, 800); }
+      if (!res.ok || !json.success) {
+        setResultIsError(true);
+        setResult(json.error || "Block update failed");
+        return;
+      }
+      completePmsAction(json, `Blocked ${json.blocked} bed(s).`, { syncType: "inventory", dates: json.syncScope?.dates || inclusiveNights(blockStart, blockEnd), dormIds: json.syncScope?.dormIds || [blockDormId] });
+    } catch {
+      setRetryPayload({ syncType: "inventory", dates: inclusiveNights(blockStart, blockEnd), dormIds: [blockDormId] });
+      setResultIsError(true);
+      setResult("The block may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
     } finally { setSaving(false); }
   };
 
   const handleUnblockBeds = async () => {
     if (!unblockIds.length) return;
     setSaving(true);
+    setResultIsError(false);
+    setResult("Updating… Removing the block and syncing with PMS.");
     try {
       const res = await fetch("/api/admin/inventory", {
         method: "POST",
@@ -1009,8 +1093,21 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
         body: JSON.stringify({ password, username, action: "unblockBeds", blockIds: unblockIds }),
       });
       const json = await res.json();
-      setResult(json.success ? "Beds unblocked" : json.error);
-      if (json.success) { onSaved(); setTimeout(onClose, 800); }
+      if (!res.ok || !json.success) {
+        setResultIsError(true);
+        setResult(json.error || "Unblock update failed");
+        return;
+      }
+      completePmsAction(json, "Beds unblocked.", { syncType: "inventory", dates: json.syncScope?.dates || [], dormIds: json.syncScope?.dormIds || [] });
+    } catch {
+      const selected = activeBlocks.filter((block) => unblockIds.includes(block.id));
+      setRetryPayload({
+        syncType: "inventory",
+        dates: [...new Set(selected.flatMap((block) => stayNights(block.startDate, block.endDate)))],
+        dormIds: [...new Set(selected.map((block) => block.dormId))],
+      });
+      setResultIsError(true);
+      setResult("The unblock may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
     } finally { setSaving(false); }
   };
 
@@ -1025,6 +1122,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
     );
     if (!confirmed) return;
     setSaving(true);
+    setResultIsError(false);
+    setResult("Updating… Saving availability and syncing with PMS.");
     try {
       const res = await fetch("/api/admin/inventory", {
         method: "POST",
@@ -1041,23 +1140,19 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
+        setResultIsError(true);
         setResult(json.error || "Availability update failed");
         if (json.partial) onSaved();
         return;
       }
       const count = availabilityMode === "set" ? json.updated : json.cleared;
-      const syncMessage = json.sync?.accepted
-        ? " PMS inventory synced."
-        : json.sync?.message
-          ? ` Local update saved; PMS sync pending: ${json.sync.message}.`
-          : " Local update saved; PMS sync can be retried from Channel Manager.";
       const capMessage = json.capped ? ` ${json.capped} cell(s) capped to available inventory.` : "";
       const unmappedMessage = json.unmappedDormIds?.length ? ` ${json.unmappedDormIds.length} unmapped dorm(s) are local-only.` : "";
-      setResult(`${availabilityMode === "set" ? "Updated" : "Cleared"} ${count} availability cell(s).${capMessage}${unmappedMessage}${syncMessage}`);
-      onSaved();
-      setTimeout(onClose, 1200);
+      completePmsAction(json, `${availabilityMode === "set" ? "Updated" : "Cleared"} ${count} availability cell(s).${capMessage}${unmappedMessage}`, { syncType: "inventory", dates: json.syncScope?.dates || filteredDatesForRetry(availabilityStart, availabilityEnd, availabilityDays), dormIds: json.syncScope?.dormIds || availabilityDormIds });
     } catch {
-      setResult("Network error");
+      setRetryPayload({ syncType: "inventory", dates: filteredDatesForRetry(availabilityStart, availabilityEnd, availabilityDays), dormIds: availabilityDormIds });
+      setResultIsError(true);
+      setResult("The availability may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
     } finally {
       setSaving(false);
     }
@@ -1066,6 +1161,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   const handleSetRates = async () => {
     if (!rateRpIds.length || !rateStart || !rateEnd || !rateValue) return;
     setSaving(true);
+    setResultIsError(false);
+    setResult("Updating… Saving rates and syncing with PMS.");
     try {
       const dates = inclusiveNights(rateStart, rateEnd);
       const res = await fetch("/api/admin/inventory", {
@@ -1074,14 +1171,24 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
         body: JSON.stringify({ password, username, action: "bulkSetRates", ratePlanIds: rateRpIds, dates, dayFilter: rateDays, rate: parseInt(rateValue), adult1Rate: parseInt(rateValue) }),
       });
       const json = await res.json();
-      setResult(json.success ? `Updated ${json.updated} rate(s)` : json.error);
-      if (json.success) { onSaved(); setTimeout(onClose, 800); }
+      if (!res.ok || !json.success) {
+        setResultIsError(true);
+        setResult(json.error || "Rate update failed");
+        return;
+      }
+      completePmsAction(json, `Updated ${json.updated} rate(s).`, { syncType: "rates", dates: json.syncScope?.dates || dates, ratePlanIds: json.syncScope?.ratePlanIds || rateRpIds });
+    } catch {
+      setRetryPayload({ syncType: "rates", dates: inclusiveNights(rateStart, rateEnd).filter((date) => rateDays.length === 0 || rateDays.includes(civilWeekday(date))), ratePlanIds: rateRpIds });
+      setResultIsError(true);
+      setResult("The rates may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
     } finally { setSaving(false); }
   };
 
   const handleAdjustRates = async () => {
     if (!adjustRpIds.length || !adjustStart || !adjustEnd || !adjustValue) return;
     setSaving(true);
+    setResultIsError(false);
+    setResult("Updating… Adjusting rates and syncing with PMS.");
     try {
       const res = await fetch("/api/admin/inventory", {
         method: "POST",
@@ -1089,14 +1196,24 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
         body: JSON.stringify({ password, username, action: "bulkAdjustRates", ratePlanIds: adjustRpIds, startDate: adjustStart, endDate: adjustEnd, dayFilter: adjustDays, direction: adjustDirection, value: parseInt(adjustValue), type: adjustType }),
       });
       const json = await res.json();
-      setResult(json.success ? `Adjusted ${json.updated} rate(s)` : json.error);
-      if (json.success) { onSaved(); setTimeout(onClose, 800); }
+      if (!res.ok || !json.success) {
+        setResultIsError(true);
+        setResult(json.error || "Rate adjustment failed");
+        return;
+      }
+      completePmsAction(json, `Adjusted ${json.updated} rate(s).`, { syncType: "rates", dates: json.syncScope?.dates || inclusiveNights(adjustStart, adjustEnd).filter((date) => adjustDays.length === 0 || adjustDays.includes(civilWeekday(date))), ratePlanIds: json.syncScope?.ratePlanIds || adjustRpIds });
+    } catch {
+      setRetryPayload({ syncType: "rates", dates: inclusiveNights(adjustStart, adjustEnd).filter((date) => adjustDays.length === 0 || adjustDays.includes(civilWeekday(date))), ratePlanIds: adjustRpIds });
+      setResultIsError(true);
+      setResult("The rate adjustment may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
     } finally { setSaving(false); }
   };
 
   const handleSetRestrictions = async () => {
     if (!restrictRpIds.length || !restrictStart || !restrictEnd || !restrictType) return;
     setSaving(true);
+    setResultIsError(false);
+    setResult("Updating… Saving restrictions and syncing with PMS.");
     try {
       const booleanTypes = ["stopSell", "closeOnArrival", "closeOnDeparture"];
       const numVal = parseInt(String(restrictValue));
@@ -1107,8 +1224,21 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
         body: JSON.stringify({ password, username, action: "bulkSetRestrictions", ratePlanIds: restrictRpIds, startDate: restrictStart, endDate: restrictEnd, dayFilter: restrictDays, restrictionType: restrictType, value: val }),
       });
       const json = await res.json();
-      setResult(json.success ? `Updated ${json.updated} restriction(s)` : json.error);
-      if (json.success) { onSaved(); setTimeout(onClose, 800); }
+      if (!res.ok || !json.success) {
+        setResultIsError(true);
+        setResult(json.error || "Restriction update failed");
+        return;
+      }
+      completePmsAction(json, `Updated ${json.updated} restriction(s).`, { syncType: "restrictions", dates: json.syncScope?.dates || inclusiveNights(restrictStart, restrictEnd).filter((date) => restrictDays.length === 0 || restrictDays.includes(civilWeekday(date))), ratePlanIds: json.syncScope?.ratePlanIds || restrictRpIds, patch: json.syncScope?.patch });
+    } catch {
+      const booleanTypes = ["stopSell", "closeOnArrival", "closeOnDeparture"];
+      const numVal = parseInt(String(restrictValue));
+      const retryPatch = booleanTypes.includes(restrictType)
+        ? { [restrictType]: restrictValue === true || restrictValue === "true" }
+        : { [restrictType]: Number.isNaN(numVal) ? null : numVal };
+      setRetryPayload({ syncType: "restrictions", dates: inclusiveNights(restrictStart, restrictEnd).filter((date) => restrictDays.length === 0 || restrictDays.includes(civilWeekday(date))), ratePlanIds: restrictRpIds, patch: retryPatch });
+      setResultIsError(true);
+      setResult("The restrictions may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
     } finally { setSaving(false); }
   };
 
@@ -1121,7 +1251,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
         {/* Tabs */}
         <div className="mt-3 flex flex-wrap gap-1">
           {([["blockBeds", "Block Beds"], ["unblockBeds", "Unblock"], ["availability", "Availability"], ["setRates", "Set Rates"], ["adjustRates", "Adjust Rates"], ["restrictions", "Restrictions"]] as const).map(([id, label]) => (
-            <button key={id} type="button" onClick={() => { setTab(id); setResult(""); }}
+            <button key={id} type="button" onClick={() => { setTab(id); setResult(""); setResultIsError(false); setRetryPayload(null); }}
               className={cn("min-w-0 flex-1 basis-[calc(50%-0.25rem)] px-2 py-1.5 text-center rounded-lg text-xs font-medium transition-colors sm:flex-none sm:basis-auto sm:px-3", tab === id ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark/70 hover:bg-brand-mist")}
             >{label}</button>
           ))}
@@ -1355,7 +1485,13 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
           )}
         </div>
 
-        {result && <p className="mt-3 text-sm font-medium text-brand-green">{result}</p>}
+        {result && <p className={cn("mt-3 text-sm font-medium", resultIsError ? "text-red-700" : "text-brand-green")}>{result}</p>}
+
+        {retryPayload && (
+          <Button variant="outline" size="sm" className="mt-2 w-full border-red-300 text-red-700 hover:bg-red-50" onClick={retryPmsSync} disabled={saving}>
+            {saving ? "Retrying PMS sync…" : "Retry PMS sync"}
+          </Button>
+        )}
 
         <div className="mt-4">
           <Button variant="outline" size="sm" className="w-full" onClick={onClose}>Close</Button>

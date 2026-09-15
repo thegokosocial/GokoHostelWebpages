@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
-import { triggerInventoryPush, triggerRatePush, triggerRestrictionPush } from "@/lib/aiosellSync";
+import { triggerInventoryPush, triggerRatePush, triggerRestrictionPush, type InventorySyncResult } from "@/lib/aiosellSync";
 import { restrictionPatch } from "@/lib/aiosell";
 import { addCalendarDays, computeNightAvailability, civilWeekday, inclusiveNights, overrideCeilingToSave, overridePreview, sellableUnits, summarizeAvailability, unassignedOtaOnNight, stayNights } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
@@ -8,7 +8,7 @@ import {
   getInventoryGridData, getChannels, upsertChannel, deleteChannel,
   getBedTypeConfigs, upsertBedTypeConfig,
   getActiveBedBlocks, createBedBlock, deactivateBedBlock, deactivateBedBlocksByBedIds,
-  upsertInventoryOverride, deleteInventoryOverride, getBedsFreeToBlock, getAllDorms, getAvailabilitySnapshot, getUnassignedOtaHoldsForRange, getRoomTypeMappings, addAuditEntry,
+  upsertInventoryOverride, deleteInventoryOverride, bulkReplaceInventoryOverrides, markInventoryDirty, getBedsFreeToBlock, getAllDorms, getAvailabilitySnapshot, getUnassignedOtaHoldsForRange, getRoomTypeMappings, addAuditEntry,
   getChannelRatesForRange, upsertChannelRate,
   getDailyRates, upsertDailyRate,
   getAllBeds,
@@ -33,7 +33,12 @@ const ACTION_PERMISSIONS: Record<string, string> = {
   bulkSetRates: "canManageInventory",
   bulkAdjustRates: "canManageInventory",
   bulkSetRestrictions: "canManageInventory",
+  retryPmsSync: "canManageInventory",
 };
+
+function requireSyncResult(sync: InventorySyncResult | void): InventorySyncResult {
+  return sync ?? { attempted: true, accepted: false, message: "PMS sync did not return a result" };
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,6 +56,28 @@ export async function POST(req: NextRequest) {
     }
 
     const actingUser = username || role;
+
+    if (action === "retryPmsSync") {
+      const { syncType, dates, dormIds, ratePlanIds, patch } = params;
+      if (!Array.isArray(dates) || dates.length > 366 || dates.some((date: unknown) => typeof date !== "string" || !date)) {
+        return NextResponse.json({ error: "dates required" }, { status: 400 });
+      }
+      const validIds = (ids: unknown): ids is number[] => Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === "number" && Number.isInteger(id) && id > 0);
+      let sync: InventorySyncResult | void;
+      if (syncType === "inventory") {
+        if (!validIds(dormIds)) return NextResponse.json({ error: "dormIds required" }, { status: 400 });
+        sync = requireSyncResult(await triggerInventoryPush(dates, dormIds));
+      } else if (syncType === "rates") {
+        if (!validIds(ratePlanIds)) return NextResponse.json({ error: "ratePlanIds required" }, { status: 400 });
+        sync = requireSyncResult(await triggerRatePush(dates, ratePlanIds));
+      } else if (syncType === "restrictions") {
+        if (!validIds(ratePlanIds)) return NextResponse.json({ error: "ratePlanIds required" }, { status: 400 });
+        sync = requireSyncResult(await triggerRestrictionPush(dates, ratePlanIds, patch));
+      } else {
+        return NextResponse.json({ error: "syncType must be inventory, rates, or restrictions" }, { status: 400 });
+      }
+      return NextResponse.json({ success: Boolean(sync?.accepted), sync });
+    }
 
     if (action === "getInventoryGrid") {
       const { startDate, endDate } = params;
@@ -128,15 +155,16 @@ export async function POST(req: NextRequest) {
         await createBedBlock({ bedId, dormId, startDate, endDate, reason: reason || "", blockedBy: actingUser });
       }
       const dates = stayNights(startDate, endDate);
-      if (dates.length > 0) await triggerInventoryPush(dates, dormId).catch(() => {});
-      await recordInventoryAudit(actingUser, "BEDS_BLOCKED", `dorm:${dormId}`, { bedIds, startDate, endDate, reason: reason || "", count: bedIds.length });
-      return NextResponse.json({ success: true, blocked: bedIds.length });
+      const sync = dates.length > 0 ? requireSyncResult(await triggerInventoryPush(dates, dormId)) : { attempted: false, accepted: true, message: "No nights to push" };
+      await recordInventoryAudit(actingUser, "BEDS_BLOCKED", `dorm:${dormId}`, { bedIds, startDate, endDate, reason: reason || "", count: bedIds.length, sync: { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } });
+      return NextResponse.json({ success: true, blocked: bedIds.length, sync, syncScope: { dates, dormIds: [dormId] } });
     }
 
     if (action === "unblockBeds") {
       const { blockIds, bedIds, startDate, endDate } = params;
       let pushDates: string[] | undefined;
       let pushDormId: number | undefined;
+      let syncDormIds: number[] = [];
       if (blockIds?.length) {
         const blocks = await getActiveBedBlocks();
         const targeted = blocks.filter((b: any) => blockIds.includes(b.id));
@@ -149,34 +177,36 @@ export async function POST(req: NextRequest) {
           }
           pushDates = [...allDates];
           if (dormIds.size === 1) pushDormId = [...dormIds][0];
+          syncDormIds = [...dormIds];
         }
         for (const blockId of blockIds) {
           await deactivateBedBlock(blockId, actingUser);
         }
       } else if (bedIds?.length && startDate && endDate) {
         const requested = new Set<number>(bedIds);
-        const completeUnitIds = sellableUnits(await getAllBeds())
-          .filter((u) => u.beds.some((b) => requested.has(b.id)))
-          .flatMap((u) => u.beds.map((b) => b.id));
+        const selectedUnits = sellableUnits(await getAllBeds()).filter((u) => u.beds.some((b) => requested.has(b.id)));
+        const completeUnitIds = selectedUnits.flatMap((u) => u.beds.map((b) => b.id));
+        syncDormIds = [...new Set(selectedUnits.map((u) => u.dormId))];
         await deactivateBedBlocksByBedIds(completeUnitIds, startDate, endDate, actingUser);
         pushDates = stayNights(startDate, endDate);
       } else {
         return NextResponse.json({ error: "blockIds or (bedIds + dates) required" }, { status: 400 });
       }
-      if (pushDates && pushDates.length > 0) {
-        await triggerInventoryPush(pushDates, pushDormId).catch(() => {});
-      }
-      await recordInventoryAudit(actingUser, "BEDS_UNBLOCKED", blockIds?.length ? `blocks:${blockIds.join(",")}` : `dorm:${pushDormId ?? "multiple"}`, { blockIds: blockIds || [], bedIds: bedIds || [], startDate: startDate || null, endDate: endDate || null });
-      return NextResponse.json({ success: true });
+      const sync = pushDates && pushDates.length > 0
+        ? requireSyncResult(await triggerInventoryPush(pushDates, syncDormIds.length > 0 ? syncDormIds : pushDormId))
+        : { attempted: false, accepted: true, message: "No nights to push" };
+      if (pushDormId && syncDormIds.length === 0) syncDormIds = [pushDormId];
+      await recordInventoryAudit(actingUser, "BEDS_UNBLOCKED", blockIds?.length ? `blocks:${blockIds.join(",")}` : `dorm:${pushDormId ?? "multiple"}`, { blockIds: blockIds || [], bedIds: bedIds || [], startDate: startDate || null, endDate: endDate || null, sync: { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } });
+      return NextResponse.json({ success: true, sync, syncScope: { dates: pushDates || [], dormIds: syncDormIds } });
     }
 
     if (action === "updateInventoryOverride") {
       const { dormId, channelId, date, onlineAvailable, offlineAvailable } = params;
       if (!dormId || !date) return NextResponse.json({ error: "dormId and date required" }, { status: 400 });
       await upsertInventoryOverride({ dormId, channelId: channelId || null, date, onlineAvailable, offlineAvailable, overriddenBy: actingUser });
-      await triggerInventoryPush([date], dormId).catch(() => {});
-      await recordInventoryAudit(actingUser, "INVENTORY_OVERRIDE_UPDATED", `dorm:${dormId} ${date}`, { channelId: channelId || null, onlineAvailable: onlineAvailable ?? null, offlineAvailable: offlineAvailable ?? null });
-      return NextResponse.json({ success: true });
+      const sync = requireSyncResult(await triggerInventoryPush([date], dormId));
+      await recordInventoryAudit(actingUser, "INVENTORY_OVERRIDE_UPDATED", `dorm:${dormId} ${date}`, { channelId: channelId || null, onlineAvailable: onlineAvailable ?? null, offlineAvailable: offlineAvailable ?? null, sync: { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } });
+      return NextResponse.json({ success: true, sync, syncScope: { dates: [date], dormIds: [dormId] } });
     }
 
     if (action === "bulkSetAvailability") {
@@ -291,27 +321,29 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        for (const dormId of dormIds) {
-          for (const date of filteredDates) {
-            const stats = statsByCell.get(`${dormId}:${date}`);
-            if (!stats) throw new Error("Availability snapshot mismatch");
-            if (mode === "clear") {
-              await deleteInventoryOverride({ dormId, channelId: null, date });
-              applied.push({ dormId, date, capped: false });
-            } else {
-              await upsertInventoryOverride({
-                dormId,
-                channelId: null,
-                date,
-                onlineAvailable: overrideCeilingToSave(stats, requestedValue),
-                offlineAvailable: null,
-                overriddenBy: actingUser,
-              });
-              applied.push({ dormId, date, capped: requestedValue > stats.available });
-            }
-          }
+        const overrideRows = dormIds.flatMap((dormId) => filteredDates.map((date) => {
+          const stats = statsByCell.get(`${dormId}:${date}`);
+          if (!stats) throw new Error("Availability snapshot mismatch");
+          return {
+            dormId,
+            date,
+            onlineAvailable: mode === "set" ? overrideCeilingToSave(stats, requestedValue) : null,
+            overriddenBy: actingUser,
+          };
+        }));
+        const committedRows = await bulkReplaceInventoryOverrides(overrideRows, mode);
+        for (const row of overrideRows.slice(0, committedRows)) {
+          const stats = statsByCell.get(`${row.dormId}:${row.date}`);
+          applied.push({ dormId: row.dormId, date: row.date, capped: mode === "set" && requestedValue > (stats?.available ?? 0) });
         }
       } catch (error: any) {
+        const committedRows = Number(error?.committedRows) || 0;
+        if (committedRows > applied.length) {
+          for (const row of dormIds.flatMap((dormId) => filteredDates.map((date) => ({ dormId, date }))).slice(applied.length, committedRows)) {
+            const stats = statsByCell.get(`${row.dormId}:${row.date}`);
+            applied.push({ dormId: row.dormId, date: row.date, capped: mode === "set" && requestedValue > (stats?.available ?? 0) });
+          }
+        }
         const partialDates = [...new Set(applied.map((item) => item.date))];
         const partialDormIds = [...new Set(applied.map((item) => item.dormId))];
         const sync = partialDates.length > 0
@@ -330,7 +362,11 @@ export async function POST(req: NextRequest) {
       }
 
       const affectedDates = [...new Set(applied.map((item) => item.date))];
-      const sync = await triggerInventoryPush(affectedDates, dormIds).catch(() => undefined);
+      const affectedDormIds = [...new Set(applied.map((item) => item.dormId))];
+      for (const dormId of affectedDormIds.filter((id) => mappedDormIds.has(id))) {
+        await markInventoryDirty(dormId, affectedDates).catch(() => {});
+      }
+      const sync = requireSyncResult(await triggerInventoryPush(affectedDates, affectedDormIds));
       await recordBulkAvailabilityAudit(actingUser, mode, dormIds, filteredDates, normalizedDayFilter, requestedValue, applied, sync, false);
 
       return NextResponse.json({
@@ -340,6 +376,7 @@ export async function POST(req: NextRequest) {
         capped: applied.filter((item) => item.capped).length,
         unmappedDormIds,
         sync,
+        syncScope: { dates: affectedDates, dormIds: affectedDormIds },
       });
     }
 
@@ -418,9 +455,18 @@ export async function POST(req: NextRequest) {
         }
       }
       // Channel-only rates live in channel_rates; triggerRatePush reads daily_rates.
-      if (!channelId) await triggerRatePush(filteredDates, ids).catch(() => {});
-      await recordInventoryAudit(actingUser, "RATES_BULK_UPDATED", `ratePlans:${ids.join(",")}`, { channelId: channelId || null, dates: filteredDates, updated: count, dayFilter: dayFilter || null });
-      return NextResponse.json({ success: true, updated: count });
+      const sync = channelId
+        ? { attempted: false, accepted: true, message: "Channel-only rate saved locally; no PMS push required" }
+        : requireSyncResult(await triggerRatePush(filteredDates, ids));
+      await recordInventoryAudit(actingUser, "RATES_BULK_UPDATED", `ratePlans:${ids.join(",")}`, {
+        channelId: channelId || null,
+        dates: filteredDates,
+        updated: count,
+        dayFilter: dayFilter || null,
+        values: { rate: rate ?? null, adult1Rate: adult1Rate ?? null, adult2Rate: adult2Rate ?? null, childRate: childRate ?? null, infantRate: infantRate ?? null, extraPersonRate: extraPersonRate ?? null },
+        sync: sync ? { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } : null,
+      });
+      return NextResponse.json({ success: true, updated: count, sync, syncScope: { dates: filteredDates, ratePlanIds: ids } });
     }
 
     if (action === "bulkAdjustRates") {
@@ -469,9 +515,12 @@ export async function POST(req: NextRequest) {
           count++;
         }
       }
-      await triggerRatePush(filteredDates, ratePlanIds).catch(() => {});
-      await recordInventoryAudit(actingUser, "RATES_BULK_ADJUSTED", `ratePlans:${ratePlanIds.join(",")}`, { startDate, endDate, dates: filteredDates, dayFilter: dayFilter || null, direction, value, type, updated: count });
-      return NextResponse.json({ success: true, updated: count });
+      const sync = requireSyncResult(await triggerRatePush(filteredDates, ratePlanIds));
+      await recordInventoryAudit(actingUser, "RATES_BULK_ADJUSTED", `ratePlans:${ratePlanIds.join(",")}`, {
+        startDate, endDate, dates: filteredDates, dayFilter: dayFilter || null, direction, value, type, updated: count,
+        sync: sync ? { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } : null,
+      });
+      return NextResponse.json({ success: true, updated: count, sync, syncScope: { dates: filteredDates, ratePlanIds } });
     }
 
     if (action === "bulkSetRestrictions") {
@@ -517,9 +566,12 @@ export async function POST(req: NextRequest) {
           count++;
         }
       }
-      await triggerRestrictionPush(filteredDates, ratePlanIds, patch).catch(() => {});
-      await recordInventoryAudit(actingUser, "RESTRICTIONS_BULK_UPDATED", `ratePlans:${ratePlanIds.join(",")}`, { startDate, endDate, dates: filteredDates, dayFilter: dayFilter || null, restrictionType, value, updated: count });
-      return NextResponse.json({ success: true, updated: count });
+      const sync = requireSyncResult(await triggerRestrictionPush(filteredDates, ratePlanIds, patch));
+      await recordInventoryAudit(actingUser, "RESTRICTIONS_BULK_UPDATED", `ratePlans:${ratePlanIds.join(",")}`, {
+        startDate, endDate, dates: filteredDates, dayFilter: dayFilter || null, restrictionType, value, updated: count, patch,
+        sync: sync ? { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } : null,
+      });
+      return NextResponse.json({ success: true, updated: count, sync, syncScope: { dates: filteredDates, ratePlanIds, patch } });
     }
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
@@ -556,7 +608,7 @@ async function recordBulkAvailabilityAudit(
   dayFilter: number[] | undefined,
   requestedValue: number,
   applied: Array<{ dormId: number; date: string; capped: boolean }>,
-  sync: { attempted: boolean; accepted: boolean; message?: string } | void,
+  sync: { attempted: boolean; accepted: boolean; queued?: boolean; message?: string } | void,
   partial: boolean,
 ) {
   await Promise.resolve(addAuditEntry({
@@ -573,7 +625,7 @@ async function recordBulkAvailabilityAudit(
       capped: applied.filter((item) => item.capped).length,
       requestedValue: mode === "set" ? requestedValue : undefined,
       partial,
-      sync: sync ? { attempted: sync.attempted, accepted: sync.accepted, message: sync.message } : null,
+      sync: sync ? { attempted: sync.attempted, accepted: sync.accepted, queued: sync.queued ?? false, message: sync.message } : null,
     }),
   })).catch(() => {});
 }

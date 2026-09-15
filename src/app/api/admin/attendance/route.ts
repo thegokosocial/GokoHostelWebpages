@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { employeeAttendance, employeeAttendanceHistory, employeeLeavePolicy, employees } from "@/db/schema";
 import { syncInsert, syncUpdate } from "@/db/syncMeta";
 import { authenticateUser } from "@/lib/auth";
+import { permissionEnabled } from "@/lib/actionPermissions";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { calculateEmployeePayroll } from "@/lib/employeeAttendance";
 import { monthEnd, type AttendanceStatus } from "@/lib/employeeAttendanceUtils";
@@ -18,12 +19,32 @@ export async function POST(req: NextRequest) {
     const { password, username, action } = body;
     const auth = await authenticateUser(password, username);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (auth.role !== "admin" && (auth.role !== "manager" || !auth.permissions.canManageAttendance)) {
+    const canManageAttendance = auth.role === "admin" || (auth.role === "manager" && auth.permissions.canManageAttendance);
+    const canViewAudit = auth.role === "admin" || permissionEnabled(auth.permissions, "canViewAudit");
+    if (action === "getAuditHistory" && !canViewAudit) {
+      return NextResponse.json({ error: "Audit access required" }, { status: 403 });
+    }
+    if (action !== "getAuditHistory" && !canManageAttendance) {
       return NextResponse.json({ error: "Manager attendance access required" }, { status: 403 });
     }
 
     const db = getDb();
     const actor = username || "admin";
+
+    if (action === "getAuditHistory") {
+      const month = String(body.month || "");
+      if (!MONTH_RE.test(month)) return NextResponse.json({ error: "Valid month required" }, { status: 400 });
+      const start = `${month}-01`;
+      const end = monthEnd(month);
+      const [historyRows, employeeRows] = await Promise.all([
+        db.select().from(employeeAttendanceHistory).where(and(gte(employeeAttendanceHistory.date, start), lte(employeeAttendanceHistory.date, end))).orderBy(desc(employeeAttendanceHistory.performedAt)).limit(100),
+        db.select({ id: employees.id, name: employees.name }).from(employees),
+      ]);
+      const names = new Map(employeeRows.map((employee) => [employee.id, employee.name]));
+      return NextResponse.json({
+        history: historyRows.map((row) => ({ ...row, employeeName: names.get(row.employeeId) || `Employee #${row.employeeId}` })),
+      });
+    }
 
     if (action === "getMonth") {
       const month = String(body.month || "");

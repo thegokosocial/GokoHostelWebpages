@@ -65,15 +65,17 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 
 ## Management tabs (`AdminManagement.tsx`)
 
-Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Bulk availability saves its local override and mapped dirty retry rows before calling PMS. The modal stays in progress until Aiosell accepts the push, then shows the successful PMS confirmation; a failed or timed-out push leaves the local change saved and exposes a Retry PMS sync action. The Worker’s protected five-minute retry remains a server-side safety net for dirty inventory rows.
+
+Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 | `tab` | UI | Permissions | Notes |
 |-------|-----|-------------|-------|
 | `dorms` | `AdminSetup` | admin only | init/remove dorms/beds |
 | `users` | `ManagementUsers` | admin only | permission checkboxes |
 | `backup` | `ManagementBackup` | admin only | |
-| `audit` | `ManagementAudit` | admin only | Audit Logs includes Room/general, booking, attendance, and food audit views; Room/general, booking, and attendance logs support responsive Records/Table presentation, with Records as the phone default and expandable entries, while Table preserves all columns and scrolls horizontally without clipping. Attendance history is selected by month and uses the existing attendance read API. Inventory, channel, bed-type, rate, availability, block/unblock, and restriction mutations write structured audit entries. |
-| `logs` | `ManagementLogs` | admin only | PMS + system; import `pmsLogSummary` not `pmsLog` |
+| `audit` | `ManagementAudit` | `canViewAudit` | Audit Logs includes Room/general, inventory, booking, attendance, and food audit views. Inventory mutations are excluded from Room/general and shown in their own responsive Records/Table view with expandable entries, preserved columns, and horizontal scrolling. Attendance history is selected by month through a history-only audit API. Inventory audit entries include operation inputs, affected dates/rooms/rate plans, updated counts, and PMS sync results where applicable. Retention controls remain admin-only. |
+| `logs` | `ManagementLogs` | `canViewLogs` | PMS + system read views; log-level configuration remains admin-only. Import `pmsLogSummary` not `pmsLog`. |
 | `health` | `ManagementHealth` | admin only | |
 | `history` | `AdminBedHistory` | management access | visible to non-admin |
 | `rates` | `AdminCheckRates` | management access | competitor scrape; visible |
@@ -83,7 +85,7 @@ Most `adminOnly: true`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 | `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | |
-| `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar, and payroll summaries; admins review attendance history in Management → Audit → Attendance, while non-admin attendance managers retain the in-page history because Audit is admin-only |
+| `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar, and payroll summaries; attendance history is also available in Management → Audit → Attendance to users with `canViewAudit` |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |

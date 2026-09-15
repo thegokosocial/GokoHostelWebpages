@@ -97,7 +97,7 @@ function SystemLogsPanel({ password, username, role }: { password: string; usern
   const [downloading, setDownloading] = useState(false);
   const loadGen = useRef(0);
 
-  useEffect(() => { loadLogLevel(); }, []);
+  useEffect(() => { if (role === "admin") void loadLogLevel(); }, [role]);
   useEffect(() => { loadLogs(); }, [page, pageSize, filterLevel, filterSource]);
 
   const loadLogs = async () => {

@@ -25,7 +25,7 @@ const CHECKINS_PERMISSIONS: Record<string, ActionPerm> = {
   getBookings: "canViewBookings", getUpcomingBookings: "canViewBookings",
   addBooking: "canAddBooking", updateBookingStatus: "canViewBookings", deleteBooking: "canDeleteBooking",
   getUsers: "admin_only", createUser: "admin_only", updateUser: "admin_only", deleteUser: "admin_only",
-  getAuditLog: "admin_only", getSystemLogs: "admin_only", runBackup: "admin_only",
+  getAuditLog: "canViewAudit", getInventoryAuditLog: "canViewAudit", getAuditRetention: "admin_only", getSystemLogs: "canViewLogs", runBackup: "admin_only",
   getLatestRateScrape: "admin_only", getRateScrapeStatus: "admin_only",
   startRateScrape: "admin_only", updateRateScrapeResults: "admin_only",
   backfillManagerPermissions: "admin_only",
@@ -158,6 +158,15 @@ describe("RBAC: Staff with no permissions is blocked", () => {
 
   it("staff without permissions cannot view dashboard", () => {
     expect(checkPermission(role, permissions, CHECKINS_PERMISSIONS, "getDashboard")).toBe("forbidden");
+  });
+
+  it("audit and logs reads are independently grantable", () => {
+    expect(checkPermission(role, { canViewAudit: true }, CHECKINS_PERMISSIONS, "getAuditLog")).toBe("allowed");
+    expect(checkPermission(role, { canViewAudit: true }, CHECKINS_PERMISSIONS, "getInventoryAuditLog")).toBe("allowed");
+    expect(checkPermission(role, { canViewLogs: true }, CHECKINS_PERMISSIONS, "getSystemLogs")).toBe("allowed");
+    expect(checkPermission(role, {}, CHECKINS_PERMISSIONS, "getAuditLog")).toBe("forbidden");
+    expect(checkPermission(role, {}, CHECKINS_PERMISSIONS, "getSystemLogs")).toBe("forbidden");
+    expect(checkPermission(role, { canViewAudit: true }, CHECKINS_PERMISSIONS, "getAuditRetention")).toBe("admin_required");
   });
 
   it("staff cannot access admin-only actions", () => {
@@ -337,6 +346,17 @@ describe("RBAC: Splits", () => {
     expect(ui).toContain("PERMISSION_GROUPS");
     expect(catalog).toContain("canViewSplits");
     expect(catalog).toContain("canManageSplits");
+  });
+
+  it("exposes separate Management permissions for Audit and Logs", () => {
+    const catalog = readFileSync("src/lib/permissionCatalog.ts", "utf8");
+    const management = readFileSync("src/components/admin/AdminManagement.tsx", "utf8");
+    expect(catalog).toContain('["canViewAudit", "View Audit Logs"]');
+    expect(catalog).toContain('["canViewLogs", "View System Logs"]');
+    expect(management).toContain('id: "audit"');
+    expect(management).toContain('permission: "canViewAudit"');
+    expect(management).toContain('id: "logs"');
+    expect(management).toContain('permission: "canViewLogs"');
   });
 });
 

@@ -52,7 +52,7 @@ Website CMS: **admin role only**, not a permission key. **403 on Pi.**
 
 `auth` on checkins returns `{ role, permissions }` with no extra gate. `changeMyPassword` is **omitted** from `ACTION_PERMISSIONS`, so `actionAllowed(undefined)` → **allowed** for any authenticated user.
 
-`/api/admin/channel-manager`: **admin role only**. `/api/admin/food` uses a per-action permission map for menu, stock, and food settings; admin bypasses all permissions.
+`/api/admin/channel-manager`: admin role for configuration and mutation actions; `getSyncLogs` is a read-only exception gated by `canViewLogs`. `/api/admin/food` uses a per-action permission map for menu, stock, and food settings; admin bypasses all permissions.
 
 `/api/admin/reviews`: admin **or** `canViewReviews`.
 
@@ -70,7 +70,7 @@ Aiosell webhook: D1 `channel_config.webhookSecret` via `Authorization` or `x-api
 
 From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does not** always mean the API checks it (see [llm-onboarding.md](llm-onboarding.md) §4).
 
-**Nav:** `canViewDashboard`, `canViewBookings`, `canViewBeds`, `canViewTimeline`, `canViewRecords`, `canViewFoodOrders`, `canViewAccounts`, `canViewSplits`, `canViewReviews`, `canViewManagement`
+**Nav:** `canViewDashboard`, `canViewBookings`, `canViewBeds`, `canViewTimeline`, `canViewRecords`, `canViewFoodOrders`, `canViewAccounts`, `canViewSplits`, `canViewReviews`, `canViewManagement`, `canViewAudit`, `canViewLogs`
 
 **Check-in:** `canAddCheckin`, `canAssignBed`, `canCheckout`, `canMarkClean`, `canEditRecords`, `canDeleteRecords`
 
@@ -110,7 +110,7 @@ Obsolete keys and their planned cleanup are tracked in [permission-debt.md](perm
 
 Admin always sees all. Staff see first allowed section (`firstVisibleAdminSection`).
 
-Management tabs: most `adminOnly: true`. Exceptions: History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access), and Links & QRs (`canViewQuickLinks`). Links & QRs mutations are admin-only; non-admin users are read-only. The public guest page is `/quick-links`; it exposes active cards only. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Management tabs: most `adminOnly: true`. Exceptions: Audit (`canViewAudit`, read-only audit views), Logs (`canViewLogs`, read-only system/PMS logs), History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access), and Links & QRs (`canViewQuickLinks`). Audit retention and log-level settings remain admin-only; Links & QRs mutations are admin-only. Users still need `canViewManagement` for the parent Management page. The public guest page is `/quick-links`; it exposes active cards only. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 ---
 
@@ -140,7 +140,13 @@ Before deletion, Records checks linked food orders using `getDeleteInfo` and sho
 | getBookings, getUpcomingBookings, updateBookingStatus | `canViewBookings` |
 | addBooking | `canAddBooking` |
 | deleteBooking | `canDeleteBooking` |
-| users, audit, backup, settings, stats, health, rate scrape, initDorms… | admin_only |
+| audit reads (`getAuditLog`, `getInventoryAuditLog`) | `canViewAudit` |
+| system/PMS log reads (`getSystemLogs`, `getSyncLogs`) | `canViewLogs` |
+| users, audit retention, backup, settings, stats, health, rate scrape, initDorms… | admin_only |
+
+### `/api/admin/attendance`
+
+`getAuditHistory` is a history-only read for the Management → Audit → Attendance tab and uses `canViewAudit`; it does not return payroll or attendance-calendar data. `getMonth`, `getPayroll`, and attendance/policy mutations remain restricted to admin or the existing manager `canManageAttendance` flow.
 
 Dashboard checkout rows show room status from a matched booking and food status from active check-in orders. Room matching is read-only and identity-first: it uses the check-in booking reference, then a unique normalized phone or guest-name match with overlapping stay dates. A physical bed’s booking assignment is never used as an identity match; planned room/bed labels are displayed separately and do not change physical occupancy or payment state. Unlinked legacy guests are shown as room `not_linked`. An overall clear state is shown only when a room is linked and both room and food balances are clear.
 
@@ -159,7 +165,7 @@ Walk-in creation may record an optional cash or online advance. `getRoomReceiptA
 
 ### `/api/admin/inventory`
 
-All actions: `canManageInventory`.
+All actions: `canManageInventory`. Bulk actions write the local mutation, then wait for the bounded Aiosell push before reporting PMS success. If the local write succeeds but PMS rejects or times out, the response reports the failed sync separately and the UI offers a PMS-only retry; local inventory/rate/restriction data is retained. The protected scheduled inventory retry remains a server-side safety net for dirty inventory rows.
 
 ### `/api/admin/food-orders`
 

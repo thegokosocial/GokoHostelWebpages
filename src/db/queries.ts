@@ -1,4 +1,4 @@
-import { eq, desc, and, sql, inArray, gte, lte, lt, or } from "drizzle-orm";
+import { eq, desc, and, sql, inArray, gte, lte, lt, or, like, not } from "drizzle-orm";
 import { getDb } from "./index";
 import { todayIST } from "@/lib/utils";
 import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassignedOtaRooms, explodeUnassignedOtaHolds, pickInventoryOverride, sellableUnits, stayNights, tagBedsForPicker } from "@/lib/inventoryAvailability";
@@ -9,6 +9,7 @@ import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog,
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
+import { INVENTORY_AUDIT_ACTION_PREFIXES } from "@/lib/inventoryAudit";
 
 // --- Check-ins ---
 
@@ -363,7 +364,14 @@ export async function addAuditEntry(data: {
 
 export async function getAuditEntries(limit = 500) {
   const db = getDb();
-  return db.select().from(auditLog).orderBy(desc(auditLog.id)).limit(limit);
+  const inventoryActionFilter = or(...INVENTORY_AUDIT_ACTION_PREFIXES.map((prefix) => like(auditLog.action, `${prefix}%`)));
+  return db.select().from(auditLog).where(not(inventoryActionFilter!)).orderBy(desc(auditLog.id)).limit(limit);
+}
+
+export async function getInventoryAuditEntries(limit = 500) {
+  const db = getDb();
+  const inventoryActionFilter = or(...INVENTORY_AUDIT_ACTION_PREFIXES.map((prefix) => like(auditLog.action, `${prefix}%`)));
+  return db.select().from(auditLog).where(inventoryActionFilter).orderBy(desc(auditLog.id)).limit(limit);
 }
 
 export async function getAuditEntriesBefore(cutoff: string) {
@@ -2359,6 +2367,69 @@ export async function deleteInventoryOverride(data: { dormId: number; channelId:
   );
 }
 
+/** Replace default (channelId IS NULL) overrides for a bulk availability operation. */
+export async function bulkReplaceInventoryOverrides(
+  rows: Array<{ dormId: number; date: string; onlineAvailable: number | null; overriddenBy: string }>,
+  mode: "set" | "clear",
+) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const chunks: typeof rows[] = [];
+  for (let start = 0; start < rows.length; start += 10) chunks.push(rows.slice(start, start + 10));
+
+  const batch = (db as unknown as { batch?: (statements: unknown[]) => Promise<unknown> }).batch;
+  if (typeof batch === "function") {
+    let committedRows = 0;
+    try {
+      // D1 limits a batch to a bounded number of statements. Forty chunks
+      // means at most 80 statements (delete + insert) per atomic batch.
+      for (let groupStart = 0; groupStart < chunks.length; groupStart += 40) {
+        const statements: unknown[] = [];
+        const group = chunks.slice(groupStart, groupStart + 40);
+        for (const chunk of group) {
+          const predicates = chunk.map((row) => and(
+            eq(inventoryOverrides.dormId, row.dormId),
+            sql`${inventoryOverrides.channelId} IS NULL`,
+            eq(inventoryOverrides.date, row.date),
+          ));
+          if (predicates.length > 0) statements.push(db.delete(inventoryOverrides).where(or(...predicates)));
+          if (mode === "set" && chunk.length > 0) {
+            statements.push(db.insert(inventoryOverrides).values(chunk.map((row) => ({
+              dormId: row.dormId,
+              channelId: null,
+              date: row.date,
+              onlineAvailable: row.onlineAvailable,
+              offlineAvailable: null,
+              overriddenBy: row.overriddenBy,
+              overriddenAt: now,
+            }))));
+          }
+        }
+        if (statements.length > 0) await batch.call(db, statements);
+        committedRows += group.reduce((count, chunk) => count + chunk.length, 0);
+      }
+    } catch (error: any) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { committedRows });
+    }
+    return committedRows;
+  }
+
+  let committedRows = 0;
+  for (const row of rows) {
+    try {
+      if (mode === "clear") {
+        await deleteInventoryOverride({ dormId: row.dormId, channelId: null, date: row.date });
+      } else {
+        await upsertInventoryOverride({ ...row, channelId: null, offlineAvailable: null });
+      }
+      committedRows++;
+    } catch (error: any) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { committedRows });
+    }
+  }
+  return committedRows;
+}
+
 export async function getChannelRatesForRange(ratePlanId: number, channelId: number, startDate: string, endDate: string) {
   const db = getDb();
   return db.select().from(channelRates).where(
@@ -2437,8 +2508,18 @@ export async function getInventoryGridData(startDate: string, endDate: string) {
 export async function markInventoryDirty(dormId: number, dates: string[]) {
   const db = getDb();
   const now = new Date().toISOString();
-  for (const date of dates) {
-    await db.run(sql`INSERT OR IGNORE INTO inventory_dirty (dorm_id, date, created_at) VALUES (${dormId}, ${date}, ${now})`);
+  const rows = [...new Set(dates)].map((date) => ({ dormId, date, createdAt: now }));
+  const batch = (db as unknown as { batch?: (statements: unknown[]) => Promise<unknown> }).batch;
+  if (typeof batch === "function") {
+    const statements = [];
+    for (let start = 0; start < rows.length; start += 20) {
+      statements.push(db.insert(inventoryDirty).values(rows.slice(start, start + 20)).onConflictDoNothing());
+    }
+    if (statements.length > 0) await batch.call(db, statements);
+    return;
+  }
+  for (const row of rows) {
+    await db.run(sql`INSERT OR IGNORE INTO inventory_dirty (dorm_id, date, created_at) VALUES (${row.dormId}, ${row.date}, ${row.createdAt})`);
   }
 }
 

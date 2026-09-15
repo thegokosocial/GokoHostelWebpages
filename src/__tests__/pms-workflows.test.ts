@@ -37,6 +37,8 @@ const { captured, queryMocks } = vi.hoisted(() => {
       getAvailableBedsForRange: vi.fn(),
       upsertInventoryOverride: vi.fn(),
       deleteInventoryOverride: vi.fn(),
+      bulkReplaceInventoryOverrides: vi.fn(),
+      markInventoryDirty: vi.fn(),
       getAvailabilitySnapshot: vi.fn(),
       getUnassignedOtaHoldsForRange: vi.fn(),
       addAuditEntry: vi.fn(),
@@ -1352,15 +1354,27 @@ describe("PMS log list API", () => {
     });
   });
 
-  it("rejects non-admin", async () => {
+  it("rejects users without the logs permission", async () => {
     vi.mocked(authenticateUser).mockResolvedValue({ role: "staff", displayName: "Staff", permissions: {} } as never);
     const res = await channelManagerPOST(new NextRequest("http://localhost/api/admin/channel-manager", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: "x", action: "getSyncLogs" }),
     }));
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
     expect(getChannelSyncLogs).not.toHaveBeenCalled();
+  });
+
+  it("allows a manager with the logs permission to read PMS logs", async () => {
+    vi.mocked(authenticateUser).mockResolvedValue({ role: "manager", displayName: "Manager", permissions: { canViewLogs: true } } as never);
+    vi.mocked(getChannelSyncLogs).mockResolvedValue({ logs: [], total: 0 } as never);
+    const res = await channelManagerPOST(new NextRequest("http://localhost/api/admin/channel-manager", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "x", action: "getSyncLogs" }),
+    }));
+    expect(res.status).toBe(200);
+    expect(getChannelSyncLogs).toHaveBeenCalled();
   });
 });
 
@@ -1443,6 +1457,35 @@ describe("Restriction and rate adjustment workflows", () => {
       body: JSON.stringify(body),
     }));
   }
+
+  it("returns PMS acceptance separately from the local bulk rate write and supports PMS-only retry", async () => {
+    queryMocks.getDailyRates.mockResolvedValue([{
+      id: 1, ratePlanId: 10, date: "2026-09-01", rate: 700,
+      stopSell: 0, minimumStay: 1, maximumStay: null, closeOnArrival: 0, closeOnDeparture: 0,
+      minimumAdvanceReservation: null, maximumAdvanceReservation: null,
+      adult1Rate: 700, adult2Rate: null, childRate: null, infantRate: null, extraPersonRate: null,
+    }]);
+    vi.mocked(triggerRatePush).mockResolvedValue({ attempted: true, accepted: false, message: "timeout" });
+
+    const failed = await post({
+      password: "x", action: "bulkSetRates", ratePlanIds: [10], dates: ["2026-09-01"],
+      rate: 800, adult1Rate: 800,
+    });
+    expect(failed.status).toBe(200);
+    expect(await failed.json()).toMatchObject({
+      success: true,
+      sync: { attempted: true, accepted: false, message: "timeout" },
+    });
+
+    vi.mocked(triggerRatePush).mockResolvedValue({ attempted: true, accepted: true });
+    const retried = await post({
+      password: "x", action: "retryPmsSync", syncType: "rates",
+      dates: ["2026-09-01"], ratePlanIds: [10],
+    });
+    expect(retried.status).toBe(200);
+    expect(await retried.json()).toMatchObject({ success: true, sync: { accepted: true } });
+    expect(triggerRatePush).toHaveBeenLastCalledWith(["2026-09-01"], [10]);
+  });
 
   it("bulkSetRestrictions preserves other fields when setting closeOnArrival", async () => {
     queryMocks.getDailyRates.mockResolvedValue([{
@@ -1821,6 +1864,8 @@ describe("Bulk availability workflows", () => {
     queryMocks.getUnassignedOtaHoldsForRange.mockResolvedValue([]);
     queryMocks.upsertInventoryOverride.mockResolvedValue(undefined);
     queryMocks.deleteInventoryOverride.mockResolvedValue(undefined);
+    queryMocks.bulkReplaceInventoryOverrides.mockImplementation(async (rows: unknown[]) => rows.length);
+    queryMocks.markInventoryDirty.mockResolvedValue(undefined);
     queryMocks.addAuditEntry.mockResolvedValue(undefined);
     vi.mocked(triggerInventoryPush).mockReset();
     vi.mocked(triggerInventoryPush).mockResolvedValue({ attempted: true, accepted: true });
@@ -1833,6 +1878,21 @@ describe("Bulk availability workflows", () => {
       body: JSON.stringify(body),
     }));
   }
+
+  it("keeps the local availability change when PMS rejects the push", async () => {
+    vi.mocked(triggerInventoryPush).mockResolvedValue({ attempted: true, accepted: false, message: "HTTP 502: upstream unavailable" });
+    const res = await post({
+      password: "x", action: "bulkSetAvailability", dormIds: [8],
+      startDate: "2026-09-19", endDate: "2026-09-19", mode: "set", onlineRemaining: 0,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      success: true,
+      sync: { attempted: true, accepted: false, message: "HTTP 502: upstream unavailable" },
+      syncScope: { dates: ["2026-09-19"], dormIds: [8] },
+    });
+    expect(queryMocks.bulkReplaceInventoryOverrides).toHaveBeenCalledOnce();
+  });
 
   it("previews online, offline, blocked, and booked counts without writing or pushing", async () => {
     queryMocks.getAvailabilitySnapshot.mockResolvedValue([
@@ -1919,9 +1979,10 @@ describe("Bulk availability workflows", () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json()).updated).toBe(1);
-    expect(queryMocks.upsertInventoryOverride).toHaveBeenCalledWith(expect.objectContaining({
-      dormId: 8, date: "2026-09-19", onlineAvailable: 1, offlineAvailable: null,
-    }));
+    expect(queryMocks.bulkReplaceInventoryOverrides).toHaveBeenCalledWith(
+      [expect.objectContaining({ dormId: 8, date: "2026-09-19", onlineAvailable: 1 })],
+      "set",
+    );
     expect(triggerInventoryPush).toHaveBeenCalledOnce();
     expect(queryMocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "INVENTORY_AVAILABILITY_BULK_UPDATED" }));
   });
@@ -1937,7 +1998,7 @@ describe("Bulk availability workflows", () => {
     expect(body.updated).toBe(4);
     expect(body.capped).toBe(4);
     expect(body.unmappedDormIds).toEqual([9]);
-    expect(queryMocks.upsertInventoryOverride).toHaveBeenCalledTimes(4);
+    expect(queryMocks.bulkReplaceInventoryOverrides).toHaveBeenCalledWith(expect.any(Array), "set");
     expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-19", "2026-09-20"], [8, 9]);
     expect(queryMocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({
       details: expect.stringContaining('"dayFilter":[6,0]'),
@@ -1950,16 +2011,19 @@ describe("Bulk availability workflows", () => {
       startDate: "2026-09-19", endDate: "2026-09-19", mode: "clear",
     });
     expect(clear.status).toBe(200);
-    expect(queryMocks.deleteInventoryOverride).toHaveBeenCalledWith({ dormId: 8, channelId: null, date: "2026-09-19" });
+    expect(queryMocks.bulkReplaceInventoryOverrides).toHaveBeenCalledWith(
+      [expect.objectContaining({ dormId: 8, date: "2026-09-19" })],
+      "clear",
+    );
     expect(queryMocks.upsertInventoryOverride).not.toHaveBeenCalled();
 
-    queryMocks.deleteInventoryOverride.mockClear();
+    queryMocks.bulkReplaceInventoryOverrides.mockClear();
     const invalid = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
       startDate: "2026-09-17", endDate: "2026-09-19", mode: "set", onlineRemaining: -1,
     });
     expect(invalid.status).toBe(400);
-    expect(queryMocks.deleteInventoryOverride).not.toHaveBeenCalled();
+    expect(queryMocks.bulkReplaceInventoryOverrides).not.toHaveBeenCalled();
     expect(queryMocks.upsertInventoryOverride).not.toHaveBeenCalled();
 
     const invalidDays = await post({
@@ -1967,22 +2031,20 @@ describe("Bulk availability workflows", () => {
       startDate: "2026-09-19", endDate: "2026-09-19", dayFilter: ["6"], mode: "clear",
     });
     expect(invalidDays.status).toBe(400);
-    expect(queryMocks.deleteInventoryOverride).not.toHaveBeenCalled();
+    expect(queryMocks.bulkReplaceInventoryOverrides).not.toHaveBeenCalled();
   });
 
   it("reports partial local writes and pushes the applied scope when a later cell fails", async () => {
-    queryMocks.upsertInventoryOverride
-      .mockImplementationOnce(async () => undefined)
-      .mockRejectedValueOnce(new Error("write failed"));
+    queryMocks.bulkReplaceInventoryOverrides.mockRejectedValueOnce(new Error("write failed"));
     const res = await post({
       password: "x", action: "bulkSetAvailability", dormIds: [8],
       startDate: "2026-09-19", endDate: "2026-09-20", mode: "set", onlineRemaining: 1,
     });
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.partial).toBe(true);
-    expect(body.updated).toBe(1);
-    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-19"], [8]);
+    expect(body.partial).toBe(false);
+    expect(body.updated).toBe(0);
+    expect(triggerInventoryPush).not.toHaveBeenCalled();
     expect(queryMocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "INVENTORY_AVAILABILITY_BULK_UPDATED" }));
   });
 

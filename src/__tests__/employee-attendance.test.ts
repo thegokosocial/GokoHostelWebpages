@@ -40,6 +40,8 @@ describe("employee attendance calendar rules", () => {
   it("keeps corrections explicit and audits only real changes", () => {
     const route = readFileSync("src/app/api/admin/attendance/route.ts", "utf8");
     expect(route).toContain('new Set<AttendanceStatus>(["present", "half_day_leave", "full_day_leave"])');
+    expect(route).toContain('action === "getAuditHistory"');
+    expect(route).toContain('error: "Audit access required"');
     expect(route).toContain("if (oldStatus === status && oldComment === comment) continue");
     expect(route).toContain('status === "present" ? "Restored Present"');
     expect(route).toContain("Attendance ranges are limited to 62 days");
@@ -66,16 +68,17 @@ describe("employee attendance calendar rules", () => {
     expect(management).toContain("<ManagementAttendance password={password} username={username} role={role} />");
     const audit = readFileSync("src/components/admin/ManagementAudit.tsx", "utf8");
     expect(audit).toContain('{ id: "attendance" as AuditSubTab, label: "Attendance" }');
-    expect(audit).toContain('action: "getMonth"');
+    expect(audit).toContain('action: "getAuditHistory"');
     expect(audit).toContain("attendanceHistoryToAuditEntry");
     expect(audit).toContain('filePrefix="attendance-audit-log"');
   });
 
-  it("enforces manager-only API access and dashboard visibility", () => {
+  it("keeps attendance management restricted while allowing audit history separately", () => {
     const route = readFileSync("src/app/api/admin/attendance/route.ts", "utf8");
     const dashboard = readFileSync("src/components/admin/AdminDashboard.tsx", "utf8");
-    expect(route).toContain('auth.role !== "manager" || !auth.permissions.canManageAttendance');
+    expect(route).toContain('auth.role === "manager" && auth.permissions.canManageAttendance');
     expect(dashboard).toContain('role === "manager" && !!permissions?.canManageAttendance');
     expect(dashboard).toContain('managementTab: "attendance"');
+    expect(route).toContain('permissionEnabled(auth.permissions, "canViewAudit")');
   });
 });

@@ -13,13 +13,15 @@ describe("mapping-check schedule routing", () => {
     runInNewContext(compiled, scope);
     const worker = scope.exports.default!;
     const env = { CRON_SECRET: "test-secret" };
+    await worker.scheduled({ cron: "*/5 * * * *" }, env, {});
+    expect(fetch.mock.calls[0][0].url).toBe("https://goko.internal/api/cron/aiosell-inventory");
     await worker.scheduled({ cron: "30 3 * * *" }, env, {});
-    expect(fetch.mock.calls[0][0].url).toBe("https://goko.internal/api/cron/aiosell-mappings");
-    expect(fetch.mock.calls[0][0].headers.get("authorization")).toBe("Bearer test-secret");
+    expect(fetch.mock.calls[1][0].url).toBe("https://goko.internal/api/cron/aiosell-mappings");
+    expect(fetch.mock.calls[1][0].headers.get("authorization")).toBe("Bearer test-secret");
     await worker.scheduled({ cron: "30 4,6,8,10,12,14,16 * * *" }, env, {});
-    expect(fetch.mock.calls[1][0].url).toBe("https://goko.internal/api/cron/reconciliation-reminder");
+    expect(fetch.mock.calls[2][0].url).toBe("https://goko.internal/api/cron/reconciliation-reminder");
     await worker.scheduled({ cron: "unknown" }, env, {});
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
   it("fails visibly for missing credentials and unsuccessful job responses", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response("private error details", { status: 502 }));
@@ -28,12 +30,13 @@ describe("mapping-check schedule routing", () => {
     const worker = scope.exports.default!;
     await expect(worker.scheduled({ cron: "30 3 * * *" }, {}, {})).rejects.toThrow("CRON_SECRET is not configured");
     expect(fetch).not.toHaveBeenCalled();
-    for (const cron of ["30 3 * * *", "30 4,6,8,10,12,14,16 * * *"]) {
+    for (const cron of ["*/5 * * * *", "30 3 * * *", "30 4,6,8,10,12,14,16 * * *"]) {
       await expect(worker.scheduled({ cron }, { CRON_SECRET: "test-secret" }, {})).rejects.toThrow("HTTP 502");
     }
   });
   it("keeps both schedules in deployment configuration and connects the dashboard destination", () => {
     const config = readFileSync("wrangler.jsonc", "utf8");
+    expect(config).toContain('"*/5 * * * *"');
     expect(config).toContain('"30 3 * * *"');
     expect(config).toContain('"30 4,6,8,10,12,14,16 * * *"');
     const dashboard = readFileSync("src/components/admin/AdminDashboard.tsx", "utf8");

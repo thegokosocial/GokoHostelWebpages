@@ -8,6 +8,8 @@ const { authenticateUser, getCheckinsByMonth, getCheckinsByDateRange, getMonthKe
   getMonthKey: vi.fn(() => "2026-08"),
   getSystemLogs: vi.fn(),
 }));
+const getAuditEntries = vi.hoisted(() => vi.fn());
+const getInventoryAuditEntries = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth", () => ({
   authenticateUser,
@@ -60,7 +62,8 @@ vi.mock("@/db/queries", () => ({
   updateUser: vi.fn(),
   deleteUser: vi.fn(),
   addAuditEntry: vi.fn(),
-  getAuditEntries: vi.fn(),
+  getAuditEntries,
+  getInventoryAuditEntries,
   addSystemLog: vi.fn(),
   getSystemLogs,
   createReviewRequest: vi.fn(),
@@ -90,6 +93,8 @@ describe("Checkins auth-vs-list workflows", () => {
     getCheckinsByMonth.mockReset();
     getCheckinsByDateRange.mockReset();
     getSystemLogs.mockReset();
+    getAuditEntries.mockReset();
+    getInventoryAuditEntries.mockReset();
     getMonthKey.mockReturnValue("2026-08");
   });
 
@@ -174,11 +179,31 @@ describe("Checkins auth-vs-list workflows", () => {
     expect(await res.json()).toEqual({ error: "Visa document is required for foreign nationals" });
   });
 
-  it("forbids staff from getSystemLogs", async () => {
+  it("forbids staff from getSystemLogs without the logs permission", async () => {
     authenticateUser.mockResolvedValue(bookingsOnly);
     const res = await POST(req({ password: "x", action: "getSystemLogs" }));
     expect(res.status).toBe(403);
     expect(getSystemLogs).not.toHaveBeenCalled();
+  });
+
+  it("allows staff with the logs permission to read system logs", async () => {
+    authenticateUser.mockResolvedValue({ role: "staff", displayName: "Logs", permissions: { canViewLogs: true } });
+    getSystemLogs.mockResolvedValue({ logs: [], total: 0, sources: [] });
+    const res = await POST(req({ password: "x", action: "getSystemLogs" }));
+    expect(res.status).toBe(200);
+    expect(getSystemLogs).toHaveBeenCalled();
+  });
+
+  it("allows managers with the audit permission to read both audit streams", async () => {
+    authenticateUser.mockResolvedValue({ role: "manager", displayName: "Audit", permissions: { canViewAudit: true } });
+    getAuditEntries.mockResolvedValue([]);
+    getInventoryAuditEntries.mockResolvedValue([]);
+    const general = await POST(req({ password: "x", action: "getAuditLog" }));
+    const inventory = await POST(req({ password: "x", action: "getInventoryAuditLog" }));
+    expect(general.status).toBe(200);
+    expect(inventory.status).toBe(200);
+    expect(getAuditEntries).toHaveBeenCalledOnce();
+    expect(getInventoryAuditEntries).toHaveBeenCalledOnce();
   });
 
   it("getSystemLogs paginates with level and source filters", async () => {
