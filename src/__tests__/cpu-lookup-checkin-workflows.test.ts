@@ -403,8 +403,12 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
         expect(source).toContain("sticky top-0");
         expect(source).toContain("overflow-x-auto overflow-y-visible");
       } else if (file === "ManagementAudit.tsx") {
+        expect(source).toContain("Audit Logs");
         expect(source).toContain("overflow-x-auto overflow-y-visible overscroll-x-contain");
+        expect(source).toContain("touch-action:pan-x_pan-y");
         expect(source).toContain("min-w-[700px]");
+        expect(source).toContain("max-w-full min-w-0");
+        expect(source).toContain("sticky top-0");
         expect(source).toContain("formatAuditDetails");
       } else {
         expect(source).toContain("sticky top-[4.5rem]");

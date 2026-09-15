@@ -60,7 +60,7 @@ export function ManagementAudit({ password, username }: { password: string; user
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <AuditRetentionControls apiCall={apiCall} />
       <div className="flex gap-1 rounded-lg border border-brand-mist bg-white dark:bg-card p-1">
         {auditTabs.map((tab) => (
@@ -310,9 +310,9 @@ function AuditTrail({
   if (loading) return <AdminLoading message="Loading audit log..." />;
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-lg font-semibold text-brand-green-dark">Audit Trail</h3>
+        <h3 className="text-lg font-semibold text-brand-green-dark">Audit Logs</h3>
         <div className="flex gap-2">
           <Button type="button" variant="ctaOutline" onClick={exportCsv} disabled={filtered.length === 0}>
             <DownloadIcon className="mr-1 h-4 w-4" /> Export CSV
@@ -334,15 +334,15 @@ function AuditTrail({
         <span className="ml-auto self-center text-xs text-brand-green-dark/50">{filtered.length} entries</span>
       </div>
 
-      <div className="isolate overflow-x-auto overflow-y-visible overscroll-x-contain rounded-2xl border border-brand-mist bg-white dark:bg-card shadow-sm dark:shadow-none">
+      <div className="isolate max-w-full min-w-0 overflow-x-auto overflow-y-visible overscroll-x-contain rounded-2xl border border-brand-mist bg-white [touch-action:pan-x_pan-y] dark:bg-card shadow-sm dark:shadow-none">
         <table className="w-full min-w-[700px] text-left text-sm">
-          <thead className="sticky top-[4.5rem] z-20 bg-brand-sand/95">
+          <thead className="sticky top-0 z-20 bg-brand-sand/95">
             <tr className="border-b border-brand-mist bg-brand-sand/50">
-              <th className="sticky top-[4.5rem] z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Time</th>
-              <th className="sticky top-[4.5rem] z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">User</th>
-              <th className="sticky top-[4.5rem] z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Action</th>
-              <th className="sticky top-[4.5rem] z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Target</th>
-              <th className="sticky top-[4.5rem] z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Details</th>
+              <th className="sticky top-0 z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Time</th>
+              <th className="sticky top-0 z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">User</th>
+              <th className="sticky top-0 z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Action</th>
+              <th className="sticky top-0 z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Target</th>
+              <th className="sticky top-0 z-20 bg-brand-sand px-4 py-3 text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Details</th>
             </tr>
           </thead>
           <tbody>
