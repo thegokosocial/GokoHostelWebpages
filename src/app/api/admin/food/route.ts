@@ -124,9 +124,7 @@ export async function POST(req: NextRequest) {
       case "deleteCategory": {
         const { id } = params;
         if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
-        const categoryItems = await getMenuItemsByCategory(id);
         await deleteMenuCategory(id);
-        await deleteMenuPhotos(categoryItems.map((item) => item.imageUrl));
         return NextResponse.json({ ok: true });
       }
 
@@ -202,9 +200,7 @@ export async function POST(req: NextRequest) {
       case "deleteMenuItem": {
         const { id } = params;
         if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
-        const previous = await getMenuItemById(id);
         await deleteMenuItem(id);
-        await deleteMenuPhotos([previous?.imageUrl]);
         return NextResponse.json({ ok: true });
       }
 
@@ -266,6 +262,10 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error("Admin food API error:", err);
     const raw = err?.message || "Internal error";
+    const cause = err?.cause?.message || "";
+    if (/FOREIGN KEY constraint failed/i.test(`${raw} ${cause}`)) {
+      return NextResponse.json({ error: "This record is referenced by existing orders and cannot be removed.", code: "CONFLICT" }, { status: 409 });
+    }
     const userMessage = raw.includes("Failed query") || raw.includes("D1_ERROR")
       ? "Database temporarily unavailable. Please try again."
       : raw;

@@ -232,7 +232,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
   };
 
   const deleteCategory = async (id: number, name: string) => {
-    if (!confirm(`Delete category "${name}" and ALL its items? This cannot be undone.`)) return;
+    if (!confirm(`Remove category "${name}" and ALL its items from the menu? Existing order history will be preserved.`)) return;
     setSaving(true);
     try {
       const res = await apiCall({ action: "deleteCategory", id });
@@ -361,7 +361,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
   };
 
   const deleteItem = async (id: number, name: string) => {
-    if (!confirm(`Delete menu item "${name}"?`)) return;
+    if (!confirm(`Remove menu item "${name}" from the menu? Existing order history will be preserved.`)) return;
     setSaving(true);
     try {
       const res = await apiCall({ action: "deleteMenuItem", id });

@@ -737,13 +737,13 @@ export async function updateRateScrape(id: number, data: { status?: string; resu
 export async function getActiveMenuCategories() {
   const db = getDb();
   return db.select().from(menuCategories)
-    .where(eq(menuCategories.isActive, 1))
+    .where(and(eq(menuCategories.isActive, 1), sql`${menuCategories.deletedAt} IS NULL`))
     .orderBy(menuCategories.displayOrder);
 }
 
 export async function getAllMenuCategories() {
   const db = getDb();
-  return db.select().from(menuCategories).orderBy(menuCategories.displayOrder);
+  return db.select().from(menuCategories).where(sql`${menuCategories.deletedAt} IS NULL`).orderBy(menuCategories.displayOrder);
 }
 
 export async function addMenuCategory(data: { name: string; nameKannada?: string; icon?: string; description?: string; displayOrder?: number; discountExempt?: number }) {
@@ -766,8 +766,9 @@ export async function updateMenuCategory(id: number, data: Partial<typeof menuCa
 
 export async function deleteMenuCategory(id: number) {
   const db = getDb();
-  await db.delete(menuItems).where(eq(menuItems.categoryId, id));
-  await db.delete(menuCategories).where(eq(menuCategories.id, id));
+  const deletedAt = new Date().toISOString();
+  await db.update(menuItems).set(syncUpdate({ deletedAt, isAvailable: 0 })).where(eq(menuItems.categoryId, id));
+  await db.update(menuCategories).set(syncUpdate({ deletedAt, isActive: 0 })).where(eq(menuCategories.id, id));
 }
 
 export async function getMenuItemCategoryExemptions(menuItemIds: number[]): Promise<Map<number, boolean>> {
@@ -810,27 +811,27 @@ export async function getAvailableMenuItems() {
     lowStockThreshold: menuItems.lowStockThreshold,
   }).from(menuItems)
     .innerJoin(menuCategories, eq(menuItems.categoryId, menuCategories.id))
-    .where(and(eq(menuItems.isAvailable, 1), eq(menuCategories.isActive, 1)))
+    .where(and(eq(menuItems.isAvailable, 1), eq(menuCategories.isActive, 1), sql`${menuItems.deletedAt} IS NULL`, sql`${menuCategories.deletedAt} IS NULL`))
     .orderBy(menuItems.displayOrder);
 }
 
 export async function getMenuItemById(id: number) {
   const db = getDb();
-  const rows = await db.select().from(menuItems).where(eq(menuItems.id, id)).limit(1);
+  const rows = await db.select().from(menuItems).where(and(eq(menuItems.id, id), sql`${menuItems.deletedAt} IS NULL`)).limit(1);
   return rows[0] || null;
 }
 
 export async function getMenuWithCategories(includeUnavailable = false) {
   const db = getDb();
   const categories = await db.select().from(menuCategories)
-    .where(eq(menuCategories.isActive, 1))
+    .where(and(eq(menuCategories.isActive, 1), sql`${menuCategories.deletedAt} IS NULL`))
     .orderBy(menuCategories.displayOrder);
   const conditions = includeUnavailable
     ? eq(menuCategories.isActive, 1)
     : and(eq(menuItems.isAvailable, 1), eq(menuCategories.isActive, 1));
   const items = await db.select().from(menuItems)
     .innerJoin(menuCategories, eq(menuItems.categoryId, menuCategories.id))
-    .where(conditions)
+    .where(and(conditions, sql`${menuItems.deletedAt} IS NULL`, sql`${menuCategories.deletedAt} IS NULL`))
     .orderBy(menuItems.displayOrder);
   return { categories, items: items.map(r => r.menu_items) };
 }
@@ -838,13 +839,13 @@ export async function getMenuWithCategories(includeUnavailable = false) {
 export async function getMenuItemsByCategory(categoryId: number) {
   const db = getDb();
   return db.select().from(menuItems)
-    .where(eq(menuItems.categoryId, categoryId))
+    .where(and(eq(menuItems.categoryId, categoryId), sql`${menuItems.deletedAt} IS NULL`))
     .orderBy(menuItems.displayOrder);
 }
 
 export async function getAllMenuItems() {
   const db = getDb();
-  return db.select().from(menuItems).orderBy(menuItems.categoryId, menuItems.displayOrder);
+  return db.select().from(menuItems).where(sql`${menuItems.deletedAt} IS NULL`).orderBy(menuItems.categoryId, menuItems.displayOrder);
 }
 
 export async function getMenuItemTagsByIds(ids: number[]): Promise<Map<number, string>> {
@@ -888,7 +889,7 @@ export async function updateMenuItem(id: number, data: Partial<typeof menuItems.
 
 export async function deleteMenuItem(id: number) {
   const db = getDb();
-  return db.delete(menuItems).where(eq(menuItems.id, id));
+  return db.update(menuItems).set(syncUpdate({ deletedAt: new Date().toISOString(), isAvailable: 0 })).where(eq(menuItems.id, id));
 }
 
 export async function toggleMenuItemAvailability(id: number, isAvailable: number) {
@@ -1219,6 +1220,7 @@ export async function getLowStockItems() {
   return db.select().from(menuItems)
     .where(and(
       eq(menuItems.trackInventory, 1),
+      sql`${menuItems.deletedAt} IS NULL`,
       sql`${menuItems.stockQuantity} <= ${menuItems.lowStockThreshold}`
     ))
     .orderBy(menuItems.stockQuantity);

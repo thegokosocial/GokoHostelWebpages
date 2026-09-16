@@ -108,6 +108,8 @@ Manual/offline/walk-in bookings can use `editReservation` to update guest name, 
 
 **Account settings:** `list/add/update/delete` × Accounts, Vendors, Employees; `paySalary`.
 
+Menu `deleteMenuItem` and `deleteCategory` archive records rather than physically deleting them; category deletion archives all child items. Existing order foreign keys and photos remain intact. Archived entries are excluded from active menus and item lookup. Foreign-key conflicts return HTTP 409 with a specific message rather than a misleading temporary-outage error.
+
 Booking creation also exposes `getRoomReceiptAccounts` (`canAddBooking` or `canCheckIn`) for active receiving-account display data. Walk-in `createBooking` accepts optional `advanceAmount`, `advancePaymentMethod` (`cash` or `online`), and `advanceOnlineAccountId`; the server recomputes the total, records the advance as paid, creates a room receipt for online advances, and rejects advances for engine bookings. Manual `editReservation` can correct the final amount received or adjust it with a recorded payment/refund; reservation edits cannot lower the booking total below the final amount received.
 
 **Website:** `getAll`, `saveEventsCopy`, `saveCommunityCopy`, `addEvent`, `updateEvent`, `deleteEvent`, `addSpace`, `updateSpace`, `deleteSpace`, `discardMedia`.

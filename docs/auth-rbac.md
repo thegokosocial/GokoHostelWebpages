@@ -94,6 +94,8 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 `canCheckIn` / `canCheckOut` are grantable calendar controls. The booking API remains backward-compatible with `canAddBooking`.
 Obsolete keys and their planned cleanup are tracked in [permission-debt.md](permission-debt.md).
 
+Menu deletion permissions are unchanged: `canManageMenuItems` archives an item and `canManageMenuCategories` archives a category and its items. Archiving preserves historical orders; it does not grant permission to delete order history.
+
 ### Admin nav permissions
 
 | Section | Key |
