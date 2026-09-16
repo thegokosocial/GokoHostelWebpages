@@ -48,7 +48,7 @@ export function CreateBookingModal({
   username?: string;
   initialCheckin?: CheckinBookingPrefill | null;
 }) {
-  const { showError, showSuccess } = useAdminToast();
+  const { showError, showApiError, showSuccess } = useAdminToast();
   const [submitting, setSubmitting] = useState(false);
 
   const [guestName, setGuestName] = useState(initialCheckin?.name || "");
@@ -232,10 +232,10 @@ export function CreateBookingModal({
         await onCreated();
       } else {
         const data = await res.json().catch(() => ({ error: "Failed to create booking" }));
-        showError(data.error || "Failed to create booking");
+        showApiError({ response: res, data, action: "createBooking", endpoint: "/api/admin/bookings" }, "Could not create the booking.");
       }
-    } catch {
-      showError("Network error");
+    } catch (err) {
+      showApiError({ error: err, action: "createBooking", endpoint: "/api/admin/bookings" }, "Could not reach the booking service. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }

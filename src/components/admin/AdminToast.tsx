@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
 import { XIcon, CopyIcon, CheckIcon, AlertTriangleIcon, CheckCircleIcon, InfoIcon } from "lucide-react";
+import { normalizeApiError, type NormalizedApiError } from "@/lib/apiError";
 
 type ToastType = "error" | "success" | "info";
 
@@ -14,6 +15,7 @@ interface Toast {
 
 interface AdminToastContextValue {
   showError: (message: string, debugInfo?: string) => void;
+  showApiError: (input: { response?: Response; data?: unknown; action?: string; endpoint?: string; error?: unknown }, fallback?: string) => void;
   showSuccess: (message: string) => void;
   showInfo: (message: string) => void;
 }
@@ -25,6 +27,7 @@ export function useAdminToast(): AdminToastContextValue {
   if (!ctx) {
     return {
       showError: (msg) => alert(msg),
+      showApiError: ({ error }, fallback) => alert(fallback || (error instanceof Error ? error.message : "The request could not be completed.")),
       showSuccess: (msg) => alert(msg),
       showInfo: (msg) => alert(msg),
     };
@@ -50,6 +53,14 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
     addToast("error", message, info);
   }, [addToast]);
 
+  const showApiError = useCallback((input: { response?: Response; data?: unknown; action?: string; endpoint?: string; error?: unknown }, fallback?: string) => {
+    const normalized = normalizeApiError(input);
+    const message = (fallback && (normalized.code === "NETWORK_ERROR" || normalized.code === "TIMEOUT"))
+      ? fallback
+      : normalized.message || fallback || "The request could not be completed.";
+    addToast("error", message, buildDebugString(message, normalized));
+  }, [addToast]);
+
   const showSuccess = useCallback((message: string) => {
     addToast("success", message);
   }, [addToast]);
@@ -63,7 +74,7 @@ export function AdminToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AdminToastContext.Provider value={{ showError, showSuccess, showInfo }}>
+    <AdminToastContext.Provider value={{ showError, showApiError, showSuccess, showInfo }}>
       {children}
       <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
         {toasts.map((toast) => (
@@ -157,7 +168,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
   );
 }
 
-function buildDebugString(message: string, rawError?: string): string {
+function buildDebugString(message: string, rawError?: string | NormalizedApiError): string {
   const now = new Date();
   const ist = now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "medium" });
   const nav = typeof navigator !== "undefined" ? navigator : null;
@@ -172,7 +183,20 @@ function buildDebugString(message: string, rawError?: string): string {
     `UTC: ${now.toISOString()}`,
     `Message: ${message}`,
   ];
-  if (rawError) {
+  if (rawError && typeof rawError !== "string") {
+    lines.push(`Request ID: ${rawError.requestId || "unknown"}`);
+    lines.push(`Action: ${rawError.action || "unknown"}`);
+    lines.push(`Endpoint: ${rawError.endpoint || "unknown"}`);
+    lines.push(`HTTP status: ${rawError.status ?? "unknown"}`);
+    lines.push(`Error code: ${rawError.code}`);
+    lines.push(`Stage: ${rawError.stage || "unknown"}`);
+    lines.push(`Retryable: ${rawError.retryable ? "yes" : "no"}`);
+    if (rawError.field) lines.push(`Field: ${rawError.field}`);
+    if (rawError.cause) lines.push(`Technical cause: ${rawError.cause}`);
+    if (rawError.details && Object.keys(rawError.details).length > 0) {
+      lines.push(`Safe details: ${JSON.stringify(rawError.details)}`);
+    }
+  } else if (rawError) {
     lines.push(`Details: ${rawError}`);
   }
   lines.push(`URL: ${win?.location.href || "unknown"}`);

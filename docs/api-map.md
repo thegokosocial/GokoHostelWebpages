@@ -4,6 +4,10 @@
 
 Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`. Unknown `action` → 400. Missing auth → 401. RBAC fail → 403.
 
+## Error responses
+
+API failures retain the existing `{ error: string }` field and progressively add structured diagnostics: `code`, `requestId`, `action`, `stage`, `field`, `retryable`, and safe `details` where applicable. Responses expose the same request ID in the `x-goko-request-id` header. Status codes map to `VALIDATION_ERROR` (400/422), `AUTHENTICATION_REQUIRED` (401), `PERMISSION_DENIED` (403), `NOT_FOUND` (404), `CONFLICT` (409), `RATE_LIMITED` (429), `UPSTREAM_ERROR` (502/503), `TIMEOUT` (504), and `INTERNAL_ERROR` (500). Admin clients show a friendly message and keep the structured fields in the copyable diagnostic report. Secrets, credentials, identity documents, and raw stack traces are never returned.
+
 ---
 
 ## Public / guest

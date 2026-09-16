@@ -40,15 +40,6 @@ function useBookingApi(password: string, username?: string) {
   return { apiCall };
 }
 
-function apiErrorDetails(response: Response, data: Record<string, any>, action: string): string {
-  return JSON.stringify({
-    status: response.status,
-    action,
-    requestId: response.headers.get("x-goko-request-id") || data.debug?.requestId,
-    ...data.debug,
-  }, null, 2);
-}
-
 const ALL_BOOKINGS_PAGE_SIZE = 50;
 const ALL_BOOKING_STATUSES: Array<BookingStatus | "all"> = [
   "all", "received", "checked_in", "checked_out", "hold", "guest_declined", "no_show", "cancelled", "modified",
@@ -75,7 +66,7 @@ export function BookingDashboard({
   onInitialCheckinConsumed?: () => void;
 }) {
   const { apiCall } = useBookingApi(password, username);
-  const { showError, showSuccess, showInfo } = useAdminToast();
+  const { showError, showApiError, showSuccess, showInfo } = useAdminToast();
 
   const [view, setView] = useState<"calendar" | "table" | "all">("calendar");
   const [dateRange, setDateRange] = useState<DateRange>(() => {
@@ -186,7 +177,7 @@ export function BookingDashboard({
           );
         } else {
           const data = await calRes.json().catch(() => ({ error: "Failed to load data" }));
-          showError(data.error || "Failed to load booking data", apiErrorDetails(calRes, data, "getCalendarData"));
+          showApiError({ response: calRes, data, action: "getCalendarData", endpoint: "/api/admin/bookings" }, "Could not load booking data.");
         }
       } else {
         showError("Network error loading booking data");
@@ -198,7 +189,7 @@ export function BookingDashboard({
           setUnassignedBookings(data.bookings || []);
         } else {
           const data = await unRes.json().catch(() => ({ error: "Failed to load unassigned bookings" }));
-          showError(data.error || "Failed to load unassigned bookings", apiErrorDetails(unRes, data, "getUnassigned"));
+          showApiError({ response: unRes, data, action: "getUnassigned", endpoint: "/api/admin/bookings" }, "Could not load unassigned bookings.");
         }
       }
     } catch {
@@ -207,7 +198,7 @@ export function BookingDashboard({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [apiCall, dateRange.startDate, dateRange.endDate, showError, dorms]);
+  }, [apiCall, dateRange.startDate, dateRange.endDate, showApiError, showError, dorms]);
 
   const loadAllBookings = useCallback(async () => {
     const requestId = allBookingsRequest.current + 1;
@@ -226,7 +217,7 @@ export function BookingDashboard({
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Failed to load all bookings" }));
         if (requestId === allBookingsRequest.current) {
-          showError(data.error || "Failed to load all bookings", apiErrorDetails(res, data, "getAllBookings"));
+          showApiError({ response: res, data, action: "getAllBookings", endpoint: "/api/admin/bookings" }, "Could not load all bookings.");
         }
         return;
       }
@@ -240,7 +231,7 @@ export function BookingDashboard({
     } finally {
       if (requestId === allBookingsRequest.current) setAllBookingsLoading(false);
     }
-  }, [allBookingSearch, allBookingStatus, allBookingsPage, apiCall, dateRange.endDate, dateRange.startDate, showError]);
+  }, [allBookingSearch, allBookingStatus, allBookingsPage, apiCall, dateRange.endDate, dateRange.startDate, showApiError, showError]);
 
   const searchAllBookings = useCallback(async (query: string) => {
     try {

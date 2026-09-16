@@ -102,7 +102,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `settings` | Key-value (OAuth tokens, food hours, `image_validation`, `primary_server`). |
 | `users` | Staff. |
 | `audit_log` | Who did what. Raw action, target, and details are retained; the Management Audit API adds friendly presentation fields and bounded reference-name enrichment without changing the table schema. |
-| `system_logs` | App errors/events. Last 30 days kept (pruned on insert and list). |
+| `system_logs` | App errors/events. Structured error context is stored as sanitized JSON in `details`, correlated with `request_id`; last 30 days kept (pruned on insert and list). |
 | `api_stats` | Vision/Drive counters by month. |
 | `rate_scrapes` | Competitor scrape jobs. |
 | `qr_history` | Saved QR configs. |

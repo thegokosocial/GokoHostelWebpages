@@ -29,7 +29,7 @@ type ScrapeData = {
 
 export function AdminCheckRates({ password, username, role }: { password: string; username?: string; role: Role }) {
   const { apiCall } = useAdminApi(password, username);
-  const { showError } = useAdminToast();
+  const { showError, showApiError } = useAdminToast();
   const [loading, setLoading] = useState(false);
   const [scrapeData, setScrapeData] = useState<ScrapeData | null>(null);
   const [scraping, setScraping] = useState(false);
@@ -83,7 +83,7 @@ export function AdminCheckRates({ password, username, role }: { password: string
         setScrapeData({ id: d.id, city, startDate, endDate, propertyType, status: "pending", results: [], createdAt: new Date().toISOString(), completedAt: "" });
       } else {
         const d = await res.json();
-        showError("Failed to start scrape", d.error);
+        showApiError({ response: res, data: d, action: "startRateScrape", endpoint: "/api/admin/checkins" }, "Could not start the rate scrape.");
       }
     } finally { setScraping(false); }
   };

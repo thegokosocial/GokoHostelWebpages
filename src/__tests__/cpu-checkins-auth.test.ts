@@ -96,6 +96,7 @@ describe("Checkins auth-vs-list workflows", () => {
     getCheckinsByMonth.mockReset();
     getCheckinsByDateRange.mockReset();
     getSystemLogs.mockReset();
+    createRateScrape.mockReset();
     getAuditEntries.mockReset();
     getInventoryAuditEntries.mockReset();
     getAuditPresentationContext.mockReset();
@@ -146,6 +147,22 @@ describe("Checkins auth-vs-list workflows", () => {
     );
     fetchMock.mockRestore();
     vi.unstubAllEnvs();
+  });
+
+  it("returns actionable diagnostics when a rate scrape date is missing", async () => {
+    authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    const res = await POST(req({ password: "x", action: "startRateScrape", city: "Gokarna", endDate: "2026-10-08" }));
+    expect(res.status).toBe(400);
+    expect(res.headers.get("x-goko-request-id")).toBeTruthy();
+    expect(await res.json()).toMatchObject({
+      error: "City and dates are required before starting a rate scrape.",
+      code: "VALIDATION_ERROR",
+      action: "startRateScrape",
+      stage: "request_validation",
+      field: "startDate",
+      retryable: false,
+    });
+    expect(createRateScrape).not.toHaveBeenCalled();
   });
 
   it("loads month rows for list after a permitted login, not for auth", async () => {

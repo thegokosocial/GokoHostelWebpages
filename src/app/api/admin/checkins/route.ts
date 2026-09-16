@@ -35,6 +35,7 @@ import {
 import { presentAuditEntry } from "@/lib/auditPresentation";
 import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
+import { apiErrorBody, getRequestId } from "@/lib/apiError";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
   const token = process.env.GITHUB_TOKEN;
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
   let role: UserRole | null = null;
   let permissions: Record<string, boolean> = {};
 
+  const requestId = getRequestId(req);
   try {
     const body = await req.json();
     const { password, action, month, startDate, endDate, username, ...rest } = body;
@@ -1415,15 +1417,24 @@ export async function POST(req: NextRequest) {
 
     if (action === "startRateScrape") {
       if (isOfflineMode()) {
-        return NextResponse.json({ error: "Rate scraping requires internet" }, { status: 503 });
+        return NextResponse.json(apiErrorBody({ error: "Rate scraping requires internet. Connect to the internet and try again.", code: "UPSTREAM_ERROR", requestId, action, stage: "runtime_check" }), { status: 503, headers: { "x-goko-request-id": requestId } });
       }
       const { city: scrapeCity, propertyType: pType, proxyUrl: pUrl } = rest;
       const sDate = startDate;
       const eDate = endDate;
-      if (!scrapeCity || !sDate || !eDate) return NextResponse.json({ error: "City and dates required" }, { status: 400 });
+      if (!scrapeCity || !sDate || !eDate) {
+        return NextResponse.json(apiErrorBody({
+          error: "City and dates are required before starting a rate scrape.",
+          code: "VALIDATION_ERROR",
+          requestId,
+          action,
+          stage: "request_validation",
+          field: !scrapeCity ? "city" : !sDate ? "startDate" : "endDate",
+        }), { status: 400, headers: { "x-goko-request-id": requestId } });
+      }
 
       if (!process.env.GITHUB_TOKEN) {
-        return NextResponse.json({ error: "GITHUB_TOKEN not configured. Add it in Cloudflare env vars." }, { status: 500 });
+        return NextResponse.json(apiErrorBody({ error: "Rate scraping is not configured on the server. Contact an administrator.", code: "CONFIGURATION_ERROR", requestId, action, stage: "configuration" }), { status: 500, headers: { "x-goko-request-id": requestId } });
       }
 
       const scrape = await createRateScrape({ city: scrapeCity, startDate: sDate, endDate: eDate, propertyType: pType || "hostels" });

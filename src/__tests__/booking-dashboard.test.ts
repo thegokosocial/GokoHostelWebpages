@@ -429,7 +429,7 @@ describe("Booking Calendar: sticky dates and row colour", () => {
     const route = readFile("src/app/api/admin/bookings/route.ts");
     const toast = readFile("src/components/admin/AdminToast.tsx");
 
-    expect(dashboard).toContain('apiErrorDetails(calRes, data, "getCalendarData")');
+    expect(dashboard).toContain('showApiError({ response: calRes, data, action: "getCalendarData", endpoint: "/api/admin/bookings" }');
     expect(route).toContain('stage = "calculate nightly availability"');
     expect(route).toContain('"x-goko-request-id": requestId');
     expect(route).toContain("serverTime: new Date().toISOString()");

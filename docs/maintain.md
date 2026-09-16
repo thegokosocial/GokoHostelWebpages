@@ -4,6 +4,10 @@
 
 Project-wide agent rule: [`AGENTS.md`](../AGENTS.md). It applies to every chat/agent working in this repository and requires code, permission maps, tests, and matching handbook pages to be updated in the same turn.
 
+### Error diagnostics
+
+When staff report a failure, collect the copyable Goko Error Report, especially its `Request ID`, action, endpoint, status, error code, and stage. Search Management → Logs by request ID, then use the PMS/channel log for full Aiosell request/response details when the stage is a PMS operation. Reports are sanitized for sharing: never request or paste passwords, tokens, identity-document contents, or payment credentials. A friendly message may say a local write completed while a PMS sync failed; use the indicated retry action rather than repeating an unsafe mutation.
+
 ## Permission and page maintenance
 
 The permission system has two levels: a page/tab entry permission and separate action permissions inside that page. Never document a page as merely “view” when it also has mutations.

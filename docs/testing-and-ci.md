@@ -42,4 +42,6 @@ CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lin
 | `cpu-*.test.ts` | Hot-path / CPU-ish workflows (auth, food, kitchen, bookings, chrome). `cpu-food-guest-workflows`: food-order cart FAB/toast `inset-x-4` not `left-1/2`. `cpu-bookings-rates`: same-day `checkOut` does not unassign; rollback availability is `[assignment.checkoutDate, planned checkout)`; `channel_manager` assign/unassign/cancel/move/check-out skip Aiosell occupancy push; `assignBeds` 400s unless one bed per person in mapped dorms; walk-in `createBooking` writes `gokoBookingId` `GOKO{date}{6}`; stay collect/refund: Later then `collectStayPayment`, prepaid check-in records online stay revenue, refund cap is `amountPaid`, split cash clamp |
 | `worker-cpu.test.ts` | Auth hashing order vs env compare |
 
+Error-handling changes must cover the shared API error contract, HTTP status/code mapping, request-ID propagation, safe diagnostic redaction, retry classification, and representative route/UI failures. Preserve legacy `error` fields and verify that non-idempotent mutations are not retried by default.
+
 Rate scrape: `scrape-rates.yml` workflow_dispatch only. Needs GitHub secrets `API_URL`, `API_PASSWORD`.
