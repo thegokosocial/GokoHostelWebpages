@@ -1,5 +1,7 @@
 # Auth and RBAC
 
+Notification presentation changes preserve existing push recipients and `/api/push` authentication; no permission keys are added. Lock-screen food alerts use first names only. See [Push notifications](push-notifications.md).
+
 **Git-safe.** Passwords: [secrets-and-access.md](secrets-and-access.md).
 
 Code: `src/lib/auth.ts`, `src/lib/actionPermissions.ts`, `src/lib/adminNav.ts`.

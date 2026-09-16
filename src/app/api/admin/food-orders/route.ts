@@ -42,7 +42,7 @@ import { getDb } from "@/db";
 import { foodOrders, foodOrderItems, checkins, orderModifications } from "@/db/schema";
 import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
-import { dispatchPush, notificationFirstName, notificationFoodItems } from "@/lib/pushNotify";
+import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
 import { auditDateBounds } from "@/lib/auditRetention";
 
 export async function POST(req: NextRequest) {
@@ -300,7 +300,7 @@ export async function POST(req: NextRequest) {
         });
         await dispatchPush({
           title: "New Food Order",
-          body: `${notificationFoodItems(validatedItems)} · ${roomInfo || notificationFirstName(guestName)} · ₹${(total / 100).toFixed(0)}`,
+          body: notificationFoodBody(guestName, validatedItems, roomInfo, total),
           url: "/admin?section=foodOrders",
           eventId: `admin-food-order-${order.id}`,
           category: "food",

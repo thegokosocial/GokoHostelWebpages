@@ -1,5 +1,7 @@
 # Pages and admin UI
 
+The admin header notification-settings dialog supports enable/test/disable with busy states and recoverable errors. Test success reports push-service acceptance; users confirm display on their device. See [Push notifications](push-notifications.md) for mobile rendering and Chrome-owned notices.
+
 **Git-safe.** Routes a human hits, then the React files behind `/admin`. APIs: [api-map.md](api-map.md). Nav permissions: [auth-rbac.md](auth-rbac.md).
 
 ---

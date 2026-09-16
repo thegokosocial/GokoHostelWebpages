@@ -1,5 +1,7 @@
 # API map
 
+Push payloads and event producers are documented in [Push notifications](push-notifications.md). Guest/admin food-order pushes always include the first name alongside location. `/api/push` test delivery counts reflect push-service acceptance, not device display; API actions and authorization are unchanged.
+
 **Git-safe.** Auth: send env `ADMIN_PASSWORD` (value in [secrets-and-access.md](secrets-and-access.md)). RBAC: [auth-rbac.md](auth-rbac.md). 42 `route.ts` files under `src/app/api/`.
 
 Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`. Unknown `action` → 400. Missing auth → 401. RBAC fail → 403.

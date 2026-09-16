@@ -21,8 +21,8 @@ export type PushDeliverySummary = {
   failed: number;
 };
 
-function clean(value: string, max: number) {
-  return value.replace(/\s+/g, " ").trim().slice(0, max);
+function clean(value: unknown, max: number) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
 }
 
 export function notificationFirstName(name?: string | null) {
@@ -45,16 +45,22 @@ export function notificationFoodItems(items: Array<{ itemName: string; quantity:
   return items.map((item) => `${item.quantity}× ${clean(item.itemName, 60)}`).join(", ");
 }
 
+export function notificationFoodBody(name: string | null | undefined, items: Array<{ itemName: string; quantity: number }>, location: string | null | undefined, total: number, approval = false) {
+  const itemText = notificationFoodItems(items);
+  return [notificationFirstName(name), itemText.length > 160 ? `${itemText.slice(0, 157)}…` : itemText,
+    clean(location, 160), `₹${(total / 100).toFixed(0)}`, approval ? "Approval needed" : ""].filter(Boolean).join(" · ");
+}
+
 export function buildPushPayload(payload: PushPayload) {
   const category = payload.category || "operations";
-  const eventId = clean(payload.eventId || payload.tag || crypto.randomUUID(), 120);
+  const eventId = clean(payload.eventId, 120) || clean(payload.tag, 120) || crypto.randomUUID();
   return {
     title: clean(payload.title || "Goko", 80) || "Goko",
     body: clean(payload.body || "You have a new update", 1000) || "You have a new update",
     icon: "/icons/icon-192.png",
     badge: "/icons/notification-badge.png",
-    url: payload.url?.startsWith("/admin") ? payload.url : "/admin",
-    tag: clean(payload.tag || `${category}-${eventId}`, 120),
+    url: typeof payload.url === "string" && /^\/admin(?:[?#]|$)/.test(payload.url) && !payload.url.includes("\\") && !/[\u0000-\u0020]/.test(payload.url) ? payload.url : "/admin",
+    tag: clean(payload.tag, 120) || `${category}-${eventId}`,
     category,
     eventId,
     renotify: payload.renotify ?? category !== "operations",

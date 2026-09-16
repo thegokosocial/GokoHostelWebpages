@@ -152,13 +152,26 @@ self.addEventListener("message", (event) => {
 
 // --- Push Notifications ---
 
+function notificationText(value, fallback, max) {
+  return (typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "") || fallback;
+}
+
+function notificationUrl(value) {
+  try {
+    if (typeof value !== "string" || /[\u0000-\u0020\\]/.test(value)) return "/admin";
+    const parsed = new URL(value, self.location.origin);
+    return parsed.origin === self.location.origin && parsed.pathname === "/admin"
+      ? `${parsed.pathname}${parsed.search}${parsed.hash}` : "/admin";
+  } catch { return "/admin"; }
+}
+
 self.addEventListener("push", (event) => {
   const showNotif = async () => {
     let title = "Goko";
     let body = "You have a new update";
     let icon = "/icons/icon-192.png";
     let url = "/admin";
-    let tag = "goko-notification";
+    let tag = `goko-${crypto.randomUUID()}`;
     let badge = "/icons/notification-badge.png";
     let renotify = true;
     let timestamp = Date.now();
@@ -172,19 +185,17 @@ self.addEventListener("push", (event) => {
           // payload wasn't valid JSON — try plain text
         }
 
-        if (data && typeof data === "object") {
-          if (data.title) title = String(data.title);
-          if (data.body) body = String(data.body);
-          if (data.icon) icon = String(data.icon);
-          if (data.url) url = String(data.url);
-          if (data.tag) tag = String(data.tag);
-          if (data.badge) badge = String(data.badge);
+        if (data && typeof data === "object" && !Array.isArray(data)) {
+          title = notificationText(data.title, title, 80);
+          body = notificationText(data.body, body, 1000);
+          url = notificationUrl(data.url);
+          tag = notificationText(data.tag, notificationText(data.eventId, tag, 120), 120);
           if (typeof data.renotify === "boolean") renotify = data.renotify;
-          if (Number.isFinite(data.timestamp)) timestamp = data.timestamp;
+          if (Number.isFinite(data.timestamp) && data.timestamp > 0 && data.timestamp <= 8640000000000000) timestamp = data.timestamp;
         } else if (!data) {
           const text = event.data.text();
           if (text && text.length > 0 && text.length < 500) {
-            body = text;
+            body = notificationText(text, body, 1000);
           }
         }
       }
@@ -204,9 +215,16 @@ self.addEventListener("push", (event) => {
         timestamp,
       });
     } catch {
-      // Some browser/OS versions reject optional notification fields.
-      // Retrying with the portable core prevents Chrome's blank fallback card.
-      await self.registration.showNotification(title, { body, data: { url } });
+      // Keep branding when only optional platform features are rejected.
+      try {
+        await self.registration.showNotification(title, { body, icon, badge, tag, data: { url } });
+      } catch {
+        try {
+          await self.registration.showNotification(title, { body, data: { url } });
+        } catch {
+          console.error("Goko notification display failed");
+        }
+      }
     }
   };
 
@@ -216,12 +234,13 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || "/admin";
+  const targetUrl = notificationUrl(event.notification.data?.url);
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windowClients) => {
       for (const client of windowClients) {
-        if (client.url.includes("/admin") && "focus" in client) {
+        const clientUrl = new URL(client.url);
+        if (clientUrl.origin === self.location.origin && clientUrl.pathname === "/admin" && "focus" in client) {
           if ("navigate" in client) await client.navigate(targetUrl);
           return client.focus();
         }

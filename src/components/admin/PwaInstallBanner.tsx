@@ -28,6 +28,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
   const [vapidPublicKey, setVapidPublicKey] = useState("");
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
+  const [pushAction, setPushAction] = useState<"test" | "disable" | null>(null);
   const [pushError, setPushError] = useState("");
   const [pushMessage, setPushMessage] = useState("");
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
@@ -66,7 +67,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
         setSwRegistration(reg);
         if (reg.pushManager) {
           let sub = await reg.pushManager.getSubscription();
-          if (!sub && Notification.permission === "granted" && vapidPublicKey) {
+          if (!sub && typeof Notification !== "undefined" && Notification.permission === "granted" && vapidPublicKey) {
             sub = await reg.pushManager.subscribe({
               userVisibleOnly: true,
               applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
@@ -87,7 +88,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
                 setPushSubscribed(false);
                 setPushError((await res.json()).error || "Notification subscription needs attention");
               }
-            }).catch(() => setPushError("Notification subscription needs attention"));
+            }).catch(() => { setPushSubscribed(false); setPushError("Notification subscription needs attention"); });
           }
         }
       }).catch(() => setPushError("Notifications are unavailable in this browser"));
@@ -131,6 +132,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
 
       const registration = swRegistration || await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
       setSwRegistration(registration);
+      if (!registration.pushManager) throw new Error("Push notifications are not supported by this browser");
       const subscription = await registration.pushManager.getSubscription()
         || await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -163,35 +165,48 @@ export function PwaInstallBanner({ password, username }: { password: string; use
   }, [swRegistration, vapidPublicKey, password, username, subscribing]);
 
   const handleTestPush = useCallback(async () => {
+    if (pushAction) return;
+    setPushAction("test");
     setPushError("");
     setPushMessage("");
-    const res = await fetch("/api/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "test", password, username }),
-    });
-    const data = await res.json();
-    if (!res.ok || data.delivery?.delivered === 0) {
-      setPushError(data.error || "No subscribed device accepted the test");
-    } else {
-      setPushMessage(`Test notification sent to ${data.delivery.delivered} device(s).`);
-    }
-  }, [password, username]);
+    try {
+      const res = await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test", password, username }),
+      });
+      const data = await res.json();
+      if (!res.ok || !(data.delivery?.delivered > 0)) {
+        setPushError(data.error || "No subscribed device accepted the test");
+      } else {
+        setPushMessage(`Push service accepted the test for ${data.delivery.delivered} device(s). Check your phone to confirm display.`);
+      }
+    } catch {
+      setPushError("Could not send the test notification. Please try again.");
+    } finally { setPushAction(null); }
+  }, [password, username, pushAction]);
 
   const handleUnsubscribePush = useCallback(async () => {
-    if (!swRegistration) return;
-    const subscription = await swRegistration.pushManager.getSubscription();
-    if (!subscription) return setPushSubscribed(false);
-    const res = await fetch("/api/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "unsubscribe", password, username, endpoint: subscription.endpoint }),
-    });
-    if (!res.ok) return setPushError((await res.json()).error || "Could not disable notifications");
-    await subscription.unsubscribe();
-    setPushSubscribed(false);
-    setPushMessage("Notifications are disabled on this device.");
-  }, [swRegistration, password, username]);
+    if (!swRegistration || pushAction) return;
+    setPushAction("disable");
+    setPushError("");
+    setPushMessage("");
+    try {
+      const subscription = await swRegistration.pushManager.getSubscription();
+      if (!subscription) return setPushSubscribed(false);
+      const res = await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unsubscribe", password, username, endpoint: subscription.endpoint }),
+      });
+      if (!res.ok) return setPushError((await res.json()).error || "Could not disable notifications");
+      if (!await subscription.unsubscribe()) throw new Error("Could not disable the browser subscription. Please try again.");
+      setPushSubscribed(false);
+      setPushMessage("Notifications are disabled on this device.");
+    } catch (error) {
+      setPushError(error instanceof Error ? error.message : "Could not disable notifications. Please try again.");
+    } finally { setPushAction(null); }
+  }, [swRegistration, password, username, pushAction]);
 
   const showInstallButton = installPrompt && !isStandalone && !installed;
   const pushUnavailable = !vapidPublicKey;
@@ -240,8 +255,8 @@ export function PwaInstallBanner({ password, username }: { password: string; use
               </Button>
             ) : (
               <>
-                <Button type="button" onClick={handleTestPush}><SendIcon /> Send test</Button>
-                <Button type="button" variant="outline" onClick={handleUnsubscribePush}><BellOffIcon /> Disable</Button>
+                <Button type="button" disabled={!!pushAction} onClick={handleTestPush}>{pushAction === "test" ? <Loader2Icon className="animate-spin" /> : <SendIcon />} Send test</Button>
+                <Button type="button" disabled={!!pushAction} variant="outline" onClick={handleUnsubscribePush}>{pushAction === "disable" ? <Loader2Icon className="animate-spin" /> : <BellOffIcon />} Disable</Button>
               </>
             )}
             {showInstallButton && (

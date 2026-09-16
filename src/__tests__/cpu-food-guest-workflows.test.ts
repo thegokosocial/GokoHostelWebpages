@@ -46,7 +46,10 @@ vi.mock("@/db/queries", () => ({
   getGuestAllFoodOrders: q.getGuestAllFoodOrders,
 }));
 
-vi.mock("@/lib/pushNotify", () => ({ dispatchPush: q.dispatchPush, notificationFoodItems: (items: Array<{ itemName: string; quantity: number }>) => items.map((i) => `${i.itemName} x${i.quantity}`).join(", "), notificationFirstName: (name: string) => name }));
+vi.mock("@/lib/pushNotify", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/pushNotify")>(),
+  dispatchPush: q.dispatchPush,
+}));
 
 import { GET as getMenu } from "@/app/api/food/menu/route";
 import { POST as postOrder } from "@/app/api/food/order/route";
