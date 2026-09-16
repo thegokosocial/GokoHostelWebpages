@@ -12,6 +12,8 @@ import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { AdminToastProvider } from "@/components/admin/AdminToast";
 import type { Role, AdminSection, ManagementTab } from "@/components/admin/types";
 import { PwaInstallBanner } from "@/components/admin/PwaInstallBanner";
+import { StaffWhatsAppProvider } from "@/components/admin/StaffWhatsAppProvider";
+import { clearStaffWhatsAppDraft } from "@/lib/staffWhatsApp";
 import { SyncStatusBar } from "@/components/admin/SyncStatusBar";
 import { firstVisibleAdminSection, isSplitsSectionEnabled } from "@/lib/adminNav";
 
@@ -119,6 +121,7 @@ function AdminPageInner() {
               const data = await res.json();
               const nextSection = firstVisibleAdminSection(data.role, data.permissions || {}, section);
               if (!nextSection) {
+                clearStaffWhatsAppDraft();
                 localStorage.removeItem("gokoAdminSession");
               } else {
                 setRole(data.role);
@@ -126,6 +129,7 @@ function AdminPageInner() {
                 if (nextSection !== section) setSection(nextSection);
               }
             } else {
+              clearStaffWhatsAppDraft();
               localStorage.removeItem("gokoAdminSession");
             }
             setAutoLogging(false);
@@ -176,6 +180,7 @@ function AdminPageInner() {
   };
 
   const handleLogout = () => {
+    clearStaffWhatsAppDraft();
     setRole(null);
     setPassword("");
     setUsername("");
@@ -280,6 +285,7 @@ function AdminPageInner() {
   const fillViewport = section === "inventory";
 
   return (
+    <StaffWhatsAppProvider key={username} username={username}>
     <section className={cn(
       "flex flex-col bg-brand-sand dark:bg-background",
       fillViewport ? "h-dvh" : "min-h-screen",
@@ -446,5 +452,6 @@ function AdminPageInner() {
         </>
       )}
     </section>
+    </StaffWhatsAppProvider>
   );
 }

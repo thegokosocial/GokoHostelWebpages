@@ -1,5 +1,7 @@
 # Pages and admin UI
 
+Staff booking templates and review requests use [WhatsApp Business messaging](whatsapp-messaging.md): Android targets Business with copy/retry recovery, while other devices offer default-app/copy choices. Reviews prepare the message before a separate launch tap; counters show preparation attempts. Public/guest WhatsApp links retain existing behavior.
+
 The admin header notification-settings dialog supports enable/test/disable with busy states and recoverable errors. Test success reports push-service acceptance; users confirm display on their device. See [Push notifications](push-notifications.md) for mobile rendering and Chrome-owned notices.
 
 **Git-safe.** Routes a human hits, then the React files behind `/admin`. APIs: [api-map.md](api-map.md). Nav permissions: [auth-rbac.md](auth-rbac.md).

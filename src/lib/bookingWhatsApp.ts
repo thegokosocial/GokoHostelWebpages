@@ -45,10 +45,12 @@ export function validateBookingWhatsAppTemplates(value: unknown): BookingWhatsAp
 
 export function bookingWhatsAppNumber(input: string): string {
   const trimmed = input.trim();
+  if (!/^\+?[\d\s().-]+$/.test(trimmed)) return "";
+  const international = trimmed.startsWith("+") || trimmed.startsWith("00");
   let digits = trimmed.replace(/\D/g, "");
   if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.length === 10) digits = `91${digits}`;
-  return digits.length >= 7 && digits.length <= 15 ? digits : "";
+  if (digits.length === 10 && !international) digits = `91${digits}`;
+  return /^[1-9]\d{6,14}$/.test(digits) ? digits : "";
 }
 
 export function bookingWhatsAppReference({

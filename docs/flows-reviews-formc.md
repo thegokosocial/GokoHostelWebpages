@@ -9,7 +9,7 @@ The helper stays active during a submission, refuses shutdown while a job is in 
 
 ## Review funnel
 
-Staff (Reviews tab, `canViewReviews` or admin): `listAskReview` = checked-out guests with `checkedOutAt` set. `sendWhatsApp` increments send count. Token on `review_requests`. Guest URL `/review/[token]` (robots `disallow: /review/`). Google URL from setting `review_google_url`.
+Staff (Reviews tab, `canViewReviews` or admin): `listAskReview` = checked-out guests with `checkedOutAt` set. `sendWhatsApp` validates the phone and increments preparation attempts in the compatibility-named send-count field. It does not confirm transmission. The prepared panel launches Business on Android via a fresh tap; retries/copy do not increment the counter. See [WhatsApp messaging](whatsapp-messaging.md). Token on `review_requests`. Guest URL `/review/[token]` (robots `disallow: /review/`). Google URL from setting `review_google_url`.
 
 Guest API `POST /api/review` (no staff password):
 

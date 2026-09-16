@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2Icon, RefreshCwIcon, SendIcon, CheckCircleIcon, SettingsIcon, XIcon, PencilIcon, RotateCcwIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
+import { bookingWhatsAppNumber } from "@/lib/bookingWhatsApp";
+import { useStaffWhatsApp } from "./StaffWhatsAppProvider";
 
 interface ReviewRequest {
   id: number;
@@ -50,6 +52,9 @@ function formatDate(iso: string): string {
 }
 
 export function ReviewAskTab({ password, username }: Props) {
+  const prepareWhatsApp = useStaffWhatsApp();
+  const preparing = useRef(false);
+  const [sendError, setSendError] = useState("");
   const [guests, setGuests] = useState<GuestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<number | null>(null);
@@ -128,6 +133,13 @@ export function ReviewAskTab({ password, username }: Props) {
   };
 
   const handleSendWhatsApp = async (guest: GuestRow) => {
+    if (preparing.current) return;
+    setSendError("");
+    if (!bookingWhatsAppNumber(guest.guestContact)) {
+      setSendError("A valid guest phone number is required before preparing a review message.");
+      return;
+    }
+    preparing.current = true;
     setSendingId(guest.checkinId);
     try {
       const res = await apiCall({
@@ -137,24 +149,19 @@ export function ReviewAskTab({ password, username }: Props) {
         guestContact: guest.guestContact,
         bookingId: guest.bookingId || "",
       });
-      if (res.ok) {
-        const data = await res.json();
-        const token = data.token;
-        const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-        const reviewUrl = `${baseUrl}/review/${token}`;
-
-        const template = settings?.review_message_template ||
-          "Thank you for staying with us! ❤️\n\nHow was your experience? Please rate your stay:\n{REVIEW_URL}";
-        const message = template.replace("{REVIEW_URL}", reviewUrl);
-
-        const phone = guest.guestContact.replace(/[^0-9]/g, "");
-        const waUrl = `https://wa.me/${phone.startsWith("91") ? phone : "91" + phone}?text=${encodeURIComponent(message)}`;
-        window.open(waUrl, "_blank");
-
-        await loadGuests();
-      }
-    } catch {}
-    setSendingId(null);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not prepare the review message.");
+      const token = data.token;
+      if (typeof token !== "string" || !token) throw new Error("The review link was not returned. Please try again.");
+      const reviewUrl = `${window.location.origin}/review/${encodeURIComponent(token)}`;
+      const template = settings?.review_message_template ||
+        "Thank you for staying with us! ❤️\n\nHow was your experience? Please rate your stay:\n{REVIEW_URL}";
+      const message = template.split("{REVIEW_URL}").join(reviewUrl);
+      prepareWhatsApp(guest.guestContact, message, "reviews");
+      await loadGuests();
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Could not prepare the review message. Please try again.");
+    } finally { preparing.current = false; setSendingId(null); }
   };
 
   const openEditModal = (guest: GuestRow) => {
@@ -195,12 +202,14 @@ export function ReviewAskTab({ password, username }: Props) {
     const rr = guest.reviewRequest;
     if (rr?.rating) return { className: "bg-gray-200 dark:bg-[#2a2a2a] text-gray-500 dark:text-gray-400 cursor-not-allowed", label: `Rated ${rr.rating}★`, disabled: true };
     if (!rr || rr.whatsappSentCount === 0) return { className: "bg-emerald-600 hover:bg-emerald-700 text-white", label: "Send WhatsApp", disabled: false };
-    if (rr.whatsappSentCount === 1) return { className: "bg-orange-500 hover:bg-orange-600 text-white", label: `Sent (${rr.whatsappSentCount})`, disabled: false };
-    return { className: "bg-red-500 hover:bg-red-600 text-white", label: `Sent (${rr.whatsappSentCount})`, disabled: false };
+    if (rr.whatsappSentCount === 1) return { className: "bg-orange-500 hover:bg-orange-600 text-white", label: `Prepared (${rr.whatsappSentCount})`, disabled: false };
+    return { className: "bg-red-500 hover:bg-red-600 text-white", label: `Prepared (${rr.whatsappSentCount})`, disabled: false };
   };
 
   return (
     <div className="space-y-4">
+      {sendError && <p role="alert" className="rounded border border-red-300 p-3 text-sm text-red-700">{sendError}</p>}
+      <p className="text-xs text-muted-foreground">Counts include review-message preparation attempts, including historical attempts. They do not confirm delivery.</p>
       {/* Filter bar */}
       <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -317,7 +326,7 @@ export function ReviewAskTab({ password, username }: Props) {
                           <button
                             type="button"
                             onClick={() => handleSendWhatsApp(g)}
-                            disabled={btn.disabled || sendingId === g.checkinId}
+                            disabled={btn.disabled || sendingId !== null}
                             className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors", btn.className)}
                           >
                             {sendingId === g.checkinId ? (
@@ -364,7 +373,7 @@ export function ReviewAskTab({ password, username }: Props) {
                       <button
                         type="button"
                         onClick={() => handleSendWhatsApp(g)}
-                        disabled={btn.disabled || sendingId === g.checkinId}
+                        disabled={btn.disabled || sendingId !== null}
                         className={cn("flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors", btn.className)}
                       >
                         {sendingId === g.checkinId ? (
@@ -422,7 +431,7 @@ export function ReviewAskTab({ password, username }: Props) {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-brand-green-dark/70 mb-1">WhatsApp Sent Count</label>
+                <label className="block text-xs font-medium text-brand-green-dark/70 mb-1">WhatsApp Preparation Attempts</label>
                 <input
                   type="number"
                   min="0"

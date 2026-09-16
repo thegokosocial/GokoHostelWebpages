@@ -1,5 +1,7 @@
 # Auth and RBAC
 
+Staff WhatsApp Business routing adds no permissions or aliases. Existing booking-template and review preparation gates remain authoritative; the prepared-draft panel is within the authenticated admin shell and retains drafts only for their owner. See [WhatsApp messaging](whatsapp-messaging.md).
+
 Notification presentation changes preserve existing push recipients and `/api/push` authentication; no permission keys are added. Lock-screen food alerts use first names only. See [Push notifications](push-notifications.md).
 
 **Git-safe.** Passwords: [secrets-and-access.md](secrets-and-access.md).

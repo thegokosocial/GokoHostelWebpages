@@ -38,6 +38,7 @@ import { hasPermission, type Role } from "../types";
 import type { DashboardBooking, BedAssignment, BookingHistoryEntry } from "./types";
 import { bookingWhatsAppNumber, bookingWhatsAppReference, fillBookingWhatsAppTemplate, type BookingWhatsAppTemplate } from "@/lib/bookingWhatsApp";
 import { EditBookingModal } from "./EditBookingModal";
+import { useStaffWhatsApp } from "../StaffWhatsAppProvider";
 
 export function BookingDetailPanel({
   booking,
@@ -61,6 +62,7 @@ export function BookingDetailPanel({
   whatsAppTemplates: BookingWhatsAppTemplate[];
 }) {
   const { showError } = useAdminToast();
+  const prepareWhatsApp = useStaffWhatsApp();
   const [history, setHistory] = useState<BookingHistoryEntry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -205,7 +207,7 @@ export function BookingDetailPanel({
       "{BALANCE}": balanceText,
       "{PROPERTY_NAME}": propertyName,
     });
-    window.open(`https://wa.me/${whatsAppNumber}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    prepareWhatsApp(booking.contact || "", message, "bookings", true);
     setShowWhatsAppTemplates(false);
   };
   const hasAssignedBed = assignments.some((a) => a.status === "assigned");
@@ -545,7 +547,7 @@ export function BookingDetailPanel({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-foreground">Message {booking.guestName}</h3>
-                <p className="text-xs text-muted-foreground">Choose a template to open in WhatsApp.</p>
+                <p className="text-xs text-muted-foreground">Choose a template. Android opens WhatsApp Business; other devices show message options.</p>
               </div>
               <Button variant="ghost" size="icon-sm" onClick={() => setShowWhatsAppTemplates(false)}><XIcon className="size-4" /><span className="sr-only">Close</span></Button>
             </div>

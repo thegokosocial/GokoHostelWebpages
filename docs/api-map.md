@@ -1,5 +1,7 @@
 # API map
 
+Reviews `sendWhatsApp` retains its action/response contract but rejects invalid guest phone numbers (400) before creating/counting a request. It prepares a review link and increments preparation attempts, not confirmed sends. Native app launch/retry/copy is client-only; see [WhatsApp messaging](whatsapp-messaging.md).
+
 Push payloads and event producers are documented in [Push notifications](push-notifications.md). Guest/admin food-order pushes always include the first name alongside location. `/api/push` test delivery counts reflect push-service acceptance, not device display; API actions and authorization are unchanged.
 
 **Git-safe.** Auth: send env `ADMIN_PASSWORD` (value in [secrets-and-access.md](secrets-and-access.md)). RBAC: [auth-rbac.md](auth-rbac.md). 42 `route.ts` files under `src/app/api/`.

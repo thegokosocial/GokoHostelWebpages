@@ -10,6 +10,7 @@ import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
 
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { bookingWhatsAppNumber } from "@/lib/bookingWhatsApp";
 
 function generateToken(): string {
   const bytes = new Uint8Array(18);
@@ -81,6 +82,9 @@ export async function POST(req: NextRequest) {
       const { checkinId, guestName, guestContact, propertyId, bookingId } = rest;
       if (!checkinId || !guestName || !guestContact) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      }
+      if (typeof guestContact !== "string" || !bookingWhatsAppNumber(guestContact)) {
+        return NextResponse.json({ error: "A valid guest phone number is required" }, { status: 400 });
       }
 
       let existing = await getReviewRequestByCheckinId(checkinId);
