@@ -10,6 +10,8 @@ interface OrderItem {
   price: number;
   quantity: number;
   lineTotal: number;
+  pricingStatus?: string;
+  notes?: string;
 }
 
 interface OrderData {
@@ -239,7 +241,7 @@ function OrderStatusContent() {
                     {item.name} × {item.quantity}
                   </span>
                 </div>
-                <span className="font-medium text-gray-800 dark:text-gray-200">{formatPrice(item.lineTotal)}</span>
+                <span className="font-medium text-gray-800 dark:text-gray-200">{item.pricingStatus === "pending" ? "Price pending" : formatPrice(item.lineTotal)}</span>
               </div>
             ))}
           </div>
@@ -261,7 +263,7 @@ function OrderStatusContent() {
             </div>
             <div className="mt-1 flex justify-between font-bold text-gray-800 dark:text-gray-200">
               <span>Total</span>
-              <span>{formatPrice(order.total)}</span>
+              <span>{order.items.some((item) => item.pricingStatus === "pending") ? "Price pending" : formatPrice(order.total)}</span>
             </div>
           </div>
 

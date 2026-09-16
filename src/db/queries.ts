@@ -801,6 +801,10 @@ export async function getAvailableMenuItems() {
     description: menuItems.description,
     price: menuItems.price,
     priceText: menuItems.priceText,
+    priceOnRequest: menuItems.priceOnRequest,
+    indicativeMinPrice: menuItems.indicativeMinPrice,
+    indicativeMaxPrice: menuItems.indicativeMaxPrice,
+    priceBasis: menuItems.priceBasis,
     tags: menuItems.tags,
     ingredients: menuItems.ingredients,
     imageUrl: menuItems.imageUrl,
@@ -862,6 +866,7 @@ export async function addMenuItem(data: {
   price: number; priceText?: string; tags?: string; ingredients?: string;
   imageUrl?: string; isAvailable?: number; displayOrder?: number;
   trackInventory?: number; stockQuantity?: number; lowStockThreshold?: number;
+  priceOnRequest?: number; indicativeMinPrice?: number; indicativeMaxPrice?: number; priceBasis?: string;
 }) {
   const db = getDb();
   return db.insert(menuItems).values(syncInsert({
@@ -871,6 +876,10 @@ export async function addMenuItem(data: {
     description: data.description || "",
     price: data.price,
     priceText: data.priceText || "",
+    priceOnRequest: data.priceOnRequest ?? 0,
+    indicativeMinPrice: data.indicativeMinPrice ?? 0,
+    indicativeMaxPrice: data.indicativeMaxPrice ?? 0,
+    priceBasis: data.priceBasis || "per portion",
     tags: data.tags || "[]",
     ingredients: data.ingredients || "[]",
     imageUrl: data.imageUrl || "",
@@ -931,7 +940,7 @@ export async function createFoodOrder(data: {
 
 export async function addFoodOrderItems(items: Array<{
   orderId: number; menuItemId: number; itemName: string;
-  itemPrice: number; quantity: number; lineTotal: number;
+  itemPrice: number; quantity: number; lineTotal: number; pricingStatus?: string; notes?: string;
 }>) {
   const db = getDb();
   return db.insert(foodOrderItems).values(items.map((item) => syncInsert(item)));

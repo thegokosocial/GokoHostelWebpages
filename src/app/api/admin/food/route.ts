@@ -150,9 +150,13 @@ export async function POST(req: NextRequest) {
       }
 
       case "addMenuItem": {
-        const { categoryId, name, nameKannada, description, price, priceText, tags, ingredients, imageUrl, displayOrder, trackInventory, stockQuantity, lowStockThreshold } = params;
+        const { categoryId, name, nameKannada, description, price, priceText, priceOnRequest, indicativeMinPrice, indicativeMaxPrice, priceBasis, tags, ingredients, imageUrl, displayOrder, trackInventory, stockQuantity, lowStockThreshold } = params;
         if (!categoryId || !name?.trim()) return NextResponse.json({ error: "categoryId and name are required" }, { status: 400 });
-        if (typeof price !== "number" || price < 0) return NextResponse.json({ error: "Valid price is required" }, { status: 400 });
+        const variablePrice = priceOnRequest ? 1 : 0;
+        if (typeof price !== "number" || price < 0 || (!variablePrice && price <= 0)) return NextResponse.json({ error: "Valid price is required" }, { status: 400 });
+        const minPrice = Number(indicativeMinPrice) || 0;
+        const maxPrice = Number(indicativeMaxPrice) || 0;
+        if ((minPrice > 0) !== (maxPrice > 0) || minPrice > maxPrice) return NextResponse.json({ error: "Enter a complete valid price range" }, { status: 400 });
         const safeImageUrl = sanitizeFoodImageUrl(imageUrl);
         if (imageUrl && !safeImageUrl) return NextResponse.json({ error: "Invalid item photo" }, { status: 400 });
         await addMenuItem({
@@ -161,6 +165,10 @@ export async function POST(req: NextRequest) {
           nameKannada: nameKannada || "",
           description: description || "",
           price,
+          priceOnRequest: variablePrice,
+          indicativeMinPrice: minPrice,
+          indicativeMaxPrice: maxPrice,
+          priceBasis: priceBasis || "per portion",
           priceText: priceText || "",
           tags: typeof tags === "string" ? tags : JSON.stringify(tags || []),
           ingredients: typeof ingredients === "string" ? ingredients : JSON.stringify(ingredients || []),
@@ -180,6 +188,13 @@ export async function POST(req: NextRequest) {
         if (!previous) return NextResponse.json({ error: "Menu item not found" }, { status: 404 });
         if (data.tags && typeof data.tags !== "string") data.tags = JSON.stringify(data.tags);
         if (data.ingredients && typeof data.ingredients !== "string") data.ingredients = JSON.stringify(data.ingredients);
+        const variablePrice = data.priceOnRequest !== undefined ? !!data.priceOnRequest : !!previous.priceOnRequest;
+        if (variablePrice) data.price = 0;
+        if (Object.prototype.hasOwnProperty.call(data, "price") && typeof data.price !== "number") return NextResponse.json({ error: "Valid price is required" }, { status: 400 });
+        if (!variablePrice && (!Object.prototype.hasOwnProperty.call(data, "price") ? previous.price <= 0 : data.price <= 0)) return NextResponse.json({ error: "Valid price is required" }, { status: 400 });
+        const nextMin = Number(data.indicativeMinPrice) || 0;
+        const nextMax = Number(data.indicativeMaxPrice) || 0;
+        if ((nextMin > 0) !== (nextMax > 0) || nextMin > nextMax) return NextResponse.json({ error: "Enter a complete valid price range" }, { status: 400 });
         if (Object.prototype.hasOwnProperty.call(data, "imageUrl")) {
           const safeImageUrl = sanitizeFoodImageUrl(data.imageUrl);
           if (data.imageUrl && !safeImageUrl) return NextResponse.json({ error: "Invalid item photo" }, { status: 400 });

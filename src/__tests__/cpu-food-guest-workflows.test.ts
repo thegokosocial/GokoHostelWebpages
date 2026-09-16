@@ -46,7 +46,7 @@ vi.mock("@/db/queries", () => ({
   getGuestAllFoodOrders: q.getGuestAllFoodOrders,
 }));
 
-vi.mock("@/lib/pushNotify", () => ({ dispatchPush: q.dispatchPush }));
+vi.mock("@/lib/pushNotify", () => ({ dispatchPush: q.dispatchPush, notificationFoodItems: (items: Array<{ itemName: string; quantity: number }>) => items.map((i) => `${i.itemName} x${i.quantity}`).join(", "), notificationFirstName: (name: string) => name }));
 
 import { GET as getMenu } from "@/app/api/food/menu/route";
 import { POST as postOrder } from "@/app/api/food/order/route";
@@ -268,6 +268,14 @@ describe("POST /api/food/order", () => {
     expect(q.createFoodOrder).not.toHaveBeenCalled();
     expect(q.dispatchPush).not.toHaveBeenCalled();
   });
+
+  it("accepts a price-on-request item and stores it as pending", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 3, name: "Seasonal Fish", price: 0, priceOnRequest: 1, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.createFoodOrder.mockResolvedValue([{ id: 7, orderNumber: "F-7" }]);
+    const res = await postOrder(orderReq({ ...validOrder, items: [{ menuItemId: 3, quantity: 2, notes: "Large fish" }] }));
+    expect(res.status).toBe(200);
+    expect(q.addFoodOrderItems).toHaveBeenCalledWith([expect.objectContaining({ itemPrice: 0, lineTotal: 0, pricingStatus: "pending", notes: "Large fish" })]);
+  });
 });
 
 describe("GET /api/food/status", () => {
@@ -399,5 +407,14 @@ describe("food-order CPU/SSR split", () => {
     expect(menu).toContain("flex-nowrap gap-1 overflow-x-auto");
     expect(page).toContain('view === "menu" ? "max-w-7xl pb-0 pt-1"');
     expect(page).toContain('className="hidden sm:inline"');
+  });
+
+  it("preserves seasonal pricing metadata from menu cards into the guest cart", () => {
+    const menu = readFile("src/components/food/MenuBrowser.tsx");
+    const page = readFile("src/app/food-order/page.tsx");
+    for (const field of ["priceOnRequest", "indicativeMinPrice", "indicativeMaxPrice", "priceBasis"]) {
+      expect(menu).toContain(`${field}: item.${field}`);
+      expect(page).toContain(`${field}: menuItem.${field}`);
+    }
   });
 });

@@ -19,7 +19,7 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/validate-id` | POST multipart | none | Live ID/visa OCR |
 | `/api/settings` | GET | none | Public flags (`image_validation`, etc.) |
 | `/api/food/menu` | GET | none | Menu + kitchen hours + busy + WhatsApp flags |
-| `/api/food/order` | POST JSON | none | Place order (idempotency, stock, tab) |
+| `/api/food/order` | POST JSON | none | Place fixed or price-on-request order (idempotency, stock, tab) |
 | `/api/food/lookup` | GET `?phone=` | none | Hostel vs walk-in |
 | `/api/food/status` | GET | none | Order status / guest orders |
 | `/api/food/bills` | GET `?phone=` | none | My bills |
@@ -98,7 +98,7 @@ Manual/offline/walk-in bookings can use `editReservation` to update guest name, 
 
 **Food admin (admin only):** `getCategories`, `addCategory`, `updateCategory`, `deleteCategory`, `getMenuItems`, `getMenuItemsByCategory`, `addMenuItem`, `updateMenuItem`, `deleteMenuItem`, `toggleItemAvailability`, `bulkToggleAvailability`, `addStock`, `getLowStockItems`, `getFoodSettings`, `updateFoodSettings`.
 
-**Food orders:** `listOrders`, `getOrderDetails`, `getOrderModifications`, `getActiveGuests`, `getGuestsWithTabs`, `getGuestTab`, `getGuestAllOrders`, `getWalkinOrders`, `getCombinedBill`, `getMenu`, `updateOrderStatus`, `placeOrderForGuest`, `voidItem`, `updateItemQuantity`, `reassignOrder`, `markOrderPaid`, `updatePaymentDetails`, `applyDiscount`, `removeDiscount`. `listOrders` accepts search and date filters; its Audit-tab mode is clamped to the global audit-retention cutoff without deleting operational order records. Online/split payments accept `onlineAccountId` and `receiptId`; their online portion creates an automatic bank receipt for reconciliation.
+**Food orders:** `listOrders`, `getOrderDetails`, `getOrderModifications`, `getActiveGuests`, `getGuestsWithTabs`, `getGuestTab`, `getGuestAllOrders`, `getWalkinOrders`, `getCombinedBill`, `getMenu`, `updateOrderStatus`, `placeOrderForGuest`, `voidItem`, `updateItemQuantity`, `setFoodOrderItemPrice`, `reassignOrder`, `markOrderPaid`, `updatePaymentDetails`, `applyDiscount`, `removeDiscount`. `setFoodOrderItemPrice` finalizes a pending market-price line; payment and billing reject orders with pending lines. `listOrders` accepts search and date filters; its Audit-tab mode is clamped to the global audit-retention cutoff without deleting operational order records. Online/split payments accept `onlineAccountId` and `receiptId`; their online portion creates an automatic bank receipt for reconciliation.
 
 **Kitchen:** `listOrders`, `updateStatus`, `updateStatusBulk` (stage-level transitions for all currently matching orders: placed → preparing, preparing → ready, or ready → served), `toggleItemAvailability`, `rejectItem`, `updateItemQuantity`, `addItemToOrder`, `toggleBusy`, `getMenuItems`, `getOrderModifications`.
 

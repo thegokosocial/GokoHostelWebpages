@@ -130,19 +130,21 @@ export async function GET(req: NextRequest) {
         createdAt: o.createdAt,
         checkinId: o.checkinId,
         items: items
-          .filter((i) => i.quantity > 0 && i.lineTotal > 0)
+          .filter((i) => i.quantity > 0)
           .map((i) => ({
             menuItemId: i.menuItemId,
             name: i.itemName,
             quantity: i.quantity,
             price: i.itemPrice,
             lineTotal: i.lineTotal,
+            pricingStatus: i.pricingStatus,
+            notes: i.notes,
           })),
       };
     });
 
     const unpaidOrders = ordersWithItems.filter(
-      (o) => o.paymentStatus !== "paid" && o.status !== "cancelled" && o.total > 0
+      (o) => o.paymentStatus !== "paid" && o.status !== "cancelled"
     );
     const paidOrders = ordersWithItems.filter(
       (o) => o.paymentStatus === "paid" && o.status !== "cancelled"

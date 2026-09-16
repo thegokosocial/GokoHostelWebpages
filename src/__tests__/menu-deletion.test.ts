@@ -20,6 +20,7 @@ beforeEach(() => {
       id INTEGER PRIMARY KEY, category_id INTEGER REFERENCES menu_categories(id), name TEXT,
       name_kannada TEXT, description TEXT, price INTEGER, price_text TEXT, tags TEXT, ingredients TEXT,
       image_url TEXT, is_available INTEGER DEFAULT 1, display_order INTEGER DEFAULT 0,
+      price_on_request INTEGER DEFAULT 0, indicative_min_price INTEGER DEFAULT 0, indicative_max_price INTEGER DEFAULT 0, price_basis TEXT DEFAULT 'per portion',
       track_inventory INTEGER DEFAULT 0, stock_quantity INTEGER DEFAULT 0, low_stock_threshold INTEGER DEFAULT 5,
       sync_id TEXT, sync_updated_at TEXT, sync_source TEXT, deleted_at TEXT
     );

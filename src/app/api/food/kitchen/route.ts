@@ -275,15 +275,18 @@ export async function POST(req: NextRequest) {
       }
 
       const db = getDb();
-      const lineTotal = menuItem.price * quantity;
+      const isPricePending = menuItem.priceOnRequest === 1;
+      if (!isPricePending && menuItem.price <= 0) return NextResponse.json({ error: "Menu item has invalid price" }, { status: 400 });
+      const lineTotal = isPricePending ? 0 : menuItem.price * quantity;
 
       await db.insert(foodOrderItems).values({
         orderId,
         menuItemId: menuItem.id,
         itemName: menuItem.name,
-        itemPrice: menuItem.price,
+        itemPrice: isPricePending ? 0 : menuItem.price,
         quantity,
         lineTotal,
+        pricingStatus: isPricePending ? "pending" : "fixed",
         status: "active",
       });
 

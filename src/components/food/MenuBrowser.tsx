@@ -25,6 +25,10 @@ interface MenuItem {
   tags: string;
   ingredients: string;
   imageUrl: string;
+  priceOnRequest?: number;
+  indicativeMinPrice?: number;
+  indicativeMaxPrice?: number;
+  priceBasis?: string;
   isAvailable: number;
   displayOrder: number;
   trackInventory?: number;
@@ -37,6 +41,10 @@ export interface CartItem {
   name: string;
   nameKannada: string;
   price: number;
+  priceOnRequest?: number;
+  indicativeMinPrice?: number;
+  indicativeMaxPrice?: number;
+  priceBasis?: string;
   quantity: number;
   imageUrl: string;
 }
@@ -143,6 +151,10 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       name: item.name,
       nameKannada: item.nameKannada || "",
       price: item.price,
+      priceOnRequest: item.priceOnRequest,
+      indicativeMinPrice: item.indicativeMinPrice,
+      indicativeMaxPrice: item.indicativeMaxPrice,
+      priceBasis: item.priceBasis,
       quantity: 1,
       imageUrl: item.imageUrl || "",
     });
@@ -338,7 +350,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
             <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {filteredItems.map((item) => {
               const tags = parseTags(item.tags);
-              const isUnavailable = item.isAvailable !== 1 || item.price <= 0;
+              const isUnavailable = item.isAvailable !== 1 || (item.priceOnRequest !== 1 && item.price <= 0);
               const qty = getCartQuantity(item.id);
               const showLowStock = !isUnavailable && item.trackInventory && item.stockQuantity != null && item.lowStockThreshold != null && item.stockQuantity <= item.lowStockThreshold && item.stockQuantity > 0;
               const imageSrc = foodImageSrc(item.imageUrl);
@@ -425,7 +437,9 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
                           {isUnavailable ? (
                             <span className="text-gray-400">Unavailable</span>
                           ) : (
-                            formatPrice(item.price)
+                            item.priceOnRequest === 1
+                              ? (item.indicativeMinPrice && item.indicativeMaxPrice ? `₹${Math.round(item.indicativeMinPrice / 100)}–₹${Math.round(item.indicativeMaxPrice / 100)} approx. ${item.priceBasis || "per portion"}` : "Check with staff")
+                              : formatPrice(item.price)
                           )}
                         </span>
                         {showLowStock && (

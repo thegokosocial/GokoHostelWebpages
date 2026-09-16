@@ -30,6 +30,8 @@ export interface OrderItem {
   quantity: number;
   lineTotal: number;
   status: string;
+  pricingStatus?: string;
+  notes?: string;
 }
 
 export interface Order {
@@ -1017,6 +1019,19 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     }
   };
 
+  const handleSetItemPrice = async (orderId: number, itemId: number, itemName: string) => {
+    const value = window.prompt(`Final price per unit for ${itemName} (₹):`);
+    if (value === null) return;
+    const rupees = Number(value);
+    if (!Number.isFinite(rupees) || rupees <= 0) { showError("Enter a valid positive price"); return; }
+    setActionBusy(`price_${itemId}`);
+    try {
+      const res = await apiCall({ action: "setFoodOrderItemPrice", orderId, orderItemId: itemId, price: Math.round(rupees * 100) });
+      if (res.ok) { if (selectedGroup) await refreshAfterEdit(selectedGroup); showSuccess("Final price saved"); }
+      else { const data = await res.json().catch(() => ({})); showError(data.error || "Could not save price"); }
+    } finally { setActionBusy(null); }
+  };
+
   const actualGroupTotal = selectedGroupOrders.length > 0
     ? selectedGroupOrders.reduce((sum, o) => sum + o.total, 0)
     : selectedGroup?.totalAmount || 0;
@@ -1118,6 +1133,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const handlePdfGroup = async (group: SummaryGroup) => {
     const orders = getGroupOrders(group);
     if (orders.length === 0) return;
+    if (orders.some((o) => o.items.some((i) => i.status !== "voided" && i.pricingStatus === "pending"))) { showError("Price pending", "Set final prices before generating the bill"); return; }
     const exemptCatIds = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
     const miCatMap = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
     const billOrders: BillOrder[] = orders.map(o => ({
@@ -1368,6 +1384,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           const isItemEditing = isEditing && !isVoided;
                           return (
                           <div key={item.id}>
+                            {item.notes && <div className="mb-0.5 pl-1 text-[10px] italic text-brand-green-dark/50">Note: {item.notes}</div>}
                             {isVoided ? (
                               <div className="flex items-center justify-between text-xs">
                                 <div className="min-w-0 flex-1">
@@ -1400,7 +1417,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                   <span className="min-w-0 truncate text-brand-green-dark/60">{item.itemName}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>
+                                  {item.pricingStatus === "pending" ? (
+                                    <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-brand-green/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-green-dark hover:bg-brand-green/20 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
+                                  ) : <span className="text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>}
                                   <button
                                     type="button"
                                     onClick={() => setVoidingItemId(voidingItemId === item.id ? null : item.id)}
@@ -1414,7 +1433,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                             ) : (
                               <div className="flex items-center justify-between text-xs text-brand-green-dark/60">
                                 <span>{item.quantity}× {item.itemName}</span>
-                                <span>₹{(item.lineTotal / 100).toFixed(0)}</span>
+                                {item.pricingStatus === "pending" ? (
+                                  <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-brand-green/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-green-dark hover:bg-brand-green/20 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
+                                ) : <span>₹{(item.lineTotal / 100).toFixed(0)}</span>}
                               </div>
                             )}
                             {voidingItemId === item.id && (
@@ -3012,6 +3033,7 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
                     <button
                       type="button"
                       onClick={async () => {
+                        if (order.items.some((i) => i.status !== "voided" && i.pricingStatus === "pending")) { showError("Price pending", "Set final prices before generating the bill"); return; }
                         const exemptCatIds3 = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
                         const miCatMap3 = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
                         let singleExempt = 0;

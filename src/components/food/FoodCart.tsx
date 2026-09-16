@@ -11,6 +11,10 @@ export interface CartItemData {
   name: string;
   nameKannada: string;
   price: number;
+  priceOnRequest?: number;
+  indicativeMinPrice?: number;
+  indicativeMaxPrice?: number;
+  priceBasis?: string;
   quantity: number;
   imageUrl: string;
 }
@@ -59,6 +63,7 @@ export function FoodCart({
   onBack,
 }: FoodCartProps) {
   const [specialInstructions, setSpecialInstructions] = useState("");
+  const [itemNotes, setItemNotes] = useState<Record<number, string>>({});
   const [walkinName, setWalkinName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -77,6 +82,7 @@ export function FoodCart({
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const taxAmount = Math.round((subtotal * taxRate) / 100);
   const total = subtotal + taxAmount;
+  const hasPendingPrice = cart.some((item) => item.priceOnRequest === 1);
 
   const handlePlaceOrder = async () => {
     const name = guestInfo.guestType === "hostel" ? guestInfo.name : walkinName.trim();
@@ -102,7 +108,7 @@ export function FoodCart({
           guestPhone: guestInfo.phone,
           roomInfo: guestInfo.roomInfo,
           specialInstructions,
-          items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
+          items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: itemNotes[c.menuItemId] || "" })),
           createdBy: "guest",
         }),
       });
@@ -170,7 +176,7 @@ export function FoodCart({
               Order #{orderSuccess.orderNumber}
             </p>
             <p className="mt-1 text-2xl font-bold text-gray-800 dark:text-foreground">
-              {formatPrice(orderSuccess.total)}
+              {orderSuccess.items.some((item) => item.price === 0) ? "Price pending" : formatPrice(orderSuccess.total)}
             </p>
           </motion.div>
 
@@ -250,7 +256,8 @@ export function FoodCart({
                 {item.nameKannada && (
                   <p className="truncate text-xs text-gray-500">{item.nameKannada}</p>
                 )}
-                <p className="mt-0.5 text-xs text-gray-400">{formatPrice(item.price)} each</p>
+                <p className="mt-0.5 text-xs text-gray-400">{item.priceOnRequest === 1 ? (item.indicativeMinPrice && item.indicativeMaxPrice ? `₹${Math.round(item.indicativeMinPrice / 100)}–₹${Math.round(item.indicativeMaxPrice / 100)} approx. ${item.priceBasis || "per portion"}` : "Check with staff for price") : `${formatPrice(item.price)} each`}</p>
+                {item.priceOnRequest === 1 && <input value={itemNotes[item.menuItemId] || ""} onChange={(e) => setItemNotes((prev) => ({ ...prev, [item.menuItemId]: e.target.value.slice(0, 500) }))} placeholder="Size or weight (optional)" className="mt-1 w-full rounded border border-gray-200 bg-transparent px-2 py-1 text-xs text-gray-600 outline-none focus:border-brand-green" />}
               </div>
 
               <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-white/10 px-1.5 py-0.5">
@@ -272,7 +279,7 @@ export function FoodCart({
               </div>
 
               <span className="w-14 text-right text-sm font-semibold text-gray-800 dark:text-gray-200">
-                {formatPrice(item.price * item.quantity)}
+                {item.priceOnRequest === 1 ? "Pending" : formatPrice(item.price * item.quantity)}
               </span>
 
               <button
@@ -292,18 +299,18 @@ export function FoodCart({
       <div className="mt-4 rounded-xl border border-gray-100 dark:border-border bg-white dark:bg-card p-4 shadow-sm dark:shadow-none">
         <div className="flex justify-between text-sm text-gray-600 dark:text-muted-foreground">
           <span>Subtotal</span>
-          <span>{formatPrice(subtotal)}</span>
+          <span>{hasPendingPrice ? `${formatPrice(subtotal)} + pending` : formatPrice(subtotal)}</span>
         </div>
         {taxRate > 0 && (
           <div className="mt-1 flex justify-between text-sm text-gray-600 dark:text-muted-foreground">
             <span>Tax ({taxRate}%)</span>
-            <span>{formatPrice(taxAmount)}</span>
+            <span>{hasPendingPrice ? "Pending" : formatPrice(taxAmount)}</span>
           </div>
         )}
         <div className="mt-2 border-t border-gray-100 dark:border-border pt-2">
           <div className="flex justify-between text-base font-bold text-gray-800 dark:text-foreground">
             <span>Total</span>
-            <span>{formatPrice(total)}</span>
+            <span>{hasPendingPrice ? "Pending price" : formatPrice(total)}</span>
           </div>
         </div>
       </div>
@@ -370,7 +377,7 @@ export function FoodCart({
             Placing order…
           </span>
         ) : (
-          `Place Order — ${formatPrice(total)}`
+          `Place Order${hasPendingPrice ? "" : ` — ${formatPrice(total)}`}`
         )}
       </button>
     </motion.div>
@@ -392,9 +399,9 @@ function buildWhatsAppMessage(
 
   msg += "*Items:*\n";
   for (const item of cart) {
-    msg += `• ${item.name} x${item.quantity} — ₹${Math.round((item.price * item.quantity) / 100)}\n`;
+    msg += `• ${item.name} x${item.quantity} — ${item.price ? `₹${Math.round((item.price * item.quantity) / 100)}` : "Price pending"}\n`;
   }
-  msg += `\n*Total: ₹${Math.round(total / 100)}*`;
+  msg += `\n*Total: ${cart.some((item) => !item.price) ? "Price pending" : `₹${Math.round(total / 100)}`}*`;
 
   if (instructions) {
     msg += `\n\n📝 ${instructions}`;

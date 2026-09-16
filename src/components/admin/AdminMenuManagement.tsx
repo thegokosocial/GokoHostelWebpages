@@ -38,6 +38,10 @@ type MenuItem = {
   description: string;
   price: number;
   priceText: string;
+  priceOnRequest: number;
+  indicativeMinPrice: number;
+  indicativeMaxPrice: number;
+  priceBasis: string;
   tags: string;
   ingredients: string;
   imageUrl: string;
@@ -65,6 +69,10 @@ type ItemForm = {
   description: string;
   priceDisplay: string;
   priceText: string;
+  priceOnRequest: boolean;
+  indicativeMinPrice: string;
+  indicativeMaxPrice: string;
+  priceBasis: string;
   tagVeg: boolean;
   tagNonVeg: boolean;
   tagSpicy: boolean;
@@ -86,7 +94,7 @@ type ItemForm = {
 const emptyCategoryForm: CategoryForm = { name: "", nameKannada: "", icon: "🍽️", description: "", displayOrder: "0", trackInventoryDefault: false, discountExempt: false };
 const emptyItemForm: ItemForm = {
   categoryId: "", name: "", nameKannada: "", description: "",
-  priceDisplay: "", priceText: "", tagVeg: false, tagNonVeg: false, tagSpicy: false,
+  priceDisplay: "", priceText: "", priceOnRequest: false, indicativeMinPrice: "", indicativeMaxPrice: "", priceBasis: "per portion", tagVeg: false, tagNonVeg: false, tagSpicy: false,
   tagSeafood: false, tagChicken: false, tagMutton: false, tagEgg: false,
   tagChefSpecial: false, tagGokoSpecial: false, customTags: [],
   ingredients: "", imageUrl: "", displayOrder: "0",
@@ -279,6 +287,10 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
       description: item.description || "",
       priceDisplay: pricePaiseToDisplay(item.price),
       priceText: item.priceText || "",
+      priceOnRequest: !!item.priceOnRequest,
+      indicativeMinPrice: pricePaiseToDisplay(item.indicativeMinPrice || 0),
+      indicativeMaxPrice: pricePaiseToDisplay(item.indicativeMaxPrice || 0),
+      priceBasis: item.priceBasis || "per portion",
       tagVeg: tags.includes("veg"),
       tagNonVeg: tags.includes("non-veg"),
       tagSpicy: tags.includes("spicy"),
@@ -305,7 +317,10 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
     if (!itemForm.name.trim()) { showError("Name is required"); return; }
     if (!itemForm.categoryId) { showError("Select a category"); return; }
     const pricePaise = priceDisplayToPaise(itemForm.priceDisplay);
-    if (pricePaise <= 0) { showError("Enter a valid price"); return; }
+    const minPrice = priceDisplayToPaise(itemForm.indicativeMinPrice);
+    const maxPrice = priceDisplayToPaise(itemForm.indicativeMaxPrice);
+    if (!itemForm.priceOnRequest && pricePaise <= 0) { showError("Enter a valid price"); return; }
+    if ((minPrice > 0 || maxPrice > 0) && (minPrice <= 0 || maxPrice <= 0 || minPrice > maxPrice)) { showError("Enter a valid price range"); return; }
 
     setSaving(true);
     try {
@@ -333,6 +348,10 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
         description: itemForm.description.trim(),
         price: pricePaise,
         priceText: itemForm.priceText.trim(),
+        priceOnRequest: itemForm.priceOnRequest ? 1 : 0,
+        indicativeMinPrice: minPrice,
+        indicativeMaxPrice: maxPrice,
+        priceBasis: itemForm.priceBasis,
         tags: JSON.stringify(tags),
         ingredients: JSON.stringify(ingredientsArr),
         imageUrl: itemForm.imageUrl,
@@ -639,6 +658,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
                     value={itemForm.priceDisplay}
                     onChange={(e) => setItemForm({ ...itemForm, priceDisplay: e.target.value })}
                     placeholder="150"
+                    disabled={itemForm.priceOnRequest}
                     className="pl-7"
                   />
                 </div>
@@ -649,6 +669,18 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
               <div>
                 <Label className="text-xs">Price Text (optional)</Label>
                 <Input value={itemForm.priceText} onChange={(e) => setItemForm({ ...itemForm, priceText: e.target.value })} placeholder="e.g. per plate" className="mt-1" />
+              </div>
+              <div className="sm:col-span-2 md:col-span-3 rounded-lg border border-brand-mist bg-brand-sand/20 p-3">
+                <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+                  <input type="checkbox" checked={itemForm.priceOnRequest} onChange={(e) => setItemForm({ ...itemForm, priceOnRequest: e.target.checked })} className="rounded" />
+                  Price on request / seasonal price
+                </label>
+                {itemForm.priceOnRequest && <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div><Label className="text-xs">Minimum indicative price (₹)</Label><Input type="number" min="0" step="0.01" value={itemForm.indicativeMinPrice} onChange={(e) => setItemForm({ ...itemForm, indicativeMinPrice: e.target.value })} className="mt-1" placeholder="300" /></div>
+                  <div><Label className="text-xs">Maximum indicative price (₹)</Label><Input type="number" min="0" step="0.01" value={itemForm.indicativeMaxPrice} onChange={(e) => setItemForm({ ...itemForm, indicativeMaxPrice: e.target.value })} className="mt-1" placeholder="600" /></div>
+                  <div><Label className="text-xs">Price basis</Label><select value={itemForm.priceBasis} onChange={(e) => setItemForm({ ...itemForm, priceBasis: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option>per portion</option><option>per piece</option><option>per kilogram</option><option>per 100 grams</option></select></div>
+                  <p className="sm:col-span-3 text-[10px] text-brand-green-dark/50">Guests see this approximate range. Staff enters the final price in Food Orders.</p>
+                </div>}
               </div>
               <div className="sm:col-span-2 md:col-span-3">
                 <SiteImageField
@@ -807,7 +839,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-brand-green-dark">{item.name}</span>
-                            <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-xs font-bold text-brand-green-dark">₹{pricePaiseToDisplay(item.price)}</span>
+                            <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-xs font-bold text-brand-green-dark">{item.priceOnRequest ? "Price on request" : `₹${pricePaiseToDisplay(item.price)}`}</span>
                             <span className={cn(
                               "rounded-full px-1.5 py-0.5 text-[9px] font-semibold",
                               item.isAvailable ? "bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-[#1c1c1c] text-gray-500 dark:text-gray-400"
@@ -837,7 +869,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
                         <div className="border-t border-brand-mist px-3 pb-3 pt-2">
                           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                             <div><span className="text-brand-green-dark/50">Category:</span> <span className="text-brand-green-dark">{item.categoryName}</span></div>
-                            <div><span className="text-brand-green-dark/50">Price:</span> <span className="font-medium text-brand-green-dark">₹{pricePaiseToDisplay(item.price)}{item.priceText ? ` ${item.priceText}` : ""}</span></div>
+                            <div><span className="text-brand-green-dark/50">Price:</span> <span className="font-medium text-brand-green-dark">{item.priceOnRequest ? (item.indicativeMinPrice && item.indicativeMaxPrice ? `₹${pricePaiseToDisplay(item.indicativeMinPrice)}–₹${pricePaiseToDisplay(item.indicativeMaxPrice)} approx.` : "Price on request") : `₹${pricePaiseToDisplay(item.price)}${item.priceText ? ` ${item.priceText}` : ""}`}</span></div>
                             {item.description && <div className="col-span-2"><span className="text-brand-green-dark/50">Description:</span> <span className="text-brand-green-dark">{item.description}</span></div>}
                             <div><span className="text-brand-green-dark/50">Order:</span> <span className="text-brand-green-dark">{item.displayOrder}</span></div>
                             {!!item.trackInventory && <div><span className="text-brand-green-dark/50">Stock:</span> <span className="text-brand-green-dark">{item.stockQuantity} (low: {item.lowStockThreshold})</span></div>}
@@ -943,7 +975,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/60">{item.categoryName}</td>
                           <td className="whitespace-nowrap px-3 py-3 text-right font-medium text-brand-green-dark">
-                            ₹{pricePaiseToDisplay(item.price)}
+                            {item.priceOnRequest ? (item.indicativeMinPrice && item.indicativeMaxPrice ? `₹${pricePaiseToDisplay(item.indicativeMinPrice)}–₹${pricePaiseToDisplay(item.indicativeMaxPrice)} approx.` : "Price on request") : `₹${pricePaiseToDisplay(item.price)}`}
                             {item.priceText && <span className="ml-1 text-[10px] font-normal text-brand-green-dark/40">{item.priceText}</span>}
                           </td>
                           <td className="px-3 py-3">

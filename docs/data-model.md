@@ -41,9 +41,9 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | Table | Role |
 |-------|------|
 | `menu_categories` | Sections, Kannada name, `discount_exempt`. |
-| `menu_items` | Price paise, tags JSON, stock. |
+| `menu_items` | Fixed price paise or price-on-request flag, optional indicative min/max range and price basis, tags JSON, stock. |
 | `food_orders` | Header. Unique `order_number`, unique `idempotency_key`. Operational rows are preserved; the Audit-tab history view applies the global audit-retention cutoff without deleting orders. |
-| `food_order_items` | Snapshot name/price. `status` active/voided. |
+| `food_order_items` | Snapshot name/price, explicit `pricing_status` (`fixed`/`pending`), optional line notes. `status` active/voided. |
 | `order_modifications` | Kitchen/admin change log. |
 
 ### Accounts

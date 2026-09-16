@@ -83,7 +83,7 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; users
 | `health` | `ManagementHealth` | admin only | |
 | `history` | `AdminBedHistory` | management access | visible to non-admin |
 | `rates` | `AdminCheckRates` | management access | competitor scrape; visible |
-| `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | `/api/admin/food` per-action map; Menu Items can be searched live by English/Kannada item or category name |
+| `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | `/api/admin/food` per-action map; Menu Items can be searched live by English/Kannada item or category name; selected items may use price-on-request with an indicative range |
 | `website` | `AdminWebsite` | admin only | CMS; Cloudflare only |
 | `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | `/api/admin/food` |
 | `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |

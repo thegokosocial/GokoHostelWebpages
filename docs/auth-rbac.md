@@ -175,7 +175,7 @@ All actions: `canManageInventory`. Bulk actions write the local mutation, then w
 
 ### `/api/admin/food-orders`
 
-View list/tabs: `canViewFoodOrders`. Place/void/qty: `canPlaceOrders` or view. Pay/discount: `canMarkPaid`. The former destructive `cleanupOldOrders` action is retired; the Audit tab applies global retention as a read boundary while preserving food-order records.
+View list/tabs: `canViewFoodOrders`. Place/void/qty/market-price finalization: `canPlaceOrders` or view. Pay/discount: `canMarkPaid`; payment is rejected while an active line remains price-pending. The former destructive `cleanupOldOrders` action is retired; the Audit tab applies global retention as a read boundary while preserving food-order records.
 
 ### `/api/admin/expenses`
 

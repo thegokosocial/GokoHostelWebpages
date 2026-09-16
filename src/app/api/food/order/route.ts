@@ -107,6 +107,8 @@ export async function POST(req: NextRequest) {
       quantity: number;
       lineTotal: number;
       trackInventory: boolean;
+      pricingStatus: string;
+      notes: string;
     }> = [];
 
     for (const item of items) {
@@ -123,7 +125,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      if (menuItem.price <= 0) {
+      if (menuItem.price <= 0 && menuItem.priceOnRequest !== 1) {
         return NextResponse.json(
           { error: `"${menuItem.name}" has an invalid price` },
           { status: 400 }
@@ -139,10 +141,12 @@ export async function POST(req: NextRequest) {
       validatedItems.push({
         menuItemId: menuItem.id,
         itemName: menuItem.name,
-        itemPrice: menuItem.price,
+        itemPrice: menuItem.priceOnRequest === 1 ? 0 : menuItem.price,
         quantity: item.quantity,
-        lineTotal: menuItem.price * item.quantity,
+        lineTotal: menuItem.priceOnRequest === 1 ? 0 : menuItem.price * item.quantity,
         trackInventory: !!menuItem.trackInventory,
+        pricingStatus: menuItem.priceOnRequest === 1 ? "pending" : "fixed",
+        notes: typeof item.notes === "string" ? item.notes.trim().slice(0, 500) : "",
       });
     }
 
@@ -219,6 +223,8 @@ export async function POST(req: NextRequest) {
         itemPrice: v.itemPrice,
         quantity: v.quantity,
         lineTotal: v.lineTotal,
+        pricingStatus: v.pricingStatus,
+        notes: v.notes,
       }))
     );
 

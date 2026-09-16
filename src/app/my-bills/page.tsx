@@ -11,6 +11,8 @@ interface BillItem {
   quantity: number;
   price: number;
   lineTotal: number;
+  pricingStatus?: string;
+  notes?: string;
 }
 
 interface BillOrder {
@@ -427,7 +429,7 @@ function OrderCard({
               </span>
             )}
             <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              ₹{Math.round(order.total / 100)}
+              {order.items.some((item) => item.pricingStatus === "pending") ? "Price pending" : `₹${Math.round(order.total / 100)}`}
             </span>
             {order.discount > 0 && (
               <p className="text-[10px] text-green-600">
@@ -462,7 +464,7 @@ function OrderCard({
                     <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-400">
                       {item.quantity}× {item.name}
                     </span>
-                    <span className="flex-shrink-0 text-gray-500 dark:text-gray-400">₹{Math.round(item.lineTotal / 100)}</span>
+                    <span className="flex-shrink-0 text-gray-500 dark:text-gray-400">{item.pricingStatus === "pending" ? "Price pending" : `₹${Math.round(item.lineTotal / 100)}`}</span>
                   </div>
                 ))}
               </div>
@@ -485,7 +487,7 @@ function OrderCard({
                 )}
                 <div className="mt-1 flex justify-between text-sm font-semibold text-gray-800 dark:text-gray-200">
                   <span>Total</span>
-                  <span>₹{Math.round(order.total / 100)}</span>
+                  <span>{order.items.some((item) => item.pricingStatus === "pending") ? "Price pending" : `₹${Math.round(order.total / 100)}`}</span>
                 </div>
               </div>
               {variant === "paid" && order.paymentMethod && (

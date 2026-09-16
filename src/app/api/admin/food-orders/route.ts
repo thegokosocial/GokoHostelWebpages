@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
       getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: "canViewFoodOrders",
       updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
       voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
+      setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
       applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
@@ -206,11 +207,11 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Phone number is required for walk-in orders" }, { status: 400 });
         }
 
-        const validatedItems: Array<{ menuItemId: number; itemName: string; itemPrice: number; quantity: number; lineTotal: number; trackInventory: boolean }> = [];
+        const validatedItems: Array<{ menuItemId: number; itemName: string; itemPrice: number; quantity: number; lineTotal: number; trackInventory: boolean; pricingStatus: string; notes: string }> = [];
         for (const item of items) {
           const menuItem = await getMenuItemById(item.menuItemId);
           if (!menuItem) return NextResponse.json({ error: `Menu item #${item.menuItemId} not found` }, { status: 400 });
-          if (menuItem.price <= 0) return NextResponse.json({ error: `"${menuItem.name}" has invalid price` }, { status: 400 });
+          if (menuItem.price <= 0 && menuItem.priceOnRequest !== 1) return NextResponse.json({ error: `"${menuItem.name}" has invalid price` }, { status: 400 });
           const qty = item.quantity || 1;
           if (menuItem.trackInventory && menuItem.stockQuantity < qty) {
             const left = menuItem.stockQuantity;
@@ -219,10 +220,12 @@ export async function POST(req: NextRequest) {
           validatedItems.push({
             menuItemId: menuItem.id,
             itemName: menuItem.name,
-            itemPrice: menuItem.price,
+            itemPrice: menuItem.priceOnRequest === 1 ? 0 : menuItem.price,
             quantity: qty,
-            lineTotal: menuItem.price * qty,
+            lineTotal: menuItem.priceOnRequest === 1 ? 0 : menuItem.price * qty,
             trackInventory: !!menuItem.trackInventory,
+            pricingStatus: menuItem.priceOnRequest === 1 ? "pending" : "fixed",
+            notes: typeof item.notes === "string" ? item.notes.trim().slice(0, 500) : "",
           });
         }
 
@@ -279,7 +282,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        await addFoodOrderItems(validatedItems.map((v) => ({ orderId: order.id, menuItemId: v.menuItemId, itemName: v.itemName, itemPrice: v.itemPrice, quantity: v.quantity, lineTotal: v.lineTotal })));
+        await addFoodOrderItems(validatedItems.map((v) => ({ orderId: order.id, menuItemId: v.menuItemId, itemName: v.itemName, itemPrice: v.itemPrice, quantity: v.quantity, lineTotal: v.lineTotal, pricingStatus: v.pricingStatus, notes: v.notes })));
 
         for (const v of validatedItems) {
           await decrementStock(v.menuItemId, v.quantity);
@@ -333,6 +336,10 @@ export async function POST(req: NextRequest) {
         for (const oid of orderIds) {
           const order = await getFoodOrderById(oid);
           if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+          const pendingItems = await getFoodOrderItems(oid);
+          if (pendingItems.some((item) => item.status !== "voided" && item.pricingStatus === "pending")) {
+            return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });
+          }
           await updateFoodOrderPayment(oid, {
             paymentStatus: "paid",
             paymentMethod,
@@ -396,6 +403,33 @@ export async function POST(req: NextRequest) {
           details: `Cancelled ${item.itemName}${reason ? `: ${reason}` : ""}`,
         });
         return NextResponse.json({ success: true, role, newTotal });
+      }
+
+      case "setFoodOrderItemPrice": {
+        const { orderId, orderItemId, price } = rest;
+        const finalPrice = Number(price);
+        if (!Number.isInteger(orderId) || !Number.isInteger(orderItemId) || !Number.isInteger(finalPrice) || finalPrice <= 0) {
+          return NextResponse.json({ error: "A positive final price is required" }, { status: 400 });
+        }
+        const order = await getFoodOrderById(orderId);
+        const [item] = await getDb().select().from(foodOrderItems).where(and(eq(foodOrderItems.id, orderItemId), eq(foodOrderItems.orderId, orderId))).limit(1);
+        if (!order || !item) return NextResponse.json({ error: "Order item not found" }, { status: 404 });
+        if (item.pricingStatus !== "pending") return NextResponse.json({ error: "Only pending prices can be finalized" }, { status: 400 });
+        if (order.status === "cancelled" || order.paymentStatus === "paid") return NextResponse.json({ error: "This order cannot be repriced" }, { status: 400 });
+        const oldPrice = item.itemPrice;
+        await getDb().update(foodOrderItems).set({ itemPrice: finalPrice, lineTotal: finalPrice * item.quantity, pricingStatus: "fixed" }).where(eq(foodOrderItems.id, orderItemId));
+        const activeItems = (await getFoodOrderItems(orderId)).filter((i) => i.status !== "voided");
+        const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
+        const exemptions = await getMenuItemCategoryExemptions(activeItems.map((i) => i.menuItemId));
+        const discountableSubtotal = activeItems.filter((i) => !exemptions.get(i.menuItemId)).reduce((sum, i) => sum + i.lineTotal, 0);
+        const discount = Math.min(order.discount || 0, discountableSubtotal);
+        const subtotal = grossSubtotal - discount;
+        const tax = Math.round((subtotal * foodTaxPercent(await getSetting("food_tax_rate"))) / 100);
+        const total = subtotal + tax;
+        await updateFoodOrder(orderId, { subtotal, tax, total, discount });
+        await addOrderModification({ orderId, action: "price_finalized", itemId: orderItemId, oldValue: String(oldPrice), newValue: String(finalPrice), reason: "Final market price", modifiedBy: actorName });
+        await addAuditEntry({ username: actorName, action: "food_item_price_finalized", target: `order:${orderId}/item:${orderItemId}`, details: `Finalized ${item.itemName} at ₹${(finalPrice / 100).toFixed(2)} per unit` });
+        return NextResponse.json({ success: true, role, subtotal, tax, total });
       }
 
       case "updateItemQuantity": {
@@ -700,6 +734,10 @@ export async function POST(req: NextRequest) {
           hasModifications: (modCountMap.get(o.id) || 0) > 0,
         }));
 
+        if (withItems.some((o) => o.items.some((item: any) => item.status !== "voided" && item.pricingStatus === "pending"))) {
+          return NextResponse.json({ error: "Set final prices before generating a combined bill" }, { status: 400 });
+        }
+
         const grouped: Record<number, { checkinId: number; guestName: string; roomInfo: string; orders: any[]; subtotal: number }> = {};
         for (const o of withItems) {
           const cid = o.checkinId!;
@@ -801,7 +839,10 @@ export async function POST(req: NextRequest) {
 
         const order = await getFoodOrderById(orderId);
         if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-
+        if (newPaymentStatus === "paid") {
+          const pendingItems = await getFoodOrderItems(orderId);
+          if (pendingItems.some((item) => item.status !== "voided" && item.pricingStatus === "pending")) return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });
+        }
         const changes: string[] = [];
         const fmt = (paise: number) => `₹${(paise / 100).toFixed(0)}`;
 

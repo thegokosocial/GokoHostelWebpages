@@ -66,6 +66,10 @@ interface MenuItemData {
   description: string;
   price: number;
   priceText: string;
+  priceOnRequest?: number;
+  indicativeMinPrice?: number;
+  indicativeMaxPrice?: number;
+  priceBasis?: string;
   tags: string;
   ingredients: string;
   imageUrl: string;
@@ -297,6 +301,10 @@ export default function FoodOrderPage() {
             name: menuItem.name,
             nameKannada: menuItem.nameKannada,
             price: menuItem.price,
+            priceOnRequest: menuItem.priceOnRequest,
+            indicativeMinPrice: menuItem.indicativeMinPrice,
+            indicativeMaxPrice: menuItem.indicativeMaxPrice,
+            priceBasis: menuItem.priceBasis,
             quantity: oi.quantity,
             imageUrl: menuItem.imageUrl,
           });
