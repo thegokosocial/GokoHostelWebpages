@@ -94,12 +94,16 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
   const [data, setData] = useState<GridData | null>(null);
   const [rangeStart, setRangeStart] = useState(() => todayIST());
   const [rangeDays, setRangeDays] = useState(14);
+  const [rangeMode, setRangeMode] = useState<"preset" | "custom">("preset");
+  const [customStart, setCustomStart] = useState(() => todayIST());
+  const [customEnd, setCustomEnd] = useState(() => addCalendarDays(todayIST(), 13));
+  const [customError, setCustomError] = useState("");
   const [editingCell, setEditingCell] = useState<{ dormId: number; date: string } | null>(null);
   const [editingRate, setEditingRate] = useState<{ ratePlanId: number; date: string } | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const dates = useMemo(() => generateDates(rangeStart, rangeDays), [rangeStart, rangeDays]);
-  const endDate = useMemo(() => addCalendarDays(rangeStart, rangeDays), [rangeStart, rangeDays]);
+  const endDate = dates[dates.length - 1] || rangeStart;
   const hasHeld = useMemo(
     () => data?.unassignedOta?.some((hold) => dates.includes(hold.date) && hold.rooms > 0) ?? false,
     [data, dates],
@@ -169,7 +173,26 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
   }, [data]);
 
   const shiftRange = (days: number) => {
-    setRangeStart(addCalendarDays(rangeStart, days));
+    const nextStart = addCalendarDays(rangeStart, days);
+    setRangeStart(nextStart);
+    if (rangeMode === "custom") {
+      setCustomStart(addCalendarDays(customStart, days));
+      setCustomEnd(addCalendarDays(customEnd, days));
+    } else {
+      setRangeMode("preset");
+    }
+  };
+
+  const applyCustomRange = () => {
+    const diff = Math.round((new Date(customEnd + "T12:00:00Z").getTime() - new Date(customStart + "T12:00:00Z").getTime()) / 86400000);
+    if (!customStart || !customEnd || !Number.isFinite(diff) || diff < 0) {
+      setCustomError("Choose a valid date range.");
+      return;
+    }
+    setCustomError("");
+    setRangeStart(customStart);
+    setRangeDays(diff + 1);
+    setRangeMode("custom");
   };
 
   const colWidth = rangeDays <= 7 ? 80 : rangeDays <= 14 ? 60 : 48;
@@ -201,11 +224,23 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
         </div>
         <div className="flex gap-1">
           {[7, 14, 30].map((d) => (
-            <Button key={d} variant={rangeDays === d ? "default" : "outline"} size="sm" onClick={() => setRangeDays(d)}>
+            <Button key={d} variant={rangeMode === "preset" && rangeDays === d ? "default" : "outline"} size="sm" onClick={() => { setRangeMode("preset"); setRangeDays(d); }}>
               {d}d
             </Button>
           ))}
+          <Button variant={rangeMode === "custom" ? "default" : "outline"} size="sm" onClick={() => { setCustomStart(rangeStart); setCustomEnd(dates[dates.length - 1] || rangeStart); setCustomError(""); setRangeMode("custom"); }}>
+            Custom
+          </Button>
         </div>
+        {rangeMode === "custom" && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs" />
+            <span className="text-xs text-muted-foreground">to</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs" />
+            <Button variant="outline" size="xs" onClick={applyCustomRange}>Apply</Button>
+            {customError && <span className="text-xs text-destructive">{customError}</span>}
+          </div>
+        )}
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setBulkOpen(true)}>
           <PackageIcon className="h-3.5 w-3.5" /> Bulk Update
         </Button>

@@ -37,7 +37,7 @@ Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`
 | `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape); records list supports month or inclusive arrival-date range; foreign record add/update requires passport and visa; booking-resolution actions support active unmatched walk-in/offline check-ins |
 | `/api/admin/attendance` | `canManageAttendance` or `canViewAudit` for `getAuditHistory` | Staff attendance management and history-only attendance audit reads |
 | `/api/admin/bookings` | per-action map | Calendar PMS |
-| `/api/admin/inventory` | `canManageInventory` | Grid, blocks, rates, channels; bulk mutations persist locally, await the bounded Aiosell push, return `sync.accepted`, and expose `retryPmsSync` for PMS-only retry without duplicating the local mutation |
+| `/api/admin/inventory` | `canManageInventory` | Grid, blocks, rates, channels; the Inventory UI may request a custom inclusive visible range and sends the inclusive `startDate`/`endDate` shown in the grid; bulk mutations persist locally, await the bounded Aiosell push, return `sync.accepted`, and expose `retryPmsSync` for PMS-only retry without duplicating the local mutation |
 | `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |
 | `/api/admin/food-orders` | per-action map | Tabs, pay, void, combined bill, retained audit-history view |
 | `/api/admin/expenses` | per-action map | Expenses, ledger, reconcile, food revenue |

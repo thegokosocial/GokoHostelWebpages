@@ -12,6 +12,7 @@ import { ChevronDownIcon, ChevronRightIcon, LogOutIcon, SparklesIcon, Loader2Ico
 import { hasPermission, parseBedRow, type Role, type BedRow } from "./types";
 import { AdminLoading } from "./AdminLoading";
 import { canLookupFoodTab, foodTabUncheckedMessage, unpaidFoodCheckoutMessage } from "@/lib/foodTab";
+import { addCalendarDays } from "@/lib/inventoryAvailability";
 
 function fmtDate(d: Date): string { return localDateStr(d); }
 function fmtShort(d: Date): string {
@@ -44,13 +45,29 @@ export function AdminTimeline({ password, username, role, permissions }: { passw
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [popup, setPopup] = useState<{ bedIdx: number; day: string } | null>(null);
   const [numDays, setNumDays] = useState(10);
+  const [rangeMode, setRangeMode] = useState<"preset" | "custom">("preset");
+  const [customStart, setCustomStart] = useState(startDate);
+  const [customEnd, setCustomEnd] = useState(() => addCalendarDays(fmtDate(new Date()), 9));
+  const [customError, setCustomError] = useState("");
 
-  const days = Array.from({ length: numDays }, (_, i) => { const d = new Date(startDate); d.setDate(d.getDate() + i); return d; });
+  const days = Array.from({ length: numDays }, (_, i) => new Date(addCalendarDays(startDate, i) + "T12:00:00Z"));
   const colWidth = numDays <= 5 ? "flex-1" : numDays <= 7 ? "w-[120px] shrink-0" : "w-[100px] shrink-0";
   const today = fmtDate(new Date());
   const canAssign = hasPermission(role, permissions || {}, "canAssignBed") || hasPermission(role, permissions || {}, "canViewBeds");
   const canCheckout = hasPermission(role, permissions || {}, "canCheckout") || hasPermission(role, permissions || {}, "canViewDashboard");
   const canMarkClean = hasPermission(role, permissions || {}, "canMarkClean");
+
+  const applyCustomRange = () => {
+    const diff = Math.round((new Date(customEnd + "T12:00:00Z").getTime() - new Date(customStart + "T12:00:00Z").getTime()) / 86400000);
+    if (!customStart || !customEnd || !Number.isFinite(diff) || diff < 0) {
+      setCustomError("Choose a valid date range.");
+      return;
+    }
+    setCustomError("");
+    setStartDate(customStart);
+    setNumDays(diff + 1);
+    setRangeMode("custom");
+  };
 
   useEffect(() => { load(); }, []);
 
@@ -102,16 +119,26 @@ export function AdminTimeline({ password, username, role, permissions }: { passw
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Occupancy Timeline</h2>
         <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40 text-xs" />
-          <select value={numDays} onChange={(e) => setNumDays(parseInt(e.target.value))}
+          {rangeMode === "preset" && <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40 text-xs" />}
+          {rangeMode === "preset" && <select value={numDays} onChange={(e) => { setRangeMode("preset"); setNumDays(parseInt(e.target.value)); }}
             className="rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium">
             <option value="3">3 days</option>
             <option value="5">5 days</option>
             <option value="7">7 days</option>
             <option value="10">10 days</option>
             <option value="14">14 days</option>
-          </select>
-          <Button type="button" variant="outline" onClick={() => setStartDate(fmtDate(new Date()))}>Today</Button>
+          </select>}
+          <Button type="button" variant={rangeMode === "custom" ? "default" : "outline"} onClick={() => { setCustomStart(startDate); setCustomEnd(addCalendarDays(startDate, numDays - 1)); setCustomError(""); setRangeMode("custom"); }}>Custom</Button>
+          {rangeMode === "custom" && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="w-36 text-xs" />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="w-36 text-xs" />
+              <Button type="button" variant="outline" size="xs" onClick={applyCustomRange}>Apply</Button>
+              {customError && <span className="text-xs text-destructive">{customError}</span>}
+            </div>
+          )}
+          <Button type="button" variant="outline" onClick={() => { setRangeMode("preset"); setStartDate(fmtDate(new Date())); if (rangeMode === "custom") setNumDays(10); }}>Today</Button>
           <Button type="button" variant="outline" onClick={load}>Refresh</Button>
         </div>
       </div>

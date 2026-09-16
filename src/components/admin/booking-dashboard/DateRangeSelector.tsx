@@ -24,6 +24,7 @@ export function DateRangeSelector({
 }) {
   const [customStart, setCustomStart] = useState(dateRange.startDate);
   const [customEnd, setCustomEnd] = useState(dateRange.endDate);
+  const [customError, setCustomError] = useState("");
 
   useEffect(() => {
     setCustomStart(dateRange.startDate);
@@ -32,6 +33,7 @@ export function DateRangeSelector({
 
   const handleModeChange = (mode: DateRange["mode"]) => {
     if (mode === "custom") {
+      setCustomError("");
       onChange({ startDate: customStart, endDate: customEnd, mode: "custom" });
     } else {
       const { start, end } = getDateRange(mode);
@@ -43,7 +45,11 @@ export function DateRangeSelector({
     const start = new Date(customStart + "T12:00:00Z");
     const end = new Date(customEnd + "T12:00:00Z");
     const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000);
-    if (diffDays < 1 || diffDays > 30) return;
+    if (!customStart || !customEnd || !Number.isFinite(diffDays) || diffDays < 0) {
+      setCustomError("Choose a valid date range.");
+      return;
+    }
+    setCustomError("");
     onChange({ startDate: customStart, endDate: customEnd, mode: "custom" });
   };
 
@@ -92,6 +98,8 @@ export function DateRangeSelector({
           </Button>
         </div>
       )}
+
+      {customError && <span className="text-xs text-destructive">{customError}</span>}
 
       <Button variant="ghost" size="xs" onClick={handleToday} className="text-xs">
         <CalendarIcon className="size-3" />

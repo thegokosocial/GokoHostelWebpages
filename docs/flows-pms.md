@@ -74,6 +74,8 @@ Gmail sync (`POST /api/bookings/sync`, **env** admin/manager passwords only): la
 
 ## Inventory UI
 
+The Inventory grid offers 7d, 14d, 30d, and Custom ranges. Custom Start/End dates are inclusive in the UI and are applied immediately; `getInventoryGrid` receives exactly those inclusive dates. Bookings and Timeline use the same immediate-Apply inclusive custom-range behavior.
+
 `/api/admin/inventory` — grid, channel CRUD, bed type config, blocks, overrides, bulk availability/rates/restrictions. Permission `canManageInventory`.
 
 Bulk Update date fields (Block / Set Rates / Adjust / Restrictions): past days greyed (`min` = today IST). Choosing start auto-fills end = next day (staff can change it). **Both dates are nights included.** Block picker shows beds free on **every** night in that range (intersection / tightest night) — not booked, not already blocked — from `getBedsFreeToBlock` only (no stale grid snapshot fallback). Unblock lists **all** active blocks via `getActiveBlocks`, not only those overlapping the visible grid. API still stores blocks as `[start, exclusiveEnd)` via `exclusiveEndFromInclusive`. `getBedsFreeToBlock` / `blockBeds` reject occupied beds.

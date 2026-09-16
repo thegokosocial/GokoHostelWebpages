@@ -52,6 +52,8 @@ Website CMS: **admin role only**, not a permission key. **403 on Pi.**
 
 `auth` on checkins returns `{ role, permissions }` with no extra gate. `changeMyPassword` is **omitted** from `ACTION_PERMISSIONS`, so `actionAllowed(undefined)` → **allowed** for any authenticated user.
 
+Bookings, Timeline, and Inventory custom date ranges are view filters. They do not add permissions or change the existing page/action authorization: Bookings still requires `canViewBookings`, Timeline `canViewTimeline`, and Inventory `canManageInventory`.
+
 `/api/admin/channel-manager`: admin role for configuration and mutation actions; `getSyncLogs` is a read-only exception gated by `canViewLogs`. `/api/admin/food` uses a per-action permission map for menu, stock, and food settings; admin bypasses all permissions.
 
 `/api/admin/reviews`: admin **or** `canViewReviews`.
