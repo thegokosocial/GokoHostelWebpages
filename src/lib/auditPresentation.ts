@@ -73,6 +73,8 @@ const ACTION_LABELS: Record<string, string> = {
   expense_added: "Expense added",
   expense_updated: "Expense updated",
   expense_deleted: "Expense deleted",
+  account_reconciliation_completed: "Account reconciled",
+  account_reconciliation_undone: "Account reconciliation undone",
   food_order_status: "Food order status changed",
   food_order_placed: "Food order placed",
   food_order_paid: "Food order paid",

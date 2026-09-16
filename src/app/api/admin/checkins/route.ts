@@ -36,6 +36,7 @@ import { presentAuditEntry } from "@/lib/auditPresentation";
 import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 import { apiErrorBody, getRequestId } from "@/lib/apiError";
+import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
   const token = process.env.GITHUB_TOKEN;
@@ -93,8 +94,8 @@ function generateBookingId(): string {
 export async function POST(req: NextRequest) {
   let role: UserRole | null = null;
   let permissions: Record<string, boolean> = {};
-
   const requestId = getRequestId(req);
+
   try {
     const body = await req.json();
     const { password, action, month, startDate, endDate, username, ...rest } = body;
@@ -1471,18 +1472,6 @@ export async function POST(req: NextRequest) {
       const db = getDb();
       const allUsers = await getAllUsers();
       const managers = allUsers.filter((u) => u.role === "manager");
-      const ALL_PERMISSION_KEYS = [
-        "canAddCheckin", "canAssignBed", "canCheckout", "canMarkClean", "canEditRecords", "canDeleteRecords",
-        "canViewFoodOrders", "canPlaceOrders", "canManageInventory", "canMarkPaid",
-        "canViewMenu", "canManageMenuCategories", "canManageMenuItems", "canToggleMenuAvailability", "canManageFoodSettings",
-        "canViewExpenses", "canViewFoodBills", "canUseQRGenerator", "canManageAttendance", "canAddIncome",
-        "canViewDashboard", "canViewBookings", "canViewBeds", "canViewTimeline", "canViewRecords", "canViewAccounts", "canViewSplits", "canViewManagement",
-        "canAddBooking", "canCheckIn", "canCheckOut", "canDeleteBooking", "canManageBookingTemplates", "canViewAnalytics",
-        "canAddExpense", "canEditExpense", "canDeleteExpense", "canViewFoodTabs", "canEditFoodOrders", "canVoidFoodOrders", "canApplyFoodDiscounts", "canGenerateFoodBills",
-        "canReconcileAccounts", "canManageAccountSettings", "canManageVendors", "canManageEmployees", "canManagePayroll", "canViewInventory", "canManageRates", "canManageInventoryBlocks",
-        "canSendReviewRequests", "canEditReviewRequests", "canManageReviewSettings",
-        "canAddSplitExpense", "canEditSplitExpense", "canDeleteSplitExpense", "canSettleSplits", "canManageSplits",
-      ];
       let updated = 0;
       for (const mgr of managers) {
         let existing: Record<string, boolean> = {};

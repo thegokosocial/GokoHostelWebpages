@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminLoading } from "./AdminLoading";
-import type { Role } from "./types";
+import { hasPermission, type Role } from "./types";
 
 type AccountBalance = {
   accountId: number | null;
@@ -30,6 +30,9 @@ type AccountBalance = {
   expectedClosing: number;
   actualClosing: number | null;
   isReconciled: boolean;
+  notes: string;
+  reconciledBy: string;
+  reconciledAt: string;
 };
 
 function getToday() {
@@ -53,14 +56,16 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
     requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : getToday(),
   );
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingKey, setSavingKey] = useState("");
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [actuals, setActuals] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [reconciled, setReconciled] = useState(false);
-  const [reconciledBy, setReconciledBy] = useState("");
-  const [reconciledAt, setReconciledAt] = useState("");
-  const [undoing, setUndoing] = useState(false);
+  const [undoingKey, setUndoingKey] = useState("");
+  const [error, setError] = useState("");
+  const cashBalance = balances.find((balance) => balance.accountId === null);
+  const onlineBalances = balances.filter((balance) => balance.accountId !== null);
+  const reconciledOnlineCount = onlineBalances.filter((balance) => balance.isReconciled).length;
 
   const apiCall = useCallback(async (body: Record<string, any>) => {
     const payload: Record<string, any> = { password, ...body };
@@ -72,7 +77,7 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
     });
   }, [password, username]);
 
-  const loadReconciliation = useCallback(async () => {
+  const loadReconciliation = useCallback(async (preserveDrafts = false) => {
     setLoading(true);
     try {
       const res = await apiCall({ action: "getReconciliation", date });
@@ -80,17 +85,35 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
         const d = await res.json();
         setBalances(d.balances || []);
         setReconciled(d.isReconciled || false);
-        setNotes(d.notes || "");
-        setReconciledBy(d.reconciledBy || "");
-        setReconciledAt(d.reconciledAt || "");
         const initialActuals: Record<string, string> = {};
+        const initialNotes: Record<string, string> = {};
         for (const b of d.balances || []) {
           const key = b.accountId != null ? String(b.accountId) : "cash";
           if (b.actualClosing != null) {
             initialActuals[key] = (b.actualClosing / 100).toFixed(2);
           }
+          initialNotes[key] = b.notes || "";
         }
-        setActuals(initialActuals);
+        setActuals((previous) => {
+          if (!preserveDrafts) return initialActuals;
+          for (const balance of d.balances || []) {
+            const key = balance.accountId != null ? String(balance.accountId) : "cash";
+            if (!balance.isReconciled && previous[key] !== undefined) initialActuals[key] = previous[key];
+          }
+          return initialActuals;
+        });
+        setNotes((previous) => {
+          if (!preserveDrafts) return initialNotes;
+          for (const balance of d.balances || []) {
+            const key = balance.accountId != null ? String(balance.accountId) : "cash";
+            if (!balance.isReconciled && previous[key] !== undefined) initialNotes[key] = previous[key];
+          }
+          return initialNotes;
+        });
+        setError("");
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error || "Unable to load reconciliation balances");
       }
     } finally {
       setLoading(false);
@@ -99,26 +122,32 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
 
   useEffect(() => { loadReconciliation(); }, [loadReconciliation]);
 
-  const saveReconciliation = async () => {
-    setSaving(true);
+  const saveReconciliation = async (balance: AccountBalance) => {
+    const key = balance.accountId != null ? String(balance.accountId) : "cash";
+    const amount = Number(actuals[key]);
+    if (actuals[key]?.trim() === "" || !Number.isFinite(amount)) {
+      setError(`Enter the actual closing balance for ${balance.accountName}`);
+      return;
+    }
+    setSavingKey(key);
+    setError("");
     try {
-      const entries = balances.map((b) => {
-        const key = b.accountId != null ? String(b.accountId) : "cash";
-        const actualStr = actuals[key];
-        return {
-          accountId: b.accountId,
-          actualClosing: actualStr ? Math.round(parseFloat(actualStr) * 100) : null,
-        };
-      });
-      await apiCall({
+      const res = await apiCall({
         action: "saveReconciliation",
         date,
-        entries,
-        notes,
+        target: balance.accountId === null ? { type: "cash" } : { type: "online", accountId: balance.accountId },
+        actualClosing: Math.round(amount * 100),
+        notes: notes[key] || "",
       });
-      await loadReconciliation();
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 409) await loadReconciliation(true);
+        setError(d.error || `Unable to reconcile ${balance.accountName}`);
+        return;
+      }
+      await loadReconciliation(true);
     } finally {
-      setSaving(false);
+      setSavingKey("");
     }
   };
 
@@ -129,19 +158,29 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
       accountId,
       openingBalance: Math.round(newOpening * 100),
     });
-    loadReconciliation();
+    loadReconciliation(true);
   };
 
-  const undoReconciliation = async () => {
-    if (!confirm("Are you sure you want to undo the reconciliation for this day? This will clear all actual closing balances.")) return;
-    setUndoing(true);
+  const undoReconciliation = async (balance: AccountBalance) => {
+    const key = balance.accountId != null ? String(balance.accountId) : "cash";
+    if (!confirm(`Undo the ${balance.accountName} reconciliation for ${formatDate(date)}?`)) return;
+    setUndoingKey(key);
+    setError("");
     try {
-      const res = await apiCall({ action: "undoReconciliation", date });
+      const res = await apiCall({
+        action: "undoReconciliation",
+        date,
+        target: balance.accountId === null ? { type: "cash" } : { type: "online", accountId: balance.accountId },
+      });
       if (res.ok) {
-        await loadReconciliation();
+        await loadReconciliation(true);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        if (res.status === 409) await loadReconciliation(true);
+        setError(d.error || `Unable to undo ${balance.accountName}`);
       }
     } finally {
-      setUndoing(false);
+      setUndoingKey("");
     }
   };
 
@@ -163,6 +202,7 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
           <input
             type="date"
             value={date}
+            max={getToday()}
             onChange={(e) => setDate(e.target.value)}
             className="border-none bg-transparent text-sm font-medium text-brand-green-dark focus:outline-none"
           />
@@ -180,29 +220,32 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
 
       {reconciled && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <LockIcon className="h-4 w-4 text-emerald-600" />
-              <div>
-                <span className="text-sm font-medium text-emerald-700">This day has been reconciled.</span>
-                {reconciledBy && (
-                  <p className="text-[10px] text-emerald-600/70">
-                    By {reconciledBy}{reconciledAt ? ` on ${new Date(reconciledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })}` : ""}
-                  </p>
-                )}
-              </div>
-            </div>
-            {role === "admin" && (
-              <button
-                type="button"
-                onClick={undoReconciliation}
-                disabled={undoing}
-                className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 disabled:opacity-50"
-              >
-                {undoing ? <Loader2Icon className="h-3 w-3 animate-spin" /> : <Undo2Icon className="h-3 w-3" />}
-                Undo
-              </button>
-            )}
+          <div className="flex items-center gap-2">
+            <LockIcon className="h-4 w-4 text-emerald-600" />
+            <span className="text-sm font-medium text-emerald-700">Cash and all online accounts are reconciled for this day.</span>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {!loading && balances.length > 0 && !reconciled && (
+        <div className="grid grid-cols-2 gap-3 rounded-xl border border-brand-mist bg-white p-3 text-center text-xs dark:bg-card">
+          <div>
+            <p className="text-brand-green-dark/50">Cash</p>
+            <p className={cashBalance?.isReconciled ? "font-medium text-emerald-600" : "font-medium text-amber-600"}>
+              {cashBalance?.isReconciled ? "Reconciled" : "Pending"}
+            </p>
+          </div>
+          <div>
+            <p className="text-brand-green-dark/50">Online accounts</p>
+            <p className={reconciledOnlineCount === onlineBalances.length ? "font-medium text-emerald-600" : "font-medium text-amber-600"}>
+              {reconciledOnlineCount} of {onlineBalances.length} reconciled
+            </p>
           </div>
         </div>
       )}
@@ -217,13 +260,27 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
               const key = b.accountId != null ? String(b.accountId) : "cash";
               const actual = actuals[key] ? parseFloat(actuals[key]) * 100 : null;
               const mismatch = actual != null && Math.abs(actual - b.expectedClosing) > 50;
+              const canReconcile = hasPermission(role, permissions || {}, b.accountId === null ? "canReconcileCash" : "canReconcileOnline");
 
               return (
                 <div key={key} className="rounded-xl border border-brand-mist bg-white dark:bg-card p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="text-sm font-semibold text-brand-green-dark">{b.accountName}</h4>
                     {b.isReconciled ? (
-                      <CheckCircleIcon className="h-4 w-4 text-emerald-500" />
+                      <div className="flex items-center gap-2">
+                        <CheckCircleIcon className="h-4 w-4 text-emerald-500" />
+                        {role === "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => undoReconciliation(b)}
+                            disabled={undoingKey === key}
+                            className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400"
+                          >
+                            {undoingKey === key ? <Loader2Icon className="h-3 w-3 animate-spin" /> : <Undo2Icon className="h-3 w-3" />}
+                            Undo
+                          </button>
+                        )}
+                      </div>
                     ) : mismatch ? (
                       <AlertTriangleIcon className="h-4 w-4 text-amber-500" />
                     ) : null}
@@ -259,7 +316,7 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
                         onChange={(e) => setActuals((prev) => ({ ...prev, [key]: e.target.value }))}
                         className={cn("mt-1 h-8 text-xs", mismatch && "border-amber-400 bg-amber-50")}
                         placeholder="Enter actual balance..."
-                        disabled={reconciled}
+                        disabled={b.isReconciled}
                       />
                     </div>
                     {mismatch && (
@@ -269,7 +326,34 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
                     )}
                   </div>
 
-                  {role === "admin" && !reconciled && (
+                  {b.isReconciled ? (
+                    <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                      Reconciled{b.reconciledBy ? ` by ${b.reconciledBy}` : ""}
+                      {b.reconciledAt ? ` on ${new Date(b.reconciledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })}` : ""}
+                      {b.notes ? <p className="mt-1 whitespace-pre-wrap">Notes: {b.notes}</p> : null}
+                    </div>
+                  ) : canReconcile ? (
+                    <div className="mt-3 space-y-2 border-t border-brand-mist pt-3">
+                      <div>
+                        <Label className="text-[10px]">Notes (optional)</Label>
+                        <Input
+                          value={notes[key] || ""}
+                          maxLength={1000}
+                          onChange={(e) => setNotes((previous) => ({ ...previous, [key]: e.target.value }))}
+                          className="mt-1 h-8 text-xs"
+                          placeholder={`Observations for ${b.accountName}...`}
+                        />
+                      </div>
+                      <Button type="button" onClick={() => saveReconciliation(b)} disabled={Boolean(savingKey || undoingKey)} className="w-full gap-1.5">
+                        {savingKey === key ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <CheckCircleIcon className="h-4 w-4" />}
+                        Reconcile {b.accountName}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-[10px] text-brand-green-dark/50">You do not have permission to reconcile this account.</p>
+                  )}
+
+                  {role === "admin" && !b.isReconciled && (
                     <button
                       type="button"
                       onClick={() => {
@@ -292,29 +376,6 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
             </p>
           )}
 
-          {/* Notes & Save */}
-          {balances.length > 0 && !reconciled && (
-            <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-4 space-y-3">
-              <div>
-                <Label className="text-xs">Notes (optional)</Label>
-                <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="mt-1 h-8 text-xs"
-                  placeholder="Any observations for the day..."
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={saveReconciliation}
-                disabled={saving}
-                className="w-full gap-1.5"
-              >
-                {saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <CheckCircleIcon className="h-4 w-4" />}
-                Confirm & Reconcile
-              </Button>
-            </div>
-          )}
         </>
       )}
     </div>

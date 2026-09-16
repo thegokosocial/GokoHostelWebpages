@@ -15,7 +15,7 @@
 | Income Records | `canViewAccounts` | `listIncomeRecords` |
 | Food Revenue | `canViewFoodBills` | `getFoodRevenue` |
 | Room Revenue | `canViewFoodBills` | `getRoomRevenue` |
-| Reconcile | `canReconcileAccounts` | `getReconciliation`, `saveReconciliation`, `undoReconciliation` |
+| Reconcile | `canReconcileCash` or `canReconcileOnline` | `getReconciliation`, `saveReconciliation`; Admin-only `undoReconciliation` |
 
 Account Settings (Management): accounts/vendors/employees/salary — `canManageAccountSettings`. Bulk XLSX: `/api/admin/bulk-import-accounts`.
 
@@ -53,7 +53,7 @@ flowchart TD
   ACT --> ROW[upsert daily_ledger isReconciled=1]
 ```
 
-Unique `(date, account_id)`. Mismatch highlight if |diff| > ₹0.50. `adjustOpeningBalance` without reconciling (manage accounts). `undoReconciliation` clears the lock.
+Unique `(date, account_id)`. Cash (`account_id = null`) and each configured online account are reconciled independently, with their own actual closing, notes, actor, timestamp, and action button. Multiple online accounts may be completed in any order by different authorized users. The day is complete only after Cash and every active account are reconciled. Mismatch highlight if |diff| > ₹0.50. `adjustOpeningBalance` works without reconciling (manage accounts). Admin-only `undoReconciliation` clears only the selected account lock.
 
 Food and room **online** receipts are automatically recorded in `guest_receipts` against the selected receiving bank and included in reconciliation; manual `daily_income` remains separate. Cash remains manual. Food revenue is still based on paid non-cancelled food orders. Income Records reports only manual `daily_income`; Food Revenue and Room Revenue remain operational reports.
 

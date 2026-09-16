@@ -51,8 +51,8 @@ const EXPENSES_PERMISSIONS: Record<string, ActionPerm> = {
   getRoomRevenue: "canViewFoodBills",
   getDailyLedger: "canViewAccounts", listIncomeRecords: "canViewAccounts", getReconciliation: "canViewAccounts",
   getIncomeAccounts: "canAddIncome", addDailyIncome: "canAddIncome", deleteDailyIncome: "canDeleteExpense",
-  saveReconciliation: "canManageAccounts", undoReconciliation: "canManageAccounts",
-  adjustOpeningBalance: "canManageAccounts",
+  saveReconciliation: ["canReconcileCash", "canReconcileOnline"], undoReconciliation: "admin_only",
+  adjustOpeningBalance: "canManageAccountSettings",
 };
 
 const BOOKINGS_PERMISSIONS: Record<string, ActionPerm> = {
@@ -131,18 +131,20 @@ describe("RBAC: active permission catalog", () => {
     expect(ALL_PERMISSION_KEYS).toEqual(expect.arrayContaining([
       "canCheckIn", "canCheckOut", "canViewAnalytics", "canViewFoodTabs",
       "canEditFoodOrders", "canVoidFoodOrders", "canApplyFoodDiscounts", "canGenerateFoodBills",
-      "canManageAccountSettings", "canManageVendors", "canManageEmployees", "canManagePayroll",
+      "canReconcileCash", "canReconcileOnline", "canManageAccountSettings", "canManageVendors", "canManageEmployees", "canManagePayroll",
       "canViewMenu", "canManageMenuCategories", "canManageMenuItems", "canToggleMenuAvailability", "canManageFoodSettings",
       "canSendReviewRequests", "canEditReviewRequests", "canManageReviewSettings",
     ]));
     expect(ALL_PERMISSION_KEYS).not.toContain("canSyncBookings");
     expect(ALL_PERMISSION_KEYS).not.toContain("canAccessKitchen");
+    expect(ALL_PERMISSION_KEYS).not.toContain("canReconcileAccounts");
   });
 
   it("keeps renamed permissions compatible with existing users", () => {
     expect(checkPermission("staff", { canViewTabs: true }, { view: "canViewFoodTabs" }, "view")).toBe("allowed");
     expect(checkPermission("staff", { canGenerateBills: true }, { bill: "canGenerateFoodBills" }, "bill")).toBe("allowed");
-    expect(checkPermission("staff", { canReconcile: true }, { reconcile: "canReconcileAccounts" }, "reconcile")).toBe("allowed");
+    expect(checkPermission("staff", { canReconcile: true }, { cash: "canReconcileCash", online: "canReconcileOnline" }, "cash")).toBe("allowed");
+    expect(checkPermission("staff", { canReconcileAccounts: true }, { cash: "canReconcileCash", online: "canReconcileOnline" }, "online")).toBe("allowed");
     expect(checkPermission("staff", { canManageAccounts: true }, { settings: "canManageAccountSettings" }, "settings")).toBe("allowed");
   });
 });
@@ -184,8 +186,15 @@ describe("RBAC: Staff with no permissions is blocked", () => {
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "applyDiscount")).toBe("forbidden");
   });
 
-  it("staff cannot manage accounts without canManageAccounts", () => {
+  it("staff cannot reconcile without a scoped reconciliation permission", () => {
     expect(checkPermission(role, permissions, EXPENSES_PERMISSIONS, "saveReconciliation")).toBe("forbidden");
+  });
+
+  it("cash and online reconciliation permissions are independent", () => {
+    expect(actionAllowed(role, { canReconcileCash: true }, "canReconcileCash")).toBe("allowed");
+    expect(actionAllowed(role, { canReconcileCash: true }, "canReconcileOnline")).toBe("forbidden");
+    expect(actionAllowed(role, { canReconcileOnline: true }, "canReconcileOnline")).toBe("allowed");
+    expect(actionAllowed(role, { canReconcileOnline: true }, "canReconcileCash")).toBe("forbidden");
   });
 
   it("menu permissions remain independently scoped", () => {
@@ -487,8 +496,8 @@ describe("Mock workflows: Bill Records edit (production 8:39pm failure)", () => 
     expect(expenseGate("admin", {}, "undoReconciliation").status).toBe(200);
   });
 
-  it("round 3: update/delete/undo do not still return Admin only after the permission map", () => {
-    for (const action of ["updateExpense", "deleteExpense", "undoReconciliation"]) {
+  it("round 3: update/delete do not still return Admin only after the permission map", () => {
+    for (const action of ["updateExpense", "deleteExpense"]) {
       const section = route.match(new RegExp(`case "${action}":[\\s\\S]*?(?=\\n      case "|\\n      default:)`))?.[0] ?? "";
       expect(section.length).toBeGreaterThan(20);
       expect(section).not.toContain('error: "Admin only"');
@@ -496,6 +505,8 @@ describe("Mock workflows: Bill Records edit (production 8:39pm failure)", () => 
     }
     expect(route).toContain('updateExpense: "canEditExpense"');
     expect(route).toContain('deleteExpense: "canDeleteExpense"');
+    expect(route).toContain('undoReconciliation: "admin_only"');
+    expect(expenseGate("manager", { canReconcileCash: true }, "undoReconciliation").status).toBe(403);
   });
 
   it("round 3: env-password manager with empty permissions cannot edit bills", () => {

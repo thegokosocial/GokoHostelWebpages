@@ -80,7 +80,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Food:** `canViewFoodOrders`, `canViewFoodTabs`, `canPlaceOrders`, `canEditFoodOrders`, `canVoidFoodOrders`, `canMarkPaid`, `canApplyFoodDiscounts`, `canGenerateFoodBills`, `canManageInventory`, `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageFoodSettings`
 
-**Expenses:** `canAddExpense`, `canEditExpense`, `canDeleteExpense`, `canViewExpenses`, `canViewFoodBills`, `canAddIncome`, `canReconcileAccounts`, `canManageAccountSettings`, `canManageVendors`, `canManageEmployees`, `canManagePayroll`
+**Expenses:** `canAddExpense`, `canEditExpense`, `canDeleteExpense`, `canViewExpenses`, `canViewFoodBills`, `canAddIncome`, `canReconcileCash`, `canReconcileOnline`, `canManageAccountSettings`, `canManageVendors`, `canManageEmployees`, `canManagePayroll`
 
 **Splits:** `canAddSplitExpense`, `canEditSplitExpense`, `canDeleteSplitExpense`, `canSettleSplits`, `canManageSplits` (plus nav `canViewSplits`). `payGokoReimbursement` / Goko-as-payer add **and update** / `listAccounts` also need `canAddExpense` (inline AND; `actionAllowed` arrays are OR).
 
@@ -177,9 +177,9 @@ View list/tabs: `canViewFoodOrders`. Place/void/qty: `canPlaceOrders` or view. P
 
 ### `/api/admin/expenses`
 
-list/getMy: `canViewExpenses`. add: `canAddExpense`. update/delete: edit/delete expense keys. food revenue **and** room revenue (`getRoomRevenue`): `canViewFoodBills`. ledger: `canViewAccounts`. income: `canAddIncome`. reconcile: `canReconcileAccounts` (legacy alias `canReconcile`). opening balance: `canManageAccountSettings` (legacy alias `canManageAccounts`).
+list/getMy: `canViewExpenses`. add: `canAddExpense`. update/delete: edit/delete expense keys. food revenue **and** room revenue (`getRoomRevenue`): `canViewFoodBills`. ledger: `canViewAccounts`. income: `canAddIncome`. cash reconcile: `canReconcileCash`; configured-account reconcile: `canReconcileOnline`. The retired `canReconcileAccounts` and `canReconcile` keys grant both scopes during compatibility. Undo reconciliation is Admin-only. Opening balance: `canManageAccountSettings` (legacy alias `canManageAccounts`).
 
-Accounts UI uses `canReconcileAccounts` on the Reconcile tab; `canReconcile` remains a compatibility alias.
+Accounts UI shows the Reconcile tab when either scoped reconciliation permission is available. Every account is saved separately; server authorization is selected from the submitted cash/online target.
 
 ### `/api/admin/splits`
 

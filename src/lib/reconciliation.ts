@@ -28,6 +28,32 @@ export type ReconciliationStatus = {
   missingAccountNames: string[];
 };
 
+export type ReconciliationTarget =
+  | { type: "cash"; accountId: null }
+  | { type: "online"; accountId: number };
+
+export function parseReconciliationTarget(value: unknown): ReconciliationTarget | null {
+  if (!value || typeof value !== "object") return null;
+  const target = value as { type?: unknown; accountId?: unknown };
+  if (target.type === "cash" && (target.accountId === undefined || target.accountId === null)) {
+    return { type: "cash", accountId: null };
+  }
+  if (target.type === "online" && Number.isInteger(target.accountId) && Number(target.accountId) > 0) {
+    return { type: "online", accountId: Number(target.accountId) };
+  }
+  return null;
+}
+
+export function reconciliationPermission(target: ReconciliationTarget): "canReconcileCash" | "canReconcileOnline" {
+  return target.type === "cash" ? "canReconcileCash" : "canReconcileOnline";
+}
+
+export function isValidReconciliationDate(value: unknown, today: string): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value > today) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 export function summarizeReconciliation(
   date: string,
   activeAccounts: Array<{ id: number; name: string; nickname: string | null }>,

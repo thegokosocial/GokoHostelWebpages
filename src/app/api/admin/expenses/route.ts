@@ -17,12 +17,14 @@ import { eq, and, sql, desc, inArray, isNull, lt } from "drizzle-orm";
 import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
 import { isOfflineMode } from "@/lib/runtime";
 import { authenticateUser } from "@/lib/auth";
-import { actionAllowed } from "@/lib/actionPermissions";
+import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { hostelExpenseIsLinked } from "@/db/splitQueries";
 import { stayDueAtHotel, cashCollected, onlineCollected, cashRefunded, onlineRefunded, occupiedForRoomRevenue, isPrepaidStatus } from "@/lib/stayPayment";
 import { validateManualIncome } from "@/lib/income";
-import { getReconciliationStatus, resolveOpeningBalance } from "@/lib/reconciliation";
+import { getReconciliationStatus, isValidReconciliationDate, parseReconciliationTarget, reconciliationPermission, resolveOpeningBalance } from "@/lib/reconciliation";
 import { parseExpenseCategories, parseIncomeCategories } from "@/lib/accountCategories";
+import { todayIST } from "@/lib/utils";
+import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 
 function extractDriveFileId(link: string): string | null {
   const match = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
     const { role, displayName, permissions } = auth;
     const actorName = username || displayName;
 
-    const ACTION_PERMISSIONS: Record<string, string | "admin_only"> = {
+    const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
       listExpenses: "canViewExpenses", getMyExpenses: "canViewExpenses",
       addExpense: "canAddExpense", updateExpense: "canEditExpense", deleteExpense: "canDeleteExpense",
       getFoodRevenue: "canViewFoodBills",
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
       getDailyLedger: "canViewAccounts", listIncomeRecords: "canViewAccounts", getReconciliation: "canViewAccounts",
       getIncomeAccounts: "canAddIncome", addDailyIncome: "canAddIncome", deleteDailyIncome: "canDeleteExpense",
       getExpenseCategories: "canAddExpense", getIncomeCategories: "canAddIncome",
-      saveReconciliation: "canReconcileAccounts", undoReconciliation: "canReconcileAccounts",
+      saveReconciliation: ["canReconcileCash", "canReconcileOnline"], undoReconciliation: "admin_only",
       adjustOpeningBalance: "canManageAccountSettings",
     };
 
@@ -578,7 +580,9 @@ export async function POST(req: NextRequest) {
       // --- Reconciliation ---
       case "getReconciliation": {
         const { date } = rest;
-        if (!date) return NextResponse.json({ error: "date required" }, { status: 400 });
+        if (!isValidReconciliationDate(date, todayIST())) {
+          return NextResponse.json({ error: "A valid non-future date is required" }, { status: 400 });
+        }
 
         const db = getDb();
         const allAccounts = await db.select().from(accounts).where(eq(accounts.isActive, 1));
@@ -622,6 +626,9 @@ export async function POST(req: NextRequest) {
             expectedClosing,
             actualClosing: ledgerEntry?.actualClosing ?? null,
             isReconciled: !!ledgerEntry?.isReconciled,
+            notes: ledgerEntry?.notes || "",
+            reconciledBy: ledgerEntry?.reconciledBy || "",
+            reconciledAt: ledgerEntry?.reconciledAt || "",
           };
         });
 
@@ -634,8 +641,19 @@ export async function POST(req: NextRequest) {
       }
 
       case "saveReconciliation": {
-        const { date, entries, notes } = rest;
-        if (!date || !entries) return NextResponse.json({ error: "date and entries required" }, { status: 400 });
+        const { date, target: rawTarget, actualClosing, notes } = rest;
+        const target = parseReconciliationTarget(rawTarget);
+        if (!isValidReconciliationDate(date, todayIST())) {
+          return NextResponse.json({ error: "A valid non-future date is required" }, { status: 400 });
+        }
+        if (!target) return NextResponse.json({ error: "A valid reconciliation target is required" }, { status: 400 });
+        if (!Number.isSafeInteger(actualClosing)) {
+          return NextResponse.json({ error: "Actual closing must be an integer amount in paise" }, { status: 400 });
+        }
+        const targetGate = actionAllowed(role, permissions, reconciliationPermission(target));
+        if (targetGate !== "allowed") {
+          return NextResponse.json({ error: "You don't have permission to reconcile this account" }, { status: 403 });
+        }
 
         const db = getDb();
         const incomeEntries = await db.select().from(dailyIncome).where(eq(dailyIncome.date, date));
@@ -644,71 +662,117 @@ export async function POST(req: NextRequest) {
           and(sql`${expenses.createdAt} >= ${date}`, sql`${expenses.createdAt} <= ${date + "T23:59:59"}`)
         );
         const allAccounts = await db.select().from(accounts).where(eq(accounts.isActive, 1));
+        const account = target.accountId === null ? null : allAccounts.find((item) => item.id === target.accountId);
+        if (target.type === "online" && !account) {
+          return NextResponse.json({ error: "The selected online account is not active" }, { status: 400 });
+        }
 
         const priorLedgerEntries = await db.select().from(dailyLedger)
           .where(lt(dailyLedger.date, date)).orderBy(desc(dailyLedger.date));
         const existingLedger = await db.select().from(dailyLedger).where(eq(dailyLedger.date, date));
-
-        for (const entry of entries as { accountId: number | null; actualClosing: number | null }[]) {
-          const totalIncome = incomeEntries.filter((i) => i.accountId === entry.accountId).reduce((s, i) => s + i.amount, 0)
-            + automaticReceipts.filter((r) => r.accountId === entry.accountId).reduce((s, r) => s + r.amount, 0);
-          const totalExpense = dayExpenses.filter((e) => e.accountId === entry.accountId).reduce((s, e) => s + e.amount, 0);
-
-          const todayEntry = existingLedger.find((l) => l.accountId === entry.accountId);
-          const prevEntry = priorLedgerEntries.find((l) => l.accountId === entry.accountId);
-          const account = allAccounts.find((a) => a.id === entry.accountId);
-          const openingBalance = resolveOpeningBalance(todayEntry, prevEntry, account?.openingBalance ?? 0);
-          const expectedClosing = openingBalance + totalIncome - totalExpense;
-
-          const existing = await db.select().from(dailyLedger).where(
-            and(eq(dailyLedger.date, date), entry.accountId != null ? eq(dailyLedger.accountId, entry.accountId) : sql`${dailyLedger.accountId} IS NULL`)
-          ).limit(1);
-
-          if (existing.length > 0) {
-            await db.update(dailyLedger).set({
-              openingBalance,
-              totalIncome,
-              totalExpense,
-              expectedClosing,
-              actualClosing: entry.actualClosing,
-              isReconciled: 1,
-              reconciledBy: username || displayName,
-              reconciledAt: new Date().toISOString(),
-              notes: notes || "",
-            }).where(eq(dailyLedger.id, existing[0].id));
-          } else {
-            await db.insert(dailyLedger).values({
-              date,
-              accountId: entry.accountId,
-              openingBalance,
-              totalIncome,
-              totalExpense,
-              expectedClosing,
-              actualClosing: entry.actualClosing,
-              isReconciled: 1,
-              reconciledBy: username || displayName,
-              reconciledAt: new Date().toISOString(),
-              notes: notes || "",
-            });
+        const totalIncome = incomeEntries.filter((item) => item.accountId === target.accountId).reduce((sum, item) => sum + item.amount, 0)
+          + automaticReceipts.filter((item) => item.accountId === target.accountId).reduce((sum, item) => sum + item.amount, 0);
+        const totalExpense = dayExpenses.filter((item) => item.accountId === target.accountId).reduce((sum, item) => sum + item.amount, 0);
+        const existing = existingLedger.find((item) => item.accountId === target.accountId);
+        if (existing?.isReconciled) {
+          return NextResponse.json({ error: "This account has already been reconciled. Undo it before trying again." }, { status: 409 });
+        }
+        const previous = priorLedgerEntries.find((item) => item.accountId === target.accountId);
+        const openingBalance = resolveOpeningBalance(existing, previous, account?.openingBalance ?? 0);
+        const expectedClosing = openingBalance + totalIncome - totalExpense;
+        const reconciledAt = new Date().toISOString();
+        const cleanNotes = typeof notes === "string" ? notes.trim().slice(0, 1000) : "";
+        const values = {
+          openingBalance,
+          totalIncome,
+          totalExpense,
+          expectedClosing,
+          actualClosing,
+          isReconciled: 1,
+          reconciledBy: actorName,
+          reconciledAt,
+          notes: cleanNotes,
+        };
+        if (existing) {
+          const updated = await db.update(dailyLedger).set(values).where(and(
+            eq(dailyLedger.id, existing.id),
+            eq(dailyLedger.isReconciled, 0),
+          )).returning({ id: dailyLedger.id });
+          if (updated.length === 0) {
+            return NextResponse.json({ error: "This account was reconciled by another user. Refresh to see the latest values." }, { status: 409 });
+          }
+        } else {
+          const targetCondition = target.accountId === null
+            ? sql`${dailyLedger.accountId} IS NULL`
+            : sql`${dailyLedger.accountId} = ${target.accountId}`;
+          const inserted = await db.run(sql`
+            INSERT INTO daily_ledger (
+              date, account_id, opening_balance, total_income, total_expense,
+              expected_closing, actual_closing, is_reconciled, reconciled_by, reconciled_at, notes
+            )
+            SELECT ${date}, ${target.accountId}, ${openingBalance}, ${totalIncome}, ${totalExpense},
+              ${expectedClosing}, ${actualClosing}, 1, ${actorName}, ${reconciledAt}, ${cleanNotes}
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${dailyLedger} WHERE ${dailyLedger.date} = ${date} AND ${targetCondition}
+            )
+          `);
+          if (sqliteWriteCount(inserted) === 0) {
+            return NextResponse.json({ error: "This account was reconciled by another user. Refresh to see the latest values." }, { status: 409 });
           }
         }
 
-        return NextResponse.json({ success: true });
+        const accountName = target.type === "cash" ? "Cash" : account!.nickname || account!.name;
+        await addAuditEntry({
+          username: actorName,
+          action: "account_reconciliation_completed",
+          target: accountName,
+          details: `${accountName} reconciled for ${date} · Expected ₹${(expectedClosing / 100).toFixed(2)} · Actual ₹${(actualClosing / 100).toFixed(2)} · Difference ₹${((actualClosing - expectedClosing) / 100).toFixed(2)}${cleanNotes ? ` · Notes: ${cleanNotes}` : ""}`,
+        });
+
+        return NextResponse.json({ success: true, target, reconciledAt });
       }
 
       case "undoReconciliation": {
-        const { date } = rest;
-        if (!date) return NextResponse.json({ error: "date required" }, { status: 400 });
+        const { date, target: rawTarget } = rest;
+        const target = parseReconciliationTarget(rawTarget);
+        if (!isValidReconciliationDate(date, todayIST())) {
+          return NextResponse.json({ error: "A valid non-future date is required" }, { status: 400 });
+        }
+        if (!target) return NextResponse.json({ error: "A valid reconciliation target is required" }, { status: 400 });
 
         const db = getDb();
-        await db.update(dailyLedger).set({
+        const existing = await db.select().from(dailyLedger).where(
+          and(eq(dailyLedger.date, date), target.accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, target.accountId))
+        ).limit(1);
+        if (!existing[0]?.isReconciled) {
+          return NextResponse.json({ error: "This account is not reconciled" }, { status: 409 });
+        }
+        const undone = await db.update(dailyLedger).set({
           isReconciled: 0,
           reconciledBy: null,
           reconciledAt: null,
           actualClosing: null,
-        }).where(eq(dailyLedger.date, date));
+          notes: "",
+        }).where(and(eq(dailyLedger.id, existing[0].id), eq(dailyLedger.isReconciled, 1)))
+          .returning({ id: dailyLedger.id });
+        if (undone.length === 0) {
+          return NextResponse.json({ error: "This reconciliation was already undone by another administrator." }, { status: 409 });
+        }
 
-        return NextResponse.json({ success: true });
+        let accountName = "Cash";
+        if (target.accountId !== null) {
+          const account = await db.select({ name: accounts.name, nickname: accounts.nickname }).from(accounts)
+            .where(eq(accounts.id, target.accountId)).limit(1);
+          accountName = account[0]?.nickname || account[0]?.name || `Account #${target.accountId}`;
+        }
+        await addAuditEntry({
+          username: actorName,
+          action: "account_reconciliation_undone",
+          target: accountName,
+          details: `${accountName} reconciliation undone for ${date}`,
+        });
+
+        return NextResponse.json({ success: true, target });
       }
 
       case "adjustOpeningBalance": {

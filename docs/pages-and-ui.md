@@ -61,6 +61,8 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 
 `AdminBookings.tsx` is leftover Gmail-list UI. Live Bookings is the calendar dashboard.
 
+Accounts reconciliation is additionally action-scoped: `canReconcileCash` controls the canonical Cash card, `canReconcileOnline` controls every configured online-account card, and either permission shows the Reconcile tab. Each card saves independently; undo is Admin-only.
+
 ---
 
 ## Management tabs (`AdminManagement.tsx`)

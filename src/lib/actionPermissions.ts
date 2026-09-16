@@ -7,7 +7,8 @@ export type ActionPerm = "admin_only" | string | readonly string[];
 export const PERMISSION_ALIASES: Record<string, readonly string[]> = {
   canViewFoodTabs: ["canViewTabs"],
   canGenerateFoodBills: ["canGenerateBills"],
-  canReconcileAccounts: ["canReconcile"],
+  canReconcileCash: ["canReconcileAccounts", "canReconcile"],
+  canReconcileOnline: ["canReconcileAccounts", "canReconcile"],
   canManageAccountSettings: ["canManageAccounts"],
 };
 

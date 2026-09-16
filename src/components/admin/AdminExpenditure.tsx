@@ -19,7 +19,7 @@ const DailyReconcile = dynamic(() => import("./DailyReconcile").then((m) => m.Da
 
 type AccountsTab = "addExpense" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile";
 
-const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?: string }[] = [
+const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?: string | string[] }[] = [
   { id: "addExpense", label: "Add Expense", icon: <PlusCircleIcon className="h-3.5 w-3.5" />, permission: "canAddExpense" },
   { id: "addIncome", label: "Add Income", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canAddIncome" },
   { id: "dailyLedger", label: "Daily Ledger", icon: <BookOpenIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
@@ -27,7 +27,7 @@ const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?
   { id: "incomeRecords", label: "Income Records", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
   { id: "foodBill", label: "Food Revenue", icon: <IndianRupeeIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
   { id: "roomBill", label: "Room Revenue", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
-  { id: "reconcile", label: "Reconcile", icon: <ScaleIcon className="h-3.5 w-3.5" />, permission: "canReconcileAccounts" },
+  { id: "reconcile", label: "Reconcile", icon: <ScaleIcon className="h-3.5 w-3.5" />, permission: ["canReconcileCash", "canReconcileOnline"] },
 ];
 
 export function AdminExpenditure({
@@ -41,7 +41,9 @@ export function AdminExpenditure({
   role: Role;
   permissions: Record<string, boolean>;
 }) {
-  const visibleTabs = TABS.filter((t) => !t.permission || hasPermission(role, permissions, t.permission));
+  const visibleTabs = TABS.filter((t) => !t.permission || (Array.isArray(t.permission)
+    ? t.permission.some((permission) => hasPermission(role, permissions, permission))
+    : hasPermission(role, permissions, t.permission)));
   const defaultTab = visibleTabs[0]?.id || "addExpense";
   const [tab, setTab] = useTabWithHistory<AccountsTab>("tab", defaultTab);
 

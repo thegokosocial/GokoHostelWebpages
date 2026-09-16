@@ -118,7 +118,8 @@ export function AdminDashboard({
   const canViewBookings = hasPermission(role, permissions || {}, "canViewBookings");
   const canManageAttendance = role === "admin" || (role === "manager" && !!permissions?.canManageAttendance);
   const canViewQuickLinks = hasPermission(role, permissions || {}, "canViewQuickLinks");
-  const canViewReconciliation = role === "admin" || (!!(permissions?.canReconcileAccounts || permissions?.canReconcile) && !!permissions?.canViewAccounts);
+  const canViewReconciliation = hasPermission(role, permissions || {}, "canViewAccounts")
+    && (hasPermission(role, permissions || {}, "canReconcileCash") || hasPermission(role, permissions || {}, "canReconcileOnline"));
 
   const foodApiCall = useCallback(async (body: Record<string, any>) => {
     const payload: Record<string, any> = { password, ...body };
