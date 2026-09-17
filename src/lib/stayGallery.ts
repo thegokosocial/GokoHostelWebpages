@@ -1,8 +1,8 @@
-import { homeRooms } from "@/content/home";
+import { gokoStayRooms } from "@/content/rooms";
 
-/** Image sets aligned with `stayRoomSummaries` order in `content/stay.ts` */
-export const stayGalleryById: Record<string, readonly string[]> = {
-  "mixed-dorm-12bed": homeRooms[0]?.images ?? [],
-  "female-dorm-6bed": homeRooms[1]?.images ?? [],
-  "luxury-dorm-8bed": homeRooms[2]?.images ?? [],
-};
+export { resolveRoomGallery } from "@/content/rooms";
+
+/** Image sets keyed by `stayRoomSummaries` / `gokoStayRooms` ids. */
+export const stayGalleryById: Record<string, readonly string[]> = Object.fromEntries(
+  gokoStayRooms.map((room) => [room.id, room.images]),
+);

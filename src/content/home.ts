@@ -1,3 +1,5 @@
+import { femaleDormImages, luxuryDormImages, mixedDormImages } from "@/content/rooms";
+
 export const homeHero = {
   title: "Your home by the sea, where waves meet music and Adventure",
   subtitle:
@@ -68,11 +70,7 @@ export const homeRooms: RoomTab[] = [
     tagline: "Comfy & spacious · 12 beds",
     description:
       "Looking for new friends? Stay in our mixed shared dorms with 12 other travelers. Lower beds are cozy doubles—perfect for couples or extra space—while upper beds are singles ideal for solo travelers. There are 2 spacious washrooms in each dorm. Each bed has its own fan — we're a non-AC property.",
-    images: [
-      "/images/stay/mixed-dorm-12bed/mixed-dorm1.jpg",
-      "/images/stay/mixed-dorm-12bed/mixed-dorm2.jpg",
-      "/images/stay/mixed-dorm-12bed/mixed-dorm3.jpg",
-    ],
+    images: [...mixedDormImages],
     accent: "blue",
   },
   {
@@ -81,11 +79,7 @@ export const homeRooms: RoomTab[] = [
     tagline: "Safe & clean · 6 beds",
     description:
       "Looking for new friends? Stay in our female shared dorms with 6 other travelers. Ensuite washroom in dorm — safe, spacious and clean. Most of the time we have a female host and volunteer on property. Each bed has its own fan — we're a non-AC property.",
-    images: [
-      "/images/stay/female-dorm-6bed/mixed-dorm1.jpg",
-      "/images/stay/female-dorm-6bed/mixed-dorm2.jpg",
-      "/images/stay/female-dorm-6bed/mixed-dorm3.jpg",
-    ],
+    images: [...femaleDormImages],
     accent: "green",
   },
   {
@@ -94,11 +88,7 @@ export const homeRooms: RoomTab[] = [
     tagline: "Fun & affordable · 8 beds",
     description:
       "Stay in our 8-bed mixed shared dorms with fellow travelers. Your space includes a private curtained bed, private locker, reading light, individual fan at your bed, WiFi, and our unique open roof washroom — we're a non-AC property. A perfect blend of privacy and community!",
-    images: [
-      "/images/stay/luxury-dorm-8bed/mixed-dorm1.jpg",
-      "/images/stay/luxury-dorm-8bed/mixed-dorm2.jpg",
-      "/images/stay/luxury-dorm-8bed/mixed-dorm3.jpg",
-    ],
+    images: [...luxuryDormImages],
     accent: "orange",
   },
 ];

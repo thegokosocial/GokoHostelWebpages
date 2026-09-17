@@ -5,7 +5,7 @@ import type { GuestRoom } from "@/lib/guestBookingSearch";
 import { site } from "@/lib/site";
 import { bookingTotals } from "@/lib/bookingPricing";
 import { canAddGuestRoom } from "@/lib/guestBookingSelection";
-import { homeRooms } from "@/content/home";
+import { resolveRoomGallery } from "@/content/rooms";
 import { ImageCarousel } from "@/components/media/ImageCarousel";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { todayIST } from "@/lib/utils";
@@ -118,15 +118,23 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         {rooms.length === 0 ? <p className="mt-3">No online beds are available for these dates. Try different dates or contact us.</p> : <>
           <div className="mt-4 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-4">{rooms.map(room => {
-            const categoryId = ["luxury", "female", "mixed"].find(id => room.name.toLowerCase().includes(id));
-            const category = homeRooms.find(item => item.id === categoryId);
+            const photos = resolveRoomGallery(room.name);
             const quantity = selection[room.id] || 0;
             const canAdd = canAddGuestRoom(rooms, selection, room, maxSelectedBeds ?? 0);
             return <article key={room.id} className="min-w-0 overflow-hidden rounded-2xl border border-brand-green/20 bg-white p-3 shadow-sm sm:p-4 xl:grid xl:grid-cols-[130px_minmax(0,1fr)_210px] xl:gap-4">
               <div className="grid min-w-0 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:contents">
                 <div className="min-w-0">
-                  {category ? <ImageCarousel images={category.images} alt={`${category.name} — representative dorm photos`} className="[&_img]:h-[180px] sm:[&_img]:h-[150px] [&_button]:min-h-12 [&_button]:min-w-12 [&_[role=tablist]]:hidden [&_div.mt-4]:mt-2" /> : <div className="flex h-[150px] items-center justify-center rounded-xl bg-brand-sand p-4 text-center text-sm">Room photos coming soon</div>}
-                  {category && <p className="mt-1 text-center text-[11px] text-brand-green">Representative dorm photos</p>}
+                  {photos.length ? (
+                    <ImageCarousel
+                      images={[...photos]}
+                      controls="overlay"
+                      alt={`${room.name} — representative dorm photos`}
+                      className="[&_img]:h-[180px] sm:[&_img]:h-[150px]"
+                    />
+                  ) : (
+                    <div className="flex h-[150px] items-center justify-center rounded-xl bg-brand-sand p-4 text-center text-sm">Room photos coming soon</div>
+                  )}
+                  {photos.length > 0 && <p className="mt-1 text-center text-[11px] text-brand-green">Representative dorm photos</p>}
                 </div>
                 <div className="min-w-0">
                   <h4 className="text-lg font-bold leading-snug">{room.name}</h4>

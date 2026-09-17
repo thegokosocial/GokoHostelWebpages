@@ -55,7 +55,8 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain('/ bed / night'); expect(panel).toContain('per bed for {rate.nightlyRates.length} nights');
     expect(panel).not.toContain('stay.units'); expect(panel).not.toContain('Beds / units');
     expect(panel).toContain('useState<GuestRoom[] | null>(null)');
-    expect(panel).toContain('<ImageCarousel'); expect(panel).toContain('Representative dorm photos');
+    expect(panel).toContain('<ImageCarousel'); expect(panel).toContain('controls="overlay"'); expect(panel).toContain('Representative dorm photos');
+    expect(panel).toContain('resolveRoomGallery');
     expect(panel).toContain('Switch rate'); expect(panel).toContain('canAddGuestRoom(rooms || [], current');
   });
   it("fetches actual configured data in preview instead of injecting sample rates", () => {

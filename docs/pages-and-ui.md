@@ -15,7 +15,7 @@ All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these 
 | Path | Content source | Hero video (typical) |
 |------|----------------|----------------------|
 | `/` | `src/content/home.ts` | loop A |
-| `/stay` | `stay.ts` | hero B |
+| `/stay` | `stay.ts` + shared `content/rooms.ts` gallery (`stayGalleryById`) | hero B; four room cards (12-bed mixed, female, 8-bed luxury, double bed) |
 | `/story` | `story.ts` | default loop (omit prop) |
 | `/events` | D1 CMS + seed; `EventsPageLive` | still / no `heroVideo=` |
 | `/community-area` | D1 CMS + seed; `CommunityPageLive` | hero B |

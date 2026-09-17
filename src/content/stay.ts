@@ -1,3 +1,5 @@
+import { gokoStayRooms } from "@/content/rooms";
+
 export const stayHero = {
   title: "Stay at Goko Hostel",
   subtitle:
@@ -6,47 +8,12 @@ export const stayHero = {
     "/legacy-images/62f5bf7bfc22850018b36726-63021b52b4a9f5776b671ae4_home_video-thumbnail_2.webp",
 };
 
-export const stayRoomSummaries = [
-  {
-    id: "mixed-dorm-12bed",
-    name: "12 bed mixed dorm",
-    description:
-      "Spacious mixed dormitory with two shared bathrooms. Perfect for solo travelers and groups who want a social atmosphere.",
-    features: [
-      "12 beds",
-      "2 shared bathrooms",
-      "Private lockers",
-      "Charging points",
-      "Fan at each bed (no AC)",
-    ],
-  },
-  {
-    id: "female-dorm-6bed",
-    name: "6 bed female dorm",
-    description:
-      "Safe, clean female-only dorm with ensuite washroom — a peaceful space built for women travelers.",
-    features: [
-      "6 beds",
-      "Ensuite washroom",
-      "Private lockers",
-      "Charging points",
-      "Fan at each bed (no AC)",
-    ],
-  },
-  {
-    id: "luxury-dorm-8bed",
-    name: "8 bed mixed dorm (luxury)",
-    description:
-      "Premium mixed dorm with an open roof washroom — comfort, privacy, and community in one.",
-    features: [
-      "8 beds",
-      "Open roof washroom",
-      "Private lockers",
-      "Charging points",
-      "Fan at each bed (no AC)",
-    ],
-  },
-] as const;
+export const stayRoomSummaries = gokoStayRooms.map(({ id, name, description, features }) => ({
+  id,
+  name,
+  description,
+  features,
+}));
 
 export const stayAmenities = [
   {
