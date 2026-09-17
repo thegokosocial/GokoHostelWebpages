@@ -51,7 +51,7 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 
 | `section` | Component | API | Perm (non-admin) |
 |-----------|-----------|-----|------------------|
-| `dashboard` | `AdminDashboard` | checkins `getDashboard`; checkout rows show separate room/food status and use active bed-booking assignments, booking references, then unique phone/name matches for room status; check-ins, checkouts, unpaid stays, and bookings use bounded scrollable lists | `canViewDashboard` |
+| `dashboard` | `AdminDashboard` | checkins `getDashboard`; checkout rows show separate room/food status and use active bed-booking assignments, booking references, then unique phone/name matches for room status; check-ins, checkouts, unpaid stays, and bookings use bounded scrollable lists; `My Tasks` is filtered to the logged-in user | `canViewDashboard` |
 | `bookings` | `booking-dashboard/` | `/api/admin/bookings`; nightly summaries show online, walk-in, blocked, and held-for-unassigned-OTA units; the page owns vertical scrolling while calendar/table content owns horizontal scrolling and headings remain aligned; Week/10 Days/30 Days plus Custom use inclusive visible dates, with Custom applied immediately from its date inputs | `canViewBookings` |
 | `beds` | `AdminBeds` | checkins beds | `canViewBeds` |
 | `timeline` | `AdminTimeline` | checkins `getBeds`; preset day counts plus Custom use an inclusive Start/End range, with Custom applied immediately | `canViewTimeline` |
@@ -77,7 +77,7 @@ Menu deletion removes items/categories from active admin and guest-menu lists us
 
 Bulk availability saves its local override and mapped dirty retry rows before calling PMS. The modal stays in progress until Aiosell accepts the push, then shows the successful PMS confirmation; a failed or timed-out push leaves the local change saved and exposes a Retry PMS sync action. The Worker’s protected five-minute retry remains a server-side safety net for dirty inventory rows.
 
-Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do is visible with `canViewTasks` or `canManageTasks`; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 | `tab` | UI | Permissions | Notes |
 |-------|-----|-------------|-------|
@@ -96,6 +96,7 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; users
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | |
 | `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar, and payroll summaries; attendance history is also available in Management → Audit → Attendance to users with `canViewAudit` |
+| `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; assigned users update their own tasks; task managers create, assign, archive, reopen, and record linked purchase expenses |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |

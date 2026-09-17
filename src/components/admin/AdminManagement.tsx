@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role, type ManagementTab } from "./types";
 
@@ -24,13 +24,14 @@ const AdminBulkImport = dynamic(() => import("./AdminBulkImport").then((m) => m.
 const QRGenerator = dynamic(() => import("./qr-generator").then((m) => m.QRGenerator), { loading: tabLoader, ssr: false });
 const AccountSettings = dynamic(() => import("./AccountSettings").then((m) => m.AccountSettings), { loading: tabLoader, ssr: false });
 const ManagementAttendance = dynamic(() => import("./ManagementAttendance").then((m) => m.ManagementAttendance), { loading: tabLoader, ssr: false });
+const ManagementTasks = dynamic(() => import("./ManagementTasks").then((m) => m.ManagementTasks), { loading: tabLoader, ssr: false });
 const ServerSync = dynamic(() => import("./ServerSync").then((m) => m.ServerSync), { loading: tabLoader, ssr: false });
 const ChannelManager = dynamic(() => import("./ChannelManager").then((m) => m.ChannelManager), { loading: tabLoader, ssr: false });
 const AdminWebsite = dynamic(() => import("./AdminWebsite").then((m) => m.AdminWebsite), { loading: tabLoader, ssr: false });
 const AdminAnalytics = dynamic(() => import("./AdminAnalytics").then((m) => m.AdminAnalytics), { loading: tabLoader, ssr: false });
 const QuickLinks = dynamic(() => import("./QuickLinks").then((m) => m.QuickLinks), { loading: tabLoader, ssr: false });
 
-const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly?: boolean; permission?: string }[] = [
+const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly?: boolean; permission?: string | string[] }[] = [
   { id: "dorms", label: "Dorms", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "users", label: "Users", icon: <UsersIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "backup", label: "Backup", icon: <DatabaseIcon className="h-3.5 w-3.5" />, adminOnly: true },
@@ -46,6 +47,7 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "qrGenerator", label: "QR Codes", icon: <QrCodeIcon className="h-3.5 w-3.5" />, permission: "canUseQRGenerator" },
   { id: "accountSettings", label: "Account Settings", icon: <WalletIcon className="h-3.5 w-3.5" />, permission: "canManageAccountSettings" },
   { id: "attendance", label: "Attendance", icon: <UserRoundCheckIcon className="h-3.5 w-3.5" />, permission: "canManageAttendance" },
+  { id: "tasks", label: "To Do", icon: <ListTodoIcon className="h-3.5 w-3.5" />, permission: ["canViewTasks", "canManageTasks"] },
   { id: "serverSync", label: "Server Sync", icon: <ServerIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "channelManager", label: "Channel Manager", icon: <WifiIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "analytics", label: "Analytics", icon: <BarChart3Icon className="h-3.5 w-3.5" />, permission: "canViewAnalytics" },
@@ -57,7 +59,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
     if (t.id === "website" && process.env.NEXT_PUBLIC_GOKO_RUNTIME === "pi") return false;
     if (t.adminOnly && role !== "admin") return false;
     if (t.id === "analytics" && role === "manager") return true;
-    if (t.permission && !hasPermission(role, permissions, t.permission)) return false;
+    if (t.permission && (Array.isArray(t.permission) ? !t.permission.some((permission) => hasPermission(role, permissions, permission)) : !hasPermission(role, permissions, t.permission))) return false;
     return true;
   }), [role, permissions]);
   const defaultTab = visibleTabs[0]?.id || "history";
@@ -167,6 +169,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         {tab === "qrGenerator" && <QRGenerator password={password} username={username} role={role} />}
         {tab === "accountSettings" && <AccountSettings password={password} username={username} role={role} />}
         {tab === "attendance" && <ManagementAttendance password={password} username={username} role={role} />}
+        {tab === "tasks" && <ManagementTasks password={password} username={username} role={role} permissions={permissions} />}
         {tab === "serverSync" && <ServerSync password={password} username={username} role={role} />}
         {tab === "channelManager" && <ChannelManager password={password} username={username} role={role} initialTab={initialChannelTab} />}
         {tab === "analytics" && <AdminAnalytics password={password} username={username} role={role} permissions={permissions} />}

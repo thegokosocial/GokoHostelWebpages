@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts` — **52** `sqliteTable`s. Applied SQL: `migrations/0001_initial.sql` … `0052_walkin_checkin_booking_resolution.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
+**Git-safe.** Schema: `src/db/schema.ts`. Applied SQL: `migrations/0001_initial.sql` … `0055_tasks.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 
@@ -60,7 +60,8 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `employee_attendance` | Current per-day attendance state. |
 | `employee_attendance_history` | Attendance audit events; Audit-tab reads and manual audit cleanup follow the global retention policy. |
 | `salary_payments` | Plus auto `expenses` row. |
-| `expenses` | Bills. Drive links. `expense_date` is the accounting/ledger date; `created_at` remains the audit insertion timestamp. `created_month` follows `expense_date`. |
+| `expenses` | Bills. Drive links. `expense_date` is the accounting/ledger date; `created_at` remains the audit insertion timestamp. `created_month` follows `expense_date`. Purchase-task expenses have a unique nullable `task_id`. |
+| `tasks` | Assignable operational work. Login-user ownership, status, scheduling, notes, Drive attachment metadata, and soft archive. |
 | `daily_income` | Manual income; `source_detail` labels Other entries. Also retains legacy `food_revenue_auto`. |
 | `daily_ledger` | Unique `(date, account_id)`. |
 
@@ -105,6 +106,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 |-------|------|
 | `settings` | Key-value (OAuth tokens, food hours, `image_validation`, `primary_server`). |
 | `users` | Staff. |
+| `tasks` | Staff work queue; `assignee_user_id` points to `users`. |
 | `audit_log` | Who did what. Raw action, target, and details are retained; the Management Audit API adds friendly presentation fields and bounded reference-name enrichment without changing the table schema. |
 | `system_logs` | App errors/events. Structured error context is stored as sanitized JSON in `details`, correlated with `request_id`; last 30 days kept (pruned on insert and list). |
 | `api_stats` | Vision/Drive counters by month. |
@@ -138,6 +140,7 @@ erDiagram
   food_orders ||--o{ food_order_items : order_id
   food_orders ||--o{ order_modifications : order_id
   accounts ||--o{ expenses : account_id
+  tasks ||--o| expenses : task_id
   accounts ||--o{ daily_income : account_id
   accounts ||--o{ daily_ledger : account_id
   accounts ||--o{ salary_payments : account_id

@@ -14,7 +14,7 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 ## What syncs
 
-**With soft-delete:** checkins, dorms, beds, bookings, menu_categories, menu_items, food_orders, accounts, vendors, employees, expenses, daily_income, users, platform_payment_profiles.
+**With soft-delete:** checkins, dorms, beds, bookings, menu_categories, menu_items, food_orders, accounts, vendors, employees, expenses, daily_income, users, tasks, platform_payment_profiles.
 
 **Append-only:** bed_history, food_order_items, order_modifications, salary_payments, daily_ledger, qr_history, guest_receipts, platform_receivable_entries, platform_settlements, platform_settlement_allocations.
 
@@ -22,7 +22,7 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 **Drift:** live Kannada flags are `food_kannada_kitchen_print` and `food_kannada_kitchen_display`. Sync still uses the old key `food_kannada_labels`. Those print/display keys do **not** sync.
 
-**Never:** CMS `site_*`, **split_***, audit/system logs, api_stats, rate_scrapes, push, reviews, channel manager, inventory/rates/blocks, sync meta tables, **R2 objects**. Drive URLs on checkin rows *do* sync (files stay in Google).
+**Never:** CMS `site_*`, **split_***, audit/system logs, api_stats, rate_scrapes, push, reviews, channel manager, inventory/rates/blocks, sync meta tables, **R2 objects**. Drive URLs on checkin and task rows *do* sync (files stay in Google). Task status/text works offline; attachment uploads require network access.
 
 Pi migrator stamps `0035_site_cms.sql` and `0041_splits.sql` without applying SQL (same as CMS). It **does** apply `0042_booking_stay_payments.sql` (those columns live on synced `bookings`). Splits nav is hidden on Pi.
 

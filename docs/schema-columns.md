@@ -13,6 +13,7 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `settings` | 4 |
 | `api_stats` | 6 |
 | `users` | 13 |
+| `tasks` | 21 |
 | `audit_log` | 8 |
 | `system_logs` | 7 |
 | `rate_scrapes` | 9 |
@@ -29,7 +30,7 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `salary_payments` | 12 |
 | `daily_income` | 15 |
 | `daily_ledger` | 15 |
-| `expenses` | 20 |
+| `expenses` | 21 |
 | `push_subscriptions` | 6 |
 | `sync_log` | 10 |
 | `sync_conflicts` | 13 |
@@ -187,6 +188,32 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `sync_updated_at` | text |  |
 | `sync_source` | text | default cloudflare |
 | `deleted_at` | text |  |
+
+## `tasks`
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `id` | integer | PK |
+| `title` | text | NOT NULL |
+| `description` | text | NOT NULL default "" |
+| `task_type` | text | general or purchase |
+| `category` | text | Optional free-text category |
+| `priority` | text | low / normal / high / urgent |
+| `due_date` | text | Optional YYYY-MM-DD |
+| `assignee_user_id` | integer | NOT NULL FK to `users` |
+| `status` | text | todo / in_progress / blocked / done |
+| `note` | text | Current shared note |
+| `attachments` | text | JSON Drive attachment metadata |
+| `completed_at` | text | Completion timestamp |
+| `completed_by` | text | Completion actor |
+| `created_by` | text | Actor username/display name |
+| `updated_by` | text | Actor username/display name |
+| `created_at` | text | NOT NULL |
+| `updated_at` | text | NOT NULL |
+| `sync_id` | text |  |
+| `sync_updated_at` | text |  |
+| `sync_source` | text | default cloudflare |
+| `deleted_at` | text | Soft archive timestamp |
 
 ## `audit_log`
 
@@ -526,6 +553,7 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `bill_image_link` | text | default "" |
 | `vendor_id` | integer |  |
 | `account_id` | integer |  |
+| `task_id` | integer | Optional FK to `tasks`; unique when present |
 | `payment_method` | text | default "cash" |
 | `main_category` | text | default "stay_expense" |
 | `sub_category` | text | default "" |

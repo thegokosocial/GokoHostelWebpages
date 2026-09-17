@@ -9,6 +9,7 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
       ["canViewRecords", "View Records"], ["canViewFoodOrders", "View Food Orders"],
       ["canViewAccounts", "View Accounts"], ["canViewSplits", "View Splits"],
       ["canViewReviews", "View Reviews"], ["canViewManagement", "View Management"],
+      ["canViewTasks", "View and update assigned tasks"],
       ["canViewAudit", "View Audit Logs"], ["canViewLogs", "View System Logs"],
       ["canViewAnalytics", "View Analytics"], ["canViewQuickLinks", "View Links & QRs"],
     ].map(([key, label]) => ({ key, label })),
@@ -69,6 +70,7 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
       ["canDeleteSplitExpense", "Delete split expenses"], ["canSettleSplits", "Settle splits / Goko pay"],
       ["canManageSplits", "Manage people and groups"], ["canUseQRGenerator", "Use QR code generator"],
       ["canManageAttendance", "Manage staff attendance"],
+      ["canManageTasks", "Create and manage all tasks"],
     ].map(([key, label]) => ({ key, label })),
   },
 ];

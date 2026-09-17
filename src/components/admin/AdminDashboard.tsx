@@ -14,6 +14,7 @@ import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { hasPermission, type Role, type AdminSection, type ManagementTab } from "./types";
 import { canLookupFoodTab, foodTabUncheckedMessage } from "@/lib/foodTab";
+import { AdminMyTasks, type MyTask } from "./AdminMyTasks";
 
 export function AdminDashboard({
   password,
@@ -62,6 +63,7 @@ export function AdminDashboard({
     date: string;
     missingAccountNames: string[];
   } | null>(null);
+  const [myTasks, setMyTasks] = useState<MyTask[]>([]);
 
   useEffect(() => { loadDashboard(); }, []);
 
@@ -86,6 +88,7 @@ export function AdminDashboard({
         setReconciliationWarning(data.reconciliationWarning || null);
         setMappingHealth(data.mappingHealth || null);
         setStats(data.stats || { total: 0, occupied: 0, available: 0, cleanup: 0 });
+        setMyTasks(data.myTasks || []);
         setValidationOn(data.validationEnabled !== false);
         if (data.guestMinAge || data.guestMaxAge) {
           setAgeRange({ min: data.guestMinAge || 18, max: data.guestMaxAge || 40 });
@@ -225,6 +228,8 @@ export function AdminDashboard({
     <div>
       <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Dashboard</h2>
       <p className="mt-1 text-sm text-brand-green-dark/60 dark:text-zinc-500">{today}</p>
+
+      {(hasPermission(role, permissions || {}, "canViewTasks") || hasPermission(role, permissions || {}, "canManageTasks")) && <AdminMyTasks tasks={myTasks} password={password} username={username} onUpdated={() => void loadDashboard()} />}
 
       {mappingHealth && !["match", "disabled"].includes(mappingHealth.status) && (role === "admin" || role === "manager") && (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-amber-950 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-100">

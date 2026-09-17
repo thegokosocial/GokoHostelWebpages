@@ -8,7 +8,7 @@ import { getRuntimeName, getBuildVersion } from "@/lib/runtime";
 
 const SYNCED_TABLES_WITH_DELETE = [
   "checkins", "dorms", "beds", "bookings", "menu_categories", "menu_items",
-  "food_orders", "accounts", "vendors", "employees", "expenses", "daily_income", "users",
+  "food_orders", "accounts", "vendors", "employees", "users", "tasks", "expenses", "daily_income",
   "employee_attendance", "employee_leave_policy", "employee_compensation_history",
   "platform_payment_profiles",
 ] as const;
@@ -47,6 +47,7 @@ const TABLE_MAP: Record<string, any> = {
   employee_leave_policy: schema.employeeLeavePolicy,
   employee_compensation_history: schema.employeeCompensationHistory,
   expenses: schema.expenses,
+  tasks: schema.tasks,
   daily_income: schema.dailyIncome,
   users: schema.users,
   bed_history: schema.bedHistory,
@@ -77,7 +78,8 @@ const FK_REMAP: Record<string, Record<string, string>> = {
   employee_compensation_history: { employeeId: "employees" },
   daily_income: { accountId: "accounts" },
   daily_ledger: { accountId: "accounts" },
-  expenses: { vendorId: "vendors", accountId: "accounts" },
+  expenses: { vendorId: "vendors", accountId: "accounts", taskId: "tasks" },
+  tasks: { assigneeUserId: "users" },
   guest_receipts: { accountId: "accounts" },
   platform_payment_profiles: { virtualAccountId: "accounts" },
   platform_receivable_entries: { bookingId: "bookings" },

@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -344,6 +344,92 @@ export async function updateUser(userId: number, data: {
 export async function deleteUser(userId: number) {
   const db = getDb();
   return db.delete(users).where(eq(users.id, userId));
+}
+
+// --- Tasks ---
+
+export type TaskStatus = "todo" | "in_progress" | "blocked" | "done";
+export type TaskPriority = "low" | "normal" | "high" | "urgent";
+
+export async function getTaskAssignees() {
+  const db = getDb();
+  return db.select({
+    id: users.id,
+    username: users.username,
+    displayName: users.displayName,
+    role: users.role,
+  }).from(users)
+    .where(sql`${users.deletedAt} IS NULL`)
+    .orderBy(users.displayName);
+}
+
+function taskWhere(includeArchived: boolean, assigneeUserId?: number) {
+  const conditions = [includeArchived ? undefined : sql`${tasks.deletedAt} IS NULL`];
+  if (assigneeUserId != null) conditions.push(eq(tasks.assigneeUserId, assigneeUserId));
+  return and(...conditions.filter((condition): condition is NonNullable<typeof condition> => Boolean(condition)));
+}
+
+export async function getTasks(options: { includeArchived?: boolean; assigneeUserId?: number } = {}) {
+  const db = getDb();
+  return db.select().from(tasks)
+    .leftJoin(users, eq(tasks.assigneeUserId, users.id))
+    .leftJoin(expenses, and(eq(tasks.id, expenses.taskId), sql`${expenses.deletedAt} IS NULL`))
+    .where(taskWhere(Boolean(options.includeArchived), options.assigneeUserId))
+    .orderBy(sql`CASE WHEN ${tasks.status} = 'done' THEN 1 ELSE 0 END`, sql`CASE WHEN ${tasks.dueDate} = '' THEN 1 ELSE 0 END`, tasks.dueDate, desc(tasks.id));
+}
+
+export async function getTaskById(id: number) {
+  const db = getDb();
+  const rows = await db.select().from(tasks)
+    .leftJoin(users, eq(tasks.assigneeUserId, users.id))
+    .leftJoin(expenses, and(eq(tasks.id, expenses.taskId), sql`${expenses.deletedAt} IS NULL`))
+    .where(eq(tasks.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function createTask(data: {
+  title: string; description?: string; taskType?: string; category?: string;
+  priority?: TaskPriority; dueDate?: string; assigneeUserId: number;
+  status?: TaskStatus; note?: string; attachments?: string; createdBy: string;
+  updatedBy: string;
+}) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const result = await db.insert(tasks).values(syncInsert({
+    ...data,
+    description: data.description || "",
+    taskType: data.taskType || "general",
+    category: data.category || "",
+    priority: data.priority || "normal",
+    dueDate: data.dueDate || "",
+    status: data.status || "todo",
+    note: data.note || "",
+    attachments: data.attachments || "[]",
+    createdAt: now,
+    updatedAt: now,
+  })).returning({ id: tasks.id });
+  return result[0]?.id || null;
+}
+
+export async function updateTask(id: number, data: Partial<{
+  title: string; description: string; taskType: string; category: string;
+  priority: TaskPriority; dueDate: string; assigneeUserId: number;
+  status: TaskStatus; note: string; attachments: string; completedAt: string;
+  completedBy: string; updatedBy: string;
+}>) {
+  return dbWrite(() => getDb().update(tasks).set(syncUpdate(data)).where(eq(tasks.id, id)), { idempotentWrite: true });
+}
+
+export async function archiveTask(id: number, updatedBy: string) {
+  return dbWrite(() => getDb().update(tasks).set(syncUpdate({ deletedAt: new Date().toISOString(), updatedBy })).where(eq(tasks.id, id)), { idempotentWrite: true });
+}
+
+export async function getTaskExpense(taskId: number) {
+  const db = getDb();
+  const rows = await db.select().from(expenses)
+    .where(and(eq(expenses.taskId, taskId), sql`${expenses.deletedAt} IS NULL`))
+    .limit(1);
+  return rows[0] || null;
 }
 
 // --- Audit Log ---
@@ -1241,7 +1327,7 @@ export async function addExpense(data: {
   amount: number; category: string; customCategory?: string; purpose: string;
   billImageLink?: string; createdBy: string; expenseDate: string; createdMonth: string;
   vendorId?: number | null; accountId?: number | null; paymentMethod?: string;
-  mainCategory?: string; subCategory?: string;
+  mainCategory?: string; subCategory?: string; taskId?: number | null;
 }) {
   const db = getDb();
   const now = new Date().toISOString();

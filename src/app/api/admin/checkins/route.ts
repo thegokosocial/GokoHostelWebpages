@@ -28,6 +28,7 @@ import {
   getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking, searchBookings, getCheckinById,
   createRateScrape, getLatestRateScrape, getRateScrapeById, updateRateScrape,
   getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
+  getTasks,
   addAuditEntry, getAuditEntries, getInventoryAuditEntries, getAuditPresentationContext, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
@@ -855,6 +856,20 @@ export async function POST(req: NextRequest) {
       const reconciliationWarning = role === "admin" || role === "manager"
         ? await getReconciliationStatus(addCalendarDays(today, -1))
         : null;
+      const taskViewer = username ? await getUserByUsername(username) : null;
+      const myTaskRows = taskViewer && (role === "admin" || actionAllowed(role, permissions, ["canViewTasks", "canManageTasks"]) === "allowed")
+        ? await getTasks({ assigneeUserId: taskViewer.id })
+        : [];
+      const myTasks = myTaskRows.map((row) => {
+        let attachments: unknown[] = [];
+        try { attachments = JSON.parse(row.tasks.attachments || "[]"); } catch {}
+        return {
+          ...row.tasks,
+          attachments: Array.isArray(attachments) ? attachments : [],
+          assignee: row.users ? { id: row.users.id, username: row.users.username, displayName: row.users.displayName, role: row.users.role } : null,
+          expense: row.expenses ? { id: row.expenses.id, amount: row.expenses.amount, category: row.expenses.category, purpose: row.expenses.purpose, expenseDate: row.expenses.expenseDate } : null,
+        };
+      });
 
       return NextResponse.json({
         todayCheckins: todayCheckinsWithBed,
@@ -871,6 +886,7 @@ export async function POST(req: NextRequest) {
         guestMaxAge,
         reconciliationWarning: reconciliationWarning?.isReconciled ? null : reconciliationWarning,
         mappingHealth: role === "admin" || role === "manager" ? await getMappingHealth().catch(() => ({ status: "failed", report: null })) : null,
+        myTasks,
         role,
       });
     }
@@ -1259,6 +1275,10 @@ export async function POST(req: NextRequest) {
     if (action === "deleteUser") {
       const { userId } = rest;
       if (!isValidId(userId)) return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
+      const assignedTasks = await getTasks({ assigneeUserId: userId, includeArchived: true });
+      if (assignedTasks.length > 0) {
+        return NextResponse.json({ error: "Reassign all tasks before deleting this user" }, { status: 409 });
+      }
       await deleteUserById(userId);
       await addAuditEntry({ username: actingUser, action: "user_deleted", target: `userId:${userId}` });
       return NextResponse.json({ success: true });

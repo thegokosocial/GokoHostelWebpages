@@ -49,6 +49,8 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |
 | `/api/admin/food-orders` | per-action map | Tabs, pay, void, combined bill, retained audit-history view |
 | `/api/admin/expenses` | per-action map | Expenses, ledger, reconcile, food revenue |
+| `/api/admin/tasks` | `authenticateUser` + per-action map | Shared task queue, assigned-user updates, task attachments, and purchase-task expense linking |
+| `/api/admin/tasks/upload` | `authenticateUser` + task ownership/task-management check | JPEG/PNG/WebP/PDF task attachments stored in Google Drive |
 | `/api/admin/platform-settlements` | `canViewAccounts` for list; `canSettlePlatformPayments` for createSettlement/allocate; `canAdjustPlatformReceivables` for adjust | OTA receivable summary, real-bank payout headers, batch allocations, immutable adjustments |
 | `/api/admin/splits` | per-action map, 403 on Pi | Staff/volunteer IOUs + Goko Accounts bridge |
 | `/api/admin/account-settings` | `canManageAccountSettings` or legacy `canManageAccounts` or admin | Accounts, vendors, employees, salary |

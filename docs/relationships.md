@@ -121,6 +121,8 @@ erDiagram
   dorms ||--o{ bed_blocks : ooo
   dorms ||--o{ inventory_overrides : ceiling
   beds ||--o{ bed_history : events
+  users ||--o{ tasks : assigned
+  tasks ||--o| expenses : purchase_expense
 ```
 
 **Two occupancy models exist at once:**
@@ -154,6 +156,7 @@ Line items snapshot `itemName` / `itemPrice` so menu edits do not rewrite histor
 ```mermaid
 erDiagram
   accounts ||--o{ expenses : paid_from
+  tasks ||--o| expenses : linked_purchase
   accounts ||--o{ daily_income : received
   accounts ||--o{ daily_ledger : one_row_per_day
   accounts ||--o{ salary_payments : paid_from
@@ -247,6 +250,7 @@ Webhook path (`/api/aiosell/reservations`) creates/updates `bookings` + assignme
 | Food orders / tabs / pay | `/api/admin/food-orders` |
 | Menu CRUD | `/api/admin/food` |
 | Expenses / ledger | `/api/admin/expenses` |
+| Tasks / task uploads | `/api/admin/tasks` + `/api/admin/tasks/upload` |
 | Splits | `/api/admin/splits` |
 | Accounts / vendors / employees | `/api/admin/account-settings` |
 | Website CMS | `/api/admin/website` + `/upload` |

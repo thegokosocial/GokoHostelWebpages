@@ -76,7 +76,7 @@ Aiosell webhook: D1 `channel_config.webhookSecret` via `Authorization` or `x-api
 
 From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does not** always mean the API checks it (see [llm-onboarding.md](llm-onboarding.md) §4).
 
-**Nav:** `canViewDashboard`, `canViewBookings`, `canViewBeds`, `canViewTimeline`, `canViewRecords`, `canViewFoodOrders`, `canViewAccounts`, `canViewSplits`, `canViewReviews`, `canViewManagement`, `canViewAudit`, `canViewLogs`
+**Nav:** `canViewDashboard`, `canViewBookings`, `canViewBeds`, `canViewTimeline`, `canViewRecords`, `canViewFoodOrders`, `canViewAccounts`, `canViewSplits`, `canViewReviews`, `canViewManagement`, `canViewAudit`, `canViewLogs`, `canViewTasks`
 
 **Check-in:** `canAddCheckin`, `canAssignBed`, `canCheckout`, `canMarkClean`, `canEditRecords`, `canDeleteRecords`
 
@@ -92,7 +92,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Analytics:** `canViewAnalytics`
 
-**Tools:** `canUseQRGenerator`, `canManageAttendance`, `canViewQuickLinks`
+**Tools:** `canUseQRGenerator`, `canManageAttendance`, `canViewQuickLinks`, `canManageTasks`
 
 `canManageInventory` gates the **Inventory** admin tab and `/api/admin/inventory`, plus stock controls inside Menu. Menu viewing and administration use the dedicated menu permissions above.
 `canCheckIn` / `canCheckOut` are grantable calendar controls. The booking API remains backward-compatible with `canAddBooking`.
@@ -118,7 +118,7 @@ Menu deletion permissions are unchanged: `canManageMenuItems` archives an item a
 
 Admin always sees all. Staff see first allowed section (`firstVisibleAdminSection`).
 
-Management tabs: most `adminOnly: true`. Exceptions: Audit (`canViewAudit`, read-only audit views), Logs (`canViewLogs`, read-only system/PMS logs), History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access), and Links & QRs (`canViewQuickLinks`). Audit retention and log-level settings remain admin-only; Links & QRs mutations are admin-only. Users still need `canViewManagement` for the parent Management page. The public guest page is `/quick-links`; it exposes active cards only. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Management tabs: most `adminOnly: true`. Exceptions: Audit (`canViewAudit`, read-only audit views), Logs (`canViewLogs`, read-only system/PMS logs), History, Rates (visible), Menu (`canViewMenu`), Food Settings (`canManageFoodSettings`), QR (`canUseQRGenerator`), Account Settings (`canManageAccountSettings`), Analytics (`canViewAnalytics`; existing managers retain compatibility access), Links & QRs (`canViewQuickLinks`), and To Do (`canViewTasks` or `canManageTasks`). To Do viewers see the shared active queue but can update only tasks assigned to themselves; `canManageTasks` controls create/edit/reassign/archive/reopen and all-task management. Dashboard task data is returned for the authenticated DB user with `canViewTasks` or `canManageTasks`. Recording a purchase-task expense additionally requires existing `canAddExpense`. Audit retention and log-level settings remain admin-only; Links & QRs mutations are admin-only. Users still need `canViewManagement` for the parent Management page. The public guest page is `/quick-links`; it exposes active cards only. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 ---
 
@@ -157,6 +157,10 @@ Audit presentation fields are read-only enrichments; they do not change the `can
 ### `/api/admin/attendance`
 
 `getAuditHistory` is a history-only read for the Management → Audit → Attendance tab and uses `canViewAudit`; it does not return payroll or attendance-calendar data. `getMonth`, `getPayroll`, and attendance/policy mutations remain restricted to admin or the existing manager `canManageAttendance` flow.
+
+### `/api/admin/tasks`
+
+`listTasks` requires `canViewTasks` or `canManageTasks`; `getTaskAssignees`, create/edit/archive/reopen require `canManageTasks`. `updateAssignedTask` and task-file uploads require `canViewTasks` plus an exact assignee match unless the user has `canManageTasks`. `createTaskExpense` requires `canAddExpense`, validates a purchase task and one-to-one task link, and reuses the task’s Drive attachments. Task rows are synced with soft-delete; Drive objects are not synced.
 
 Dashboard checkout rows show room status from a matched booking and food status from active check-in orders. Room matching is read-only and identity-first: it uses the check-in booking reference, then a unique normalized phone or guest-name match with overlapping stay dates. A physical bed’s booking assignment is never used as an identity match; planned room/bed labels are displayed separately and do not change physical occupancy or payment state. Unlinked legacy guests are shown as room `not_linked`. An overall clear state is shown only when a room is linked and both room and food balances are clear.
 

@@ -122,6 +122,31 @@ export const users = sqliteTable("users", {
   ...syncColumnsWithDelete,
 });
 
+export const tasks = sqliteTable("tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  taskType: text("task_type").notNull().default("general"),
+  category: text("category").notNull().default(""),
+  priority: text("priority").notNull().default("normal"),
+  dueDate: text("due_date").default(""),
+  assigneeUserId: integer("assignee_user_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("todo"),
+  note: text("note").notNull().default(""),
+  attachments: text("attachments").notNull().default("[]"),
+  completedAt: text("completed_at").default(""),
+  completedBy: text("completed_by").default(""),
+  createdBy: text("created_by").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  ...syncColumnsWithDelete,
+}, (table) => [
+  index("idx_tasks_assignee").on(table.assigneeUserId),
+  index("idx_tasks_status").on(table.status),
+  index("idx_tasks_due_date").on(table.dueDate),
+]);
+
 export const auditLog = sqliteTable("audit_log", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   timestamp: text("timestamp").notNull(),
@@ -628,6 +653,7 @@ export const expenses = sqliteTable("expenses", {
   paymentMethod: text("payment_method").default("cash"),
   mainCategory: text("main_category").default("stay_expense"),
   subCategory: text("sub_category").default(""),
+  taskId: integer("task_id").references(() => tasks.id),
   createdBy: text("created_by").notNull(),
   updatedBy: text("updated_by").default(""),
   createdAt: text("created_at").notNull(),
@@ -640,6 +666,7 @@ export const expenses = sqliteTable("expenses", {
   index("idx_expenses_created").on(table.createdAt),
   index("idx_expenses_expense_date").on(table.expenseDate),
   index("idx_expenses_created_by").on(table.createdBy),
+  uniqueIndex("idx_expenses_task_unique").on(table.taskId),
 ]);
 
 export const pushSubscriptions = sqliteTable("push_subscriptions", {
