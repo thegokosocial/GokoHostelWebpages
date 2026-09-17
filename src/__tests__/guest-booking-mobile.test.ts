@@ -48,7 +48,8 @@ describe("Mobile-first booking layout contracts", () => {
   });
   it("searches with dates only, shows nightly prices and uses a configured limit", () => {
     expect(panel).not.toContain('stay.guests');
-    expect(panel).toContain('maxSelectedBeds'); expect(panel).toContain('Maximum ${maxSelectedBeds} beds reached');
+    expect(panel).toContain('maxSelectedBeds'); expect(panel).toContain('Maximum {maxSelectedBeds} beds reached');
+    expect(panel).not.toContain('Choose up to'); expect(panel).not.toContain('Availability is advisory');
     expect(panel).toContain('/ bed / night'); expect(panel).toContain('per bed for {rate.nightlyRates.length} nights');
     expect(panel).not.toContain('stay.units'); expect(panel).not.toContain('Beds / units');
     expect(panel).toContain('useState<GuestRoom[] | null>(null)');

@@ -152,8 +152,16 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             <div className="min-w-0"><p className="text-xs sm:text-sm">Your stay estimate</p><p className="mt-1 break-words text-2xl font-semibold sm:text-3xl">{selectedCount ? money(totals?.total ?? subtotal) : "Choose beds"}</p></div>
             <button type="button" className={`${action} max-w-36 text-sm sm:max-w-none sm:text-base`} disabled={!ready} onClick={() => setReview(true)}>Review your stay</button>
             <p className="col-span-2 text-xs xl:col-span-1">{selectedCount} {selectedCount === 1 ? "bed" : "beds"} selected · Sleeps up to {capacity}.</p>
-            <p role="status" className="col-span-2 text-xs xl:col-span-1">{selectedCount === maxSelectedBeds ? `Maximum ${maxSelectedBeds} beds reached. Remove a bed before adding another.` : `Choose up to ${maxSelectedBeds} beds across all dorms. Whole doubles count as one bed.`}</p>
-            <p className="col-span-2 text-xs xl:col-span-1">{selectedCount && totals ? `Beds ${money(subtotal)} + tax (${taxPercent}%) ${money(totals.tax)}.` : "Select beds to see your total."} Availability is advisory; not reserved.</p>
+            {selectedCount === maxSelectedBeds && maxSelectedBeds != null ? (
+              <p role="status" className="col-span-2 text-xs xl:col-span-1">
+                Maximum {maxSelectedBeds} beds reached. Remove a bed before adding another.
+              </p>
+            ) : null}
+            {selectedCount && totals ? (
+              <p className="col-span-2 text-xs xl:col-span-1">
+                Beds {money(subtotal)} + tax ({taxPercent}%) {money(totals.tax)}.
+              </p>
+            ) : null}
             <p className="hidden text-xs text-white/80 xl:block">Payment remains disabled.</p>
           </aside>
           </div>
