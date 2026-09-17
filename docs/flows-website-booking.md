@@ -40,7 +40,11 @@ The specification model now reserves each refund against a captured payment, all
 
 ## Native page today
 
-The homepage hero and `/book` expose Find a stay / My booking: dates/guests-only search, photo-led listings after availability search, visible eligible rate rows, bounded Add/minus selection and an estimated-tax summary (XL desktop sidebar). Switching rates reprices existing selected beds without doubling stock. Review requires enough capacity; payment remains disabled. Email-verified existing PMS lookup is unchanged. See [guest UI workflows, activation and limits](guest-booking-ui.md). Missing tariffs never use sample prices. `/book/preview` is a labelled local fixture gated by `GOKO_BOOKING_UI_PREVIEW=true`. No native booking is created or confirmed. Automatic confirmation email still requires a transactional fulfilment outbox; enquiries and verification emails are not confirmations.
+Preview Search now follows the live read-only availability workflow as well: user dates → connected Inventory tariffs/stock/settings → advisory selection/review. Removed all fixture room/rate/tax/limit injection and date resetting. Missing backend/data never falls back to fake rates. Preview still blocks lookup/email and reservation/payment creation.
+
+Current flow: dates-only Search → server tariffs/stock and saved bed limit → choose beds up to stock/limit → review estimated tax-inclusive total → payment unavailable. Guest count is not requested or inferred from capacity. Booking Settings controls the whole-bed limit (default 4, 1–100); it applies to new searches. Both `/book` and `/book/preview` use connected Inventory tariffs, shown per bed/night plus per-bed stay total. Future reservation writes must enforce saved limits server-side.
+
+The homepage hero and `/book` expose dates-only search, photo-led availability listings, rate rows, bounded Add/minus selection and estimated-tax summary (XL sidebar). Switching rates reprices without adding beds; Review requires a priced selection within stock/limit. Existing email-verified PMS lookup is unchanged. See [guest workflows](guest-booking-ui.md). Preview remains gated by `GOKO_BOOKING_UI_PREVIEW=true`, with lookup email disabled. Neither missing tariffs nor missing backend use samples. No native booking is created/confirmed; confirmation email requires a transactional fulfilment outbox. Enquiries and verification emails are not confirmations.
 
 ## Remaining implementation gates
 

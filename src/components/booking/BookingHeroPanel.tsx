@@ -18,7 +18,7 @@ async function readResponse(response: Response) {
   return data;
 }
 
-export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; taxPercent: number; stay: { checkinDate: string; checkoutDate: string; guests: string } } }) {
+export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate: string; checkoutDate: string } } }) {
   const panelRef = useRef<HTMLDivElement>(null), reviewRef = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
   const [tab, setTab] = useState<"search" | "booking">("search");
@@ -27,9 +27,10 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
   const [selection, setSelection] = useState<Record<string, number>>({});
   const [plans, setPlans] = useState<Record<string, number>>({});
   const [review, setReview] = useState(false);
-  const [taxPercent, setTaxPercent] = useState<number | null>(preview?.taxPercent ?? null);
+  const [taxPercent, setTaxPercent] = useState<number | null>(null);
+  const [maxSelectedBeds, setMaxSelectedBeds] = useState<number | null>(null);
   const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
-  const [stay, setStay] = useState(preview?.stay ?? { checkinDate: "", checkoutDate: "", guests: "1" });
+  const [stay, setStay] = useState(preview?.stay ?? { checkinDate: "", checkoutDate: "" });
   const [searchedStay, setSearchedStay] = useState<typeof stay | null>(null);
   const [reference, setReference] = useState(""), [email, setEmail] = useState("");
   const [challengeId, setChallengeId] = useState(""), [code, setCode] = useState("");
@@ -51,9 +52,8 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
   async function search(event: FormEvent) {
     event.preventDefault(); setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false);
     try {
-      if (preview) { const sampleStay = { ...preview.stay, guests: stay.guests }; setStay(sampleStay); setSearchedStay(sampleStay); setRooms(preview.rooms); setTaxPercent(preview.taxPercent); setMessage("Demo search: sample dates and prices, with your selected guest count. No live inventory or payments."); return; }
       const data = await readResponse(await fetch(`/api/guest-booking/availability?${new URLSearchParams(stay)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) }));
-      setRooms(data.rooms); setTaxPercent(data.taxPercent); setSearchedStay({ ...stay });
+      setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...stay });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not search. Try WhatsApp."); }
     finally { setBusy(false); }
   }
@@ -73,24 +73,23 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
   const chosenRate = (room: GuestRoom) => room.rates?.find(rate => rate.id === plans[room.id]) ?? room.rates?.[0];
   const subtotal = rooms?.reduce((sum, room) => sum + (selection[room.id] || 0) * (chosenRate(room)?.subtotalRupees || 0), 0) || 0;
   const totals = taxPercent == null ? null : bookingTotals(subtotal, { taxPercent });
-  const ready = !!searchedStay && selectedCount > 0 && selectedCount <= Number(searchedStay.guests) && capacity >= Number(searchedStay.guests) && !!rooms?.every(room => !selection[room.id] || (selection[room.id] <= room.availableUnits && !!chosenRate(room)));
+  const ready = !!searchedStay && maxSelectedBeds != null && selectedCount > 0 && selectedCount <= maxSelectedBeds && !!rooms?.every(room => !selection[room.id] || (selection[room.id] <= room.availableUnits && !!chosenRate(room)));
   function addRoom(room: GuestRoom, planId: number) {
-    setSelection(current => canAddGuestRoom(rooms || [], current, room, Number(searchedStay?.guests)) ? { ...current, [room.id]: (current[room.id] || 0) + 1 } : current);
+    setSelection(current => canAddGuestRoom(rooms || [], current, room, maxSelectedBeds ?? 0) ? { ...current, [room.id]: (current[room.id] || 0) + 1 } : current);
     setPlans(current => ({ ...current, [room.id]: planId })); setReview(false);
   }
-  const enquiry = searchedStay ? `Hi Goko, please confirm availability and rates for ${searchedStay.checkinDate} to ${searchedStay.checkoutDate}, ${searchedStay.guests} guests. Selection: ${rooms?.filter(room => selection[room.id]).map(room => `${selection[room.id]} × ${room.name} (${room.type === "Double" ? "double bed" : "dorm bed"})`).join(", ")}.` : "";
+  const enquiry = searchedStay ? `Hi Goko, please confirm availability and rates for ${searchedStay.checkinDate} to ${searchedStay.checkoutDate}. Selection: ${rooms?.filter(room => selection[room.id]).map(room => `${selection[room.id]} × ${room.name} (${room.type === "Double" ? "double bed" : "dorm bed"})`).join(", ")}. Capacity up to ${capacity} guests; please confirm actual guest count with me.` : "";
   return <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
-    {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview only — sample prices and availability, not a real booking offer. No email, reservation or payment can be made.</p>}
+    {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
     <div className="mb-5 grid grid-cols-2 gap-2 sm:flex" role="tablist" aria-label="Booking options">
       {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "My booking"}</button>)}
     </div>
     {tab === "search" ? <div role="tabpanel" id="panel-search" aria-labelledby="tab-search">
       <h2 className="font-display text-2xl font-bold">Find your bed by the beach</h2>
       <p className="mt-1 text-sm">Choose your dates, compare our stays and make yourself at home. Dorm beds and double beds · No private rooms.</p>
-      <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-4">
+      <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-3">
         <label className="col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1">Check-in<input className={field} type="date" required disabled={busy} value={stay.checkinDate} onInput={e => changeStay("checkinDate", e.currentTarget.value)} onChange={e => changeStay("checkinDate", e.target.value)} /></label>
         <label className="col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1">Check-out<input className={field} type="date" required disabled={busy} min={stay.checkinDate || undefined} value={stay.checkoutDate} onInput={e => changeStay("checkoutDate", e.currentTarget.value)} onChange={e => changeStay("checkoutDate", e.target.value)} /></label>
-        <label className="col-span-2 min-w-0 text-sm font-semibold lg:col-span-1">Guests<select className={field} disabled={busy} value={stay.guests} onChange={e => changeStay("guests", e.target.value)}>{[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} {n === 1 ? "guest" : "guests"}</option>)}</select></label>
         <button className={`${action} col-span-2 lg:col-span-1`} disabled={busy}>{busy ? "Checking…" : "Check availability"}</button>
       </form>
       {rooms && <div className="mt-6 border-t border-brand-mist pt-5">
@@ -101,7 +100,7 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
             const categoryId = ["luxury", "female", "mixed"].find(id => room.name.toLowerCase().includes(id));
             const category = homeRooms.find(item => item.id === categoryId);
             const quantity = selection[room.id] || 0;
-            const canAdd = canAddGuestRoom(rooms, selection, room, Number(searchedStay?.guests));
+            const canAdd = canAddGuestRoom(rooms, selection, room, maxSelectedBeds ?? 0);
             return <article key={room.id} className="min-w-0 overflow-hidden rounded-2xl border border-brand-green/20 bg-white p-3 shadow-sm sm:p-4 xl:grid xl:grid-cols-[130px_minmax(0,1fr)_210px] xl:gap-4">
               <div className="grid min-w-0 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:contents">
                 <div className="min-w-0">
@@ -113,13 +112,13 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
                   <p className="mt-1 text-sm">{room.type === "Double" ? "Double bed in a shared dorm" : "Single bed in a shared dorm"}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-full bg-brand-sand px-3 py-2">Sleeps {room.capacity} per bed</span><span className="rounded-full bg-brand-green/10 px-3 py-2">{room.availableUnits} beds available</span></div>
                   <p className="mt-3 text-xs leading-relaxed text-brand-green">Non-AC · Individual fan · Locker · Charging point</p>
-                  <p className="mt-3 text-xs">Prices below are per {room.type === "Double" ? "whole double bed" : "bed"}, for the entire stay. Taxes shown in your summary.</p>
+                  <p className="mt-3 text-xs">Nightly prices and stay totals are per {room.type === "Double" ? "whole double bed" : "single bed"}. Taxes shown in your summary.</p>
                 </div>
               </div>
               <div className="mt-4 min-w-0 divide-y divide-brand-mist border-t border-brand-mist xl:mt-0 xl:border-t-0">{room.rates?.length ? room.rates.map(rate => {
                 const active = quantity > 0 && chosenRate(room)?.id === rate.id;
                 return <div key={rate.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
-                  <div className="min-w-0"><p className="text-xl font-bold">{money(rate.subtotalRupees)} <span className="text-xs font-normal">/ stay</span></p><p className="mt-1 break-words text-sm">{rate.name}</p><p className="mt-1 text-xs">{rate.nightlyRates.length} nights · Before taxes</p></div>
+                  <div className="min-w-0"><p className="text-xl font-bold">{rate.nightlyRates.some(night => night.rupees !== rate.nightlyRates[0]?.rupees) ? "From " : ""}{money(Math.min(...rate.nightlyRates.map(night => night.rupees)))} <span className="text-xs font-normal">/ bed / night</span></p><p className="mt-1 break-words text-sm">{rate.name}</p><p className="mt-1 text-xs">{money(rate.subtotalRupees)} per bed for {rate.nightlyRates.length} nights · Before taxes</p></div>
                   {active ? <div className="flex items-center gap-1 rounded-xl border border-brand-green/30"><button type="button" className="min-h-12 min-w-12 text-xl" aria-label={`Remove ${room.name}`} onClick={() => { setSelection(current => ({ ...current, [room.id]: Math.max(0, (current[room.id] || 0) - 1) })); setReview(false); }}>−</button><span className="min-w-4 text-center font-bold" aria-label={`${quantity} selected`}>{quantity}</span><button type="button" className="min-h-12 min-w-12 text-xl disabled:opacity-30" aria-label={`Add ${room.name} ${rate.name}`} disabled={!canAdd} onClick={() => addRoom(room, rate.id)}>+</button></div>
                     : <button type="button" className="min-h-12 rounded-xl border-2 border-brand-green px-3 font-semibold disabled:opacity-40" disabled={!quantity && !canAdd} aria-label={`${quantity ? "Switch rate for" : "Add"} ${room.name} ${rate.name}`} onClick={() => { if (quantity) { setPlans(current => ({ ...current, [room.id]: rate.id })); setReview(false); } else addRoom(room, rate.id); }}>{quantity ? "Switch rate" : "+ Add"}</button>}
                   <details className="col-span-2 text-xs"><summary className="min-h-12 cursor-pointer py-3">Nightly price breakdown</summary><ul className="space-y-1">{rate.nightlyRates.map(night => <li key={night.date} className="flex justify-between gap-2"><span>{night.date}</span><span>{money(night.rupees)}</span></li>)}</ul></details>
@@ -128,17 +127,18 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
             </article>;
           })}</div>
           <aside data-booking-summary className="sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-brand-green-dark p-3 text-white shadow-lg xl:top-24 xl:bottom-auto xl:grid-cols-1 xl:p-5">
-            <p className="hidden border-b border-white/20 pb-3 text-xs xl:block">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate} · {searchedStay?.guests} guests</p>
+            <p className="hidden border-b border-white/20 pb-3 text-xs xl:block">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate}</p>
             <div className="min-w-0"><p className="text-xs sm:text-sm">Your stay estimate</p><p className="mt-1 break-words text-2xl font-semibold sm:text-3xl">{selectedCount ? money(totals?.total ?? subtotal) : "Choose beds"}</p></div>
             <button type="button" className={`${action} max-w-36 text-sm sm:max-w-none sm:text-base`} disabled={!ready} onClick={() => setReview(true)}>Review your stay</button>
-            <p className="col-span-2 text-xs xl:col-span-1">{selectedCount} {selectedCount === 1 ? "bed" : "beds"} selected · Capacity {capacity} for {searchedStay?.guests} guests.</p>
+            <p className="col-span-2 text-xs xl:col-span-1">{selectedCount} {selectedCount === 1 ? "bed" : "beds"} selected · Sleeps up to {capacity}.</p>
+            <p role="status" className="col-span-2 text-xs xl:col-span-1">{selectedCount === maxSelectedBeds ? `Maximum ${maxSelectedBeds} beds reached. Remove a bed before adding another.` : `Choose up to ${maxSelectedBeds} beds across all dorms. Whole doubles count as one bed.`}</p>
             <p className="col-span-2 text-xs xl:col-span-1">{selectedCount && totals ? `Beds ${money(subtotal)} + tax (${taxPercent}%) ${money(totals.tax)}.` : "Select beds to see your total."} Availability is advisory; not reserved.</p>
             <p className="hidden text-xs text-white/80 xl:block">Payment remains disabled.</p>
           </aside>
           </div>
           {review && ready && <div ref={reviewRef} tabIndex={-1} className="mt-5 scroll-mt-24 rounded-xl border border-brand-mist p-4 focus:outline-none focus:ring-2 focus:ring-brand-green sm:p-5">
             <h3 className="font-display text-2xl font-bold">Your Goko stay</h3>
-            <p className="mt-2">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate} · {searchedStay?.guests} guests · {selectedCount} {selectedCount === 1 ? "bed" : "beds"}</p>
+            <p className="mt-2">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate} · {selectedCount} {selectedCount === 1 ? "bed" : "beds"} · Sleeps up to {capacity}</p>
             <ul className="mt-3 space-y-2 text-sm">{rooms.filter(room => selection[room.id]).map(room => <li key={room.id}>{selection[room.id]} × {room.name} · {chosenRate(room)?.name} · {money(selection[room.id] * chosenRate(room)!.subtotalRupees)}</li>)}</ul>
             {totals && <dl className="mt-4 space-y-2 border-t border-brand-mist pt-3 text-sm"><div className="flex justify-between"><dt>Bed subtotal</dt><dd>{money(totals.beforeTax)}</dd></div><div className="flex justify-between"><dt>Estimated tax ({taxPercent}%)</dt><dd>{money(totals.tax)}</dd></div><div className="flex justify-between text-lg font-semibold"><dt>Estimated total</dt><dd>{money(totals.total)}</dd></div></dl>}
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -152,7 +152,7 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
           </div>}
         </>}
       </div>}
-      <p className="mt-4 text-sm">Guests aged 18–35 only, up to 4 people. No children. Online checkout is not enabled yet; our team must confirm your stay.</p>
+      <p className="mt-4 text-sm">Guests aged 18–35 only. No children. The online bed-selection limit is set by Goko. Our team must confirm actual guest count and your stay; online checkout is not enabled yet.</p>
     </div> : <div role="tabpanel" id="panel-booking" aria-labelledby="tab-booking">
       <h2 className="font-display text-2xl font-bold">Find your booking</h2>
       <p className="mt-1 text-sm">Enter your confirmation number and the email used for your booking. We’ll email a verification code from booking@gokohostel.com.</p>

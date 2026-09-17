@@ -53,7 +53,7 @@ export function BookingSettings({ password, username }: { password: string; user
       setSettings(data.settings);
       setRevision(data.revision);
       setGateway(data.gateway);
-      setMessage("Draft settings saved. Native checkout remains disabled.");
+      setMessage("Settings saved. Maximum bed selection applies to new availability searches; payment policies remain draft and checkout stays disabled.");
     } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to save settings"); }
     finally { setBusy(false); }
   }
@@ -78,7 +78,7 @@ export function BookingSettings({ password, username }: { password: string; user
   return <div className="space-y-5">
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
       <h3 className="font-semibold">Native booking setup — checkout not yet enabled</h3>
-      <p className="mt-1">These are draft configuration values, not published payment or refund promises. Saving a Goko link does not activate Razorpay. External booking links continue to use the provider’s checkout.</p>
+      <p className="mt-1">The maximum bed selection applies to guest browsing. Payment and refund values remain drafts, not published promises. Saving a Goko link does not activate Razorpay. External links use the provider’s checkout.</p>
     </div>
     <nav aria-label="Booking settings sections" className="flex flex-wrap gap-2">
       {([["policies", "Booking & Policies"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"]] as const).map(([id, title]) =>
@@ -89,6 +89,7 @@ export function BookingSettings({ password, username }: { password: string; user
     <fieldset disabled={busy || !loaded} className="space-y-4 disabled:opacity-60">
       {section === "policies" && <>
         <div className="grid gap-4 sm:grid-cols-2">
+          {numberField("maxSelectedBeds", "Maximum beds per website selection (whole doubles count as one bed)", 1, 100)}
           {numberField("advancePercent", "Advance payment (%)", 0, 100)}
           {numberField("holdMinutes", "Initial inventory hold (minutes)", 5, 15)}
           {numberField("unresolvedPaymentMaxMinutes", "Maximum unresolved payment window (minutes from creation)", 15, 30)}
@@ -133,7 +134,7 @@ export function BookingSettings({ password, username }: { password: string; user
         </div>
         <Button type="button" variant="outline" onClick={check}>Check saved credential configuration (no charge)</Button>
       </>}
-      <Button type="button" onClick={save}>Save draft settings</Button>
+      <Button type="button" onClick={save}>Save booking settings</Button>
     </fieldset>
     {section === "payments" && <RazorpayTestPreview password={password} username={username} />}
   </div>;

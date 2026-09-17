@@ -130,6 +130,14 @@ describe("Channel Manager booking link mutations", () => {
 });
 
 describe("Draft booking settings", () => {
+  it("defaults old drafts to four beds, validates limits, and saves administrator changes", async () => {
+    expect(websiteBookingSettingsSchema.parse({}).maxSelectedBeds).toBe(4);
+    for (const maxSelectedBeds of [0, 101, 1.5, "4"]) expect(websiteBookingSettingsSchema.safeParse({ maxSelectedBeds }).success).toBe(false);
+    const response = await bookingSettings(request({ password: "test", action: "saveSettings", settings: { maxSelectedBeds: 12 } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ settings: { maxSelectedBeds: 12 }, gateway: { nativeCheckoutReady: false } });
+    expect(mocks.compareAndSetWebsiteSettings).toHaveBeenCalledWith(null, expect.stringContaining('"maxSelectedBeds":12'));
+  });
   it("has safe reviewed draft defaults", () => {
     expect(websiteBookingSettingsSchema.parse({})).toMatchObject({ advancePercent: 50, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30, cancellationDeadlineHours: 48, cancellationRefundPercent: 100, gatewayEnvironment: "test" });
   });

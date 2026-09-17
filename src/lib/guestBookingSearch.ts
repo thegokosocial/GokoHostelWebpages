@@ -6,6 +6,7 @@ import { beds as bedsTable } from "@/db/schema";
 import { sellableUnits, stayNights, type InventoryBedRef } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
 import { BOOKING_TAX_SETTING, DEFAULT_BOOKING_TAX_PERCENT } from "@/lib/bookingPricing";
+import { WEBSITE_BOOKING_SETTINGS_KEY, readWebsiteBookingSettings, MAX_WEBSITE_BOOKING_BEDS } from "@/lib/websiteBookingSettings";
 
 const date = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/).refine(value => {
   const parsed = new Date(`${value}T00:00:00Z`);
@@ -13,7 +14,6 @@ const date = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/).refine(value => {
 }, "Enter a valid date");
 export const guestSearchSchema = z.object({
   checkinDate: date, checkoutDate: date,
-  guests: z.coerce.number().int().min(1).max(4),
 }).strict()
   .refine(s => s.checkoutDate > s.checkinDate && Date.parse(s.checkoutDate) - Date.parse(s.checkinDate) <= 30 * 86400000, "Choose a stay of 1–30 nights")
   .refine(s => s.checkinDate >= todayIST() && Date.parse(s.checkinDate) - Date.parse(todayIST()) <= 365 * 86400000, "Choose an arrival within the next year");
@@ -39,8 +39,8 @@ export function guestRateForStay(rows: RateRow[], arrival: string, departure: st
       || (row.maximumAdvanceReservation != null && advance > row.maximumAdvanceReservation)
       || (date === arrival && row.closeOnArrival)) return null;
     const rupees = capacity === 2 ? (row.adult2Rate ?? row.rate) : (row.adult1Rate ?? row.rate);
-    // Up to 4 units × 30 nights × 2 (100% tax) must remain a safe integer.
-    if (!Number.isSafeInteger(rupees) || rupees <= 0 || rupees > Number.MAX_SAFE_INTEGER / 240) return null;
+    // Maximum supported beds × 30 nights × 2 (100% tax) remains a safe integer.
+    if (!Number.isSafeInteger(rupees) || rupees <= 0 || rupees > Number.MAX_SAFE_INTEGER / (MAX_WEBSITE_BOOKING_BEDS * 30 * 2)) return null;
     nightlyRates.push({ date, rupees });
   }
   if (byDate.get(departure)?.closeOnDeparture) return null;
@@ -88,10 +88,11 @@ export async function searchGuestRooms(input: unknown) {
     for (const plan of plans.filter(plan => plan.roomMappingId === activeMappings[0].id && plan.isActive === 1)) {
       const rows = daily.filter(row => row.ratePlanId === plan.id);
       // A mixed bunk/double dorm cannot infer a double tariff from its single-bed base rate.
-      if (room.type === "Double" && beds.some(bed => bed.dormId === dormId && bed.type !== "Double") && rows.some(row => row.adult2Rate == null)) continue;
+      if (room.type === "Double" && beds.some(bed => bed.dormId === dormId && bed.type !== "Double") && rows.some(row => row.date < stay.checkoutDate && row.adult2Rate == null)) continue;
       const rate = guestRateForStay(rows, stay.checkinDate, stay.checkoutDate, room.capacity, todayIST());
       if (rate) room.rates.push({ id: plan.id, name: plan.ratePlanName, ...rate });
     }
   }
-  return { rooms, taxPercent: guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)), nights: stayNights(stay.checkinDate, stay.checkoutDate).length, currency: "INR", priceBasis: "tax-inclusive-estimate", nativeCheckoutReady: false as const };
+  const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
+  return { rooms, maxSelectedBeds: settings.maxSelectedBeds, taxPercent: guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)), nights: stayNights(stay.checkinDate, stay.checkoutDate).length, currency: "INR", priceBasis: "tax-inclusive-estimate", nativeCheckoutReady: false as const };
 }

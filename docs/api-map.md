@@ -157,7 +157,11 @@ curl -s https://www.gokohostel.com/api/admin/checkins \
 ```
 # Guest booking browsing APIs
 
-- `GET /api/guest-booking/availability`: strict `checkinDate`, `checkoutDate`, `guests` query (no `units`); non-cacheable advisory online categories, eligible configured rate plans and configured tax. Beds are selected from results with stock/capacity limits in the advisory UI. No holds or payments. Cloud only.
+Both `/book` and gated `/book/preview` call the same availability endpoint for connected-backend rates/stock/tax/limit; preview no longer injects fixture data or resets submitted dates. Preview blocks lookup email and all booking/payment writes. No new API, permission or cross-origin production proxy.
+
+- `GET /api/guest-booking/availability`: strict `checkinDate`, `checkoutDate` only (no guests/units); non-cacheable online categories, eligible configured nightly tariffs, stay subtotals, tax and public `maxSelectedBeds`. Reads the existing website settings JSON (default 4 beds; corrupt settings fail closed). Beds are selected up to saved limit and stock. No holds or payments. Cloud only.
+
+`POST /api/admin/booking-settings` existing admin-only `getSettings`/`saveSettings` include integer `maxSelectedBeds` 1–100 in the revision-protected JSON. This field governs browsing immediately on the next availability search; payment policies remain draft. No new permission or action.
 - `POST /api/guest-booking/lookup`: action `request` (`reference`, `email`) returns a generic opaque challenge; action `verify` (`challengeId`, six-digit `code`) returns minimized current booking details only after one-use email proof. 4 KiB body bound, same-origin browser checks, sanitized non-cacheable responses, cloud only. Missing migration/secret/email setup requires contact support.
 
 See [contracts, restrictions and rollout](guest-booking-ui.md). Neither API reuses or publicly exposes an administrator mutation endpoint.

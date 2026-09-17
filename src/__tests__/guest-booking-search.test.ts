@@ -5,14 +5,14 @@ import { addCalendarDays } from "@/lib/inventoryAvailability";
 vi.mock("@/db", () => ({ getDb: vi.fn() }));
 vi.mock("@/db/queries", () => ({}));
 afterEach(() => vi.unstubAllEnvs());
-const stay = () => ({ checkinDate: addCalendarDays(todayIST(), 1), checkoutDate: addCalendarDays(todayIST(), 3), guests: "2" });
+const stay = () => ({ checkinDate: addCalendarDays(todayIST(), 1), checkoutDate: addCalendarDays(todayIST(), 3) });
 describe("Guest stay search", () => {
   it("uses explicit zero tax and the PMS default only when absent, not corrupt", () => {
     expect(guestTaxPercent("0")).toBe(0); expect(guestTaxPercent("12.5")).toBe(12.5); expect(guestTaxPercent(null)).toBe(5);
     for (const raw of ["", "bad", "-1", "101", "Infinity"]) expect(() => guestTaxPercent(raw)).toThrow();
   });
-  it("validates party size and stay boundaries", () => {
-    expect(guestSearchSchema.parse(stay()).guests).toBe(2);
+  it("validates date-only stay boundaries and rejects obsolete guest/units fields", () => {
+    expect(guestSearchSchema.parse(stay())).toEqual(stay());
     for (const change of [{ guests: 5 }, { units: 3 }, { guests: 0 }, { checkinDate: "2026-02-30" }, { checkoutDate: stay().checkinDate }, { checkoutDate: addCalendarDays(stay().checkinDate, 31) }, { checkinDate: addCalendarDays(todayIST(), -1) }, { checkinDate: addCalendarDays(todayIST(), 366) }, { price: 1 }]) expect(guestSearchSchema.safeParse({ ...stay(), ...change }).success).toBe(false);
   });
   it("only exposes whole online units, excludes holds and drops orphaned doubles", () => {

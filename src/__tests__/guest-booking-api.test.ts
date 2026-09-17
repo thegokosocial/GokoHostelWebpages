@@ -12,9 +12,9 @@ beforeEach(() => { state.pi = false; state.search.mockReset(); state.lookup.mock
 describe("Public guest booking endpoints", () => {
   it("returns non-cacheable search data and rejects repeated keys", async () => {
     state.search.mockResolvedValue({ rooms: [], nativeCheckoutReady: false });
-    const result = await GET(new NextRequest("https://www.gokohostel.com/api/guest-booking/availability?guests=2"));
+    const result = await GET(new NextRequest("https://www.gokohostel.com/api/guest-booking/availability?checkinDate=2026-10-01&checkoutDate=2026-10-03"));
     expect(result.status).toBe(200); expect(result.headers.get("cache-control")).toBe("no-store");
-    expect((await GET(new NextRequest("https://www.gokohostel.com/api/guest-booking/availability?guests=1&guests=2"))).status).toBe(400);
+    expect((await GET(new NextRequest("https://www.gokohostel.com/api/guest-booking/availability?checkinDate=2026-10-01&checkinDate=2026-10-02"))).status).toBe(400);
     expect(state.search).toHaveBeenCalledTimes(1);
   });
   it("sanitizes infrastructure errors and distinguishes validation errors", async () => {

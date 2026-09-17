@@ -199,4 +199,6 @@ Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kan
 `site_events`, `site_community_spaces`, `site_page_copy`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`. Migrator skips `0035_site_cms.sql` and `0041_splits.sql` but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
 # Cloud-only guest booking verification
 
+The existing settings row `website_booking_settings_v1` JSON now includes `maxSelectedBeds` (integer 1–100; absent field defaults to 4). No new table/migration is needed for the browsing limit. Existing revision-protected admin saves retain payment fields; availability exposes only the public limit, never the full settings JSON.
+
 Migration 0061 adds `guest_booking_lookup_challenges`: opaque ID, unique secret-bound booking/email request digest, booking FK, code hash, database-clock expiry, bounded attempts and single-use flag. It contains no plaintext code/contact and is not Pi-synced. This is ephemeral authentication, not a reservation/payment ledger. See [guest booking UI](guest-booking-ui.md).
