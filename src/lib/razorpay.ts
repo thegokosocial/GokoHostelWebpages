@@ -1,6 +1,23 @@
 import { z } from "zod";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 // Native fetch/Web Crypto work in both Next.js and Cloudflare; no gateway SDK needed.
+function workerEnv(): Record<string, string | undefined> {
+  try {
+    const { env } = getCloudflareContext();
+    return { ...process.env, ...(env as unknown as Record<string, string | undefined>) };
+  } catch {
+    return process.env;
+  }
+}
+function basicAuth(keyId: string, keySecret: string) {
+  // Test keys are ASCII; btoa is available in Workers and Node test runners.
+  return `Basic ${btoa(`${keyId}:${keySecret}`)}`;
+}
+function fetchSignal(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal?.timeout === "function") return AbortSignal.timeout(ms);
+  return undefined;
+}
 const paise = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 export const razorpayId = (prefix: "order" | "pay" | "rfnd") => z.string().regex(new RegExp(`^${prefix}_[A-Za-z0-9]+$`)).max(80);
 const notes = z.record(z.string()).or(z.array(z.unknown()).length(0)).optional();
@@ -27,8 +44,9 @@ export type RazorpayPayment = z.infer<typeof razorpayPaymentSchema>;
 export type RazorpayRefund = z.infer<typeof razorpayRefundSchema>;
 
 export class RazorpayError extends Error {
-  constructor(public code: "CONFIGURATION" | "UNAVAILABLE" | "INVALID_RESPONSE" | "MISMATCH" | "SIGNATURE", public httpStatus = 503) {
+  constructor(public code: "CONFIGURATION" | "REJECTED" | "UNAVAILABLE" | "INVALID_RESPONSE" | "MISMATCH" | "SIGNATURE", public httpStatus = 503) {
     super(code === "CONFIGURATION" ? "Razorpay test integration is not configured" :
+      code === "REJECTED" ? "Razorpay test API credentials were rejected. Re-check Worker secrets match Razorpay Test mode keys." :
       code === "SIGNATURE" ? "Payment signature verification failed" :
       code === "MISMATCH" ? "Gateway evidence does not match the stored payment" :
       "Unable to verify the gateway result. Reconcile before trying again.");
@@ -36,7 +54,7 @@ export class RazorpayError extends Error {
   }
 }
 
-export function testRazorpayCredentials(env: Record<string, string | undefined> = process.env) {
+export function testRazorpayCredentials(env: Record<string, string | undefined> = workerEnv()) {
   const keyId = env.RAZORPAY_TEST_KEY_ID || "";
   const keySecret = env.RAZORPAY_TEST_KEY_SECRET || "";
   if (!/^rzp_test_[A-Za-z0-9_]+$/.test(keyId) || !keySecret.trim() || keySecret !== keySecret.trim() || /[^\x21-\x7e]/.test(keySecret)) {
@@ -62,16 +80,19 @@ export async function verifyCheckoutSignature(storedOrderId: string, paymentId: 
 async function request(path: string, method: "GET" | "POST" = "GET", body?: object): Promise<unknown> {
   const { keyId, keySecret } = testRazorpayCredentials();
   try {
+    const signal = fetchSignal(10000);
     const res = await fetch(`https://api.razorpay.com/v1/${path}`, {
-      method, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
+      method, cache: "no-store", redirect: "manual", ...(signal ? { signal } : {}),
       headers: {
-        Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}`,
+        Authorization: basicAuth(keyId, keySecret),
         Accept: "application/json",
         "Content-Type": "application/json",
+        "User-Agent": "GokoWeb-RazorpayTest/1",
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     // Do not forward gateway descriptions, headers, auth or PII to clients/logs.
+    if (res.status === 401 || res.status === 403) throw new RazorpayError("REJECTED");
     if (!res.ok) throw new RazorpayError("UNAVAILABLE");
     return await res.json();
   } catch (error) {

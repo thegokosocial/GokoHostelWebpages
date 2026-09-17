@@ -19,7 +19,7 @@ Retrieved from Razorpay's official documentation on 17 September 2026:
 - [Create normal refund](https://razorpay.com/docs/api/refunds/create-normal/), [payment refunds](https://razorpay.com/docs/api/refunds/fetch-multiple-refund-payment/) and [fetch exact refund](https://razorpay.com/docs/api/refunds/fetch-with-id/): captured-payment eligibility, explicit amount, receipt and pending/processed/failed states.
 - [D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/): bound SQL and result shapes. Source queries use installed Drizzle; no new platform session/transaction API is introduced.
 
-The adapter uses native `fetch` and Web Crypto; no new dependency was added. All requests target the fixed `https://api.razorpay.com/v1/` origin, use test-only Basic authentication, reject redirects, disable caching and have a ten-second timeout. Provider messages/PII/credentials are not returned or logged.
+The adapter uses native `fetch` and Web Crypto; no new dependency was added. All requests target the fixed `https://api.razorpay.com/v1/` origin, use test-only Basic authentication, read credentials from Worker `env` via `getCloudflareContext()` with `process.env` fallback, send `Accept: application/json`, use `redirect: "manual"` (Workers `fetch` rejects `redirect: "error"`), disable caching and optional `AbortSignal.timeout(10s)`. HTTP `401`/`403` map to `RAZORPAY_REJECTED` with an admin-facing credential hint; other transport failures stay `RAZORPAY_UNAVAILABLE`. Provider messages/PII/credentials are not returned or logged.
 
 ## Setup for a later reviewed test deployment
 

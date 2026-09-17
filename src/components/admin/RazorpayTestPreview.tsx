@@ -36,10 +36,15 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
     if (!response.ok) throw new Error(result.error || "Gateway request could not be verified");
     return result;
   }, [password, username]);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (attemptId?: string) => {
     const result = await call("listTestAttempts");
     setAttempts(result.attempts); setHooks(result.webhooks); setEnabled(result.previewEnabled);
-  }, [call]);
+    const id = attemptId ?? snapshot?.attempt.id;
+    if (!id) return null;
+    const current = await call("getTestAttempt", { attemptId: id });
+    setSnapshot(current);
+    return current;
+  }, [call, snapshot?.attempt.id]);
   useEffect(() => {
     let active = true;
     const requestSequence = generation; // Stable ref object; cancel the latest request on cleanup.
@@ -50,23 +55,38 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
       .catch((error) => { if (active) setMessage(error.message); });
     return () => { active = false; requestSequence.current++; };
   }, [call]);
+  function snapshotMessage(result: Snapshot) {
+    const captured = result.payments.find((p) => p.captured);
+    if (captured) return `Captured payment recorded (${captured.id}).`;
+    if (result.payments.length) return `Payment on record: ${result.payments[0].status}. Review before retrying.`;
+    if (result.attempt.checkoutStartedAt && !result.checkout) {
+      return "Checkout was already opened for this order and cannot be reopened. Start a fresh ₹1 test below.";
+    }
+    if (result.checkout) return "Ready to open test checkout.";
+    return "Reconciled — no payment evidence found on this attempt yet.";
+  }
   async function run(action: string, extra: Record<string, unknown> = {}, isSnapshot = true) {
     const token = ++generation.current;
     setBusy(true); setMessage("");
     try {
       const result = await call(action, extra);
       if (token !== generation.current) return;
-      if (isSnapshot) setSnapshot(result);
-      else setMessage(result.authenticated ? "Test credentials authenticated. This does not certify webhooks, settlement or live checkout." : "Webhook retry completed.");
-      await refresh();
+      if (isSnapshot) {
+        setSnapshot(result);
+        setMessage(snapshotMessage(result));
+      } else {
+        setMessage(result.authenticated ? "Test credentials authenticated. This does not certify webhooks, settlement or live checkout." : "Webhook retry completed.");
+      }
+      await refresh(isSnapshot ? result.attempt.id : undefined);
     } catch (error) {
       if (token === generation.current) setMessage(`${error instanceof Error ? error.message : "Verification unavailable"}. Do not charge or refund again while the result is unknown.`);
     } finally { if (token === generation.current) setBusy(false); }
   }
-  async function create() {
+  async function create(fresh = false) {
     let requestKey: string;
     try {
-      requestKey = localStorage.getItem(STORAGE_KEY) || crypto.randomUUID();
+      if (fresh) localStorage.removeItem(STORAGE_KEY);
+      requestKey = fresh ? crypto.randomUUID() : localStorage.getItem(STORAGE_KEY) || crypto.randomUUID();
       localStorage.setItem(STORAGE_KEY, requestKey); setSavedRequest(true);
     } catch { setMessage("Persistent browser storage is unavailable. Test creation is blocked so an unknown request cannot be lost."); return; }
     await run("createTestAttempt", { requestKey });
@@ -129,7 +149,13 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
       <Button type="button" variant="outline" disabled={busy || checkoutOpen} onClick={() => void run("checkTestConnectivity", {}, false)}>Check test API connectivity</Button>
       <Button type="button" disabled={!enabled || busy || checkoutOpen} onClick={() => void create()}>{savedRequest ? "Retry original test request" : "Create ₹1 test order"}</Button>
       {savedRequest && <Button type="button" variant="outline" disabled={busy || checkoutOpen} onClick={() => void recoverRequest()}>Recover saved request (no new order)</Button>}
-      <Button type="button" variant="outline" disabled={busy || checkoutOpen} onClick={() => void refresh().catch((e) => setMessage(e.message))}>Refresh ledger</Button>
+      <Button type="button" variant="outline" disabled={busy || checkoutOpen} onClick={() => {
+        setBusy(true); setMessage("");
+        void refresh().then((current) => setMessage(current ? snapshotMessage(current) : "Ledger refreshed."))
+          .catch((e) => setMessage(e instanceof Error ? e.message : "Could not refresh ledger"))
+          .finally(() => setBusy(false));
+      }}>Refresh ledger</Button>
+      <Button type="button" variant="outline" disabled={!enabled || busy || checkoutOpen} onClick={() => void create(true)}>Start fresh ₹1 test</Button>
       {canNewTest && <Button type="button" variant="outline" disabled={busy || checkoutOpen} onClick={newTest}>Start another test</Button>}
     </div>
     {message && <p role="status" className="rounded border p-3">{message}</p>}
@@ -139,6 +165,13 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
         <Button type="button" disabled={!enabled || !scriptReady || !snapshot.checkout || busy || checkoutOpen} onClick={() => void pay()}>Open TEST checkout</Button>
         <Button type="button" variant="outline" disabled={busy || checkoutOpen} onClick={() => void run("reconcileTestAttempt", { attemptId: snapshot.attempt.id })}>Reconcile this attempt</Button>
       </div>
+      {!snapshot.checkout && <p className="text-xs text-muted-foreground">
+        {!enabled ? "Test preview is disabled on the server." :
+          !scriptReady ? "Loading Razorpay checkout script…" :
+          snapshot.attempt.checkoutStartedAt ? "Checkout already opened for this order — use Start fresh ₹1 test." :
+          snapshot.payments.length ? "This attempt already has payment evidence." :
+          "Checkout is not available for this attempt."}
+      </p>}
       {snapshot.payments.map((p) => <div key={p.id} className="border-t pt-2">
         <p className="break-all">{p.id}: {p.status}; capture verified: {p.captured ? "yes" : "no"}; provider refund amount: {p.refundedPaise} paise</p>
         {snapshot.refunds.filter((r) => r.paymentId === p.id).map((r) => <p key={r.id}>Refund reservation: {r.state} — {r.providerId || "provider result unresolved"}</p>)}

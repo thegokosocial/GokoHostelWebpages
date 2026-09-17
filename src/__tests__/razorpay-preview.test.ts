@@ -17,6 +17,7 @@ import { verifyRazorpaySignature, checkRazorpayTestConnectivity, testRazorpayCre
 const state = vi.hoisted(() => ({ db: null as any, role: "admin", pi: false, unavailableAuth: false }));
 vi.mock("@/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => state.pi }));
+vi.mock("@opennextjs/cloudflare", () => ({ getCloudflareContext: () => { throw new Error("no cloudflare context"); } }));
 vi.mock("@/lib/auth", () => ({ authenticateUser: async (password: string) => {
   if (state.unavailableAuth) throw new Error("DUMMY_AUTH_INTERNAL");
   return password === "DUMMY_PASSWORD" ? { role: state.role, displayName: "Test Admin", permissions: {
@@ -60,7 +61,7 @@ beforeEach(() => {
   failOrderResponse = false; failRefundResponse = false; failGets = false; malformedOrder = false;
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     const parsed = new URL(url); expect(parsed.origin).toBe("https://api.razorpay.com");
-    expect(init.redirect).toBe("error"); expect(init.cache).toBe("no-store"); expect(init.signal).toBeDefined();
+    expect(init.redirect).toBe("manual"); expect(init.cache).toBe("no-store");
     expect((init.headers as any).Authorization).toBe(`Basic ${btoa(`rzp_test_DUMMYPUBLIC:${KEY}`)}`);
     const path = parsed.pathname.replace("/v1/", ""), method = init.method || "GET", body = init.body ? JSON.parse(String(init.body)) : null;
     calls.push({ path, method, body });
@@ -119,6 +120,19 @@ describe("Razorpay adapter and security boundaries", () => {
   it("authenticates test connectivity without creating an order/payment", async () => {
     expect(await checkRazorpayTestConnectivity()).toEqual({ authenticated: true, environment: "test", nativeCheckoutReady: false });
     expect(calls).toHaveLength(1); expect(calls[0].method).toBe("GET");
+  });
+  it("maps rejected Razorpay credentials to a clear admin error", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { description: "Authentication failed" } }), { status: 401 })));
+    await expect(checkRazorpayTestConnectivity()).rejects.toMatchObject({ code: "REJECTED" });
+  });
+  it("parses real Razorpay order list shapes returned by connectivity checks", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      entity: "collection", count: 1, items: [{
+        id: "order_DUMMY1", entity: "order", amount: 100, amount_paid: null, amount_due: 100,
+        currency: "INR", receipt: "goko_connectivity_probe", status: "created", notes: [],
+      }],
+    })));
+    await expect(checkRazorpayTestConnectivity()).resolves.toEqual({ authenticated: true, environment: "test", nativeCheckoutReady: false });
   });
   it.each(["rzp_live_DUMMY", "rzp_test_", "rzp_test_BAD/ID", " rzp_test_DUMMY"])("rejects non-test/malformed key %s before network", async (id) => {
     vi.stubEnv("RAZORPAY_TEST_KEY_ID", id);
