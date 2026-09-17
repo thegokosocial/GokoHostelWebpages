@@ -89,7 +89,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     {tab === "search" ? <div role="tabpanel" id="panel-search" aria-labelledby="tab-search">
       <h2 className="font-display text-2xl font-bold">Find your bed by the beach</h2>
       <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-3">
-        <label className="col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1 lg:col-span-2">
+        <label className="col-span-2 min-w-0 text-sm font-semibold lg:col-span-2">
           Dates
           <DateRangePicker
             className="mt-1"

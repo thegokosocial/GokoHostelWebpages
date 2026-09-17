@@ -124,13 +124,17 @@ export function DateRangePicker({
     />
   );
 
+  const calendarShell = (
+    <div className="max-w-full overflow-x-auto p-1">{calendar}</div>
+  );
+
   if (presentation === "inline") {
     return (
       <div className={cn("space-y-2", className)} id={id}>
         <p className="text-sm font-medium text-muted-foreground">
           {formatTriggerLabel(startDate, endDate, labels)}
         </p>
-        <div className="rounded-xl border border-border bg-background p-1">{calendar}</div>
+        <div className="rounded-xl border border-border bg-background">{calendarShell}</div>
       </div>
     );
   }
@@ -147,8 +151,13 @@ export function DateRangePicker({
         <CalendarIcon className={cn("shrink-0 opacity-60", variant === "compact" ? "size-3.5" : "size-4")} />
         <span className="min-w-0 truncate">{formatTriggerLabel(startDate, endDate, labels)}</span>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        {calendar}
+      <PopoverContent
+        className="w-auto max-w-[calc(100vw-2rem)] p-0"
+        align="center"
+        side="bottom"
+        collisionPadding={16}
+      >
+        {calendarShell}
       </PopoverContent>
     </Popover>
   );

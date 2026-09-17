@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { DayPicker } from "react-day-picker";
+import { DayPicker, getDefaultClassNames } from "react-day-picker";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -15,32 +15,50 @@ function Calendar({
   showOutsideDays = true,
   ...props
 }: CalendarProps) {
+  const defaults = getDefaultClassNames();
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
-      className={cn("p-2", className)}
+      className={cn("w-fit max-w-full p-2", className)}
       classNames={{
-        months: "flex flex-col gap-4 sm:flex-row sm:gap-6",
-        month: "flex flex-col gap-3",
-        month_caption: "flex justify-center pt-1 relative items-center w-full",
-        caption_label: "text-sm font-medium",
-        nav: "flex items-center gap-1",
+        root: cn("w-fit max-w-full", defaults.root),
+        months: cn("relative flex flex-col gap-4 md:flex-row md:gap-6", defaults.months),
+        month: cn("flex w-full flex-col gap-3", defaults.month),
+        month_caption: cn(
+          "flex h-9 w-full items-center justify-center px-9",
+          defaults.month_caption,
+        ),
+        caption_label: cn("text-sm font-medium", defaults.caption_label),
+        nav: cn(
+          "pointer-events-none absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1 px-1",
+          defaults.nav,
+        ),
         button_previous: cn(
           buttonVariants({ variant: "outline", size: "icon-sm" }),
-          "absolute left-1 size-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+          "pointer-events-auto size-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+          defaults.button_previous,
         ),
         button_next: cn(
           buttonVariants({ variant: "outline", size: "icon-sm" }),
-          "absolute right-1 size-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+          "pointer-events-auto size-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+          defaults.button_next,
         ),
-        month_grid: "w-full border-collapse",
-        weekdays: "flex",
-        weekday: "text-muted-foreground w-9 rounded-md text-[0.7rem] font-normal",
-        week: "mt-1 flex w-full",
-        day: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
+        month_grid: cn("w-full border-collapse", defaults.month_grid),
+        weekdays: cn("flex", defaults.weekdays),
+        weekday: cn(
+          "flex-1 rounded-md text-[0.7rem] font-normal text-muted-foreground",
+          defaults.weekday,
+        ),
+        week: cn("mt-1 flex w-full", defaults.week),
+        day: cn(
+          "relative flex-1 p-0 text-center text-sm focus-within:relative focus-within:z-20",
+          defaults.day,
+        ),
         day_button: cn(
           buttonVariants({ variant: "ghost", size: "icon" }),
-          "size-9 p-0 font-normal aria-selected:opacity-100",
+          "mx-auto size-9 max-w-full p-0 font-normal aria-selected:opacity-100",
+          defaults.day_button,
         ),
         range_start: "rounded-l-md bg-brand-green/15",
         range_middle: "rounded-none bg-brand-green/10",
