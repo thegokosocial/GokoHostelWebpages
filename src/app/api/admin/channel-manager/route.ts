@@ -13,6 +13,7 @@ import { BOOKING_TAX_SETTING, bookingTaxPercent } from "@/lib/bookingPricing";
 import { logListQuery, logSafePage } from "@/lib/logRetention";
 import { getAiosellPropertyDetails, type AiosellConfig } from "@/lib/aiosell";
 import { sellableUnits } from "@/lib/inventoryAvailability";
+import { bookingDestination } from "@/lib/bookingDestination";
 
 function clientConfig(config: NonNullable<Awaited<ReturnType<typeof getChannelConfig>>>): AiosellConfig {
   return { hotelCode: config.hotelCode, pmsId: config.pmsId, apiBaseUrl: config.apiBaseUrl, apiUsername: config.apiUsername, apiPassword: config.apiPassword };
@@ -47,6 +48,12 @@ export async function POST(req: NextRequest) {
 
       case "saveConfig": {
         const configData = { ...body.config };
+        try {
+          const destination = bookingDestination(configData.bookingEngineUrl, configData.apiBaseUrl);
+          configData.bookingEngineUrl = destination.mode === "enquiry" ? "" : destination.url;
+        } catch (error) {
+          return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid Booking Engine URL" }, { status: 400 });
+        }
         if (configData.isActive && !configData.webhookSecret) {
           return NextResponse.json({ error: "Webhook secret is required to enable the channel manager" }, { status: 400 });
         }

@@ -128,9 +128,9 @@ UI/settings: `food_kannada_kitchen_print`, `food_kannada_kitchen_display`.
 
 `public/sw.js` registered from admin (`PwaInstallBanner`, scope `/`). Polls `GET /api/failover-config`. If `failoverEnabled` + `pi_local_url`, intercepts GET/POST (not `/_next/` static) and fails over to Pi. Toggle is `/api/sync` `toggleFailover`, not the GET.
 
-### 8. Book now is not Aiosell
+### 8. Book now uses the saved guest booking link
 
-Header Book now → `BookingGateProvider` (age/terms copy in `src/content/bookingGate.ts`) → Stayflexi URL `hotel_id=30819`. Inventory/rates = Aiosell.
+Header/footer/mobile Book now → `BookingGateProvider` (age/terms copy in `src/content/bookingGate.ts`) → sanitized `/api/booking/config` and fresh `/api/booking/destination` → saved `channel_config.bookingEngineUrl`. Empty/invalid/unavailable → Booking Enquiry. `/book` is currently a safe enquiry entry, not a working native reservation/payment flow. Management → Booking Settings is admin-only/Cloudflare-only draft policy/configuration metadata. Razorpay checkout and recovery ledgers are still pending. Inventory/rates = existing Aiosell integration. See [implemented scope](flows-website-booking.md), not just the target plan.
 
 ### 8b. Bulk restriction auto-push is a patch
 

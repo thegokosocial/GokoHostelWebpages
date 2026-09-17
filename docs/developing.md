@@ -34,7 +34,7 @@ Tell the next agent:
 
 ## What this product is (one paragraph)
 
-One Next.js 15.5 App Router monolith: marketing site, guest check-in/food, kitchen, admin PMS (beds + calendar bookings + Aiosell), accounts, splits IOUs, Events/Community CMS. Cloudflare Workers (OpenNext) + D1 + R2. Optional Pi SQLite copy for front desk (`GOKO_RUNTIME=pi`). Public Book now is Stayflexi; inventory/rates are Aiosell. ID photos go to Google Drive, CMS stills to R2.
+One Next.js 15.5 App Router monolith: marketing site, guest check-in/food, kitchen, admin PMS (beds + calendar bookings + Aiosell), accounts, splits IOUs, Events/Community CMS. Cloudflare Workers (OpenNext) + D1 + R2. Optional Pi SQLite copy for front desk (`GOKO_RUNTIME=pi`). Public Book now uses the saved Channel Manager guest booking URL (blank → enquiry); `/book` is an enquiry entry until native checkout is implemented. Booking Settings stores admin-only draft policies; inventory/rates remain Aiosell. ID photos go to Google Drive, CMS stills to R2.
 
 ---
 

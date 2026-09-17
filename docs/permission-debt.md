@@ -15,3 +15,7 @@ This file records permission keys that are retained for compatibility but are no
 | `canManageAccounts` | Replaced in the active catalog by `canManageAccountSettings` | Existing users may have the old key and current APIs still recognize it | Remove after API compatibility aliases are retired |
 
 Do not delete these keys from existing permission JSON until the review date. New users should receive only keys from `src/lib/permissionCatalog.ts`.
+
+## Website booking foundation
+
+Booking Settings uses an administrator-role gate, not a new stored permission or compatibility alias. Payment view/reconcile/refund permissions in the reviewed plan are not yet active because the corresponding payment actions are not implemented. Existing permission keys and compatibility fallbacks remain unchanged.

@@ -1,4 +1,4 @@
-/** Copy from legacy `js/booking-modal.js` — shown before redirecting to StayFlexi. */
+/** Eligibility gate before the administrator-configured booking destination. */
 
 export const bookingGateCopy = {
   mainTitle: "Before You Book",
@@ -48,7 +48,7 @@ export const bookingGateCopy = {
   agreeLabelBefore: "I agree to the ",
   termsInlineLabel: "terms and conditions",
   reserveCta: "Reserve My Spot",
-  redirectNoteLine1: "You will be redirected to our trusted booking partner to complete your reservation.",
+  redirectNoteLine1: "Continue to our booking page, or contact our team if online booking is unavailable.",
   redirectPartner: "",
   early: {
     title: "Coming in before check-in time?",

@@ -145,7 +145,7 @@ Every Aiosell hop writes `channel_sync_log` (Management → Logs → PMS). `logP
 
 `getSyncLogs` type filter is prefix: `inventory` also returns `inventory (auto)` (`LIKE` with escaped `%`/`_`). Management → Logs keeps the last **30 days** (not a 500-row cap). UI default **50 per page** (25 / 50 / 100). Response is `{ logs, total, page, pageSize }`. Download is a menu: **PDF** (full fields + pretty request/response via `logExport.formatPmsLogsForPdf`, then browser `jspdf`) or **JSON** (same payload as before). Both use `download: true` / `pageSize: LOG_DOWNLOAD_MAX` (2000). System Logs has the same PDF/JSON menu. Auto-push catch failures are typed `inventory (auto)` / `rate (auto)` / `restriction (auto)` so they do not look like a failed manual push.
 
-Stayflexi is **only** the public Book now URL (`hotel_id=30819`), not this inventory loop.
+Public Book now follows the saved guest Booking Engine URL (StayFlexi, Aiosell guest engine, another provider, or `/book`). Blank/error uses Booking Enquiry; `/book` currently offers enquiry only, not native checkout. Guest routing is separate from this existing Aiosell inventory loop. See [Website booking foundation](flows-website-booking.md).
 # Walk-in check-in reconciliation
 
 Records can reconcile an active Walk-in or Offline check-in that has no booking row. Staff with `canAddBooking` may create a reviewed manual booking using the check-in reference, link an existing booking by stable reference, or mark the stay as no booking needed. Created bookings use the existing assignment path; Aiosell inventory is updated only when at least one selected bed is in the `online` pool. `offline` and `block` assignments remain internal tracking.

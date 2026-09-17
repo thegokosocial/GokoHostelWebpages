@@ -24,10 +24,11 @@ All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these 
 | `/faqs` | content | hero B |
 | `/reviews` | content | default loop |
 | `/booking-enquiry` | form → WhatsApp / email | default loop |
+| `/book` | branded Goko direct-booking entry → enquiry / WhatsApp | Native date/room checkout and payments not yet implemented |
 
 `robots.ts` **disallows:** `/self-checkin`, `/admin`, `/api/`, `/food-order`, `/kitchen`, `/my-bills`, `/review/`.
 
-Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → Stayflexi URL in `src/lib/site.ts` (`hotel_id=30819`). Not Aiosell.
+Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitized `/api/booking/config` → `/api/booking/destination` → saved `channel_config.bookingEngineUrl`. Blank/invalid/unavailable configuration uses Booking Enquiry; external links use their provider checkout. `/book` currently offers enquiry only; native checkout is disabled. See [Website booking foundation](flows-website-booking.md).
 
 ---
 
@@ -99,6 +100,7 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do
 | `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; assigned users update their own tasks; task managers create, assign, archive, reopen, and record linked purchase expenses |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
+| `bookingSettings` | `BookingSettings` | admin only; Cloudflare only | Draft native booking policies and credential-presence metadata; invalid drafts show a sanitized error and block editing/readiness, with load retry; checkout remains disabled |
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |
 | `quickLinks` | `QuickLinks` | `canViewQuickLinks` | mobile-friendly sections of links and QR/image cards; admins edit |
 

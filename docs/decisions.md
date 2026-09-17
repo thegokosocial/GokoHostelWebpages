@@ -111,7 +111,7 @@ These are the load-bearing choices. Changing one without the others usually crea
 
 ## ADR-10 — Aiosell as channel manager, Stayflexi as booking engine
 
-**Choice:** Public Book now → Stayflexi URL. Inventory/rates/restrictions/no-show → Aiosell HTTP. Inbound reservations → `POST /api/aiosell/reservations`.
+**Choice (updated 17 September 2026):** Public Book now → administrator-saved `channel_config.bookingEngineUrl` through sanitized public configuration/redirect routes. Blank/unavailable → Booking Enquiry; `/book` currently offers an enquiry entry, not active native checkout. External providers, including StayFlexi/Aiosell guest engines, handle their own checkout. Inventory/rates/restrictions/no-show → Aiosell HTTP. Inbound reservations → `POST /api/aiosell/reservations`. See [Website booking foundation](flows-website-booking.md).
 
 **Why:** Those are the vendors the property already uses. GokoWeb owns occupancy truth and pushes **Goko-originated** changes only.
 

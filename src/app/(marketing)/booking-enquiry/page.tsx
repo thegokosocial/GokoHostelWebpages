@@ -30,11 +30,11 @@ export default function BookingEnquiryPage() {
               For questions before you book, reach out — we read every message.
             </p>
             <p className="mx-auto mt-6 max-w-2xl text-center text-brand-green-dark/90">
-              Prefer instant confirmation? You can still{" "}
+              Check our current{" "}
               <BookNowBare className="inline bg-transparent p-0 font-inherit font-semibold text-brand-red underline underline-offset-2 hover:opacity-90">
-                book directly
+                booking options
               </BookNowBare>{" "}
-              anytime.
+              . Online booking availability depends on our configured booking provider.
             </p>
           </Reveal>
           <div className="mt-12">

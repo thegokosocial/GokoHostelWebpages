@@ -133,7 +133,7 @@ If `MEDIA` is unbound, CMS upload returns **503**. Guest ID upload still uses Dr
 |-------|---------|
 | Marketing | Server-rendered static HTML + client islands (carousels, CMS hydrate) |
 | Admin | Client SPA, `next/dynamic` per section (first click spinner) |
-| State | No Redux/Zustand. `useState` per panel. `BookingGateProvider` for Book now (then Stayflexi). `useTabWithHistory` syncs `?section=` / `?tab=` |
+| State | No Redux/Zustand. `useState` per panel. `BookingGateProvider` for Book now (then fresh configured guest destination; blank/error → enquiry). `useTabWithHistory` syncs `?section=` / `?tab=` |
 | Guest cart | `localStorage` `gokoFoodCart` / `gokoFoodPhone` |
 | Kitchen auth | `sessionStorage.kitchen_pw` |
 | Admin auth | Password in React state; Remember me → `localStorage.gokoAdminSession` **raw password JSON** |

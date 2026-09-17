@@ -60,6 +60,8 @@ Bookings, Timeline, and Inventory custom date ranges are view filters. They do n
 
 `/api/admin/channel-manager`: admin role for configuration and mutation actions; `getSyncLogs` is a read-only exception gated by `canViewLogs`. `/api/admin/food` uses a per-action permission map for menu, stock, and food settings; admin bypasses all permissions.
 
+`/api/admin/booking-settings`: `getSettings`, `saveSettings`, and `checkGatewayReadiness` require authenticated **admin role**, and all return 403 on Pi. Management's `bookingSettings` tab is also admin-only/Cloudflare-only. No new permission key or fallback is introduced for this foundation. Invalid saved drafts fail closed with 409 `BOOKING_SETTINGS_INVALID`; partial saves preserve other saved fields. `/api/booking/config` and `/api/booking/destination` are public but expose only validated guest routing, not the authenticated Channel Manager config. Their dedicated query selects only guest destination/API base columns, never password or webhook-secret columns. Readiness currently means configuration presence only, never capture/webhook/provider verification. Native checkout is disabled. See [Website booking foundation](flows-website-booking.md).
+
 `/api/admin/reviews`: admin **or** `canViewReviews`.
 
 `/api/admin/import` and `/api/admin/upload`: env `ADMIN_PASSWORD` / `MANAGER_PASSWORD` only — **not** DB users.

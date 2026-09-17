@@ -18,6 +18,20 @@ import { bookingTaxPercent, DEFAULT_BOOKING_TAX_PERCENT } from "@/lib/bookingPri
 import type { Role } from "./types";
 import { ManagementSalesChannels } from "./ManagementSalesChannels";
 import { ManagementBedConfig } from "./ManagementBedConfig";
+import { bookingDestination, NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
+
+function BookingEngineLinkPreview({ value, apiBaseUrl }: { value: string; apiBaseUrl: string }) {
+  try {
+    const destination = bookingDestination(value, apiBaseUrl);
+    const label = destination.mode === "native" ? "Goko booking (checkout pending)" : destination.mode === "external" ? "External booking engine" : "Not configured — Booking enquiry";
+    return <p className="mt-2 text-xs text-muted-foreground">Selected mode: {label}.{" "}
+      <a className="underline" href={destination.url} target="_blank" rel="noopener noreferrer">Preview selected link</a>
+      {" "}Unsaved edits are previews only.
+    </p>;
+  } catch (error) {
+    return <p role="status" className="mt-2 text-xs text-red-600">{error instanceof Error ? error.message : "Invalid booking link"}</p>;
+  }
+}
 
 function useChannelApi(password: string, username?: string) {
   const call = async (url: string, body: Record<string, any> = {}) => {
@@ -231,7 +245,22 @@ function ConfigTab({ password, username }: { password: string; username?: string
         </div>
         <div className="sm:col-span-2">
           <label className="text-xs text-muted-foreground">Booking Engine URL (for direct guests)</label>
-          <Input value={config.bookingEngineUrl} onChange={(e) => setConfig({ ...config, bookingEngineUrl: e.target.value })} placeholder="https://..." />
+          <Input aria-label="Booking Engine URL for direct guests" value={config.bookingEngineUrl} onChange={(e) => setConfig({ ...config, bookingEngineUrl: e.target.value })} placeholder="/book or https://your-provider-guest-booking-link" />
+          <BookingEngineLinkPreview value={config.bookingEngineUrl} apiBaseUrl={config.apiBaseUrl} />
+          <details className="mt-2 rounded-lg border border-brand-mist p-3 text-xs text-muted-foreground" open>
+            <summary className="cursor-pointer font-semibold text-foreground">Choose your booking link (Goko or another provider)</summary>
+            <div className="mt-2 space-y-2">
+              <p><strong>Goko booking:</strong> use <code>/book</code> or <code>{NATIVE_BOOKING_URL}</code>. Native checkout is not enabled yet; the page currently offers an enquiry fallback.</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setConfig({ ...config, bookingEngineUrl: "/book" })}>Use Goko booking</Button>
+              <p><strong>Aiosell / StayFlexi / another engine:</strong> paste the complete HTTPS link guests use to select rooms and pay. Do not use the API Base URL or PMS integration address. Payment is handled by that provider.</p>
+              <p><strong>Leave blank:</strong> Book Now opens Booking Enquiry, not an old provider. This setting is independent of Enable Channel Manager.</p>
+              <p>Click Save Configuration to activate your chosen destination. Changes do not affect existing bookings or payments.</p>
+              <div className="flex flex-wrap gap-4">
+                <a className="underline" href="/admin?section=management&tab=bookingSettings">Open Booking Settings</a>
+                <a className="underline" href="/book" target="_blank" rel="noopener noreferrer">Preview Goko page</a>
+              </div>
+            </div>
+          </details>
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Walk-in / offline GST (%)</label>

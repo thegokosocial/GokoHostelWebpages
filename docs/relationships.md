@@ -291,7 +291,7 @@ Env manager **fails** gated actions. That is not a bug; DB managers need permiss
 |---|---|------------------|
 | `site_events` | Pi SQLite | CMS Cloudflare-only |
 | R2 objects | `/api/sync` | Photos stay on CF; IDs are Drive URLs on checkin rows |
-| Stayflexi | Aiosell client | Book now is a link; inventory is Aiosell |
+| Configured guest booking engine | Aiosell client | Book now follows the saved guest link (blank/error → enquiry); native checkout pending; inventory is Aiosell |
 | `qr_history` | Food order URLs | Staff paste URLs by hand |
 | `rate_scrapes` | `daily_rates` | Competitor scrape is research, not live selling rates |
 | `api_stats` | Billing | Internal Vision/Drive counters only |

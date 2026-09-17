@@ -26,7 +26,8 @@ flowchart LR
 | Google Drive | ID + bill photos | Desktop OAuth refresh token |
 | Gmail | OTA emails | Same OAuth family / web client |
 | Aiosell | Channel manager | D1 `channel_config`. Webhook: header = `webhookSecret`. Sandbox UI defaults live in `src/lib/aiosell.ts` |
-| Stayflexi | Book now | Public URL hotel_id **30819** — no API in this repo |
+| Guest booking engines (StayFlexi / Aiosell / other) | Book now | Admin-saved HTTPS guest link in Channel Manager; external provider owns checkout; no hard-coded provider fallback |
+| Goko native booking / Razorpay | Foundation only | `/book` enquiry entry and Booking Settings draft preferences; reservations/payment processing/webhooks/recovery remain pending |
 | WhatsApp | Enquiry + food | `wa.me/919833624363` |
 | FRRO | Form C | Staff portal login **not in env**; local Playwright |
 | GitHub | Rate scrape | `GITHUB_TOKEN` Worker secret |

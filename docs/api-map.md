@@ -22,6 +22,8 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/checkin/lookup` | GET `?phone=` | none | Returning guest prefill plus stored ID/visa links for preview and reuse |
 | `/api/validate-id` | POST multipart | none | Live ID/visa OCR |
 | `/api/settings` | GET | none | Public flags (`image_validation`, etc.) |
+| `/api/booking/config` | GET | none | Sanitized configured destination/mode, `configurationAvailable`, `nativeCheckoutReady: false`; no-store; unavailable/invalid configuration → 503; no integration secrets |
+| `/api/booking/destination` | GET | none | Fresh configured guest destination, no-store 303; missing/invalid/configuration failure → Booking Enquiry; ignores public redirect queries |
 | `/api/food/menu` | GET | none | Menu + kitchen hours + busy + WhatsApp flags |
 | `/api/food/order` | POST JSON | none | Place fixed or price-on-request order (idempotency, stock, tab) |
 | `/api/food/lookup` | GET `?phone=` | none | Hostel vs walk-in |
@@ -57,6 +59,7 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/admin/website` | **admin role**, 403 on Pi | CMS JSON |
 | `/api/admin/website/upload` | admin, 403 on Pi, 503 if no R2 | CMS JPEG |
 | `/api/admin/channel-manager` | admin role; `getSyncLogs` uses `canViewLogs` | Aiosell config, room/rate maps, daily rates, sync logs |
+| `/api/admin/booking-settings` | admin role, 403 on Pi | `getSettings`, `saveSettings`, `checkGatewayReadiness`; validated partial updates preserve other saved fields; invalid persisted drafts → 409 `BOOKING_SETTINGS_INVALID` without overwrite/default activation; credential-presence metadata only; no provider request or active checkout |
 | `/api/admin/reviews` | admin or `canViewReviews` | Ask-review list, WhatsApp, analytics, settings |
 | `/api/admin/qr-history` | user auth | `list` / `save` / `delete` |
 | `/api/admin/quick-links` | `canViewQuickLinks`; mutations admin-only | Sections and link/QR cards: `list`, `saveSection`, `deleteSection`, `saveItem`, `deleteItem`, `reorder` |

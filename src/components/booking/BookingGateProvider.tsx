@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from "react";
@@ -17,6 +18,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { BOOKING_ENQUIRY_PATH, type BookingDestination } from "@/lib/bookingDestination";
 
 type View = "idle" | "main" | "early" | "terms";
 
@@ -38,8 +40,35 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<View>("idle");
   const [mainAgreed, setMainAgreed] = useState(false);
   const [termsAgreed, setTermsAgreed] = useState(false);
+  const [destination, setDestination] = useState<BookingDestination | null>(null);
+  const [destinationError, setDestinationError] = useState(false);
+  const [configRefresh, setConfigRefresh] = useState(0);
+
+  useEffect(() => {
+    if (view === "idle") return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let active = true;
+    fetch("/api/booking/config", { cache: "no-store", signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Booking configuration unavailable");
+        const data = await res.json();
+        if (!["native", "external", "enquiry"].includes(data.mode)) throw new Error("Invalid configuration");
+        if (active) { setDestination(data); setDestinationError(false); }
+      })
+      .catch(() => { if (active) { setDestination({ mode: "enquiry", url: BOOKING_ENQUIRY_PATH }); setDestinationError(true); } })
+      .finally(() => clearTimeout(timeout));
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+    // Opening the gate refreshes configuration; switching gate panels does not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view === "idle", configRefresh]);
+
+  const actionLabel = !destination ? "Checking booking options…" : destination.mode === "enquiry" ? "Booking enquiry" : destination.mode === "native" ? "Continue to Goko" : "Reserve My Spot";
+  const destinationNote = !destination ? "Checking the latest booking destination." : destination.mode === "enquiry" ? "Online booking is unavailable. Contact our team for dates and availability; an enquiry is not a confirmed reservation." : destination.mode === "native" ? "Continue to Goko. Native online checkout is not enabled yet; our team can help with your enquiry." : "Continue to the configured booking provider, which handles your reservation and payment.";
 
   const openBookingGate = useCallback(() => {
+    setDestination(null);
+    setDestinationError(false);
     setMainAgreed(false);
     setTermsAgreed(false);
     setView("main");
@@ -52,9 +81,10 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const goBooking = useCallback(() => {
-    window.open(site.bookingUrl, "_blank", "noopener,noreferrer");
+    // Navigation resolves the latest saved link server-side; no async popup blocker.
+    window.location.assign(destination?.mode === "enquiry" ? BOOKING_ENQUIRY_PATH : "/api/booking/destination");
     closeAll();
-  }, [closeAll]);
+  }, [closeAll, destination]);
 
   return (
     <BookingGateContext.Provider value={{ openBookingGate }}>
@@ -79,8 +109,15 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
             view === "terms" && "flex max-h-[min(92vh,880px)] flex-col"
           )}
         >
+          {destinationError && <div role="status" className="px-5 pt-4 text-sm">
+            Could not load booking options. You can send an enquiry or contact us on WhatsApp.
+            <button type="button" className="ml-2 underline" onClick={() => { setDestination(null); setDestinationError(false); setConfigRefresh((n) => n + 1); }}>Retry</button>
+          </div>}
           {view === "main" ? (
             <MainGateBody
+              actionLabel={actionLabel}
+              destinationNote={destinationNote}
+              destinationLoading={!destination}
               mainAgreed={mainAgreed}
               setMainAgreed={setMainAgreed}
               onClose={closeAll}
@@ -96,6 +133,9 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
           ) : null}
           {view === "terms" ? (
             <TermsBody
+              actionLabel={actionLabel}
+              destinationNote={destinationNote}
+              destinationLoading={!destination}
               termsAgreed={termsAgreed}
               setTermsAgreed={setTermsAgreed}
               onBack={() => {
@@ -117,6 +157,9 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
 }
 
 function MainGateBody({
+  actionLabel,
+  destinationNote,
+  destinationLoading,
   mainAgreed,
   setMainAgreed,
   onClose,
@@ -124,6 +167,9 @@ function MainGateBody({
   onTerms,
   onReserve,
 }: {
+  actionLabel: string;
+  destinationNote: string;
+  destinationLoading: boolean;
   mainAgreed: boolean;
   setMainAgreed: (v: boolean) => void;
   onClose: () => void;
@@ -230,16 +276,15 @@ function MainGateBody({
           type="button"
           variant="cta"
           className="w-full disabled:opacity-45"
-          disabled={!mainAgreed}
+          disabled={!mainAgreed || destinationLoading}
           onClick={onReserve}
         >
-          {c.reserveCta}
+          {actionLabel}
         </Button>
         <p className="flex items-start justify-center gap-2 text-center text-xs text-brand-green-dark/80">
           <span aria-hidden>📢</span>
           <span>
-            {c.redirectNoteLine1}{" "}
-            <strong className="text-brand-green-dark">{c.redirectPartner}</strong>
+            {destinationNote}
           </span>
         </p>
       </div>
@@ -301,11 +346,17 @@ function EarlyCheckinBody({ onBack }: { onBack: () => void }) {
 }
 
 function TermsBody({
+  actionLabel,
+  destinationNote,
+  destinationLoading,
   termsAgreed,
   setTermsAgreed,
   onBack,
   onAgreeReserve,
 }: {
+  actionLabel: string;
+  destinationNote: string;
+  destinationLoading: boolean;
   termsAgreed: boolean;
   setTermsAgreed: (v: boolean) => void;
   onBack: () => void;
@@ -384,16 +435,15 @@ function TermsBody({
           type="button"
           variant="cta"
           className="w-full disabled:opacity-45"
-          disabled={!termsAgreed}
+          disabled={!termsAgreed || destinationLoading}
           onClick={onAgreeReserve}
         >
-          {t.agreeCta}
+          Agree & {actionLabel}
         </Button>
         <p className="flex items-start justify-center gap-2 text-center text-xs text-brand-green-dark/80">
           <span aria-hidden>📢</span>
           <span>
-            {bookingGateCopy.redirectNoteLine1}{" "}
-            <strong className="text-brand-green-dark">{bookingGateCopy.redirectPartner}</strong>
+            {destinationNote}
           </span>
         </p>
       </div>

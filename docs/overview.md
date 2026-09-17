@@ -7,7 +7,7 @@
 
 It is one Next.js 15.5 App Router app (React 19, TypeScript, Tailwind, shadcn/Base UI) that serves:
 
-1. A **marketing website** (Stayflexi “Book now”, GTM, CMS-backed Events + Community Area).
+1. A **marketing website** (administrator-configured “Book now”, GTM, CMS-backed Events + Community Area).
 2. **Guest tools** — self check-in with ID photos, food ordering, my-bills, review links.
 3. **Staff tools** — kitchen dashboard, full admin PMS (beds, bookings, inventory, channel manager), food ops, accounts, **splits** (staff/volunteer IOUs).
 4. An optional **Raspberry Pi LAN copy** of the same app (`GOKO_RUNTIME=pi`) for front-desk when internet is down.
@@ -67,7 +67,7 @@ flowchart LR
 | OTA inventory / rates | Checking Booking.com / MMY / Hostelworld inboxes only |
 | Events + community copy | Git commits for every photo/text change |
 
-OTA **booking engine** for the public “Book now” button is still **Stayflexi** (external URL). Channel-manager inventory/rates go through **Aiosell**. GokoWeb is the property PMS + website, not a replacement for those two vendors.
+The public “Book now” destination is the saved Channel Manager guest Booking Engine URL, not a hard-coded StayFlexi link. External HTTPS engines handle their own checkout; blank/invalid/unavailable settings use Booking Enquiry. `/book` currently provides a branded enquiry entry only. Booking Settings holds draft preferences and credential-presence metadata; **native reservations and Razorpay checkout are not yet implemented**. Channel-manager inventory/rates still go through **Aiosell**. See [Website booking foundation](flows-website-booking.md).
 
 ---
 

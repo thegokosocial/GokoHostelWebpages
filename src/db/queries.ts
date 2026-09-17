@@ -1521,6 +1521,16 @@ export async function getReviewAnalytics(filters: { fromDate?: string; toDate?: 
 
 // --- Channel Manager ---
 
+/** Public routing needs only these fields, never integration credentials. */
+export async function getGuestBookingConfig() {
+  const db = getDb();
+  const rows = await db.select({
+    bookingEngineUrl: channelConfig.bookingEngineUrl,
+    apiBaseUrl: channelConfig.apiBaseUrl,
+  }).from(channelConfig).limit(1);
+  return rows[0] || null;
+}
+
 export async function getChannelConfig() {
   const db = getDb();
   const rows = await db.select().from(channelConfig).limit(1);
