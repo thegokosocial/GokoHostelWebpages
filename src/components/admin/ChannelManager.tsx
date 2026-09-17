@@ -8,6 +8,7 @@ import { AdminLoading } from "./AdminLoading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn, todayIST } from "@/lib/utils";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import {
   RefreshCwIcon, SaveIcon, PlusIcon, Trash2Icon, PencilIcon,
@@ -709,20 +710,20 @@ function SyncTab({ password, username }: { password: string; username?: string }
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">Push to Aiosell</h3>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-[10px] text-muted-foreground">Start Date</label>
-          <input type="date" min={today} className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs" value={pushStartDate} onChange={(e) => {
-            const start = e.target.value;
-            setPushStartDate(start);
-            if (start) setPushEndDate(start);
-          }} />
-        </div>
-        <div>
-          <label className="text-[10px] text-muted-foreground">End Date</label>
-          <input type="date" min={pushStartDate || today} className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs" value={pushEndDate} onChange={(e) => setPushEndDate(e.target.value)} />
-        </div>
-      </div>
+      <DateRangePicker
+        variant="compact"
+        applyMode="manual"
+        minDate={today}
+        minNights={0}
+        labels={{ start: "Start Date", end: "End Date" }}
+        startDate={pushStartDate}
+        endDate={pushEndDate}
+        onChange={({ startDate, endDate }) => {
+          setPushStartDate(startDate);
+          setPushEndDate(endDate);
+        }}
+        className="max-w-md"
+      />
       <p className="text-[10px] text-muted-foreground">Leave empty for defaults (today + 30 days)</p>
 
       <div className="flex flex-wrap gap-2">
@@ -783,18 +784,23 @@ function SyncTab({ password, username }: { password: string; username?: string }
 
       <div className="pt-4 border-t border-border">
         <h3 className="text-sm font-semibold mb-2">Fetch from Aiosell</h3>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <select className="rounded-md border border-input bg-background px-2 py-1 text-xs" value={fetchType} onChange={(e) => setFetchType(e.target.value as any)}>
             <option value="inventory">Inventory</option>
             <option value="rates">Rates</option>
             <option value="reservation">Reservations</option>
           </select>
-          <input type="date" className="rounded-md border border-input bg-background px-2 py-1 text-xs" value={fetchStart} onChange={(e) => {
-            const start = e.target.value;
-            setFetchStart(start);
-            if (start) setFetchEnd(start);
-          }} />
-          <input type="date" min={fetchStart || undefined} className="rounded-md border border-input bg-background px-2 py-1 text-xs" value={fetchEnd} onChange={(e) => setFetchEnd(e.target.value)} />
+          <DateRangePicker
+            variant="compact"
+            applyMode="manual"
+            minNights={0}
+            startDate={fetchStart}
+            endDate={fetchEnd}
+            onChange={({ startDate, endDate }) => {
+              setFetchStart(startDate);
+              setFetchEnd(endDate);
+            }}
+          />
         </div>
         <Button size="sm" className="mt-2" onClick={handleFetch} disabled={fetching || !fetchStart || !fetchEnd}>
           {fetching ? <Loader2Icon className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCwIcon className="h-3.5 w-3.5 mr-1" />}

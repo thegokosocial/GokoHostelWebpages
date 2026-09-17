@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PlusIcon, Trash2Icon, CalendarIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { cn, localDateStr, todayIST } from "@/lib/utils";
-import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { motion, AnimatePresence } from "framer-motion";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 type Booking = {
   id: number;
@@ -318,16 +318,15 @@ export function AdminBookings({ password, username, role, permissions = {} }: { 
                 <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Booking Ref</label>
                 <Input value={form.bookingRef} onChange={(e) => setForm({ ...form, bookingRef: e.target.value })} placeholder="OTA booking ID" />
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Check-in Date *</label>
-                <Input type="date" min={todayIST()} value={form.checkinDate} onChange={(e) => {
-                  const start = e.target.value;
-                  setForm({ ...form, checkinDate: start, checkoutDate: start ? addCalendarDays(start, 1) : "" });
-                }} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Check-out Date</label>
-                <Input type="date" min={form.checkinDate ? addCalendarDays(form.checkinDate, 1) : todayIST()} value={form.checkoutDate} onChange={(e) => setForm({ ...form, checkoutDate: e.target.value })} />
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Stay dates *</label>
+                <DateRangePicker
+                  variant="admin"
+                  minDate={todayIST()}
+                  startDate={form.checkinDate}
+                  endDate={form.checkoutDate}
+                  onChange={({ startDate, endDate }) => setForm({ ...form, checkinDate: startDate, checkoutDate: endDate })}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Room Type</label>

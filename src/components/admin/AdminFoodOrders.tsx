@@ -14,6 +14,7 @@ import { useAdminToast } from "@/components/admin/AdminToast";
 import { usePanelHistory } from "@/hooks/usePanelHistory";
 import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/RecordPaymentModal";
 import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 type FoodTab = "summary" | "place" | "combined" | "payment" | "active";
 
@@ -2694,9 +2695,18 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
           </div>
           {range === "custom" && (
             <div className="flex flex-wrap items-center gap-2">
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="rounded-md border border-brand-mist px-2 py-1.5 text-sm" />
-              <span className="text-xs text-brand-green-dark/50">to</span>
-              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="rounded-md border border-brand-mist px-2 py-1.5 text-sm" />
+              <DateRangePicker
+                variant="compact"
+                applyMode="manual"
+                minNights={0}
+                startDate={customFrom}
+                endDate={customTo}
+                onChange={({ startDate, endDate }) => {
+                  setCustomFrom(startDate);
+                  setCustomTo(endDate);
+                }}
+                className="w-56"
+              />
               <button type="button" onClick={loadHistory} disabled={!customFrom || !customTo || loading} className="rounded-md bg-brand-green px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-green/90 disabled:opacity-50">
                 Search
               </button>
@@ -2846,14 +2856,19 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 rounded-xl border border-brand-mist bg-white dark:bg-card p-3">
-        <div>
-          <label className="mb-0.5 block text-xs text-brand-green-dark/60">From</label>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded border border-brand-mist px-2 py-1 text-sm" />
-        </div>
-        <div>
-          <label className="mb-0.5 block text-xs text-brand-green-dark/60">To</label>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded border border-brand-mist px-2 py-1 text-sm" />
-        </div>
+        <DateRangePicker
+          variant="compact"
+          applyMode="manual"
+          minNights={0}
+          labels={{ start: "From", end: "To" }}
+          startDate={dateFrom}
+          endDate={dateTo}
+          onChange={({ startDate, endDate }) => {
+            setDateFrom(startDate);
+            setDateTo(endDate);
+          }}
+          className="w-56"
+        />
         <div>
           <label className="mb-0.5 block text-xs text-brand-green-dark/60">Status</label>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded border border-brand-mist px-2 py-1 text-sm">

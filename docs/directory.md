@@ -10,7 +10,7 @@ GokoWeb/
 ├── src/app/(marketing)/          # Public pages + GTM + SiteShell, force-static
 ├── src/app/admin|self-checkin|food-order|kitchen|my-bills|review/
 ├── src/app/api/                  # 42 route.ts files
-├── src/components/admin|food|kitchen|forms|layout|sections|ui|booking|faq|media|motion/
+├── src/components/admin|dates|food|kitchen|forms|layout|sections|ui|booking|faq|media|motion/
 ├── src/content/                  # Marketing seed + CMS fallback
 ├── src/db/                       # schema.ts queries.ts siteQueries.ts splitQueries.ts index.ts cloudflare.ts pi.ts syncMeta.ts
 ├── src/lib/                      # see table below
@@ -50,6 +50,7 @@ Live marketing routes are `src/app/(marketing)/` (`force-static`). Do not add SS
 
 | New thing | File |
 |-----------|------|
+| Paired date range UI | `components/dates/DateRangePicker.tsx` + `lib/dateRangePicker.ts`; shadcn `ui/calendar.tsx`, `ui/popover.tsx` |
 | Admin section | `components/admin/X.tsx` + `admin/page.tsx` + `adminNav.ts` |
 | Management tab | `AdminManagement.tsx` `TABS` |
 | Admin action | existing `api/admin/*/route.ts` + `ACTION_PERMISSIONS` |

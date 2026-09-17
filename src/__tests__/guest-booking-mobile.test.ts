@@ -8,13 +8,15 @@ const css = readFileSync("src/app/globals.css", "utf8");
 
 // Source-level layout contracts; actual dimensions/interaction are checked in-browser.
 describe("Mobile-first booking layout contracts", () => {
-  it("retains 48px fields, 16px input text, native dates and phone keyboards", () => {
+  it("retains 48px fields, 16px input text, dual-month date picker and phone keyboards", () => {
     expect(panel).toMatch(/const field = "[^"]*min-h-12[^"]*min-w-0[^"]*text-base/);
-    expect(panel).toContain('type="date"'); expect(panel).toContain('type="tel"');
+    expect(panel).toContain("DateRangePicker");
+    expect(panel).toContain("maxNights={30}");
+    expect(panel).toContain('type="tel"');
     expect(panel).toContain('inputMode="numeric"'); expect(panel).toContain('autoComplete="one-time-code"');
   });
-  it("keeps narrow dates full-width and mobile search full-width", () => {
-    expect(panel.match(/col-span-2 min-w-0 text-sm font-semibold min-\[360px\]:col-span-1/g)).toHaveLength(2);
+  it("keeps date picker full-width on narrow screens and mobile search full-width", () => {
+    expect(panel).toContain("col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1 lg:col-span-2");
     expect(panel).toContain('col-span-2 lg:col-span-1');
   });
   it("keeps the mobile summary safe-area-aware without a fixed overlay", () => {
@@ -32,6 +34,11 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain('focus({ preventScroll: true })'); expect(panel).toContain('scroll-mt-24');
     expect(panel).toMatch(/<button type="button" className=\{action\} disabled>Payment unavailable/);
     expect(panel).toContain('These details stay in this page only.');
+  });
+  it("blocks search until both stay dates are chosen", () => {
+    expect(panel).toContain("stayReady");
+    expect(panel).toContain("disabled={busy || !stayReady}");
+    expect(panel).toContain("Choose your check-in and check-out dates.");
   });
   it("searches with dates only, shows nightly prices and uses a configured limit", () => {
     expect(panel).not.toContain('stay.guests');

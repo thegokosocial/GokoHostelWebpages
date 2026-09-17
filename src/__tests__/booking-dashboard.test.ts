@@ -679,7 +679,8 @@ describe("Unassigned bookings: same availability as New Booking", () => {
     expect(unassigned).toContain("Failed to load beds");
     expect(create).toContain('action: "getAvailableBeds"');
     expect(create).toContain("addCalendarDays(start, 1)");
-    expect(create).toContain("addCalendarDays(checkinDate, 1)");
+    expect(create).toContain("DateRangePicker");
+    expect(create).toContain('presentation="inline"');
     expect(create).toContain("cancelled = true");
     expect(create).toContain("setAvailableUnits([])");
   });

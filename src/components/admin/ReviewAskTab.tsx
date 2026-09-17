@@ -5,6 +5,7 @@ import { Loader2Icon, RefreshCwIcon, SendIcon, CheckCircleIcon, SettingsIcon, XI
 import { cn, localDateStr } from "@/lib/utils";
 import { bookingWhatsAppNumber } from "@/lib/bookingWhatsApp";
 import { useStaffWhatsApp } from "./StaffWhatsAppProvider";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 interface ReviewRequest {
   id: number;
@@ -249,21 +250,18 @@ export function ReviewAskTab({ password, username }: Props) {
           )}
 
           {filterMode === "range" && (
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="rounded-md border border-brand-mist px-2 py-1.5 text-xs"
-              />
-              <span className="text-xs text-brand-green-dark/50">to</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="rounded-md border border-brand-mist px-2 py-1.5 text-xs"
-              />
-            </div>
+            <DateRangePicker
+              variant="compact"
+              applyMode="manual"
+              minNights={0}
+              startDate={fromDate}
+              endDate={toDate}
+              onChange={({ startDate, endDate }) => {
+                setFromDate(startDate);
+                setToDate(endDate);
+              }}
+              className="w-56"
+            />
           )}
 
           <div className="ml-auto flex items-center gap-2">

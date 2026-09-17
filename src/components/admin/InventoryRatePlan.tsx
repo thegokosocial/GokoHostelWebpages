@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, stayNights, civilWeekday, unassignedOtaOnNight, type AvailabilitySummary, type NightAvailability } from "@/lib/inventoryAvailability";
 import type { Role } from "./types";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 type Props = { password: string; username?: string; role: Role; permissions: Record<string, boolean> };
 
@@ -234,9 +235,18 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
         </div>
         {rangeMode === "custom" && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs" />
-            <span className="text-xs text-muted-foreground">to</span>
-            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs" />
+            <DateRangePicker
+              variant="compact"
+              applyMode="manual"
+              minNights={0}
+              startDate={customStart}
+              endDate={customEnd}
+              onChange={({ startDate, endDate }) => {
+                setCustomStart(startDate);
+                setCustomEnd(endDate);
+              }}
+              className="w-56"
+            />
             <Button variant="outline" size="xs" onClick={applyCustomRange}>Apply</Button>
             {customError && <span className="text-xs text-destructive">{customError}</span>}
           </div>
@@ -937,11 +947,6 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [availabilityDormIds, availabilityStart, availabilityEnd, availabilityDays, availabilityMode, availabilityValue, password, username]);
 
-  const setStartAndNextEnd = (start: string, setStart: (v: string) => void, setEnd: (v: string) => void) => {
-    setStart(start);
-    setEnd(start ? addCalendarDays(start, 1) : "");
-  };
-
   useEffect(() => {
     if (!blockDormId || !blockStart || !blockExclusiveEnd) {
       setFetchedFreeBeds(null);
@@ -1302,16 +1307,19 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   {data?.dorms.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div>
-                  <label className="text-xs font-medium">Start Date</label>
-                  <input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={blockStart} onChange={(e) => setStartAndNextEnd(e.target.value, setBlockStart, setBlockEnd)} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium">End Date</label>
-                  <input type="date" min={blockStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={blockEnd} onChange={(e) => setBlockEnd(e.target.value)} />
-                </div>
-              </div>
+              <DateRangePicker
+                presentation="inline"
+                variant="admin"
+                minDate={today}
+                minNights={0}
+                labels={{ start: "Start Date", end: "End Date" }}
+                startDate={blockStart}
+                endDate={blockEnd}
+                onChange={({ startDate, endDate }) => {
+                  setBlockStart(startDate);
+                  setBlockEnd(endDate);
+                }}
+              />
               <p className="text-[10px] text-brand-green-dark/50">Both dates are nights included. 1 Sep–2 Sep covers both nights; only beds free on every night in the range are shown (the tightest night wins). Past dates are disabled.</p>
               {blockDormId > 0 && blockExclusiveEnd && (
                 <div>
@@ -1385,10 +1393,19 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div><label className="text-xs font-medium">Start Date</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={availabilityStart} onChange={(e) => setStartAndNextEnd(e.target.value, setAvailabilityStart, setAvailabilityEnd)} /></div>
-                <div><label className="text-xs font-medium">End Date</label><input type="date" min={availabilityStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={availabilityEnd} onChange={(e) => setAvailabilityEnd(e.target.value)} /></div>
-              </div>
+              <DateRangePicker
+                presentation="inline"
+                variant="admin"
+                minDate={today}
+                minNights={0}
+                labels={{ start: "Start Date", end: "End Date" }}
+                startDate={availabilityStart}
+                endDate={availabilityEnd}
+                onChange={({ startDate, endDate }) => {
+                  setAvailabilityStart(startDate);
+                  setAvailabilityEnd(endDate);
+                }}
+              />
               <p className="text-[10px] text-brand-green-dark/50">Both dates are nights included. Availability means OTA/PMS slots remaining; walk-in availability is calculated automatically. Past dates are disabled.</p>
               <div><label className="text-xs font-medium">Days</label><div className="mt-1"><DaySelector days={availabilityDays} setDays={setAvailabilityDays} /></div></div>
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -1422,10 +1439,19 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div><label className="text-xs font-medium">Start Date</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={rateStart} onChange={(e) => setStartAndNextEnd(e.target.value, setRateStart, setRateEnd)} /></div>
-                <div><label className="text-xs font-medium">End Date</label><input type="date" min={rateStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={rateEnd} onChange={(e) => setRateEnd(e.target.value)} /></div>
-              </div>
+              <DateRangePicker
+                presentation="inline"
+                variant="admin"
+                minDate={today}
+                minNights={0}
+                labels={{ start: "Start Date", end: "End Date" }}
+                startDate={rateStart}
+                endDate={rateEnd}
+                onChange={({ startDate, endDate }) => {
+                  setRateStart(startDate);
+                  setRateEnd(endDate);
+                }}
+              />
               <div><label className="text-xs font-medium">Days</label><div className="mt-1"><DaySelector days={rateDays} setDays={setRateDays} /></div></div>
               <div><label className="text-xs font-medium">Rate (₹)</label><input type="number" className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={rateValue} onChange={(e) => setRateValue(e.target.value)} /></div>
               {rateRpIds.length > 0 && rateValue && (
@@ -1450,10 +1476,19 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div><label className="text-xs font-medium">Start</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={adjustStart} onChange={(e) => setStartAndNextEnd(e.target.value, setAdjustStart, setAdjustEnd)} /></div>
-                <div><label className="text-xs font-medium">End</label><input type="date" min={adjustStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={adjustEnd} onChange={(e) => setAdjustEnd(e.target.value)} /></div>
-              </div>
+              <DateRangePicker
+                presentation="inline"
+                variant="admin"
+                minDate={today}
+                minNights={0}
+                labels={{ start: "Start", end: "End" }}
+                startDate={adjustStart}
+                endDate={adjustEnd}
+                onChange={({ startDate, endDate }) => {
+                  setAdjustStart(startDate);
+                  setAdjustEnd(endDate);
+                }}
+              />
               <div><label className="text-xs font-medium">Days</label><div className="mt-1"><DaySelector days={adjustDays} setDays={setAdjustDays} /></div></div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setAdjustDirection("increase")} className={cn("flex-1 py-1.5 rounded text-xs font-medium border", adjustDirection === "increase" ? "bg-green-600 text-white border-green-600" : "border-input")}>Increase</button>
@@ -1485,10 +1520,19 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div><label className="text-xs font-medium">Start</label><input type="date" min={today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={restrictStart} onChange={(e) => setStartAndNextEnd(e.target.value, setRestrictStart, setRestrictEnd)} /></div>
-                <div><label className="text-xs font-medium">End</label><input type="date" min={restrictStart || today} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={restrictEnd} onChange={(e) => setRestrictEnd(e.target.value)} /></div>
-              </div>
+              <DateRangePicker
+                presentation="inline"
+                variant="admin"
+                minDate={today}
+                minNights={0}
+                labels={{ start: "Start", end: "End" }}
+                startDate={restrictStart}
+                endDate={restrictEnd}
+                onChange={({ startDate, endDate }) => {
+                  setRestrictStart(startDate);
+                  setRestrictEnd(endDate);
+                }}
+              />
               <div><label className="text-xs font-medium">Days</label><div className="mt-1"><DaySelector days={restrictDays} setDays={setRestrictDays} /></div></div>
               <div>
                 <label className="text-xs font-medium">Restriction Type</label>

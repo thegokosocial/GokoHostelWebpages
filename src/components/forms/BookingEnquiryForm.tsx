@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, todayIST } from "@/lib/utils";
-import { addCalendarDays } from "@/lib/inventoryAvailability";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 export function BookingEnquiryForm() {
   const form = useForm<BookingEnquiryPayload>({
@@ -27,6 +27,8 @@ export function BookingEnquiryForm() {
     },
   });
 
+  const checkIn = form.watch("checkIn");
+  const checkOut = form.watch("checkOut");
   const [submitted, setSubmitted] = useState<"whatsapp" | "email" | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -128,32 +130,18 @@ export function BookingEnquiryForm() {
         </div>
       </div>
       <div className="grid gap-5 sm:grid-cols-2 md:grid-cols-3">
-        <div className="space-y-2">
-          <Label htmlFor="enq-in" className="text-brand-green">
-            Check-in
-          </Label>
-          <Input
-            id="enq-in"
-            type="date"
-            min={todayIST()}
+        <div className="space-y-2 sm:col-span-2">
+          <Label className="text-brand-green">Stay dates</Label>
+          <DateRangePicker
+            variant="marketing"
+            minDate={todayIST()}
+            startDate={checkIn ?? ""}
+            endDate={checkOut ?? ""}
+            onChange={({ startDate, endDate }) => {
+              form.setValue("checkIn", startDate, { shouldValidate: true });
+              form.setValue("checkOut", endDate, { shouldValidate: true });
+            }}
             className={fieldRing}
-            {...form.register("checkIn", {
-              onChange: (e) => {
-                if (e.target.value) form.setValue("checkOut", addCalendarDays(e.target.value, 1));
-              },
-            })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="enq-out" className="text-brand-green">
-            Check-out
-          </Label>
-          <Input
-            id="enq-out"
-            type="date"
-            min={form.watch("checkIn") ? addCalendarDays(form.watch("checkIn")!, 1) : todayIST()}
-            className={fieldRing}
-            {...form.register("checkOut")}
           />
         </div>
         <div className="space-y-2">

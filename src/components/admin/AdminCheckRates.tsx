@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2Icon, RefreshCwIcon } from "lucide-react";
 import { cn, localDateStr, todayIST } from "@/lib/utils";
-import { addCalendarDays } from "@/lib/inventoryAvailability";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import type { Role } from "./types";
 
 import { parseRateResults, rateScrapeDates, type RateResult } from "@/lib/rateScrapeResults";
@@ -122,17 +122,18 @@ export function AdminCheckRates({ password, username, role }: { password: string
             <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">City</label>
             <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Gokarna" />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">From Date</label>
-            <Input type="date" min={todayIST()} value={startDate} onChange={(e) => {
-              const start = e.target.value;
-              setStartDate(start);
-              if (start) setEndDate(addCalendarDays(start, 1));
-            }} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">To Date</label>
-            <Input type="date" min={startDate ? addCalendarDays(startDate, 1) : todayIST()} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Date range</label>
+            <DateRangePicker
+              variant="admin"
+              minDate={todayIST()}
+              startDate={startDate}
+              endDate={endDate}
+              onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+                setStartDate(nextStart);
+                setEndDate(nextEnd);
+              }}
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Property Type</label>

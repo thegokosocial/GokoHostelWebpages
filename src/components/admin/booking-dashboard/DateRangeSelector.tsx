@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { Button } from "@/components/ui/button";
 import { CalendarIcon } from "lucide-react";
 import { getDateRange, getHostelToday } from "./utils";
@@ -80,18 +80,17 @@ export function DateRangeSelector({
 
       {dateRange.mode === "custom" && (
         <div className="flex items-center gap-1.5">
-          <Input
-            type="date"
-            value={customStart}
-            onChange={(e) => setCustomStart(e.target.value)}
-            className="h-7 w-32 text-xs"
-          />
-          <span className="text-xs text-muted-foreground">to</span>
-          <Input
-            type="date"
-            value={customEnd}
-            onChange={(e) => setCustomEnd(e.target.value)}
-            className="h-7 w-32 text-xs"
+          <DateRangePicker
+            variant="compact"
+            applyMode="manual"
+            minNights={0}
+            startDate={customStart}
+            endDate={customEnd}
+            onChange={({ startDate, endDate }) => {
+              setCustomStart(startDate);
+              setCustomEnd(endDate);
+            }}
+            className="w-56"
           />
           <Button variant="outline" size="xs" onClick={handleCustomApply}>
             Apply

@@ -8,6 +8,7 @@ import { BanknoteIcon, SmartphoneIcon, AlertTriangleIcon, BedDoubleIcon, RotateC
 import { cn, localDateStr } from "@/lib/utils";
 import { AdminLoading } from "./AdminLoading";
 import type { Role } from "./types";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 function getMonthStart() {
   const d = new Date();
@@ -93,14 +94,18 @@ export function AdminRoomRevenue({
       <p className="mt-1 text-xs text-brand-green-dark/50">By check-in date. Occupied stays only (checked in, checked out, or cancelled after check-in).</p>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <div>
-          <Label className="text-xs">From</Label>
-          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="mt-1" />
-        </div>
-        <div>
-          <Label className="text-xs">To</Label>
-          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="mt-1" />
-        </div>
+        <DateRangePicker
+          variant="admin"
+          applyMode="manual"
+          minNights={0}
+          labels={{ start: "From", end: "To" }}
+          startDate={fromDate}
+          endDate={toDate}
+          onChange={({ startDate, endDate }) => {
+            setFromDate(startDate);
+            setToDate(endDate);
+          }}
+        />
         <Button type="button" variant="cta" onClick={loadData} disabled={loading}>
           {loading ? "Loading..." : "Apply"}
         </Button>

@@ -10,6 +10,7 @@ import { cn, localDateStr } from "@/lib/utils";
 import { auditActionLabel, formatAuditDetails, presentAuditEntry } from "@/lib/auditPresentation";
 import { OrderHistory } from "./AdminFoodOrders";
 import type { Role } from "./types";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 type AuditSubTab = "room" | "inventory" | "bookings" | "food" | "attendance";
 
@@ -374,14 +375,19 @@ function AuditTrail({
 
       <div className="flex flex-wrap gap-3">
         <Input placeholder="Search..." value={search} onChange={(event) => setSearch(event.target.value)} className="w-full sm:w-48" />
-        <label className="text-xs text-brand-green-dark/60">
-          From
-          <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} className="mt-0.5 h-9 w-40 bg-white text-xs dark:bg-card" aria-label="Audit from date" />
-        </label>
-        <label className="text-xs text-brand-green-dark/60">
-          To
-          <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} className="mt-0.5 h-9 w-40 bg-white text-xs dark:bg-card" aria-label="Audit to date" />
-        </label>
+        <DateRangePicker
+          variant="compact"
+          applyMode="manual"
+          minNights={0}
+          labels={{ start: "From", end: "To" }}
+          startDate={dateFrom}
+          endDate={dateTo}
+          onChange={({ startDate, endDate }) => {
+            setDateFrom(startDate);
+            setDateTo(endDate);
+          }}
+          className="w-56 bg-white dark:bg-card"
+        />
         <select value={filterAction} onChange={(event) => setFilterAction(event.target.value)} className="rounded-md border border-input bg-background px-3 py-2 text-xs">
           <option value="">All actions</option>
           {allActions.map((action) => <option key={action} value={action}>{auditActionLabel(action)}</option>)}

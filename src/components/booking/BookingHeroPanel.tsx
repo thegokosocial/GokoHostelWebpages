@@ -7,6 +7,8 @@ import { bookingTotals } from "@/lib/bookingPricing";
 import { canAddGuestRoom } from "@/lib/guestBookingSelection";
 import { homeRooms } from "@/content/home";
 import { ImageCarousel } from "@/components/media/ImageCarousel";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
+import { todayIST } from "@/lib/utils";
 
 type BookingDetails = { reference: string | null; externalReference: string | null; guestName: string; checkinDate: string; checkoutDate: string; roomType: string; guests: number; status: string; paymentStatus: string | null; total: number | null; paid: number | null; refunded: number | null };
 const field = "mt-1 min-h-12 w-full min-w-0 max-w-full rounded-lg border border-brand-green/25 bg-white px-3 py-3 text-base text-brand-green-dark focus:outline-none focus:ring-2 focus:ring-brand-green";
@@ -46,11 +48,11 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     reviewRef.current?.focus({ preventScroll: true });
     reviewRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
   }, [review]);
-  function changeStay(key: keyof typeof stay, value: string) {
-    setStay(previous => ({ ...previous, [key]: value })); setRooms(null); setSelection({}); setPlans({}); setReview(false); setSearchedStay(null); setMessage("");
-  }
+  const stayReady = Boolean(stay.checkinDate && stay.checkoutDate && stay.checkoutDate > stay.checkinDate);
   async function search(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false);
+    event.preventDefault();
+    if (!stayReady) { setMessage("Choose your check-in and check-out dates."); return; }
+    setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false);
     try {
       const data = await readResponse(await fetch(`/api/guest-booking/availability?${new URLSearchParams(stay)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) }));
       setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...stay });
@@ -88,9 +90,29 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       <h2 className="font-display text-2xl font-bold">Find your bed by the beach</h2>
       <p className="mt-1 text-sm">Choose your dates, compare our stays and make yourself at home. Dorm beds and double beds · No private rooms.</p>
       <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-3">
-        <label className="col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1">Check-in<input className={field} type="date" required disabled={busy} value={stay.checkinDate} onInput={e => changeStay("checkinDate", e.currentTarget.value)} onChange={e => changeStay("checkinDate", e.target.value)} /></label>
-        <label className="col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1">Check-out<input className={field} type="date" required disabled={busy} min={stay.checkinDate || undefined} value={stay.checkoutDate} onInput={e => changeStay("checkoutDate", e.currentTarget.value)} onChange={e => changeStay("checkoutDate", e.target.value)} /></label>
-        <button className={`${action} col-span-2 lg:col-span-1`} disabled={busy}>{busy ? "Checking…" : "Check availability"}</button>
+        <label className="col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1 lg:col-span-2">
+          Dates
+          <DateRangePicker
+            className="mt-1"
+            variant="marketing"
+            required
+            disabled={busy}
+            minDate={todayIST()}
+            maxNights={30}
+            startDate={stay.checkinDate}
+            endDate={stay.checkoutDate}
+            onChange={({ startDate, endDate }) => {
+              setStay({ checkinDate: startDate, checkoutDate: endDate });
+              setRooms(null);
+              setSelection({});
+              setPlans({});
+              setReview(false);
+              setSearchedStay(null);
+              setMessage("");
+            }}
+          />
+        </label>
+        <button className={`${action} col-span-2 lg:col-span-1`} disabled={busy || !stayReady}>{busy ? "Checking…" : "Check availability"}</button>
       </form>
       {rooms && <div className="mt-6 border-t border-brand-mist pt-5">
         <h3 className="font-semibold">Available for {searchedStay?.checkinDate} – {searchedStay?.checkoutDate}</h3>

@@ -10,6 +10,7 @@ import { useAdminToast } from "./AdminToast";
 import type { Role } from "./types";
 import { calendarMonthDates } from "@/lib/employeeAttendanceUtils";
 import { todayIST } from "@/lib/utils";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 type Employee = { id: number; name: string; role: string; isActive: number; attendanceStartDate: string; employmentEndDate: string };
 type Attendance = { id: number; employeeId: number; date: string; status: string; comment: string; updatedBy: string };
@@ -230,7 +231,7 @@ export function ManagementAttendance({ password, username, role }: { password: s
     {role !== "admin" && <details className="rounded-xl border border-brand-mist bg-white p-4 dark:bg-card"><summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold"><HistoryIcon className="h-4 w-4" /> Attendance audit ({history.length})</summary><div className="mt-3 max-h-72 space-y-2 overflow-y-auto">{history.map((item) => <div key={item.id} className="rounded-lg bg-brand-sand/50 p-2 text-xs"><span className="font-medium">{item.employeeName}</span> · {item.date}: {statusLabel(item.oldStatus)} → {statusLabel(item.newStatus)}<span className="block text-[10px] text-muted-foreground">{item.performedBy} · {new Date(item.performedAt).toLocaleString("en-IN")}{item.newComment ? ` · ${item.newComment}` : ""}</span></div>)}</div></details>}
 
     {form && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl dark:bg-card"><h4 className="font-display text-lg font-bold">Mark attendance</h4><div className="mt-4 grid gap-3 sm:grid-cols-2">
-      <label className="text-xs">From<Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value, endDate: form.endDate < e.target.value ? e.target.value : form.endDate })} className="mt-1" /></label><label className="text-xs">To<Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} className="mt-1" /></label>
+      <div className="sm:col-span-2"><label className="text-xs">Date range</label><DateRangePicker presentation="inline" variant="admin" minNights={0} startDate={form.startDate} endDate={form.endDate} onChange={({ startDate, endDate }) => setForm({ ...form, startDate, endDate })} /></div>
       <label className="text-xs sm:col-span-2">Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"><option value="full_day_leave">Full-day leave</option><option value="half_day_leave">Half-day leave</option><option value="present">Present / correct attendance</option></select></label>
       <label className="text-xs sm:col-span-2">Comment (optional)<Input value={form.comment} maxLength={500} onChange={(e) => setForm({ ...form, comment: e.target.value })} className="mt-1" placeholder="Reason or note" /></label>
     </div><div className="mt-5 flex gap-2"><Button onClick={saveAttendance} disabled={saving}>{saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <CheckIcon className="h-4 w-4" />} Save</Button><Button variant="ghost" onClick={() => setForm(null)} disabled={saving}>Cancel</Button></div></div></div>}

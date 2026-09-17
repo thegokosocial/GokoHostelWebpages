@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2Icon, RefreshCwIcon, StarIcon, SendIcon, ExternalLinkIcon, MessageSquareIcon, TrendingUpIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 interface Analytics {
   totalRequests: number;
@@ -79,18 +80,17 @@ export function ReviewAnalyticsTab({ password, username, onNavigateToResponses }
       {/* Filters */}
       <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-3 sm:p-4">
         <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap sm:gap-3">
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="min-w-0 w-full rounded-md border border-brand-mist px-2 py-1.5 text-xs sm:w-auto"
-          />
-          <span className="hidden text-xs text-brand-green-dark/50 sm:inline">to</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="min-w-0 w-full rounded-md border border-brand-mist px-2 py-1.5 text-xs sm:w-auto"
+          <DateRangePicker
+            variant="compact"
+            applyMode="manual"
+            minNights={0}
+            startDate={fromDate}
+            endDate={toDate}
+            onChange={({ startDate, endDate }) => {
+              setFromDate(startDate);
+              setToDate(endDate);
+            }}
+            className="col-span-2 w-full sm:col-span-1 sm:w-56"
           />
           <select
             value={propertyFilter}

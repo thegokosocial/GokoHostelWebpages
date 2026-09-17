@@ -11,6 +11,8 @@ function inclusiveDays(start: string, end: string): number {
 
 describe("admin custom date ranges", () => {
   it("applies Bookings custom dates directly and accepts ranges longer than 30 days", () => {
+    expect(bookings).toContain("DateRangePicker");
+    expect(bookings).toContain('applyMode="manual"');
     expect(bookings).toContain("onChange({ startDate: customStart, endDate: customEnd, mode: \"custom\" });");
     expect(bookings).not.toContain("diffDays > 30");
     expect(bookings).toContain("Choose a valid date range.");

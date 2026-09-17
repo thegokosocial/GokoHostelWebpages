@@ -12,6 +12,7 @@ import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
 import { useAdminApi } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { CHECKIN_COLUMNS, type Role, hasPermission } from "./types";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { countries } from "@/content/countries";
 import { BOOKING_PLATFORMS, isForeignNationality } from "@/lib/checkinSchema";
 import { useAdminToast } from "@/components/admin/AdminToast";
@@ -674,15 +675,19 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
         </div>
         <div className="flex flex-1 flex-wrap items-end gap-2 rounded-xl border border-brand-mist/80 bg-brand-sand/30 p-2">
           <span className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-brand-green-dark/55">Custom range</span>
-          <div>
-            <Label className="sr-only">From</Label>
-            <Input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} className="h-9 w-[145px] bg-white text-xs dark:bg-card" aria-label="Records start date" />
-          </div>
-          <span className="pb-2 text-xs text-brand-green-dark/45" aria-hidden="true">to</span>
-          <div>
-            <Label className="sr-only">To</Label>
-            <Input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} className="h-9 w-[145px] bg-white text-xs dark:bg-card" aria-label="Records end date" />
-          </div>
+          <DateRangePicker
+            variant="compact"
+            applyMode="manual"
+            minNights={0}
+            labels={{ start: "From", end: "To" }}
+            startDate={rangeStart}
+            endDate={rangeEnd}
+            onChange={({ startDate, endDate }) => {
+              setRangeStart(startDate);
+              setRangeEnd(endDate);
+            }}
+            className="w-56 bg-white dark:bg-card"
+          />
           <Button type="button" variant="outline" size="sm" className="h-9 bg-white dark:bg-card" onClick={applyDateRange} disabled={loading}>Apply</Button>
         </div>
       </div>

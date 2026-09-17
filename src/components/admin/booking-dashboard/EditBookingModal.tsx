@@ -7,6 +7,7 @@ import type { DashboardBooking, BedAssignment } from "./types";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { getNights } from "./utils";
 import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 type Unit = { key: string; label: string; dormId: number; dormName: string; type: string; capacity: number; bedIds: number[]; pool: string };
 
@@ -107,9 +108,20 @@ export function EditBookingModal({ booking, assignments, password, username, onA
             <label className="text-xs font-medium sm:col-span-2">Guest name *<input className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={guestName} onChange={(e) => setGuestName(e.target.value)} /></label>
             <label className="text-xs font-medium">Phone<input className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={contact} onChange={(e) => setContact(e.target.value)} /></label>
             <label className="text-xs font-medium">Email<input type="email" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-            <label className="text-xs font-medium">Check-in *<input type="date" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={checkinDate} onChange={(e) => setCheckinDate(e.target.value)} /></label>
-            <label className="text-xs font-medium">Check-out *<input type="date" min={checkinDate} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={checkoutDate} onChange={(e) => setCheckoutDate(e.target.value)} /></label>
-            <p className="text-xs text-muted-foreground sm:col-span-2">{validDates ? `${getNights(checkinDate, checkoutDate)} night${getNights(checkinDate, checkoutDate) === 1 ? "" : "s"}` : "Enter a check-out date after check-in."}</p>
+            <div className="sm:col-span-2">
+              <DateRangePicker
+                presentation="inline"
+                variant="admin"
+                labels={{ start: "Check-in", end: "Check-out" }}
+                startDate={checkinDate}
+                endDate={checkoutDate}
+                onChange={({ startDate, endDate }) => {
+                  setCheckinDate(startDate);
+                  setCheckoutDate(endDate);
+                }}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{validDates ? `${getNights(checkinDate, checkoutDate)} night${getNights(checkinDate, checkoutDate) === 1 ? "" : "s"}` : "Enter a check-out date after check-in."}</p>
+            </div>
             <label className="text-xs font-medium">Persons<input type="number" min={1} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={persons} onChange={(e) => setPersons(e.target.value)} /></label>
             <label className="text-xs font-medium">Nightly rate (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={nightlyRate} onChange={(e) => setNightlyRate(e.target.value)} /></label>
             <label className="text-xs font-medium sm:col-span-2">Amount received (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} /><span className="mt-1 block text-[11px] font-normal text-muted-foreground">Final balance is recalculated from the saved pricing rules when you save.</span></label>

@@ -13,6 +13,7 @@ import { hasPermission, parseBedRow, type Role, type BedRow } from "./types";
 import { AdminLoading } from "./AdminLoading";
 import { canLookupFoodTab, foodTabUncheckedMessage, unpaidFoodCheckoutMessage } from "@/lib/foodTab";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 function fmtDate(d: Date): string { return localDateStr(d); }
 function fmtShort(d: Date): string {
@@ -131,9 +132,18 @@ export function AdminTimeline({ password, username, role, permissions }: { passw
           <Button type="button" variant={rangeMode === "custom" ? "default" : "outline"} onClick={() => { setCustomStart(startDate); setCustomEnd(addCalendarDays(startDate, numDays - 1)); setCustomError(""); setRangeMode("custom"); }}>Custom</Button>
           {rangeMode === "custom" && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="w-36 text-xs" />
-              <span className="text-xs text-muted-foreground">to</span>
-              <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="w-36 text-xs" />
+              <DateRangePicker
+                variant="compact"
+                applyMode="manual"
+                minNights={0}
+                startDate={customStart}
+                endDate={customEnd}
+                onChange={({ startDate, endDate }) => {
+                  setCustomStart(startDate);
+                  setCustomEnd(endDate);
+                }}
+                className="w-56"
+              />
               <Button type="button" variant="outline" size="xs" onClick={applyCustomRange}>Apply</Button>
               {customError && <span className="text-xs text-destructive">{customError}</span>}
             </div>

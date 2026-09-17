@@ -8,6 +8,7 @@ import { overlayVariants, modalVariants } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { XIcon, Loader2Icon, CheckIcon } from "lucide-react";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { fetchWithRetry } from "@/components/admin/useAdminApi";
@@ -317,31 +318,19 @@ export function CreateBookingModal({
             )}
 
             {/* Dates */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Check-in Date</Label>
-                <Input
-                  type="date"
-                  min={todayIST()}
-                  value={checkinDate}
-                  onChange={(e) => {
-                    const start = e.target.value;
-                    setCheckinDate(start);
-                    if (start) setCheckoutDate(addCalendarDays(start, 1));
-                  }}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Check-out Date</Label>
-                <Input
-                  type="date"
-                  min={checkinDate ? addCalendarDays(checkinDate, 1) : todayIST()}
-                  value={checkoutDate}
-                  onChange={(e) => setCheckoutDate(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
+            <div>
+              <Label className="text-xs">Stay dates</Label>
+              <DateRangePicker
+                presentation="inline"
+                variant="admin"
+                minDate={todayIST()}
+                startDate={checkinDate}
+                endDate={checkoutDate}
+                onChange={({ startDate, endDate }) => {
+                  setCheckinDate(startDate);
+                  setCheckoutDate(endDate);
+                }}
+              />
             </div>
             <div className="text-xs text-muted-foreground">
               {nights} night{nights !== 1 ? "s" : ""}

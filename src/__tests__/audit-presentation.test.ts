@@ -45,8 +45,8 @@ describe("audit presentation", () => {
     const source = readFileSync("src/components/admin/ManagementAudit.tsx", "utf8");
     expect(source).toContain("min-w-[320px] whitespace-normal break-words");
     expect(source).not.toContain("max-w-[360px] truncate");
-    expect(source).toContain('aria-label="Audit from date"');
-    expect(source).toContain('aria-label="Audit to date"');
+    expect(source).toContain("DateRangePicker");
+    expect(source).toContain('labels={{ start: "From", end: "To" }}');
   });
 
   it("uses global retention for every audit source and removes food cleanup", () => {

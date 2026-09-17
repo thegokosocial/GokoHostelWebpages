@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2Icon, RefreshCwIcon, StarIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 const IMPROVEMENT_OPTIONS = ["Dorms", "Washrooms", "Comfort", "Vibe", "Common Area", "Cafe Food"];
 
@@ -91,20 +92,17 @@ export function ReviewResponsesTab({ password, username }: Props) {
       {/* Filters */}
       <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="rounded-md border border-brand-mist px-2 py-1.5 text-xs"
-            placeholder="From"
-          />
-          <span className="text-xs text-brand-green-dark/50">to</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="rounded-md border border-brand-mist px-2 py-1.5 text-xs"
-            placeholder="To"
+          <DateRangePicker
+            variant="compact"
+            applyMode="manual"
+            minNights={0}
+            startDate={fromDate}
+            endDate={toDate}
+            onChange={({ startDate, endDate }) => {
+              setFromDate(startDate);
+              setToDate(endDate);
+            }}
+            className="w-56"
           />
           <select
             value={ratingFilter}

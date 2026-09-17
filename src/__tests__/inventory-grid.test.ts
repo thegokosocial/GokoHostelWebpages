@@ -336,7 +336,8 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(ui).toContain("Select at least one room/dorm and both dates");
     expect(ui).toContain("availabilityActionValid");
     expect(ui).toContain('variant={availabilityActionValid ? "cta" : "secondary"}');
-    expect(ui).toContain("grid-cols-1 gap-2 sm:grid-cols-2");
+    expect(ui).toContain("DateRangePicker");
+    expect(ui).toContain('presentation="inline"');
     expect(route).toContain("preview === true");
     expect(route).toContain("summarizeAvailability");
     expect(ui).toContain('action: "bulkSetRates"');
@@ -351,8 +352,8 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
   it("only offers beds free to block (not booked or already blocked)", () => {
     expect(ui).toContain("exclusiveEndFromInclusive");
     expect(ui).toContain("addCalendarDays");
-    expect(ui).toContain("min={today}");
-    expect(ui).toContain("setStartAndNextEnd");
+    expect(ui).toContain("minDate={today}");
+    expect(ui).toContain('minNights={0}');
     expect(ui).toContain('action: "getBedsFreeToBlock"');
     expect(ui).toContain("Beds free to block");
     expect(ui).not.toContain("localFreeBeds");
@@ -409,8 +410,8 @@ describe("Check Rates scrape dates are exclusive", () => {
   const checkRates = readFileSync("src/components/admin/AdminCheckRates.tsx", "utf8");
 
   it("greys past From dates and excludes checkout from scraped nights", () => {
-    expect(checkRates).toContain("min={todayIST()}");
-    expect(checkRates).toContain("min={startDate ? addCalendarDays(startDate, 1) : todayIST()}");
+    expect(checkRates).toContain("DateRangePicker");
+    expect(checkRates).toContain("minDate={todayIST()}");
     expect(rateScrapeDates("2026-09-16", "2026-09-18")).toEqual(["2026-09-16", "2026-09-17"]);
   });
 });
