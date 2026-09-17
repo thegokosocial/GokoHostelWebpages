@@ -12,6 +12,7 @@ const config: Config = {
           "red-deep": "rgb(var(--brand-red-deep) / <alpha-value>)",
           green: "rgb(var(--brand-green) / <alpha-value>)",
           "green-dark": "rgb(var(--brand-green-dark) / <alpha-value>)",
+          gold: "rgb(var(--brand-gold) / <alpha-value>)",
           sand: "rgb(var(--brand-sand) / <alpha-value>)",
           mist: "rgb(var(--brand-mist) / 0.08)",
         },

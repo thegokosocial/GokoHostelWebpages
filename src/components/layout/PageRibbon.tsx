@@ -53,7 +53,7 @@ export function PageRibbon({
         aria-hidden
       />
       <div className={cn("relative z-[2] px-4 text-center", children ? "w-full max-w-6xl py-8 md:py-16" : "max-w-4xl py-16")}>
-        <h1 className={cn("font-display font-bold text-white [text-shadow:2px_2px_14px_rgba(0,0,0,0.35)]", children ? "text-3xl sm:text-display-lg" : "text-display-lg")}>
+        <h1 className={cn("goko-hero-title font-display font-bold", children ? "text-3xl sm:text-display-lg" : "text-display-lg")}>
           {title}
         </h1>
         {subtitle ? (

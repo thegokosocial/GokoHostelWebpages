@@ -10,7 +10,7 @@ The admin header notification-settings dialog supports enable/test/disable with 
 
 ## Public marketing (`src/app/(marketing)/`)
 
-All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these only.
+All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these only. Video-hero page titles use the shared `goko-hero-title` class (`PageRibbon` + homepage `HomeHeroPremium`): warm gold (`--brand-gold`) with a dark shadow for contrast over green foliage footage; subtitles stay white.
 
 | Path | Content source | Hero video (typical) |
 |------|----------------|----------------------|

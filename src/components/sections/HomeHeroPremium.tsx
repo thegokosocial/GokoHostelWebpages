@@ -51,7 +51,7 @@ export function HomeHeroPremium() {
             <p className="font-display text-sm font-semibold uppercase tracking-[0.2em] text-white/80">
               Gokarna · Karnataka
             </p>
-            <h1 className="mt-3 max-w-4xl font-display text-3xl font-bold text-white [text-shadow:2px_2px_20px_rgba(0,0,0,0.35)] sm:text-display-lg">
+            <h1 className="goko-hero-title mt-3 max-w-4xl font-display text-3xl font-bold sm:text-display-lg">
               {homeHero.title}
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/95 sm:text-lg md:text-xl">
@@ -84,7 +84,7 @@ export function HomeHeroPremium() {
               Gokarna · Karnataka
             </motion.p>
             <motion.h1
-              className="mt-3 max-w-4xl font-display text-3xl font-bold text-white [text-shadow:2px_2px_20px_rgba(0,0,0,0.35)] sm:text-display-lg"
+              className="goko-hero-title mt-3 max-w-4xl font-display text-3xl font-bold sm:text-display-lg"
               variants={fadeUp}
               custom={1}
             >

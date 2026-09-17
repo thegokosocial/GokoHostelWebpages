@@ -30,6 +30,8 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain('sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))]');
     expect(panel).toContain('xl:top-24 xl:bottom-auto'); expect(ribbon).toContain('children ? "overflow-clip"');
     expect(home).toContain('items-end overflow-clip');
+    expect(ribbon).toContain('goko-hero-title');
+    expect(home).toContain('goko-hero-title');
   });
   it("temporarily suppresses overlapping floats only on phones, and cleans up observation", () => {
     expect(css).toMatch(/@media \(max-width: 767px\)\s*\{\s*body:has\(\[data-booking-in-view="true"\]\) \.goko-floating-bottom\s*\{\s*display: none/);
