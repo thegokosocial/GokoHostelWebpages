@@ -32,7 +32,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `dorms` | Named rooms. Unique `name`. |
 | `beds` | Physical bed. `status` available / occupied / cleanup. Denormalized guest fields and `checkin_id` when occupied. `is_blocked`. `checkin_id` is independent from booking-bed assignments. |
 | `bed_history` | Append-only assign/checkout/clean/swap. |
-| `bookings` | OTA + manual + Aiosell. Amounts in **rupees** (food is paise). `goko_booking_id`, `cm_booking_id`. Desk collect: `payment_method` cash/online/split, `cash_received`, `change_given`. Prepaid check-in copies `amount_paid` = total as online. Cancel-after-check-in refund: `amount_refunded` (does **not** reduce `amount_paid`), `refund_method`, `refund_cash`. |
+| `bookings` | OTA + manual + Aiosell. Amounts in **rupees** (food is paise). `goko_booking_id`, `cm_booking_id`. `booking_cycle` separates reused cancelled/no-show reservations; `payment_override` protects a manual payment decision from later channel payloads. Desk collect: `payment_method` cash/online/split, `cash_received`, `change_given`. Prepaid check-in copies `amount_paid` = total as online for compatibility, while the actual receivable is in the platform journal. Cancel-after-check-in refund: `amount_refunded` (does **not** reduce `amount_paid`), `refund_method`, `refund_cash`. |
 | `booking_bed_assignments` | Date-range bed hold. `inventory_pool` online/offline/block. |
 | `booking_history` | Booking audit. The global audit-retention policy bounds Audit-tab reads and manual cleanup. |
 
@@ -50,7 +50,11 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 
 | Table | Role |
 |-------|------|
-| `accounts` | Cash/bank. `opening_balance` paise. |
+| `accounts` | Cash/bank/virtual platform accounts. `opening_balance` paise. `is_virtual=1` accounts are excluded from bank receipt selectors and reconciliation. |
+| `platform_payment_profiles` | Configurable OTA profile and deduction policy linked to a virtual account. |
+| `platform_receivable_entries` | Immutable gross/tax/commission/TDS/TCS/expected-net recognition and reversal journal in paise, keyed by booking cycle/event. |
+| `platform_settlements` | Real bank payout header with actual credit date and bank account. |
+| `platform_settlement_allocations` | One-to-many payout-to-booking-cycle allocation journal in paise. |
 | `vendors` | Directory. |
 | `employees` | Salary paise + frequency. |
 | `employee_attendance` | Current per-day attendance state. |

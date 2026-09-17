@@ -450,7 +450,7 @@ export async function POST(req: NextRequest) {
         if (!date) return NextResponse.json({ error: "date required" }, { status: 400 });
 
         const db = getDb();
-        const allAccounts = await db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, isDefault: accounts.isDefault }).from(accounts).where(eq(accounts.isActive, 1));
+        const allAccounts = await db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, isDefault: accounts.isDefault }).from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0)));
 
         const incomeEntries = await db.select().from(dailyIncome).where(eq(dailyIncome.date, date)).orderBy(desc(dailyIncome.createdAt));
 
@@ -513,7 +513,7 @@ export async function POST(req: NextRequest) {
         const income = validation.value;
         const db = getDb();
         if (income.type === "online") {
-          const activeAccount = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, income.accountId!), eq(accounts.isActive, 1))).limit(1);
+          const activeAccount = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, income.accountId!), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
           if (!activeAccount.length) return NextResponse.json({ error: "The selected online account is not active" }, { status: 400 });
         }
         const reconciled = await db.select({ id: dailyLedger.id }).from(dailyLedger).where(and(
@@ -533,7 +533,7 @@ export async function POST(req: NextRequest) {
       case "getIncomeAccounts": {
         const db = getDb();
         const activeAccounts = await db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, isDefault: accounts.isDefault })
-          .from(accounts).where(eq(accounts.isActive, 1)).orderBy(desc(accounts.isDefault), accounts.name);
+          .from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).orderBy(desc(accounts.isDefault), accounts.name);
         return NextResponse.json({ accounts: activeAccounts });
       }
 
@@ -585,7 +585,7 @@ export async function POST(req: NextRequest) {
         }
 
         const db = getDb();
-        const allAccounts = await db.select().from(accounts).where(eq(accounts.isActive, 1));
+        const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0)));
         const ledgerEntries = await db.select().from(dailyLedger).where(eq(dailyLedger.date, date));
 
         // Get income/expense totals for the day
@@ -661,7 +661,7 @@ export async function POST(req: NextRequest) {
         const dayExpenses = await db.select().from(expenses).where(
           and(sql`${expenses.createdAt} >= ${date}`, sql`${expenses.createdAt} <= ${date + "T23:59:59"}`)
         );
-        const allAccounts = await db.select().from(accounts).where(eq(accounts.isActive, 1));
+        const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0)));
         const account = target.accountId === null ? null : allAccounts.find((item) => item.id === target.accountId);
         if (target.type === "online" && !account) {
           return NextResponse.json({ error: "The selected online account is not active" }, { status: 400 });

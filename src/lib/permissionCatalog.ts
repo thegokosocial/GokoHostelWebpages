@@ -48,6 +48,8 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
       ["canDeleteExpense", "Delete expenses"], ["canViewExpenses", "View expense records"],
       ["canViewFoodBills", "View food and room revenue"], ["canAddIncome", "Add daily income entries"],
       ["canReconcileCash", "Reconcile cash balance"], ["canReconcileOnline", "Reconcile online account balances"],
+      ["canSettlePlatformPayments", "Record and allocate OTA payouts"],
+      ["canAdjustPlatformReceivables", "Adjust OTA receivables and deductions"],
       ["canManageAccountSettings", "Manage account settings"],
       ["canManageVendors", "Manage vendors"], ["canManageEmployees", "Manage employees"],
       ["canManagePayroll", "Manage payroll"],

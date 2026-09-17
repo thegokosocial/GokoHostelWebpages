@@ -16,6 +16,7 @@
 | Food Revenue | `canViewFoodBills` | `getFoodRevenue` |
 | Room Revenue | `canViewFoodBills` | `getRoomRevenue` |
 | Reconcile | `canReconcileCash` or `canReconcileOnline` | `getReconciliation`, `saveReconciliation`; Admin-only `undoReconciliation` |
+| OTA Receivables | `canViewAccounts`; mutations additionally require `canSettlePlatformPayments` / `canAdjustPlatformReceivables` | `/api/admin/platform-settlements`: list, createSettlement, allocate, adjust |
 
 Account Settings (Management): accounts/vendors/employees/salary — `canManageAccountSettings`. Bulk XLSX: `/api/admin/bulk-import-accounts`.
 
@@ -55,7 +56,17 @@ flowchart TD
 
 Unique `(date, account_id)`. Cash (`account_id = null`) and each configured online account are reconciled independently, with their own actual closing, notes, actor, timestamp, and action button. Multiple online accounts may be completed in any order by different authorized users. The day is complete only after Cash and every active account are reconciled. Mismatch highlight if |diff| > ₹0.50. `adjustOpeningBalance` works without reconciling (manage accounts). Admin-only `undoReconciliation` clears only the selected account lock.
 
-Food and room **online** receipts are automatically recorded in `guest_receipts` against the selected receiving bank and included in reconciliation; manual `daily_income` remains separate. Cash remains manual. Food revenue is still based on paid non-cancelled food orders. Income Records reports only manual `daily_income`; Food Revenue and Room Revenue remain operational reports.
+Food and room **online** receipts are automatically recorded in `guest_receipts` against the selected receiving bank and included in reconciliation; manual `daily_income` remains separate. Cash remains manual. Virtual platform accounts are excluded from bank reconciliation and real receipt-account selectors. Food revenue is still based on paid non-cancelled food orders. Income Records reports only manual `daily_income`; Food Revenue and Room Revenue remain operational reports.
+
+## OTA receivables and settlement
+
+Prepaid OTA bookings are recognized only when the guest is checked in. Recognition records gross charge, guest tax, withholding, commission, TDS/TCS, other deductions, and expected net payout in an immutable booking-cycle journal. It does not create a bank receipt. A platform profile automatically creates a virtual account such as `MakeMyTrip Receivable`; virtual accounts never participate in daily reconciliation.
+
+When a payout reaches a real bank account, staff record one settlement with the actual bank-credit date and reference. That creates the real `guest_receipts` row on that date. A settlement may be recorded before its bookings are recognized at check-in, then allocated to one or many recognized booking-cycle receivables; allocation without a recognition row is rejected so money cannot be attached to an unverified expected amount. Unallocated and explicitly acknowledged variance amounts remain visible. Cancellations, post-recognition OTA modifications, refunds, and reversals append adjustment rows rather than overwriting history. A cancelled/no-show row reused by Aiosell increments `booking_cycle` so the new stay cannot inherit old receivable or refund state.
+
+`pah: true` (pay at hotel) remains a normal desk collection and is not recognized as an OTA receivable. Missing/unsupported currency is not guessed into INR. Existing historical rows are not silently rewritten; backfill must be reviewed and applied as an explicit migration/adjustment.
+
+Room booking receipt writers now pass paise to `guest_receipts` (booking UI amounts remain rupees). Existing pre-0054 room receipt rows are left untouched because their unit provenance cannot be safely inferred; review those rows before any historical correction.
 
 ---
 

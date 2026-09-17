@@ -173,6 +173,7 @@ export const bookings = sqliteTable("bookings", {
   roomType: text("room_type").default(""),
   persons: integer("persons").notNull().default(1),
   paymentStatus: text("payment_status").default("unknown"),
+  paymentOverride: integer("payment_override").notNull().default(0),
   specialRequests: text("special_requests").default(""),
   status: text("status").notNull().default("received"),
   source: text("source").default("manual"),
@@ -192,6 +193,7 @@ export const bookings = sqliteTable("bookings", {
   refundCash: integer("refund_cash").notNull().default(0),
   refundedAt: text("refunded_at").notNull().default(""),
   refundedBy: text("refunded_by").notNull().default(""),
+  bookingCycle: integer("booking_cycle").notNull().default(1),
 
   nightlyRate: integer("nightly_rate").default(0),
   currency: text("currency").default("INR"),
@@ -355,10 +357,88 @@ export const accounts = sqliteTable("accounts", {
   isDefault: integer("is_default").notNull().default(0),
   isActive: integer("is_active").notNull().default(1),
   openingBalance: integer("opening_balance").notNull().default(0),
+  isVirtual: integer("is_virtual").notNull().default(0),
+  platformKey: text("platform_key").default(""),
   createdAt: text("created_at").notNull(),
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_accounts_active").on(table.isActive),
+  index("idx_accounts_virtual").on(table.isVirtual),
+]);
+
+/** Configurable channel rules. Amounts in dependent financial tables are paise. */
+export const platformPaymentProfiles = sqliteTable("platform_payment_profiles", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  platformKey: text("platform_key").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  defaultPaymentMode: text("default_payment_mode").notNull().default("unknown"),
+  virtualAccountId: integer("virtual_account_id").notNull().references(() => accounts.id),
+  currency: text("currency").notNull().default("INR"),
+  taxTreatment: text("tax_treatment").notNull().default("tax_charged_not_withheld"),
+  deductionPolicy: text("deduction_policy").notNull().default("{}"),
+  isActive: integer("is_active").notNull().default(1),
+  createdAt: text("created_at").notNull(),
+  ...syncColumnsWithDelete,
+}, (table) => [index("idx_platform_profiles_active").on(table.isActive)]);
+
+/** Immutable booking-side receivable/reversal journal. All amounts are paise. */
+export const platformReceivableEntries = sqliteTable("platform_receivable_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  bookingId: integer("booking_id").notNull().references(() => bookings.id),
+  bookingCycle: integer("booking_cycle").notNull().default(1),
+  platformKey: text("platform_key").notNull(),
+  eventKey: text("event_key").notNull().unique(),
+  entryType: text("entry_type").notNull(), // recognition | adjustment | reversal
+  grossPaise: integer("gross_paise").notNull().default(0),
+  taxChargedPaise: integer("tax_charged_paise").notNull().default(0),
+  taxWithheldPaise: integer("tax_withheld_paise").notNull().default(0),
+  commissionPaise: integer("commission_paise").notNull().default(0),
+  tdsPaise: integer("tds_paise").notNull().default(0),
+  tcsPaise: integer("tcs_paise").notNull().default(0),
+  otherDeductionsPaise: integer("other_deductions_paise").notNull().default(0),
+  expectedNetPaise: integer("expected_net_paise").notNull().default(0),
+  recognitionDate: text("recognition_date").notNull(),
+  reason: text("reason").notNull().default(""),
+  sourcePayload: text("source_payload").notNull().default(""),
+  createdBy: text("created_by").notNull().default("system"),
+  createdAt: text("created_at").notNull(),
+  ...syncColumns,
+}, (table) => [
+  index("idx_platform_receivables_booking").on(table.bookingId, table.bookingCycle),
+  index("idx_platform_receivables_platform").on(table.platformKey, table.recognitionDate),
+]);
+
+/** A real bank payout header; the actual bank date drives reconciliation. */
+export const platformSettlements = sqliteTable("platform_settlements", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  platformKey: text("platform_key").notNull(),
+  bankAccountId: integer("bank_account_id").notNull().references(() => accounts.id),
+  receiptId: text("receipt_id").notNull().unique(),
+  payoutDate: text("payout_date").notNull(),
+  actualAmountPaise: integer("actual_amount_paise").notNull(),
+  reference: text("reference").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull(),
+  ...syncColumns,
+}, (table) => [index("idx_platform_settlements_date").on(table.payoutDate, table.platformKey)]);
+
+/** Allocation of a payout to one booking-cycle receivable. */
+export const platformSettlementAllocations = sqliteTable("platform_settlement_allocations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  settlementId: integer("settlement_id").notNull().references(() => platformSettlements.id),
+  bookingId: integer("booking_id").notNull().references(() => bookings.id),
+  bookingCycle: integer("booking_cycle").notNull().default(1),
+  allocationKey: text("allocation_key").notNull().unique(),
+  allocatedPaise: integer("allocated_paise").notNull(),
+  varianceType: text("variance_type").notNull().default("none"),
+  notes: text("notes").notNull().default(""),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull(),
+  ...syncColumns,
+}, (table) => [
+  index("idx_platform_allocations_settlement").on(table.settlementId),
+  index("idx_platform_allocations_booking").on(table.bookingId, table.bookingCycle),
 ]);
 
 export const vendors = sqliteTable("vendors", {
@@ -498,9 +578,9 @@ export const dailyIncome = sqliteTable("daily_income", {
 export const guestReceipts = sqliteTable("guest_receipts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   receiptId: text("receipt_id").notNull().unique(),
-  sourceType: text("source_type").notNull(), // food_order | booking
+  sourceType: text("source_type").notNull(), // food_order | booking | platform_settlement
   sourceId: integer("source_id").notNull(),
-  kind: text("kind").notNull(), // food | stay | ota_prepaid | refund | reversal
+  kind: text("kind").notNull(), // food | stay | ota_prepaid | refund | reversal | platform_settlement
   accountId: integer("account_id").notNull().references(() => accounts.id),
   amount: integer("amount").notNull(), // positive receipt, negative reversal/refund
   businessDate: text("business_date").notNull(),

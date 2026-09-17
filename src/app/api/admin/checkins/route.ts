@@ -33,7 +33,7 @@ import {
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
 import { presentAuditEntry } from "@/lib/auditPresentation";
-import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments } from "@/db/schema";
+import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments, platformReceivableEntries, platformSettlementAllocations } from "@/db/schema";
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 import { apiErrorBody, getRequestId } from "@/lib/apiError";
 import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
@@ -1396,6 +1396,19 @@ export async function POST(req: NextRequest) {
     if (action === "deleteBooking") {
       const { bookingId } = rest;
       if (!isValidId(bookingId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      const db = getDb();
+      let receivable: Array<{ id: number }> = [];
+      let allocation: Array<{ id: number }> = [];
+      try {
+        [receivable, allocation] = await Promise.all([
+          db.select({ id: platformReceivableEntries.id }).from(platformReceivableEntries).where(eq(platformReceivableEntries.bookingId, Number(bookingId))).limit(1),
+          db.select({ id: platformSettlementAllocations.id }).from(platformSettlementAllocations).where(eq(platformSettlementAllocations.bookingId, Number(bookingId))).limit(1),
+        ]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/no such table|no such column|Cannot find module|MODULE_NOT_FOUND/i.test(message)) throw error;
+      }
+      if (receivable[0] || allocation[0]) return NextResponse.json({ error: "This booking has platform finance history and cannot be deleted; use cancellation or an adjustment." }, { status: 409 });
       await deleteBooking(bookingId);
       await addAuditEntry({ username: actingUser, action: "booking_deleted", target: `id:${bookingId}` });
       return NextResponse.json({ success: true });

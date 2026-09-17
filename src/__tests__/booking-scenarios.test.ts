@@ -789,7 +789,7 @@ describe("walk-in advance payment", () => {
     }));
     expect(res.status).toBe(200);
     expect(q.resolveReceiptAccount).toHaveBeenCalledWith("room", 22);
-    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "stay", accountId: 22, amount: 500 }));
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "stay", accountId: 22, amount: 50000 }));
   });
 
   it("does not create an online receipt when bed assignment fails", async () => {
@@ -847,7 +847,7 @@ describe("walk-in advance payment", () => {
     const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountPaid: 600, paymentAdjustment: "payment", paymentMethod: "online", onlineAccountId: 22, receiptId: "receipt-1" }));
     expect(res.status).toBe(200);
     expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountPaid: 600, paymentMethod: "split" }));
-    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "stay", accountId: 22, amount: 200, receiptId: "receipt-1" }));
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "stay", accountId: 22, amount: 20000, receiptId: "receipt-1" }));
   });
 
   it("records a refund adjustment and negative online receipt when editing amount received downward", async () => {
@@ -859,7 +859,7 @@ describe("walk-in advance payment", () => {
     const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountPaid: 300, paymentAdjustment: "refund", refundMethod: "online", onlineAccountId: 22, receiptId: "refund-1" }));
     expect(res.status).toBe(200);
     expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountPaid: 300, amountRefunded: 200, refundMethod: "online" }));
-    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "refund", accountId: 22, amount: -200, receiptId: "refund-1" }));
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "refund", accountId: 22, amount: -20000, receiptId: "refund-1" }));
   });
 
   it("validates a changed booking total against the edited final amount received", async () => {

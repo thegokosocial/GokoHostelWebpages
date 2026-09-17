@@ -1,6 +1,6 @@
 # Schema columns
 
-**Git-safe.** Generated from `src/db/schema.ts` (52 tables). Money columns are integer **paise**, except `bookings` amounts which are **rupees**. Sync extras (`sync_id`, `sync_updated_at`, `sync_source`, often `deleted_at`) are listed when the table spreads `syncColumns` / `syncColumnsWithDelete`.
+**Git-safe.** Generated from `src/db/schema.ts`. Money columns are integer **paise**, except `bookings` amounts which are **rupees**. Sync extras (`sync_id`, `sync_updated_at`, `sync_source`, often `deleted_at`) are listed when the table spreads `syncColumns` / `syncColumnsWithDelete`.
 
 Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data-model.md](data-model.md). FKs: [relationships.md](relationships.md).
 
@@ -96,6 +96,10 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `sync_updated_at` | text |  |
 | `sync_source` | text | default cloudflare |
 | `deleted_at` | text |  |
+
+## Platform receivables tables
+
+`platform_payment_profiles` stores the platform key, virtual account, currency, tax treatment, deduction policy, and active flag. `platform_receivable_entries` stores immutable booking-cycle event amounts in paise (`gross_paise`, `tax_charged_paise`, `tax_withheld_paise`, `commission_paise`, `tds_paise`, `tcs_paise`, `other_deductions_paise`, `expected_net_paise`). `platform_settlements` stores the real bank account, receipt id, payout date, and actual amount in paise. `platform_settlement_allocations` stores each booking-cycle allocation and variance. All four tables carry sync metadata; the profile is soft-deletable and the financial journals are append-only.
 
 ## `dorms`
 

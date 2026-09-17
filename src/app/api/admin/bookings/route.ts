@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { accounts } from "@/db/schema";
 import { authenticateUser } from "@/lib/auth";
@@ -26,8 +26,9 @@ import {
   getCheckinById, updateCheckin, getBookingByRef,
 } from "@/db/queries";
 import { todayIST } from "@/lib/utils";
-import { isStayPayMethod, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
+import { isStayPayMethod, isPrepaidStatus, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
+import { bookingAmountsFromRaw, recognizePlatformBooking, recordPlatformAdjustment } from "@/lib/platformReceivables";
 import { getPendingFoodTab } from "@/lib/foodTabDb";
 import { dispatchPush, notificationFirstName, notificationDate, notificationStayDates } from "@/lib/pushNotify";
 import { presentAuditEntry } from "@/lib/auditPresentation";
@@ -339,7 +340,7 @@ export async function POST(req: NextRequest) {
     if (action === "getRoomReceiptAccounts") {
       const [items, defaultId] = await Promise.all([
         getDb().select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname })
-          .from(accounts).where(eq(accounts.isActive, 1)),
+          .from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))),
         getSetting("room_online_receipt_account_id"),
       ]);
       return NextResponse.json({ accounts: items, roomOnlineReceiptAccountId: defaultId });
@@ -737,7 +738,7 @@ export async function POST(req: NextRequest) {
           sourceId: newBookingId,
           kind: "stay",
           accountId: advanceAccountId,
-          amount: advance,
+          amount: Math.round(advance * 100),
           createdBy: actingUser,
           notes: `Advance stay payment for ${guestName}`,
         });
@@ -889,7 +890,7 @@ export async function POST(req: NextRequest) {
       let collectedAtCheckIn = false;
       let collectedMethod = "";
       let prepaidRecorded = 0;
-      let receiptData: { receiptId: string; kind: "stay" | "ota_prepaid"; accountId: number; amount: number; notes: string } | null = null;
+      let receiptData: { receiptId: string; kind: "stay"; accountId: number; amount: number; notes: string } | null = null;
       if (collectPayment && dueAtCheckIn > 0) {
         const { paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId } = body;
         if (!isStayPayMethod(paymentMethod)) {
@@ -906,10 +907,11 @@ export async function POST(req: NextRequest) {
           newChangeGiven: Number(changeGiven) || 0,
         });
         Object.assign(updateData, merged);
+        updateData.paymentOverride = 1;
         const onlineAmount = paymentMethod === "online" ? dueAtCheckIn : paymentMethod === "split" ? Math.max(0, dueAtCheckIn - (Number(cashReceived) || 0)) : 0;
         if (onlineAmount > 0) {
           const accountId = await resolveReceiptAccount("room", onlineAccountId);
-          receiptData = { receiptId: receiptId || crypto.randomUUID(), kind: "stay", accountId, amount: onlineAmount, notes: `Stay payment for ${detail.booking.guestName}` };
+          receiptData = { receiptId: receiptId || crypto.randomUUID(), kind: "stay", accountId, amount: Math.round(onlineAmount * 100), notes: `Stay payment for ${detail.booking.guestName}` };
         }
         collectedAtCheckIn = true;
         collectedMethod = merged.paymentMethod;
@@ -922,13 +924,20 @@ export async function POST(req: NextRequest) {
         if (prepaid) {
           Object.assign(updateData, prepaid);
           prepaidRecorded = prepaid.amountPaid;
-          const accountId = await resolveReceiptAccount("room", body.onlineAccountId);
-          receiptData = { receiptId: body.receiptId || `ota-prepaid-${bookingId}`, kind: "ota_prepaid", accountId, amount: prepaid.amountPaid, notes: `OTA prepaid stay for ${detail.booking.guestName}` };
         }
       }
 
       await updateBookingFull(bookingId, updateData);
       if (receiptData) await createGuestReceipt({ ...receiptData, sourceType: "booking", sourceId: bookingId, createdBy: actingUser });
+      if (prepaidRecorded > 0) {
+        try {
+          await recognizePlatformBooking({ ...detail.booking, id: bookingId }, actingUser);
+        } catch (error) {
+          // Keep older installations usable until migration 0054 is applied; the check-in remains compatible.
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/no such table|no such column|MODULE_NOT_FOUND|Cannot find module/i.test(message)) throw error;
+        }
+      }
       await addBookingHistoryEntry({
         bookingId,
         action: "Checked In",
@@ -984,7 +993,7 @@ export async function POST(req: NextRequest) {
       let receiptData: { receiptId: string; accountId: number; amount: number } | null = null;
       if (onlineAmount > 0) {
         const accountId = await resolveReceiptAccount("room", onlineAccountId);
-        receiptData = { receiptId: receiptId || crypto.randomUUID(), accountId, amount: onlineAmount };
+        receiptData = { receiptId: receiptId || crypto.randomUUID(), accountId, amount: Math.round(onlineAmount * 100) };
       }
       await updateBookingFull(bookingId, merged);
       if (receiptData) await createGuestReceipt({ ...receiptData, sourceType: "booking", sourceId: bookingId, kind: "stay", createdBy: actingUser, notes: `Stay payment for ${detail.booking.guestName}` });
@@ -1057,9 +1066,26 @@ export async function POST(req: NextRequest) {
         if (accountId) await createGuestReceipt({
           receiptId: `ota-prepaid-rollback-${bookingId}-${detail.booking.checkedInAt || "original"}`,
           sourceType: "booking", sourceId: bookingId, kind: "reversal", accountId,
-          amount: -reversePrepaid.amountPaid, createdBy: actingUser,
+          amount: -Math.round(reversePrepaid.amountPaid * 100), createdBy: actingUser,
           notes: `Rolled back OTA prepaid stay for ${detail.booking.guestName}`,
         });
+      }
+      if (reversePrepaid && detail?.booking) {
+        try {
+          await recordPlatformAdjustment({
+            bookingId,
+            bookingCycle: detail.booking.bookingCycle || 1,
+            platform: detail.booking.platform,
+            amounts: bookingAmountsFromRaw(detail.booking.rawData, detail.booking),
+            entryType: "reversal",
+            eventKey: `rollback:${bookingId}:${detail.booking.bookingCycle || 1}:${detail.booking.checkedInAt || "original"}`,
+            reason: "Check-in rollback reversed OTA receivable recognition",
+            actor: actingUser,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/no such table|no such column|MODULE_NOT_FOUND|Cannot find module/i.test(message)) throw error;
+        }
       }
       await addBookingHistoryEntry({
         bookingId,
@@ -1179,6 +1205,9 @@ export async function POST(req: NextRequest) {
         };
         let refundNote = "";
         if (detail?.booking.status === "checked_in") {
+          if (isPrepaidStatus(detail.booking.paymentStatus) && Number(refundAmount) > 0) {
+            return NextResponse.json({ error: "OTA-prepaid refunds must be recorded against the platform receivable after the OTA confirms the refund; no bank refund is created here." }, { status: 409 });
+          }
           const cap = stayRefundCap(detail.booking.amountPaid);
           const refundAmt = Math.max(0, Math.min(Number(refundAmount) || 0, cap));
           if (refundAmt > 0) {
@@ -1196,7 +1225,7 @@ export async function POST(req: NextRequest) {
             if (onlineRefund > 0) {
               const previousAccount = await latestReceiptAccount("booking", bookingId);
               const accountId = await resolveReceiptAccount("room", onlineAccountId ?? previousAccount);
-              await createGuestReceipt({ receiptId: receiptId || crypto.randomUUID(), sourceType: "booking", sourceId: bookingId, kind: "refund", accountId, amount: -onlineRefund, createdBy: actingUser, notes: `Stay refund for ${detail.booking.guestName}` });
+              await createGuestReceipt({ receiptId: receiptId || crypto.randomUUID(), sourceType: "booking", sourceId: bookingId, kind: "refund", accountId, amount: -Math.round(onlineRefund * 100), createdBy: actingUser, notes: `Stay refund for ${detail.booking.guestName}` });
             }
           }
         }
@@ -1853,7 +1882,7 @@ export async function POST(req: NextRequest) {
         sourceId: bookingId,
         kind: paymentReceipt.kind,
         accountId: paymentReceipt.accountId,
-        amount: paymentReceipt.amount,
+        amount: paymentReceipt.amount * 100,
         createdBy: actingUser,
         notes: paymentReceipt.kind === "refund" ? `Booking payment refund for ${detail.booking.guestName}` : `Booking payment adjustment for ${detail.booking.guestName}`,
       });

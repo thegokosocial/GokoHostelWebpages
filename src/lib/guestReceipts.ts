@@ -13,7 +13,7 @@ export async function requireActiveReceiptAccount(accountId: unknown): Promise<n
   if (!Number.isInteger(id) || id <= 0) throw new Error("Receiving bank is required for online payment");
   const db = getDb();
   const row = await db.select({ id: accounts.id }).from(accounts)
-    .where(and(eq(accounts.id, id), eq(accounts.isActive, 1))).limit(1);
+    .where(and(eq(accounts.id, id), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
   if (!row[0]) throw new Error("Selected receiving bank is not active");
   return id;
 }
@@ -24,9 +24,9 @@ export async function resolveReceiptAccount(kind: "food" | "room", supplied: unk
 }
 
 export async function createGuestReceipt(data: {
-  receiptId: string; sourceType: "food_order" | "booking"; sourceId: number;
-  kind: "food" | "stay" | "ota_prepaid" | "refund" | "reversal";
-  accountId: number; amount: number; createdBy: string; notes?: string;
+  receiptId: string; sourceType: "food_order" | "booking" | "platform_settlement"; sourceId: number;
+  kind: "food" | "stay" | "ota_prepaid" | "refund" | "reversal" | "platform_settlement";
+  accountId: number; amount: number; createdBy: string; notes?: string; businessDate?: string;
 }) {
   if (!data.receiptId) throw new Error("receiptId required");
   const db = getDb();
@@ -35,12 +35,12 @@ export async function createGuestReceipt(data: {
   if (existing[0]) return { id: existing[0].id, duplicate: true };
   const now = new Date().toISOString();
   const rows = await db.insert(guestReceipts).values(syncInsert({
-    ...data, businessDate: receiptBusinessDate(), notes: data.notes || "", createdAt: now,
+    ...data, businessDate: data.businessDate || receiptBusinessDate(), notes: data.notes || "", createdAt: now,
   })).returning({ id: guestReceipts.id });
   return { id: rows[0]?.id, duplicate: false };
 }
 
-export async function latestReceiptAccount(sourceType: "food_order" | "booking", sourceId: number): Promise<number | null> {
+export async function latestReceiptAccount(sourceType: "food_order" | "booking" | "platform_settlement", sourceId: number): Promise<number | null> {
   const db = getDb();
   const rows = await db.select({ accountId: guestReceipts.accountId }).from(guestReceipts)
     .where(and(eq(guestReceipts.sourceType, sourceType), eq(guestReceipts.sourceId, sourceId)))

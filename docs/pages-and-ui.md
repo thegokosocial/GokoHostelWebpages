@@ -67,6 +67,8 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 
 Accounts reconciliation is additionally action-scoped: `canReconcileCash` controls the canonical Cash card, `canReconcileOnline` controls every configured online-account card, and either permission shows the Reconcile tab. Each card saves independently; undo is Admin-only.
 
+Accounts also has an OTA Receivables tab under `canViewAccounts`. It displays recognized platform receivables and payout allocations. Recording/allocating a payout requires `canSettlePlatformPayments`; manual adjustments require `canAdjustPlatformReceivables`.
+
 Menu deletion removes items/categories from active admin and guest-menu lists using existing soft-deletion fields. Category deletion archives its children too. Historical food-order references and menu photos are retained; no order history is deleted.
 
 ---

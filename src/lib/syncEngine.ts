@@ -10,12 +10,14 @@ const SYNCED_TABLES_WITH_DELETE = [
   "checkins", "dorms", "beds", "bookings", "menu_categories", "menu_items",
   "food_orders", "accounts", "vendors", "employees", "expenses", "daily_income", "users",
   "employee_attendance", "employee_leave_policy", "employee_compensation_history",
+  "platform_payment_profiles",
 ] as const;
 
 const SYNCED_TABLES_APPEND = [
   "bed_history", "food_order_items", "order_modifications", "salary_payments",
   "daily_ledger", "qr_history", "guest_receipts",
   "employee_attendance_history",
+  "platform_receivable_entries", "platform_settlements", "platform_settlement_allocations",
 ] as const;
 
 const SYNCABLE_SETTINGS = [
@@ -54,6 +56,10 @@ const TABLE_MAP: Record<string, any> = {
   daily_ledger: schema.dailyLedger,
   qr_history: schema.qrHistory,
   guest_receipts: schema.guestReceipts,
+  platform_payment_profiles: schema.platformPaymentProfiles,
+  platform_receivable_entries: schema.platformReceivableEntries,
+  platform_settlements: schema.platformSettlements,
+  platform_settlement_allocations: schema.platformSettlementAllocations,
   settings: schema.settings,
 };
 
@@ -73,6 +79,10 @@ const FK_REMAP: Record<string, Record<string, string>> = {
   daily_ledger: { accountId: "accounts" },
   expenses: { vendorId: "vendors", accountId: "accounts" },
   guest_receipts: { accountId: "accounts" },
+  platform_payment_profiles: { virtualAccountId: "accounts" },
+  platform_receivable_entries: { bookingId: "bookings" },
+  platform_settlements: { bankAccountId: "accounts" },
+  platform_settlement_allocations: { settlementId: "platform_settlements", bookingId: "bookings" },
 };
 
 /** Parse an FK integer from a sync payload. null/"" must not become 0. */

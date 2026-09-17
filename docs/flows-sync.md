@@ -14,9 +14,9 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 ## What syncs
 
-**With soft-delete:** checkins, dorms, beds, bookings, menu_categories, menu_items, food_orders, accounts, vendors, employees, expenses, daily_income, users.
+**With soft-delete:** checkins, dorms, beds, bookings, menu_categories, menu_items, food_orders, accounts, vendors, employees, expenses, daily_income, users, platform_payment_profiles.
 
-**Append-only:** bed_history, food_order_items, order_modifications, salary_payments, daily_ledger, qr_history, guest_receipts.
+**Append-only:** bed_history, food_order_items, order_modifications, salary_payments, daily_ledger, qr_history, guest_receipts, platform_receivable_entries, platform_settlements, platform_settlement_allocations.
 
 **Settings keys only:** `image_validation`, `guest_min_age`, `guest_max_age`, `show_dob_in_records`, `log_level`, `food_tax_rate`, `booking_tax_rate`, `food_kitchen_hours`, `food_tab_limit`, `food_kitchen_busy`, `food_confirm_with_guest`, `food_kannada_labels`, `food_cafe_tables`, `primary_server`, `food_online_receipt_account_id`, `room_online_receipt_account_id`.
 

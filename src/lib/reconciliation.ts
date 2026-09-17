@@ -1,6 +1,6 @@
 import { getDb } from "@/db";
 import { accounts, dailyLedger } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 type LedgerOpening = {
   openingBalance: number;
@@ -56,7 +56,7 @@ export function isValidReconciliationDate(value: unknown, today: string): value 
 
 export function summarizeReconciliation(
   date: string,
-  activeAccounts: Array<{ id: number; name: string; nickname: string | null }>,
+  activeAccounts: Array<{ id: number; name: string; nickname: string | null; isVirtual?: number }>,
   ledgerEntries: Array<{ accountId: number | null; isReconciled: number }>,
 ): ReconciliationStatus {
   const reconciledIds = new Set(
@@ -64,7 +64,7 @@ export function summarizeReconciliation(
   );
   const required = [
     { id: null as number | null, name: "Cash" },
-    ...activeAccounts.map((account) => ({
+    ...activeAccounts.filter((account) => account.isVirtual !== 1).map((account) => ({
       id: account.id as number | null,
       name: account.nickname || account.name,
     })),
@@ -88,7 +88,7 @@ export async function getReconciliationStatus(date: string): Promise<Reconciliat
   const [activeAccounts, ledgerEntries] = await Promise.all([
     db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname })
       .from(accounts)
-      .where(eq(accounts.isActive, 1)),
+      .where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))),
     db.select({ accountId: dailyLedger.accountId, isReconciled: dailyLedger.isReconciled })
       .from(dailyLedger)
       .where(eq(dailyLedger.date, date)),

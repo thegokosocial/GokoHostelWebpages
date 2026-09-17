@@ -16,8 +16,9 @@ const AdminFoodBill = dynamic(() => import("./AdminFoodBill").then((m) => m.Admi
 const AdminRoomRevenue = dynamic(() => import("./AdminRoomRevenue").then((m) => m.AdminRoomRevenue), { loading: tabLoader, ssr: false });
 const DailyLedger = dynamic(() => import("./DailyLedger").then((m) => m.DailyLedger), { loading: tabLoader, ssr: false });
 const DailyReconcile = dynamic(() => import("./DailyReconcile").then((m) => m.DailyReconcile), { loading: tabLoader, ssr: false });
+const PlatformReceivables = dynamic(() => import("./PlatformReceivables").then((m) => m.PlatformReceivables), { loading: tabLoader, ssr: false });
 
-type AccountsTab = "addExpense" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile";
+type AccountsTab = "addExpense" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile" | "platformReceivables";
 
 const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?: string | string[] }[] = [
   { id: "addExpense", label: "Add Expense", icon: <PlusCircleIcon className="h-3.5 w-3.5" />, permission: "canAddExpense" },
@@ -28,6 +29,7 @@ const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?
   { id: "foodBill", label: "Food Revenue", icon: <IndianRupeeIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
   { id: "roomBill", label: "Room Revenue", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
   { id: "reconcile", label: "Reconcile", icon: <ScaleIcon className="h-3.5 w-3.5" />, permission: ["canReconcileCash", "canReconcileOnline"] },
+  { id: "platformReceivables", label: "OTA Receivables", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
 ];
 
 export function AdminExpenditure({
@@ -91,6 +93,7 @@ export function AdminExpenditure({
         {tab === "foodBill" && <AdminFoodBill password={password} username={username} role={role} permissions={permissions} />}
         {tab === "roomBill" && <AdminRoomRevenue password={password} username={username} role={role} permissions={permissions} />}
         {tab === "reconcile" && <DailyReconcile password={password} username={username} role={role} permissions={permissions} />}
+        {tab === "platformReceivables" && <PlatformReceivables password={password} username={username} role={role} />}
       </div>
     </div>
   );

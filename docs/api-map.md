@@ -49,6 +49,7 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |
 | `/api/admin/food-orders` | per-action map | Tabs, pay, void, combined bill, retained audit-history view |
 | `/api/admin/expenses` | per-action map | Expenses, ledger, reconcile, food revenue |
+| `/api/admin/platform-settlements` | `canViewAccounts` for list; `canSettlePlatformPayments` for createSettlement/allocate; `canAdjustPlatformReceivables` for adjust | OTA receivable summary, real-bank payout headers, batch allocations, immutable adjustments |
 | `/api/admin/splits` | per-action map, 403 on Pi | Staff/volunteer IOUs + Goko Accounts bridge |
 | `/api/admin/account-settings` | `canManageAccountSettings` or legacy `canManageAccounts` or admin | Accounts, vendors, employees, salary |
 | `/api/admin/website` | **admin role**, 403 on Pi | CMS JSON |
@@ -111,6 +112,8 @@ Manual/offline/walk-in bookings can use `editReservation` to update guest name, 
 **Splits (403 on Pi, 503 if tables missing):** `listMembers`, `addMember`, `updateMember`, `deactivateMember`, `listGroups`, `addGroup`, `updateGroup`, `setGroupMembers`, `deleteGroup`, `listLoginUsers`, `listActivity`, `addExpense`, `updateExpense`, `deleteExpense`, `getBalances`, `addSettlement`, `deleteSettlement`, `payGokoReimbursement`, `listAccounts`. UI `fetch("/api/admin/splits")` only. Goko-as-payer add/update, `payGokoReimbursement`, and `listAccounts` also require `canAddExpense` (inline AND). `deleteSettlement` refuses `hostelExpenseId`. Never `paySalary`.
 
 **Account settings:** `list/add/update/delete` × Accounts, Vendors, Employees; `paySalary`.
+
+**OTA finance:** Prepaid channel check-in keeps the legacy booking `amountPaid` compatibility write but recognizes an immutable platform receivable instead of a real-bank receipt. `/api/admin/platform-settlements` records actual payout dates in real accounts, supports one-to-many allocations only after receivable recognition, caps ordinary allocations at the booking-cycle expected net, and requires an explicit variance for mismatches. It appends manual adjustments/reversals, validates integer paise inputs, and repairs a missing real-bank receipt if a settlement request is retried after a partial write. OTA-prepaid desk refunds are deferred to this adjustment flow.
 
 Menu `deleteMenuItem` and `deleteCategory` archive records rather than physically deleting them; category deletion archives all child items. Existing order foreign keys and photos remain intact. Archived entries are excluded from active menus and item lookup. Foreign-key conflicts return HTTP 409 with a specific message rather than a misleading temporary-outage error.
 

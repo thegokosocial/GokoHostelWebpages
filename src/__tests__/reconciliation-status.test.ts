@@ -32,4 +32,17 @@ describe("summarizeReconciliation", () => {
     expect(status.isReconciled).toBe(true);
     expect(status.missingAccountNames).toEqual([]);
   });
+
+  it("does not require virtual platform accounts", () => {
+    const status = summarizeReconciliation("2026-09-09", [
+      ...accounts,
+      { id: 3, name: "MakeMyTrip Receivable", nickname: "MMT", isVirtual: 1 },
+    ], [
+      { accountId: null, isReconciled: 1 },
+      { accountId: 1, isReconciled: 1 },
+      { accountId: 2, isReconciled: 1 },
+    ]);
+    expect(status.isReconciled).toBe(true);
+    expect(status.requiredAccountCount).toBe(3);
+  });
 });

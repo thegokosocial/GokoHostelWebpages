@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { accounts, vendors, employees, salaryPayments, expenses, guestReceipts, employeeCompensationHistory } from "@/db/schema";
+import { accounts, vendors, employees, salaryPayments, expenses, guestReceipts, employeeCompensationHistory, platformPaymentProfiles, platformSettlements } from "@/db/schema";
 import { getSetting, setSetting } from "@/db/queries";
 import { eq, desc, and } from "drizzle-orm";
 import { authenticateUser } from "@/lib/auth";
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
         const validate = async (raw: unknown) => {
           const id = Number(raw);
           if (!Number.isInteger(id) || id <= 0) throw new Error("Select an active account for each online receipt default");
-          const found = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, id), eq(accounts.isActive, 1))).limit(1);
+          const found = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, id), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
           if (!found[0]) throw new Error("Selected receipt account no longer exists");
           return id;
         };
@@ -80,12 +80,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true });
       }
       case "addAccount": {
-        const { name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault } = rest;
+        const { name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault, isVirtual, platformKey } = rest;
         if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
         if (isDefault === "1" || isDefault === 1) {
           await db.update(accounts).set({ isDefault: 0 });
         }
-        await db.insert(accounts).values({
+        await db.insert(accounts).values(syncInsert({
           name,
           nickname: nickname || "",
           bankName: bankName || "",
@@ -94,13 +94,24 @@ export async function POST(req: NextRequest) {
           ifscCode: ifscCode || "",
           isDefault: isDefault === "1" || isDefault === 1 ? 1 : 0,
           openingBalance: openingBalance || 0,
+          isVirtual: isVirtual === "1" || isVirtual === 1 ? 1 : 0,
+          platformKey: platformKey || "",
           createdAt: new Date().toISOString(),
-        });
+        }));
         return NextResponse.json({ success: true });
       }
       case "updateAccount": {
-        const { id, name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault } = rest;
+        const { id, name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault, isVirtual, platformKey } = rest;
         if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+        if (isVirtual != null) {
+          const referenced = await Promise.all([
+            db.select({ id: platformPaymentProfiles.id }).from(platformPaymentProfiles).where(eq(platformPaymentProfiles.virtualAccountId, id)).limit(1),
+            db.select({ id: platformSettlements.id }).from(platformSettlements).where(eq(platformSettlements.bankAccountId, id)).limit(1),
+          ]);
+          if (referenced.some((rows) => rows.length > 0) && !(isVirtual === "1" || isVirtual === 1)) {
+            return NextResponse.json({ error: "A platform finance account cannot be changed into a real bank account" }, { status: 400 });
+          }
+        }
         if (isDefault === "1" || isDefault === 1) {
           await db.update(accounts).set({ isDefault: 0 });
         }
@@ -113,6 +124,8 @@ export async function POST(req: NextRequest) {
           ifscCode: ifscCode ?? undefined,
           isDefault: isDefault === "1" || isDefault === 1 ? 1 : 0,
           openingBalance: openingBalance ?? undefined,
+          isVirtual: isVirtual == null ? undefined : (isVirtual === "1" || isVirtual === 1 ? 1 : 0),
+          platformKey: platformKey ?? undefined,
         }).where(eq(accounts.id, id));
         return NextResponse.json({ success: true });
       }
@@ -121,6 +134,9 @@ export async function POST(req: NextRequest) {
         if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
         const usedByReceipt = await db.select({ id: guestReceipts.id }).from(guestReceipts).where(eq(guestReceipts.accountId, id)).limit(1);
         if (usedByReceipt[0]) return NextResponse.json({ error: "This account is used by guest receipts and cannot be deleted" }, { status: 400 });
+        const usedByPlatform = await db.select({ id: platformPaymentProfiles.id }).from(platformPaymentProfiles).where(eq(platformPaymentProfiles.virtualAccountId, id)).limit(1);
+        const usedBySettlement = await db.select({ id: platformSettlements.id }).from(platformSettlements).where(eq(platformSettlements.bankAccountId, id)).limit(1);
+        if (usedByPlatform[0] || usedBySettlement[0]) return NextResponse.json({ error: "This account is used by platform finance records and cannot be deleted" }, { status: 400 });
         const [foodDefault, roomDefault] = await Promise.all([getSetting("food_online_receipt_account_id"), getSetting("room_online_receipt_account_id")]);
         if (String(id) === foodDefault || String(id) === roomDefault) return NextResponse.json({ error: "Choose another guest receipt default before deleting this account" }, { status: 400 });
         await db.delete(accounts).where(eq(accounts.id, id));

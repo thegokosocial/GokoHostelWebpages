@@ -1296,7 +1296,7 @@ describe("Bookings calendar and rates workflows", () => {
     expect(q.updateBookingFull.mock.calls[0][1].amountPaid).toBeUndefined();
   });
 
-  it("workflow: cancel refund cannot exceed Goko amountPaid (OTA total is not the cap)", async () => {
+  it("workflow: prepaid OTA refund is deferred to platform settlement adjustment", async () => {
     q.getBookingDetail.mockResolvedValue(stay({
       amountTotal: 12600000, amountPaid: 0, paymentStatus: "prepaid",
     }));
@@ -1304,8 +1304,8 @@ describe("Bookings calendar and rates workflows", () => {
       password: "x", action: "cancelBooking", bookingId: 5,
       refundAmount: 12600000, refundMethod: "cash",
     }));
-    expect(res.status).toBe(200);
-    expect(q.updateBookingFull.mock.calls[0][1].amountRefunded).toBeUndefined();
+    expect(res.status).toBe(409);
+    expect(q.updateBookingFull).not.toHaveBeenCalled();
   });
 
   it("workflow: cancel refund missing method when amount is due from till is 400", async () => {
@@ -1356,7 +1356,7 @@ describe("Bookings calendar and rates workflows", () => {
     }));
   });
 
-  it("workflow: cancel after prepaid check-in can refund the recorded amount", async () => {
+  it("workflow: cancel after prepaid check-in defers refund outside the real bank", async () => {
     q.getBookingDetail.mockResolvedValue(stay({
       amountTotal: 31500, amountPaid: 31500, paymentStatus: "prepaid", paymentMethod: "online",
     }));
@@ -1364,17 +1364,8 @@ describe("Bookings calendar and rates workflows", () => {
       password: "x", action: "cancelBooking", bookingId: 5,
       refundAmount: 31500, refundMethod: "online",
     }));
-    expect(res.status).toBe(200);
-    expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({
-      status: "cancelled",
-      amountRefunded: 31500,
-      refundMethod: "online",
-      refundCash: 0,
-    }));
-    expect(q.updateBookingFull.mock.calls[0][1].amountPaid).toBeUndefined();
-    expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
-      details: expect.stringContaining("refund ₹31500 online"),
-    }));
+    expect(res.status).toBe(409);
+    expect(q.updateBookingFull).not.toHaveBeenCalled();
   });
 
   it("workflow: rollbackCheckIn reverses prepaid check-in recording", async () => {

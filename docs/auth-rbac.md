@@ -84,7 +84,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Food:** `canViewFoodOrders`, `canViewFoodTabs`, `canPlaceOrders`, `canEditFoodOrders`, `canVoidFoodOrders`, `canMarkPaid`, `canApplyFoodDiscounts`, `canGenerateFoodBills`, `canManageInventory`, `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageFoodSettings`
 
-**Expenses:** `canAddExpense`, `canEditExpense`, `canDeleteExpense`, `canViewExpenses`, `canViewFoodBills`, `canAddIncome`, `canReconcileCash`, `canReconcileOnline`, `canManageAccountSettings`, `canManageVendors`, `canManageEmployees`, `canManagePayroll`
+**Expenses:** `canAddExpense`, `canEditExpense`, `canDeleteExpense`, `canViewExpenses`, `canViewFoodBills`, `canAddIncome`, `canReconcileCash`, `canReconcileOnline`, `canSettlePlatformPayments`, `canAdjustPlatformReceivables`, `canManageAccountSettings`, `canManageVendors`, `canManageEmployees`, `canManagePayroll`
 
 **Splits:** `canAddSplitExpense`, `canEditSplitExpense`, `canDeleteSplitExpense`, `canSettleSplits`, `canManageSplits` (plus nav `canViewSplits`). `payGokoReimbursement` / Goko-as-payer add **and update** / `listAccounts` also need `canAddExpense` (inline AND; `actionAllowed` arrays are OR).
 
@@ -194,6 +194,10 @@ Every action requires `canViewSplits`. Then: list* → view; people/groups → `
 ### `/api/admin/account-settings`
 
 Entire route: `canManageAccountSettings` (or legacy `canManageAccounts`) or admin.
+
+### `/api/admin/platform-settlements`
+
+`list` requires `canViewAccounts`. `createSettlement` and `allocate` require `canSettlePlatformPayments`; `adjust` requires `canAdjustPlatformReceivables`. Admin bypasses all maps. Virtual platform accounts are deliberately excluded from bank-receipt defaults and reconciliation.
 
 ---
 

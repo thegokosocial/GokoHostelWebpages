@@ -73,6 +73,7 @@ flowchart LR
     PERM[actionPermissions.ts]
     INV[inventoryAvailability.ts]
     AIO[aiosell.ts aiosellSync.ts]
+    OTA[platformReceivables.ts]
     SYN[syncEngine.ts]
     GOOG[googleApiFetch.ts]
     CMS[siteContent.ts mediaR2.ts]
@@ -92,6 +93,7 @@ flowchart LR
   RTE --> PERM
   RTE --> Q
   RTE --> AIO
+  RTE --> OTA
   RTE --> SYN
   RTE --> GOOG
   Q --> IDX
@@ -155,6 +157,11 @@ erDiagram
   accounts ||--o{ daily_income : received
   accounts ||--o{ daily_ledger : one_row_per_day
   accounts ||--o{ salary_payments : paid_from
+  accounts ||--o{ platform_payment_profiles : virtual_account
+  accounts ||--o{ platform_settlements : bank_payout
+  bookings ||--o{ platform_receivable_entries : booking_cycle_events
+  bookings ||--o{ platform_settlement_allocations : booking_cycle_allocations
+  platform_settlements ||--o{ platform_settlement_allocations : allocates
   vendors ||--o{ expenses : optional
   employees ||--o{ salary_payments : paid
 ```

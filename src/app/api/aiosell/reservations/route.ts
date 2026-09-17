@@ -6,6 +6,7 @@ import { occupiedNights, exclusiveEndDate } from "@/lib/inventoryAvailability";
 import { autoAssignOnlineChannelBeds, channelAssignmentNeedsReseat, channelBedNeeds, channelPersonCount } from "@/lib/channelAutoAssign";
 import { logPmsCall } from "@/lib/pmsLog";
 import { dispatchPush, notificationFirstName, notificationDate, notificationStayDates } from "@/lib/pushNotify";
+import { bookingAmountsFromRaw, recordPlatformAdjustment, subtractPlatformAmounts } from "@/lib/platformReceivables";
 
 const WEBHOOK_URL = "/api/aiosell/reservations";
 
@@ -17,6 +18,19 @@ function respondSuccess(message: string): HandlerResult {
 
 function respondError(message: string, status = 400) {
   return NextResponse.json({ success: false, message }, { status });
+}
+
+async function recordChannelPlatformAdjustment(data: Parameters<typeof recordPlatformAdjustment>[0]) {
+  try {
+    return await recordPlatformAdjustment(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Keep webhook processing compatible with installations that have not run migration 0054 yet.
+    if (/no such table|no such column|Cannot find module|MODULE_NOT_FOUND/i.test(message)) {
+      return { created: false, reason: "platform-finance-migration-not-installed" as const };
+    }
+    throw error;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -330,6 +344,17 @@ async function handleNewBooking(payload: ReservationPayload) {
       await updateBookingFull(existing.id, {
         ...extractBookingFields(payload),
         status: "received",
+        bookingCycle: (existing.bookingCycle || 1) + 1,
+        amountPaid: 0,
+        paymentMethod: "",
+        cashReceived: 0,
+        changeGiven: 0,
+        amountRefunded: 0,
+        refundMethod: "",
+        refundCash: 0,
+        refundedAt: "",
+        refundedBy: "",
+        paymentOverride: 0,
         cancelledAt: "",
         cancelledBy: "",
       });
@@ -408,6 +433,23 @@ async function handleModifyBooking(payload: ReservationPayload) {
     if (!aligned) moveDates = false;
   }
 
+  if (existing.paymentStatus === "prepaid" && existing.checkedInAt && payload.amount) {
+    // Append the financial delta before replacing rawData, so a transient journal failure can be retried safely.
+    await recordChannelPlatformAdjustment({
+      bookingId: existing.id,
+      bookingCycle: existing.bookingCycle || 1,
+      platform: existing.platform,
+      amounts: subtractPlatformAmounts(
+        bookingAmountsFromRaw(JSON.stringify({ amount: payload.amount }), { amountTotal: existing.amountTotal, amountTax: existing.amountTax }),
+        bookingAmountsFromRaw(existing.rawData, existing),
+      ),
+      entryType: "adjustment",
+      eventKey: `modify:${existing.id}:${existing.bookingCycle || 1}:${payload.cmBookingId || payload.bookingId}:${payload.checkin || ""}:${payload.checkout || ""}:${JSON.stringify(payload.amount)}`,
+      reason: "OTA modification after receivable recognition",
+      actor: "channel_manager",
+    });
+  }
+
   await updateBookingFull(existing.id, {
     guestName,
     contact: contact || "",
@@ -418,7 +460,8 @@ async function handleModifyBooking(payload: ReservationPayload) {
     } : {}),
     roomType: roomInfo || "",
     persons,
-    paymentStatus: payload.pah !== undefined ? channelPaymentStatus(payload.pah) : (existing.paymentStatus || "unknown"),
+    paymentStatus: existing.paymentOverride ? (existing.paymentStatus || "unknown") : (payload.pah !== undefined ? channelPaymentStatus(payload.pah) : (existing.paymentStatus || "unknown")),
+    paymentOverride: existing.paymentOverride || 0,
     specialRequests: payload.specialRequests || existing.specialRequests || "",
     status: existing.status,
     rawData: JSON.stringify(payload),
@@ -488,12 +531,21 @@ async function handleCancelBooking(payload: ReservationPayload) {
   }
 
   if (existing.status === "cancelled") {
+    if (existing.paymentStatus === "prepaid" && existing.checkedInAt) {
+      await recordChannelPlatformAdjustment({
+        bookingId: existing.id,
+        bookingCycle: existing.bookingCycle || 1,
+        platform: existing.platform,
+        amounts: bookingAmountsFromRaw(existing.rawData, existing),
+        entryType: "reversal",
+        eventKey: `cancel:${existing.id}:${existing.bookingCycle || 1}:${payload.bookingId}`,
+        reason: "OTA cancellation reversed recognized receivable",
+        actor: "channel_manager",
+      });
+    }
     return respondSuccess("Reservation already cancelled");
   }
-  if (existing.status === "checked_out" || existing.status === "no_show" || existing.status === "guest_declined") {
-    return respondSuccess("Reservation already closed");
-  }
-
+  const alreadyClosed = existing.status === "checked_out" || existing.status === "no_show" || existing.status === "guest_declined";
   const now = new Date().toISOString();
 
   const detail = await getBookingDetail(existing.id);
@@ -502,19 +554,35 @@ async function handleCancelBooking(payload: ReservationPayload) {
   const fromBooking = occupiedNights(existing.checkinDate, existing.checkoutDate);
   const affectedDates = [...new Set(fromAssignments.length ? fromAssignments : fromBooking)];
 
-  await updateBookingFull(existing.id, {
-    status: "cancelled",
-    cancelledAt: now,
-    cancelledBy: "channel_manager",
-  });
-  await unassignBookingBeds(existing.id);
+  if (!alreadyClosed) {
+    await updateBookingFull(existing.id, {
+      status: "cancelled",
+      cancelledAt: now,
+      cancelledBy: "channel_manager",
+    });
+  }
+  if (existing.paymentStatus === "prepaid" && existing.checkedInAt) {
+    await recordChannelPlatformAdjustment({
+      bookingId: existing.id,
+      bookingCycle: existing.bookingCycle || 1,
+      platform: existing.platform,
+      amounts: bookingAmountsFromRaw(existing.rawData, existing),
+      entryType: "reversal",
+      eventKey: `cancel:${existing.id}:${existing.bookingCycle || 1}:${payload.bookingId}`,
+      reason: "OTA cancellation reversed recognized receivable",
+      actor: "channel_manager",
+    });
+  }
+  if (!alreadyClosed) await unassignBookingBeds(existing.id);
   await addBookingHistoryEntry({
     bookingId: existing.id,
-    action: "Cancelled from Channel",
-    details: `Cancelled via ${payload.channel || "aiosell"}`,
+    action: alreadyClosed ? "Financial Cancellation from Channel" : "Cancelled from Channel",
+    details: alreadyClosed
+      ? `Cancellation received after local status ${existing.status}; financial adjustment evaluated via ${payload.channel || "aiosell"}`
+      : `Cancelled via ${payload.channel || "aiosell"}`,
     performedBy: "channel_manager",
   });
-  if (affectedDates.length > 0) {
+  if (!alreadyClosed && affectedDates.length > 0) {
     await triggerInventoryPush(affectedDates).catch(async () => {
       await dispatchPush({
         title: "Inventory Sync Failed",
@@ -534,7 +602,7 @@ async function handleCancelBooking(payload: ReservationPayload) {
     category: "booking",
   });
 
-  return respondSuccess("Reservation Cancelled Successfully");
+  return respondSuccess(alreadyClosed ? "Reservation already closed" : "Reservation Cancelled Successfully");
 }
 
 async function realignAssignments(bookingId: number, newCheckin: string, newCheckout: string): Promise<boolean> {

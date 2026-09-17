@@ -158,6 +158,10 @@ export type ReservationPayload = {
     amountBeforeTax: number;
     tax: number;
     currency: string;
+    commission?: number;
+    tcs?: number;
+    tds?: number;
+    otherDeductions?: number;
   };
   guest?: {
     firstName: string;
