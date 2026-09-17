@@ -24,7 +24,7 @@ All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these 
 | `/faqs` | content | hero B |
 | `/reviews` | content | default loop |
 | `/booking-enquiry` | form → WhatsApp or `POST /api/booking-enquiry` (Cloudflare Email Sending) | default loop |
-| `/book` | branded Goko direct-booking entry → enquiry / WhatsApp | Native date/room checkout and payments not yet implemented |
+| `/book` | `BookingHeroPanel` in `PageRibbon` only (no lower-page copy block) | Native date/room checkout and payments not yet implemented |
 
 `robots.ts` **disallows:** `/self-checkin`, `/admin`, `/api/`, `/food-order`, `/kitchen`, `/my-bills`, `/review/`.
 
