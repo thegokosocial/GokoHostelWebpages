@@ -31,6 +31,9 @@ export const razorpayPaymentSchema = z.object({
   amount: paise, currency: z.literal("INR"),
   status: z.enum(["created", "authorized", "captured", "refunded", "failed"]),
   captured: z.boolean(), amount_refunded: paise,
+  error_code: z.string().max(120).nullable().optional(),
+  error_description: z.string().max(500).nullable().optional(),
+  error_reason: z.string().max(120).nullable().optional(),
 }).refine((p) => p.amount > 0 && p.amount_refunded <= p.amount &&
   p.captured === ["captured", "refunded"].includes(p.status) &&
   (p.captured || p.amount_refunded === 0) &&

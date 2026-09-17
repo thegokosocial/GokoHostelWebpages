@@ -278,6 +278,18 @@ describe("Durable test order/capture/refund workflows", () => {
     await expect(verifyPreviewCallback(first.attempt.id, "pay_DUMMY1", first.attempt.orderId!, sign(`${first.attempt.orderId}|pay_DUMMY1`, KEY))).rejects.toThrow();
     expect((await previewSnapshot(first.attempt.id)).payments).toHaveLength(0);
   });
+  it("surfaces Razorpay failure metadata on failed payments in preview snapshots", async () => {
+    const first = await createPreviewAttempt(crypto.randomUUID(), "admin");
+    const p = payment(first.attempt, "failed", "pay_DUMMYFAIL1");
+    Object.assign(p, { error_code: "BAD_REQUEST_ERROR", error_reason: "authentication_failed",
+      error_description: "Payment was unsuccessful as customer entered incorrect OTP" });
+    providerPayments.set("pay_DUMMYFAIL1", p);
+    await reconcilePreviewAttempt(first.attempt.id);
+    expect((await previewSnapshot(first.attempt.id)).payments[0]).toMatchObject({
+      status: "failed", errorCode: "BAD_REQUEST_ERROR", errorReason: "authentication_failed",
+      errorDescription: expect.stringContaining("incorrect OTP"),
+    });
+  });
   it("authorized is not captured, does not allow refund, and stale failed state cannot regress later capture", async () => {
     const first = await createPreviewAttempt(crypto.randomUUID(), "admin"), p = payment(first.attempt, "authorized");
     let result = await reconcilePreviewAttempt(first.attempt.id); expect(result.payments[0].captured).toBe(0); expect(result.checkout).toBeNull();

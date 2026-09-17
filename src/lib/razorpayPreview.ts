@@ -191,9 +191,19 @@ export async function refundPreviewPayment(attemptId: string, paymentId: string,
   }
   return previewSnapshot(attemptId);
 }
+async function enrichFailedPayments(rows: (typeof payments.$inferSelect)[]) {
+  return Promise.all(rows.map(async (row) => {
+    if (row.status !== "failed") return row;
+    try {
+      const evidence = await fetchRazorpayTestPayment(row.id);
+      return { ...row, errorCode: evidence.error_code ?? null, errorDescription: evidence.error_description ?? null,
+        errorReason: evidence.error_reason ?? null };
+    } catch { return { ...row, errorCode: null, errorDescription: null, errorReason: null }; }
+  }));
+}
 export async function previewSnapshot(id: string) {
   const attempt = await getAttempt(id);
-  const paymentRows = await getDb().select().from(payments).where(eq(payments.attemptId, id));
+  const paymentRows = await enrichFailedPayments(await getDb().select().from(payments).where(eq(payments.attemptId, id)));
   const refundRows = paymentRows.length ? await getDb().select().from(refunds).where(inArray(refunds.paymentId, paymentRows.map((p) => p.id))) : [];
   return { attempt, payments: paymentRows, refunds: refundRows, environment: "test" as const,
     nativeCheckoutReady: false as const,

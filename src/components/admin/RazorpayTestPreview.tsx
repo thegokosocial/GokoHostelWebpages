@@ -3,17 +3,38 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { Button } from "@/components/ui/button";
+import { formatPreviewPaymentFailure, paymentFailureHint, type RazorpayFailureError } from "@/lib/razorpayPreviewFailure";
 import type { previewSnapshot, listPreviewAttempts, listPreviewWebhooks } from "@/lib/razorpayPreview";
 
 type Snapshot = Awaited<ReturnType<typeof previewSnapshot>>;
 type Attempt = Awaited<ReturnType<typeof listPreviewAttempts>>[number];
 type Hook = Awaited<ReturnType<typeof listPreviewWebhooks>>[number];
 type Callback = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
-type CheckoutOptions = { key: string; order_id: string; amount: number; currency: string; name: string; description: string;
-  retry: { enabled: boolean }; handler: (response: Callback) => void; modal: { ondismiss: () => void };
+type FailedCallback = { error: RazorpayFailureError };
+type CheckoutOptions = {
+  key: string; order_id: string; amount: number; currency: string; name: string; description: string;
+  retry: { enabled: boolean };
+  method?: { card?: boolean; upi?: boolean; netbanking?: boolean; wallet?: boolean; emi?: boolean; paylater?: boolean };
+  handler: (response: Callback) => void;
+  modal: { ondismiss: () => void };
 };
-declare global { interface Window { Razorpay?: new (options: CheckoutOptions) => { open(): void; on(event: string, callback: () => void): void }; } }
+declare global {
+  interface Window {
+    Razorpay?: new (options: CheckoutOptions) => {
+      open(): void;
+      on(event: "payment.failed", callback: (response: FailedCallback) => void): void;
+    };
+  }
+}
 const STORAGE_KEY = "gokoRazorpayTestRequestV1";
+const TEST_CARD_RUNBOOK = [
+  "Razorpay Dashboard must be in Test mode.",
+  "Select Card only in Checkout.",
+  "Card: 4111 1111 1111 1111 (or 4384 7968 2770 3274). Any future expiry and CVV.",
+  "OTP: 1234 when prompted.",
+  "On the mock bank page, click Success — not Failure.",
+  "After any failure, use Start fresh ₹1 test. Each order opens Checkout once.",
+];
 
 export function RazorpayTestPreview({ password, username }: { password: string; username?: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -47,9 +68,8 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
   }, [call, snapshot?.attempt.id]);
   useEffect(() => {
     let active = true;
-    const requestSequence = generation; // Stable ref object; cancel the latest request on cleanup.
+    const requestSequence = generation;
     setSnapshot(null); setEnabled(false); setAttempts([]); setHooks([]);
-    // Request keys, never credentials, survive a lost response or refresh.
     try { setSavedRequest(Boolean(localStorage.getItem(STORAGE_KEY))); } catch { setSavedRequest(true); }
     call("listTestAttempts").then((result) => { if (active) { setAttempts(result.attempts); setHooks(result.webhooks); setEnabled(result.previewEnabled); } })
       .catch((error) => { if (active) setMessage(error.message); });
@@ -57,7 +77,12 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
   }, [call]);
   function snapshotMessage(result: Snapshot) {
     const captured = result.payments.find((p) => p.captured);
-    if (captured) return `Captured payment recorded (${captured.id}).`;
+    if (captured) return `Captured payment recorded (${captured.id}). You can refund the test payment below.`;
+    const failed = result.payments.find((p) => p.status === "failed");
+    if (failed) {
+      const hint = paymentFailureHint(failed as { status: string; errorCode?: string | null; errorDescription?: string | null; errorReason?: string | null });
+      return hint || `Payment on record: failed (${failed.id}). Start a fresh ₹1 test to retry.`;
+    }
     if (result.payments.length) return `Payment on record: ${result.payments[0].status}. Review before retrying.`;
     if (result.attempt.checkoutStartedAt && !result.checkout) {
       return "Checkout was already opened for this order and cannot be reopened. Start a fresh ₹1 test below.";
@@ -65,15 +90,15 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
     if (result.checkout) return "Ready to open test checkout.";
     return "Reconciled — no payment evidence found on this attempt yet.";
   }
-  async function run(action: string, extra: Record<string, unknown> = {}, isSnapshot = true) {
+  async function run(action: string, extra: Record<string, unknown> = {}, isSnapshot = true, messageOverride?: string) {
     const token = ++generation.current;
-    setBusy(true); setMessage("");
+    setBusy(true); if (!messageOverride) setMessage("");
     try {
       const result = await call(action, extra);
       if (token !== generation.current) return;
       if (isSnapshot) {
         setSnapshot(result);
-        setMessage(snapshotMessage(result));
+        setMessage(messageOverride || snapshotMessage(result));
       } else {
         setMessage(result.authenticated ? "Test credentials authenticated. This does not certify webhooks, settlement or live checkout." : "Webhook retry completed.");
       }
@@ -106,7 +131,7 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
       if (localStorage.getItem(STORAGE_KEY) && localStorage.getItem(STORAGE_KEY) !== snapshot!.attempt.requestKey) {
         setMessage("A different saved request still needs recovery. Recover it before clearing browser recovery state."); return;
       }
-      localStorage.removeItem(STORAGE_KEY); setSavedRequest(false); setSnapshot(null);
+      localStorage.removeItem(STORAGE_KEY); setSavedRequest(false); setSnapshot(null); setMessage("Browser recovery cleared. Start fresh ₹1 test when ready.");
     }
     catch { setMessage("Unable to clear the completed test request safely"); }
   }
@@ -128,22 +153,31 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
       return;
     } finally { if (token === generation.current) setBusy(false); }
     if (!claimed.checkout) return;
-    callbackReceived.current = false; setCheckoutOpen(true); setMessage("Test checkout open. Closing it is not evidence that payment failed.");
+    callbackReceived.current = false; setCheckoutOpen(true); setMessage("Test checkout open. Use Card only. OTP 1234. Click Success on the mock bank page.");
     try {
-    const checkout = new window.Razorpay({ ...claimed.checkout, name: "Goko TEST ONLY", description: "₹1 simulated payment — no booking or real money",
-      retry: { enabled: false },
-      handler: (response) => { callbackReceived.current = true; setCheckoutOpen(false);
-        void run("verifyTestCallback", { attemptId, paymentId: response.razorpay_payment_id, orderId: response.razorpay_order_id, signature: response.razorpay_signature }); },
-      modal: { ondismiss: () => { setCheckoutOpen(false); if (!callbackReceived.current) void run("reconcileTestAttempt", { attemptId }); } },
-    });
-    checkout.on("payment.failed", () => { void run("reconcileTestAttempt", { attemptId }); });
-    checkout.open();
+      const checkout = new window.Razorpay({
+        ...claimed.checkout, name: "Goko TEST ONLY", description: "₹1 simulated payment — no booking or real money",
+        retry: { enabled: false },
+        method: { card: true, upi: false, netbanking: false, wallet: false, emi: false, paylater: false },
+        handler: (response) => { callbackReceived.current = true; setCheckoutOpen(false);
+          void run("verifyTestCallback", { attemptId, paymentId: response.razorpay_payment_id, orderId: response.razorpay_order_id, signature: response.razorpay_signature }); },
+        modal: { ondismiss: () => { setCheckoutOpen(false); if (!callbackReceived.current) void run("reconcileTestAttempt", { attemptId }); } },
+      });
+      checkout.on("payment.failed", (response) => {
+        const failureMessage = formatPreviewPaymentFailure(response.error);
+        void run("reconcileTestAttempt", { attemptId }, true, failureMessage);
+      });
+      checkout.open();
     } catch { setCheckoutOpen(false); setMessage("Test checkout could not open. Reconcile before retrying."); }
   }
   return <div className="rounded-lg border p-4 text-sm space-y-4">
     <h3 className="font-semibold">Razorpay authenticated test checkout</h3>
     <p>Fixed ₹1 simulated transaction using test keys only. No room is reserved, no PMS amount is changed, and no bank receipt is created. Live guest checkout remains blocked.</p>
-    <p>After the reviewed test-ledger migration, set <code>RAZORPAY_TEST_PREVIEW_ENABLED=true</code> to enable creation/refunds. Reconciliation remains available after disabling new tests.</p>
+    {!enabled && <p>Set <code>RAZORPAY_TEST_PREVIEW_ENABLED=true</code> on the Worker to enable new test orders and refunds. Reconciliation remains available after disabling new tests.</p>}
+    <details className="rounded border bg-muted/30 p-3">
+      <summary className="cursor-pointer font-semibold">How to pass the ₹1 test (card)</summary>
+      <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs">{TEST_CARD_RUNBOOK.map((line) => <li key={line}>{line}</li>)}</ol>
+    </details>
     {enabled && <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" onReady={() => setScriptReady(true)} onError={() => setMessage("Checkout script unavailable. Reconcile existing tests rather than assuming failure.")} />}
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={busy || checkoutOpen} onClick={() => void run("checkTestConnectivity", {}, false)}>Check test API connectivity</Button>
@@ -174,12 +208,20 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
       </p>}
       {snapshot.payments.map((p) => <div key={p.id} className="border-t pt-2">
         <p className="break-all">{p.id}: {p.status}; capture verified: {p.captured ? "yes" : "no"}; provider refund amount: {p.refundedPaise} paise</p>
+        {(() => {
+          const hint = paymentFailureHint(p as { status: string; errorCode?: string | null; errorDescription?: string | null; errorReason?: string | null });
+          return hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null;
+        })()}
         {snapshot.refunds.filter((r) => r.paymentId === p.id).map((r) => <p key={r.id}>Refund reservation: {r.state} — {r.providerId || "provider result unresolved"}</p>)}
         <Button type="button" variant="outline" disabled={!enabled || busy || checkoutOpen || !p.captured || p.status !== "captured" || p.refundedPaise > 0 || snapshot.refunds.some((r) => r.paymentId === p.id)}
           onClick={() => { if (window.confirm("Refund this simulated ₹1 test payment? No real money is involved.")) void run("refundTestPayment", { attemptId: snapshot.attempt.id, paymentId: p.id }); }}>Refund TEST payment</Button>
       </div>)}
     </div>}
     {attempts.length > 0 && <div><h4 className="font-semibold">Recent test attempts</h4><div className="mt-2 flex flex-wrap gap-2">{attempts.map((a) => <Button type="button" key={a.id} size="sm" variant="outline" disabled={busy || checkoutOpen} onClick={() => void run("getTestAttempt", { attemptId: a.id })}>{a.receipt.slice(-8)} · {a.state}</Button>)}</div></div>}
-    {hooks.length > 0 && <div><h4 className="font-semibold">Recent test webhooks</h4>{hooks.map((h) => <p key={h.eventId} className="mt-2 break-all">{h.eventType}: {h.state} · {h.eventId}{!["processed", "ignored"].includes(h.state) && <Button type="button" size="sm" variant="outline" className="ml-2" disabled={busy || checkoutOpen} onClick={() => void run("retryTestWebhook", { eventId: h.eventId }, false)}>Retry saved event</Button>}</p>)}</div>}
+    <div>
+      <h4 className="font-semibold">Test webhooks</h4>
+      {hooks.length === 0 ? <p className="mt-2 text-xs text-muted-foreground">No test webhooks received yet. In Razorpay Test mode, register <code>/api/webhooks/razorpay</code> and enable payment/refund events. Reconcile still works without webhooks.</p>
+        : hooks.map((h) => <p key={h.eventId} className="mt-2 break-all">{h.eventType}: {h.state} · {h.eventId}{!["processed", "ignored"].includes(h.state) && <Button type="button" size="sm" variant="outline" className="ml-2" disabled={busy || checkoutOpen} onClick={() => void run("retryTestWebhook", { eventId: h.eventId }, false)}>Retry saved event</Button>}</p>)}
+    </div>
   </div>;
 }

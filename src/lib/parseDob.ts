@@ -152,7 +152,9 @@ function validDobParts(dd: string, mm: string, yyyy: string): string | null {
   const year = Number(yyyy);
   const date = new Date(Date.UTC(year, month - 1, day));
   if (year < 1900 || year > 2100 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
-  if (date.getTime() > Date.now()) return null;
+  const now = new Date();
+  const todayOrdinal = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  if (Date.UTC(year, month - 1, day) > todayOrdinal) return null;
   return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
 }
 

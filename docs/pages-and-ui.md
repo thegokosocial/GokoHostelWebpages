@@ -110,7 +110,7 @@ The public guest page is `/quick-links`. It displays active sections and cards f
 
 ## Booking dashboard files
 
-Management → Booking Settings → Payments & Readiness test operations fail closed without the complete gateway schema (migrations 0057/0058), a current distinct test webhook secret and deployment opt-in. The panel cannot enable native/live guest checkout. Setup and local runtime verification are documented in [Razorpay integration](integrations-razorpay.md).
+Management → Booking Settings → Payments & Readiness test operations fail closed without the complete gateway schema (migrations 0057/0058), a current distinct test webhook secret and deployment opt-in. The panel cannot enable native/live guest checkout. The Razorpay test block includes an expandable card runbook, card-only Checkout, operator-facing failure reasons from `payment.failed` / reconcile, and webhook empty-state guidance when no test events have arrived. Setup and local runtime verification are documented in [Razorpay integration](integrations-razorpay.md).
 
 `src/components/admin/booking-dashboard/`
 
