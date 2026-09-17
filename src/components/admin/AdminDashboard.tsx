@@ -229,8 +229,6 @@ export function AdminDashboard({
       <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Dashboard</h2>
       <p className="mt-1 text-sm text-brand-green-dark/60 dark:text-zinc-500">{today}</p>
 
-      {(hasPermission(role, permissions || {}, "canViewTasks") || hasPermission(role, permissions || {}, "canManageTasks")) && <AdminMyTasks tasks={myTasks} password={password} username={username} onUpdated={() => void loadDashboard()} />}
-
       {mappingHealth && !["match", "disabled"].includes(mappingHealth.status) && (role === "admin" || role === "manager") && (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-amber-950 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-100">
           {role === "admin" ? <button type="button" className="w-full text-left" onClick={() => onNavigate("management", { managementTab: "channelManager", channelManagerTab: "sync" })}>
@@ -611,6 +609,8 @@ export function AdminDashboard({
           <p className="text-xs text-brand-green-dark/50 dark:text-zinc-500">All check-in entries</p>
         </button>
       </div>
+
+      {(hasPermission(role, permissions || {}, "canViewTasks") || hasPermission(role, permissions || {}, "canManageTasks")) && <AdminMyTasks tasks={myTasks} password={password} username={username} onUpdated={() => void loadDashboard()} />}
 
       {/* Validation toggle (admin only) */}
       {role === "admin" && (

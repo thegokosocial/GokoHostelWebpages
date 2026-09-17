@@ -54,7 +54,8 @@ describe("Tasks implementation wiring", () => {
     const migration = readFileSync("migrations/0055_tasks.sql", "utf8");
     const optionalAssigneeMigration = readFileSync("migrations/0056_tasks_optional_assignee.sql", "utf8");
     const sync = readFileSync("src/lib/syncEngine.ts", "utf8");
-    const dashboard = readFileSync("src/app/api/admin/checkins/route.ts", "utf8");
+    const dashboardApi = readFileSync("src/app/api/admin/checkins/route.ts", "utf8");
+    const dashboard = readFileSync("src/components/admin/AdminDashboard.tsx", "utf8");
     const management = readFileSync("src/components/admin/AdminManagement.tsx", "utf8");
     const taskManagement = readFileSync("src/components/admin/ManagementTasks.tsx", "utf8");
     expect(schema).toContain('export const tasks = sqliteTable("tasks"');
@@ -65,7 +66,9 @@ describe("Tasks implementation wiring", () => {
     expect(optionalAssigneeMigration).toContain("assignee_user_id INTEGER REFERENCES users(id)");
     expect(sync).toContain('tasks: schema.tasks');
     expect(sync).toContain('tasks: { assigneeUserId: "users" }');
-    expect(dashboard).toContain("myTasks");
+    expect(dashboardApi).toContain("myTasks");
+    expect(dashboard.indexOf("<AdminMyTasks")).toBeLessThan(dashboard.indexOf("{/* Validation toggle"));
+    expect(dashboard.indexOf("<AdminMyTasks")).toBeGreaterThan(dashboard.indexOf("{/* Quick actions */}"));
     expect(management).toContain('id: "tasks"');
     expect(management).toContain("canViewTasks");
     expect(management).toContain("canManageTasks");
