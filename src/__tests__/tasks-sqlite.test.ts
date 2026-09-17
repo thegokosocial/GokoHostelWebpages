@@ -55,6 +55,29 @@ describe("Tasks SQLite workflows", () => {
     expect((await getTasks({ includeArchived: true }))[0].tasks.deletedAt).toBeTruthy();
   });
 
+  it("creates an unassigned task that can be assigned later", async () => {
+    const id = await createTask({ title: "Review stock list", createdBy: "admin", updatedBy: "admin" });
+    expect((await getTaskById(id!))?.tasks.assigneeUserId).toBeNull();
+    expect(await getTasks({ assigneeUserId: 1 })).toHaveLength(0);
+
+    await updateTask(id!, { assigneeUserId: 1, updatedBy: "admin" });
+    expect((await getTaskById(id!))?.tasks.assigneeUserId).toBe(1);
+    await updateTask(id!, { assigneeUserId: null, updatedBy: "admin" });
+    expect((await getTaskById(id!))?.tasks.assigneeUserId).toBeNull();
+  });
+
+  it("preserves task-linked expenses when the optional-assignee migration rebuilds tasks", async () => {
+    const id = await createTask({ title: "Legacy purchase", taskType: "purchase", assigneeUserId: 1, createdBy: "admin", updatedBy: "admin" });
+    const expenseId = await addExpense({ amount: 500, category: "Supplies", purpose: "Legacy", expenseDate: "2026-09-17", createdMonth: "2026-09", createdBy: "staff", taskId: id });
+
+    sqlite.exec(readMigration("0056_tasks_optional_assignee.sql"));
+    mocks.db = drizzle(sqlite, { schema });
+
+    const task = await getTaskById(id!);
+    expect(task?.tasks.assigneeUserId).toBe(1);
+    expect(task?.expenses?.id).toBe(expenseId);
+  });
+
   it("links one purchase expense and exposes it with task reads", async () => {
     const id = await createTask({ title: "Buy soap", taskType: "purchase", assigneeUserId: 1, createdBy: "admin", updatedBy: "admin" });
     const expenseId = await addExpense({ amount: 1250, category: "Supplies", purpose: "Soap", expenseDate: "2026-09-17", createdMonth: "2026-09", createdBy: "staff", taskId: id });
@@ -70,6 +93,8 @@ describe("Tasks SQLite workflows", () => {
   });
 });
 
-function readMigration() {
-  return readFileSync("migrations/0055_tasks.sql", "utf8");
+function readMigration(...files: string[]) {
+  return (files.length ? files : ["0055_tasks.sql", "0056_tasks_optional_assignee.sql"])
+    .map((file) => readFileSync(`migrations/${file}`, "utf8"))
+    .join("\n");
 }

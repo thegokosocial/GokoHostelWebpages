@@ -52,18 +52,23 @@ describe("Tasks implementation wiring", () => {
   it("wires tasks into schema, migration, dashboard, management UI, and sync", () => {
     const schema = readFileSync("src/db/schema.ts", "utf8");
     const migration = readFileSync("migrations/0055_tasks.sql", "utf8");
+    const optionalAssigneeMigration = readFileSync("migrations/0056_tasks_optional_assignee.sql", "utf8");
     const sync = readFileSync("src/lib/syncEngine.ts", "utf8");
     const dashboard = readFileSync("src/app/api/admin/checkins/route.ts", "utf8");
     const management = readFileSync("src/components/admin/AdminManagement.tsx", "utf8");
+    const taskManagement = readFileSync("src/components/admin/ManagementTasks.tsx", "utf8");
     expect(schema).toContain('export const tasks = sqliteTable("tasks"');
     expect(schema).toContain('taskId: integer("task_id")');
+    expect(schema).toContain('assigneeUserId: integer("assignee_user_id").references');
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS tasks");
     expect(migration).toContain("ALTER TABLE expenses ADD COLUMN task_id");
+    expect(optionalAssigneeMigration).toContain("assignee_user_id INTEGER REFERENCES users(id)");
     expect(sync).toContain('tasks: schema.tasks');
     expect(sync).toContain('tasks: { assigneeUserId: "users" }');
     expect(dashboard).toContain("myTasks");
     expect(management).toContain('id: "tasks"');
     expect(management).toContain("canViewTasks");
     expect(management).toContain("canManageTasks");
+    expect(taskManagement).toContain('option value="">Unassigned</option>');
   });
 });

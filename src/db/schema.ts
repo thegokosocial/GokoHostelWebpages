@@ -130,7 +130,7 @@ export const tasks = sqliteTable("tasks", {
   category: text("category").notNull().default(""),
   priority: text("priority").notNull().default("normal"),
   dueDate: text("due_date").default(""),
-  assigneeUserId: integer("assignee_user_id").notNull().references(() => users.id),
+  assigneeUserId: integer("assignee_user_id").references(() => users.id),
   status: text("status").notNull().default("todo"),
   note: text("note").notNull().default(""),
   attachments: text("attachments").notNull().default("[]"),

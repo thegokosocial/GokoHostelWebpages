@@ -389,7 +389,7 @@ export async function getTaskById(id: number) {
 
 export async function createTask(data: {
   title: string; description?: string; taskType?: string; category?: string;
-  priority?: TaskPriority; dueDate?: string; assigneeUserId: number;
+  priority?: TaskPriority; dueDate?: string; assigneeUserId?: number | null;
   status?: TaskStatus; note?: string; attachments?: string; createdBy: string;
   updatedBy: string;
 }) {
@@ -413,7 +413,7 @@ export async function createTask(data: {
 
 export async function updateTask(id: number, data: Partial<{
   title: string; description: string; taskType: string; category: string;
-  priority: TaskPriority; dueDate: string; assigneeUserId: number;
+  priority: TaskPriority; dueDate: string; assigneeUserId: number | null;
   status: TaskStatus; note: string; attachments: string; completedAt: string;
   completedBy: string; updatedBy: string;
 }>) {

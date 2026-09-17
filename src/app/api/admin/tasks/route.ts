@@ -92,14 +92,15 @@ export async function POST(req: NextRequest) {
 
     if (action === "createTask") {
       const title = typeof rest.title === "string" ? rest.title.trim() : "";
-      const assigneeUserId = Number(rest.assigneeUserId);
+      const hasAssignee = rest.assigneeUserId !== undefined && rest.assigneeUserId !== null && String(rest.assigneeUserId).trim() !== "";
+      const assigneeUserId = hasAssignee ? Number(rest.assigneeUserId) : null;
       if (!title || title.length > 200) return taskError("A title between 1 and 200 characters is required");
-      if (!validId(assigneeUserId)) return taskError("A valid assignee is required");
+      if (hasAssignee && !validId(assigneeUserId)) return taskError("Assignee must be a valid user");
       if (!TASK_TYPES.has(rest.taskType || "general")) return taskError("Invalid task type");
       if (!PRIORITIES.has(rest.priority || "normal")) return taskError("Invalid priority");
       if (!validDate(rest.dueDate || "")) return taskError("dueDate must be YYYY-MM-DD");
-      const assignee = await getUserById(assigneeUserId);
-      if (!assignee || assignee.deletedAt) return taskError("Assignee is not available", 404);
+      const assignee = assigneeUserId ? await getUserById(assigneeUserId) : null;
+      if (hasAssignee && (!assignee || assignee.deletedAt)) return taskError("Assignee is not available", 404);
       const id = await createTask({
         title,
         description: typeof rest.description === "string" ? rest.description.trim().slice(0, 5000) : "",
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
         createdBy: actorName,
         updatedBy: actorName,
       });
-      await addAuditEntry({ username: actorName, action: "task_created", target: `task:${id}`, details: `${title} → ${assignee.displayName}` });
+      await addAuditEntry({ username: actorName, action: "task_created", target: `task:${id}`, details: `${title} → ${assignee?.displayName || "Unassigned"}` });
       return NextResponse.json({ success: true, id });
     }
 
@@ -172,10 +173,15 @@ export async function POST(req: NextRequest) {
         data.dueDate = rest.dueDate;
       }
       if (rest.assigneeUserId !== undefined) {
-        const assigneeUserId = Number(rest.assigneeUserId);
-        const assignee = validId(assigneeUserId) ? await getUserById(assigneeUserId) : null;
-        if (!assignee || assignee.deletedAt) return taskError("Assignee is not available", 404);
-        data.assigneeUserId = assigneeUserId;
+        const hasAssignee = rest.assigneeUserId !== null && String(rest.assigneeUserId).trim() !== "";
+        if (!hasAssignee) {
+          data.assigneeUserId = null;
+        } else {
+          const assigneeUserId = Number(rest.assigneeUserId);
+          const assignee = validId(assigneeUserId) ? await getUserById(assigneeUserId) : null;
+          if (!assignee || assignee.deletedAt) return taskError("Assignee is not available", 404);
+          data.assigneeUserId = assigneeUserId;
+        }
       }
       if (rest.status !== undefined) {
         if (!STATUSES.has(rest.status)) return taskError("Invalid task status");

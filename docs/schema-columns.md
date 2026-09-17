@@ -200,7 +200,7 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `category` | text | Optional free-text category |
 | `priority` | text | low / normal / high / urgent |
 | `due_date` | text | Optional YYYY-MM-DD |
-| `assignee_user_id` | integer | NOT NULL FK to `users` |
+| `assignee_user_id` | integer | Optional FK to `users`; null means unassigned |
 | `status` | text | todo / in_progress / blocked / done |
 | `note` | text | Current shared note |
 | `attachments` | text | JSON Drive attachment metadata |

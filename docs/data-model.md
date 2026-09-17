@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts`. Applied SQL: `migrations/0001_initial.sql` … `0055_tasks.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
+**Git-safe.** Schema: `src/db/schema.ts`. Applied SQL: `migrations/0001_initial.sql` … `0056_tasks_optional_assignee.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 
@@ -106,7 +106,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 |-------|------|
 | `settings` | Key-value (OAuth tokens, food hours, `image_validation`, `primary_server`). |
 | `users` | Staff. |
-| `tasks` | Staff work queue; `assignee_user_id` points to `users`. |
+| `tasks` | Staff work queue; nullable `assignee_user_id` points to `users`, with null meaning unassigned. |
 | `audit_log` | Who did what. Raw action, target, and details are retained; the Management Audit API adds friendly presentation fields and bounded reference-name enrichment without changing the table schema. |
 | `system_logs` | App errors/events. Structured error context is stored as sanitized JSON in `details`, correlated with `request_id`; last 30 days kept (pruned on insert and list). |
 | `api_stats` | Vision/Drive counters by month. |

@@ -76,6 +76,27 @@ describe("Tasks API mock workflows", () => {
     expect(mocks.archiveTask).toHaveBeenCalledWith(10, "manager");
   });
 
+  it("allows a task manager to create a title-only unassigned task", async () => {
+    mocks.auth = { role: "manager", displayName: "Manager", permissions: { canManageTasks: true } };
+    mocks.actor = { id: 3, username: "manager", displayName: "Manager", role: "manager", deletedAt: null };
+    mocks.getUserByUsername.mockResolvedValue(mocks.actor);
+
+    const response = await POST(request({ action: "createTask", title: "Review stock list" }, "manager"));
+    expect(response.status).toBe(200);
+    expect(mocks.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Review stock list", assigneeUserId: null, taskType: "general", priority: "normal", dueDate: "",
+    }));
+    expect(mocks.getUserById).not.toHaveBeenCalled();
+    expect(mocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ details: "Review stock list → Unassigned" }));
+  });
+
+  it("allows a task manager to clear an existing assignment", async () => {
+    mocks.auth = { role: "manager", displayName: "Manager", permissions: { canManageTasks: true } };
+    const response = await POST(request({ action: "updateTask", taskId: 10, assigneeUserId: "" }, "manager"));
+    expect(response.status).toBe(200);
+    expect(mocks.updateTask).toHaveBeenCalledWith(10, expect.objectContaining({ assigneeUserId: null }));
+  });
+
   it("records one linked purchase expense and rejects a duplicate", async () => {
     mocks.auth = { role: "staff", displayName: "Staff", permissions: { canAddExpense: true } };
     const response = await POST(request({ action: "createTaskExpense", taskId: 10, amount: 1250, category: "Supplies", paymentMethod: "cash" }));
