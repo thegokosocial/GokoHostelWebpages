@@ -64,7 +64,11 @@ async function request(path: string, method: "GET" | "POST" = "GET", body?: obje
   try {
     const res = await fetch(`https://api.razorpay.com/v1/${path}`, {
       method, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
-      headers: { Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Basic ${btoa(`${keyId}:${keySecret}`)}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     // Do not forward gateway descriptions, headers, auth or PII to clients/logs.
