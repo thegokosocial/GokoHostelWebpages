@@ -32,7 +32,7 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/site` | GET `?page=events\|community` | none | CMS JSON, `s-maxage=60` |
 | `/api/quick-links` | GET | none | Active guest links and QR/image cards |
 | `/api/media/[...key]` | GET | none | R2 image media; preserves stored content type |
-| `/api/booking-enquiry` | POST JSON | none | Booking enquiry form → Cloudflare Email Sending (`info@` auto-reply + `admin@` staff notification); honeypot `_hp`; 503 if `EMAIL` binding unavailable |
+| `/api/booking-enquiry` | POST JSON | none | Booking enquiry form → Cloudflare Email Sending (`booking@` auto-reply + `admin@` staff notification); honeypot `_hp`; 503 if `EMAIL` binding unavailable |
 | `/api/review` | POST | token in JSON | `getReviewRequest`, `submitRating`, `submitFeedback` |
 | `/api/form-c/[id]` | GET | token = `ADMIN_PASSWORD` | FRRO payload + photo |
 | `/api/aiosell/reservations` | POST | `Authorization` or `x-api-key` = D1 `channel_config.webhookSecret` (raw or `Bearer …`) | Inbound `book` / `modify` / `cancel` |

@@ -12,7 +12,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 }));
 
 import { POST } from "@/app/api/booking-enquiry/route";
-import { EmailUnavailableError, sendBookingEnquiryEmails, sendBookingLookupCode, ADMIN_EMAIL, INFO_EMAIL } from "@/lib/email";
+import { EmailUnavailableError, sendBookingEnquiryEmails, sendBookingLookupCode, ADMIN_EMAIL, BOOKING_EMAIL } from "@/lib/email";
 
 const validPayload = {
   name: "Ada Lovelace",
@@ -50,9 +50,9 @@ describe("bookingEnquirySchema", () => {
 });
 
 describe("sendBookingEnquiryEmails", () => {
-  it("sends private lookup codes from info and rejects malformed codes", async () => {
+  it("sends private lookup codes from booking@ and rejects malformed codes", async () => {
     await sendBookingLookupCode("ada@example.com", "012345");
-    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ from: { email: INFO_EMAIL, name: "Goko Hostel" }, to: "ada@example.com", text: expect.stringContaining("012345") }));
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ from: { email: BOOKING_EMAIL, name: "Goko Hostel" }, to: "ada@example.com", text: expect.stringContaining("012345") }));
     await expect(sendBookingLookupCode("ada@example.com", "bad")).rejects.toThrow();
     expect(mocks.send).toHaveBeenCalledTimes(1);
   });
@@ -61,14 +61,14 @@ describe("sendBookingEnquiryEmails", () => {
 
     expect(mocks.send).toHaveBeenCalledTimes(2);
     expect(mocks.send).toHaveBeenNthCalledWith(1, {
-      from: { email: INFO_EMAIL, name: "Goko Hostel" },
+      from: { email: BOOKING_EMAIL, name: "Goko Hostel" },
       to: ADMIN_EMAIL,
       replyTo: validPayload.email,
       subject: `Booking enquiry — ${validPayload.name}`,
       text: expect.stringContaining(validPayload.name),
     });
     expect(mocks.send).toHaveBeenNthCalledWith(2, {
-      from: { email: INFO_EMAIL, name: "Goko Hostel" },
+      from: { email: BOOKING_EMAIL, name: "Goko Hostel" },
       to: validPayload.email,
       subject: "We received your enquiry — Goko Hostel",
       text: expect.stringContaining("Thanks for reaching out"),

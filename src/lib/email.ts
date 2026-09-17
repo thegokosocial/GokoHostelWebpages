@@ -3,8 +3,13 @@ import { formatBookingEnquiryBody, type BookingEnquiryPayload } from "@/lib/book
 import { site } from "@/lib/site";
 
 export const INFO_EMAIL = "info@gokohostel.com";
+export const BOOKING_EMAIL = "booking@gokohostel.com";
 export const ADMIN_EMAIL = "admin@gokohostel.com";
 export const STAFF_INBOX = "thegokosocial@gmail.com";
+
+function bookingFrom() {
+  return { email: BOOKING_EMAIL, name: site.shortName };
+}
 
 export class EmailUnavailableError extends Error {
   constructor(message = "Email service is not available") {
@@ -22,7 +27,7 @@ function getEmailBinding(): CloudflareEnv["EMAIL"] {
 
 export async function sendBookingLookupCode(recipient: string, code: string): Promise<void> {
   if (!/^\d{6}$/.test(code)) throw new Error("Invalid verification code");
-  await getEmailBinding().send({ from: { email: INFO_EMAIL, name: site.shortName }, to: recipient,
+  await getEmailBinding().send({ from: bookingFrom(), to: recipient,
     subject: "Your Goko booking verification code",
     text: `Your verification code is ${code}. It expires in 10 minutes and can be used once. Do not share it. If you did not request this code, ignore this email.`,
   });
@@ -31,7 +36,7 @@ export async function sendBookingLookupCode(recipient: string, code: string): Pr
 export async function sendBookingEnquiryEmails(payload: BookingEnquiryPayload): Promise<void> {
   const email = getEmailBinding();
   const body = formatBookingEnquiryBody(payload);
-  const from = { email: INFO_EMAIL, name: site.shortName };
+  const from = bookingFrom();
 
   await email.send({
     from,

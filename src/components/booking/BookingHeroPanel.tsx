@@ -155,7 +155,7 @@ export function BookingHeroPanel({ preview }: { preview?: { rooms: GuestRoom[]; 
       <p className="mt-4 text-sm">Guests aged 18–35 only, up to 4 people. No children. Online checkout is not enabled yet; our team must confirm your stay.</p>
     </div> : <div role="tabpanel" id="panel-booking" aria-labelledby="tab-booking">
       <h2 className="font-display text-2xl font-bold">Find your booking</h2>
-      <p className="mt-1 text-sm">Enter your confirmation number and the email used for your booking. We’ll email a verification code from info@gokohostel.com.</p>
+      <p className="mt-1 text-sm">Enter your confirmation number and the email used for your booking. We’ll email a verification code from booking@gokohostel.com.</p>
       <form onSubmit={lookup} className="mt-5 grid items-end gap-3 md:grid-cols-3">
         {!challengeId ? <><label className="text-sm font-semibold">Confirmation number<input className={field} required maxLength={120} disabled={busy} autoComplete="off" value={reference} onChange={e => setReference(e.target.value)} /></label><label className="text-sm font-semibold">Booking email<input className={field} required type="email" maxLength={254} disabled={busy} autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} /></label></> : <label className="text-sm font-semibold md:col-span-2">Email verification code<input className={field} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} disabled={busy} value={code} onChange={e => setCode(e.target.value)} /></label>}
         <button className={action} disabled={busy}>{busy ? "Please wait…" : challengeId ? "View booking" : "Send verification code"}</button>

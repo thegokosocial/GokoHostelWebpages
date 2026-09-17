@@ -6,18 +6,20 @@ Goko uses Cloudflare **Email Sending** (outbound) and **Email Routing** (inbound
 
 | Address | Role |
 |---------|------|
-| `info@gokohostel.com` | Public contact on the website; sends guest auto-replies |
+| `info@gokohostel.com` | Public website contact (footer, security.txt, vCard QR) |
+| `booking@gokohostel.com` | Booking transactional sender (enquiry auto-reply, My Booking OTP, future confirmations) |
 | `admin@gokohostel.com` | Receives staff notifications (booking enquiries, internal alerts) |
 
-Inbound mail for both addresses forwards to `thegokosocial@gmail.com` after the destination is verified in Cloudflare.
+Inbound mail for all three addresses forwards to `thegokosocial@gmail.com` after the destination is verified in Cloudflare.
 
 ## Outbound (website)
 
 - Wrangler binding: `EMAIL` in `wrangler.jsonc` (`send_email`).
 - `POST /api/booking-enquiry` — public JSON endpoint used by `/booking-enquiry`.
-- `src/lib/email.ts` — `sendBookingEnquiryEmails()`:
-  1. Staff notification: `from info@` → `admin@`, `replyTo` guest email.
-  2. Guest auto-reply: `from info@` → guest email.
+- `src/lib/email.ts`:
+  - `sendBookingEnquiryEmails()` — staff notification and guest auto-reply from `booking@`.
+  - `sendBookingLookupCode()` — My Booking verification OTP from `booking@`.
+  - Future booking confirmation outbox must also send from `booking@`.
 
 If the binding is missing (e.g. plain `next dev` without Wrangler), the API returns **503**.
 
@@ -38,13 +40,17 @@ npx wrangler email routing rules create gokohostel.com \
 npx wrangler email routing rules create gokohostel.com \
   --name "Forward info" --match-type literal --match-field to --match-value info@gokohostel.com \
   --action-type forward --action-value thegokosocial@gmail.com
+
+npx wrangler email routing rules create gokohostel.com \
+  --name "Forward booking" --match-type literal --match-field to --match-value booking@gokohostel.com \
+  --action-type forward --action-value thegokosocial@gmail.com
 ```
 
 Routing rules require the destination address to be **verified** first.
 
 ## Replying from Gmail
 
-Forwarded mail arrives in `thegokosocial@gmail.com`. To reply as `info@gokohostel.com`, add **Send mail as** in Gmail → Settings → Accounts (SPF/DKIM for `gokohostel.com` is already managed by Cloudflare Email Sending).
+Forwarded mail arrives in `thegokosocial@gmail.com`. To reply as `info@gokohostel.com` or `booking@gokohostel.com`, add **Send mail as** in Gmail → Settings → Accounts (SPF/DKIM for `gokohostel.com` is already managed by Cloudflare Email Sending).
 
 ## Limits
 
@@ -55,9 +61,9 @@ Forwarded mail arrives in `thegokosocial@gmail.com`. To reply as `info@gokohoste
 
 ```bash
 npx wrangler email sending send \
-  --from info@gokohostel.com \
+  --from booking@gokohostel.com \
   --to thegokosocial@gmail.com \
   --subject "Test" --text "Outbound works"
 ```
 
-Send a message from an external account to `info@gokohostel.com` and confirm it appears in Gmail.
+Send a message from an external account to `booking@gokohostel.com` and confirm it appears in Gmail.
