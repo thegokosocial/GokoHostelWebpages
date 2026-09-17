@@ -28,7 +28,7 @@ Current menu permissions are `canViewMenu`, `canManageMenuCategories`, `canManag
 
 When a page or action changes, update the source catalog/map, the UI gate, focused RBAC tests, and the matching handbook tables in the same turn. Run `npx vitest run`, `npx tsc --noEmit`, `git diff --check`, and `npm run build` for RBAC/API/UI changes.
 
-**Current schema line:** migrations `0047_daily_ledger_opening_adjusted.sql` and `0048_analytics_indexes.sql` are applied on the remote D1 as of 11 Sep 2026. `0048` adds timestamp indexes for booking and expense analytics. The repository’s latest migration is `0048_analytics_indexes.sql`; apply new migrations to D1 before using their dependent code in production. Analytics implementation and follow-up corrections are pushed to `main`; the latest bulk inventory availability implementation is commit `9ddf631`. No new migration is required for that feature because it reuses the existing `inventory_overrides` and `inventory_dirty` tables. Production Worker rollout remains through the configured Workers Build; verify the live stamp in `MAINTAINER.local.md` after deployment.
+**Current schema line:** migration `0054_expense_date.sql` adds a backfilled accounting date for expenses and was applied to remote D1 on 17 Sep 2026. It is the repository’s latest migration. Production Worker rollout remains through the configured Workers Build; verify the live stamp in `MAINTAINER.local.md` after deployment.
 
 ---
 

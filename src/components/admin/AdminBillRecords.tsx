@@ -215,7 +215,7 @@ export function AdminBillRecords({
                         <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-xs font-bold text-brand-green-dark">₹{((exp.amount || 0) / 100).toFixed(0)}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-green-dark/60">
-                        <span>{exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—"}</span>
+                        <span>{exp.expenseDate || (exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—")}</span>
                         {exp.purpose && <span className="truncate max-w-[180px]">{exp.purpose}</span>}
                       </div>
                     </div>
@@ -225,7 +225,7 @@ export function AdminBillRecords({
                   {isExpanded && (
                     <div className="border-t border-brand-mist px-3 pb-3 pt-2">
                       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                        <div><span className="text-brand-green-dark/50">Date:</span> <span className="text-brand-green-dark">{exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—"}</span></div>
+                        <div><span className="text-brand-green-dark/50">Date:</span> <span className="text-brand-green-dark">{exp.expenseDate || (exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—")}</span></div>
                         <div><span className="text-brand-green-dark/50">Category:</span> <span className="text-brand-green-dark">{exp.category || "—"}</span></div>
                         <div className="col-span-2"><span className="text-brand-green-dark/50">Purpose:</span> <span className="text-brand-green-dark">{exp.purpose || "—"}</span></div>
                         <div><span className="text-brand-green-dark/50">Amount:</span> <span className="font-medium text-brand-green-dark">₹{((exp.amount || 0) / 100).toFixed(0)}</span></div>
@@ -304,7 +304,7 @@ export function AdminBillRecords({
               filteredExpenses.map((exp: any, i: number) => (
                 <tr key={exp.id || i} className="border-b border-brand-mist/60 last:border-b-0 hover:bg-brand-sand/30">
                   <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90">
-                    {exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—"}
+                    {exp.expenseDate || (exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90">{exp.category || "—"}</td>
                   <td className="max-w-[200px] truncate px-3 py-3 text-brand-green-dark/70">{exp.purpose || "—"}</td>

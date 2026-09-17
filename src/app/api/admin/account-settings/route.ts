@@ -286,6 +286,7 @@ export async function POST(req: NextRequest) {
           createdBy: actorName,
           createdAt: now,
           updatedAt: now,
+          expenseDate: `${month}-01`,
           createdMonth: monthKey,
         });
 

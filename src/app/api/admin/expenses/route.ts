@@ -92,7 +92,11 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "amount must be a positive integer (in paise)" }, { status: 400 });
         }
 
-        const month = getMonthKey();
+        const expenseDate = rest.expenseDate || todayIST();
+        if (!isValidReconciliationDate(expenseDate, todayIST())) {
+          return NextResponse.json({ error: "expenseDate must be a valid non-future date (YYYY-MM-DD)" }, { status: 400 });
+        }
+        const month = expenseDate.slice(0, 7);
         let billImageLink = "";
 
         const uploadOneImage = async (base64Data: string, mimeType: string, folderId: string): Promise<string> => {
@@ -140,6 +144,7 @@ export async function POST(req: NextRequest) {
           purpose: purpose || category,
           billImageLink,
           createdBy: actorName,
+          expenseDate,
           createdMonth: month,
           vendorId: vendorId || null,
           accountId: accountId || null,
@@ -454,9 +459,7 @@ export async function POST(req: NextRequest) {
 
         const incomeEntries = await db.select().from(dailyIncome).where(eq(dailyIncome.date, date)).orderBy(desc(dailyIncome.createdAt));
 
-        const dayExpenses = await db.select().from(expenses).where(
-          and(sql`${expenses.createdAt} >= ${date}`, sql`${expenses.createdAt} <= ${date + "T23:59:59"}`)
-        ).orderBy(desc(expenses.createdAt));
+        const dayExpenses = await db.select().from(expenses).where(eq(expenses.expenseDate, date)).orderBy(desc(expenses.id));
 
         // Attach vendor names
         const vendorIds = dayExpenses.filter((e) => e.vendorId).map((e) => e.vendorId!);
@@ -591,9 +594,7 @@ export async function POST(req: NextRequest) {
         // Get income/expense totals for the day
         const incomeEntries = await db.select().from(dailyIncome).where(eq(dailyIncome.date, date));
         const automaticReceipts = await db.select().from(guestReceipts).where(eq(guestReceipts.businessDate, date));
-        const dayExpenses = await db.select().from(expenses).where(
-          and(sql`${expenses.createdAt} >= ${date}`, sql`${expenses.createdAt} <= ${date + "T23:59:59"}`)
-        );
+        const dayExpenses = await db.select().from(expenses).where(eq(expenses.expenseDate, date));
 
         const priorLedgerEntries = await db.select().from(dailyLedger)
           .where(lt(dailyLedger.date, date)).orderBy(desc(dailyLedger.date));
@@ -658,9 +659,7 @@ export async function POST(req: NextRequest) {
         const db = getDb();
         const incomeEntries = await db.select().from(dailyIncome).where(eq(dailyIncome.date, date));
         const automaticReceipts = await db.select().from(guestReceipts).where(eq(guestReceipts.businessDate, date));
-        const dayExpenses = await db.select().from(expenses).where(
-          and(sql`${expenses.createdAt} >= ${date}`, sql`${expenses.createdAt} <= ${date + "T23:59:59"}`)
-        );
+        const dayExpenses = await db.select().from(expenses).where(eq(expenses.expenseDate, date));
         const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0)));
         const account = target.accountId === null ? null : allAccounts.find((item) => item.id === target.accountId);
         if (target.type === "online" && !account) {

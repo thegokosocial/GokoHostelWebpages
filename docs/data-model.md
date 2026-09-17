@@ -60,7 +60,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `employee_attendance` | Current per-day attendance state. |
 | `employee_attendance_history` | Attendance audit events; Audit-tab reads and manual audit cleanup follow the global retention policy. |
 | `salary_payments` | Plus auto `expenses` row. |
-| `expenses` | Bills. Drive links. `created_month`. |
+| `expenses` | Bills. Drive links. `expense_date` is the accounting/ledger date; `created_at` remains the audit insertion timestamp. `created_month` follows `expense_date`. |
 | `daily_income` | Manual income; `source_detail` labels Other entries. Also retains legacy `food_revenue_auto`. |
 | `daily_ledger` | Unique `(date, account_id)`. |
 

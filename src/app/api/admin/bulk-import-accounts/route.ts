@@ -236,6 +236,7 @@ async function importExpenses(
           updatedBy: "",
           createdAt,
           updatedAt: createdAt,
+          expenseDate: dateStr,
           createdMonth,
         });
         results.inserted++;

@@ -17,6 +17,8 @@ const MAIN_CATEGORIES = [
 type Account = { id: number; name: string; nickname: string };
 type Vendor = { id: number; name: string; category: string };
 
+const todayIST = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
 export function AdminAddExpense({
   password,
   username,
@@ -29,6 +31,7 @@ export function AdminAddExpense({
   permissions?: Record<string, boolean>;
 }) {
   const [amount, setAmount] = useState("");
+  const [expenseDate, setExpenseDate] = useState(todayIST);
   const [mainCategory, setMainCategory] = useState("stay_expense");
   const [subCategory, setSubCategory] = useState("");
   const [customCategory, setCustomCategory] = useState("");
@@ -136,6 +139,7 @@ export function AdminAddExpense({
         vendorId: vendorId ? parseInt(vendorId) : undefined,
         paymentMethod,
         accountId: paymentMethod === "online" && accountId ? parseInt(accountId) : undefined,
+        expenseDate,
       };
 
       if (billFiles.length > 0) {
@@ -160,6 +164,7 @@ export function AdminAddExpense({
       if (res.ok) {
         setSuccess("Expense submitted successfully!");
         setAmount("");
+        setExpenseDate(todayIST());
         setSubCategory("");
         setCustomCategory("");
         setPurpose("");
@@ -192,6 +197,18 @@ export function AdminAddExpense({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="e.g. 500"
+              className="mt-1"
+            />
+          </div>
+
+          {/* Expense date */}
+          <div>
+            <Label className="text-xs">Expense Date *</Label>
+            <Input
+              type="date"
+              value={expenseDate}
+              max={todayIST()}
+              onChange={(e) => setExpenseDate(e.target.value)}
               className="mt-1"
             />
           </div>
@@ -367,7 +384,7 @@ export function AdminAddExpense({
                 {recentExpenses.map((exp: any, i: number) => (
                   <tr key={exp.id || i} className="border-b border-brand-mist/60 last:border-b-0 hover:bg-brand-sand/30">
                     <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90">
-                      {exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—"}
+                      {exp.expenseDate || (exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—")}
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90">{exp.subCategory || exp.category || "—"}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-medium text-brand-green-dark">₹{(exp.amount / 100).toFixed(0)}</td>

@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { isPiRuntime } from "@/lib/runtime";
-import { addAuditEntry, addExpense, getAllUsers, getExpenseById, getMonthKey, getUserById, getUserByUsername } from "@/db/queries";
+import { addAuditEntry, addExpense, getAllUsers, getExpenseById, getUserById, getUserByUsername } from "@/db/queries";
 import { getDb } from "@/db";
 import { accounts, vendors } from "@/db/schema";
 import { desc } from "drizzle-orm";
+import { todayIST } from "@/lib/utils";
 import {
   assertBalanced,
   assertGokoPayerRules,
@@ -922,6 +923,7 @@ async function postHostelExpense(
   if (!subCategory) return { error: NextResponse.json({ error: "Category is required" }, { status: 400 }) };
   if (subCategory === "Salary") return { error: NextResponse.json({ error: "Reimbursements cannot be Salary" }, { status: 400 }) };
   const mainCategory = String(params.mainCategory || "stay_expense");
+  const expenseDate = String(params.expenseDate || todayIST());
   const vendorId = params.vendorId == null || params.vendorId === "" ? null : Number(params.vendorId);
   const category = subCategory === "Others" ? String(params.customCategory || purpose).trim() || purpose : subCategory;
   const id = await addExpense({
@@ -931,7 +933,8 @@ async function postHostelExpense(
     purpose: purpose || category,
     billImageLink: "",
     createdBy: actorName,
-    createdMonth: getMonthKey(),
+    expenseDate,
+    createdMonth: expenseDate.slice(0, 7),
     vendorId,
     accountId: paymentMethod === "cash" ? null : accountIdRaw,
     paymentMethod,

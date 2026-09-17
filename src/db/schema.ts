@@ -632,11 +632,13 @@ export const expenses = sqliteTable("expenses", {
   updatedBy: text("updated_by").default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").default(""),
+  expenseDate: text("expense_date").notNull().default(""),
   createdMonth: text("created_month").notNull(),
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_expenses_month").on(table.createdMonth),
   index("idx_expenses_created").on(table.createdAt),
+  index("idx_expenses_expense_date").on(table.expenseDate),
   index("idx_expenses_created_by").on(table.createdBy),
 ]);
 

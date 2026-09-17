@@ -32,9 +32,9 @@ Ledger / expenses / food / salary integers are **paise**. UI: rupees × 100 on t
 
 ## Add expense
 
-Amount, stay vs food, category, vendor, cash/online, account if online, notes, bill images (base64). Drive upload failure still saves the expense with empty/failed link. Audit `expense_added`.
+Amount, expense date (defaults to today in IST and cannot be future), stay vs food, category, vendor, cash/online, account if online, notes, bill images (base64). The selected expense date controls its accounting month and Daily Ledger/Reconciliation day; creation time remains the audit timestamp. Drive upload failure still saves the expense with empty/failed link. Audit `expense_added`.
 
-**Splits bridge:** Goko-as-payer and `payGokoReimbursement` insert the same `expenses` row (paise, `getMonthKey()` UTC, cash `accountId` null, never `paySalary` / Salary). See [flows-splits.md](flows-splits.md). Splits IOUs are **not** Accounts until cash moves.
+**Splits bridge:** Goko-as-payer and `payGokoReimbursement` insert the same `expenses` row (paise, split expense date, cash `accountId` null, never `paySalary` / Salary). See [flows-splits.md](flows-splits.md). Splits IOUs are **not** Accounts until cash moves.
 
 ---
 

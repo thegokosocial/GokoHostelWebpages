@@ -62,4 +62,16 @@ describe("manual income enhancements", () => {
     expect(route).toContain('.from(accounts).orderBy(accounts.name)');
     expect(route).toContain('new Set([month, ...monthRows.map');
   });
+
+  it("uses the entered expense date for accounting instead of creation time", () => {
+    const form = readFileSync("src/components/admin/AdminAddExpense.tsx", "utf8");
+    const schema = readFileSync("src/db/schema.ts", "utf8");
+    const migration = readFileSync("migrations/0054_expense_date.sql", "utf8");
+    expect(form).toContain('type="date"');
+    expect(form).toContain("expenseDate");
+    expect(route).toContain("expenseDate must be a valid non-future date");
+    expect(route).toContain("eq(expenses.expenseDate, date)");
+    expect(schema).toContain('expenseDate: text("expense_date")');
+    expect(migration).toContain("UPDATE expenses SET expense_date = substr(created_at, 1, 10)");
+  });
 });

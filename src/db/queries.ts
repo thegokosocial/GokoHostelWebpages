@@ -1239,7 +1239,7 @@ export async function getLowStockItems() {
 
 export async function addExpense(data: {
   amount: number; category: string; customCategory?: string; purpose: string;
-  billImageLink?: string; createdBy: string; createdMonth: string;
+  billImageLink?: string; createdBy: string; expenseDate: string; createdMonth: string;
   vendorId?: number | null; accountId?: number | null; paymentMethod?: string;
   mainCategory?: string; subCategory?: string;
 }) {
