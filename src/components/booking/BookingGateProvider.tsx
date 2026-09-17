@@ -15,7 +15,6 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { BOOKING_ENQUIRY_PATH, type BookingDestination } from "@/lib/bookingDestination";
@@ -106,7 +105,7 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
           overlayClassName="bg-brand-green-dark/70 backdrop-blur-sm"
           className={cn(
             "max-h-[min(92vh,880px)] max-w-lg gap-0 overflow-hidden border-2 border-brand-mist bg-gradient-to-b from-brand-sand to-white p-0 text-brand-green-dark shadow-[0_25px_80px_rgba(0,0,0,0.22)] sm:max-w-lg",
-            view === "terms" && "flex max-h-[min(92vh,880px)] flex-col"
+            view === "terms" && "!flex h-[min(92vh,880px)] max-h-[min(92vh,880px)] flex-col"
           )}
         >
           {destinationError && <div role="status" className="px-5 pt-4 text-sm">
@@ -381,47 +380,45 @@ function TermsBody({
         </h2>
         <p className="mt-1 text-xs text-brand-green-dark/70">{t.lastUpdated}</p>
       </div>
-      <ScrollArea className="min-h-0 max-h-[52vh] md:max-h-[56vh]">
-        <div className="px-5 py-4 md:px-6">
-          <p className="text-sm leading-relaxed text-brand-green-dark/90">{t.intro}</p>
-          <div className="mt-5 space-y-5">
-            {t.sections.map((sec) => (
-              <section key={sec.title} className="rounded-xl border border-brand-mist bg-white/80 p-4">
-                <div className="flex items-center gap-2">
-                  <span aria-hidden>{sec.icon}</span>
-                  <h3 className="font-display text-base font-bold text-brand-green-dark">
-                    {sec.title}
-                  </h3>
-                </div>
-                <ul className="mt-3 list-inside list-disc space-y-1.5 text-sm text-brand-green-dark/90">
-                  {sec.bullets.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-          <div className="mt-5 rounded-xl border-2 border-brand-mist bg-amber-50/80 p-4">
-            <p className="flex items-center gap-2 font-display text-sm font-bold text-brand-green-dark">
-              <span aria-hidden>⚡</span>
-              {t.importantTitle}
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-brand-green-dark/90">
-              {t.importantBody}
-            </p>
-          </div>
-          <div className="mt-4 space-y-1 text-center text-sm text-brand-green-dark/80">
-            <p>
-              <span aria-hidden>🚀 </span>
-              {t.footerName}
-            </p>
-            <p>
-              <span aria-hidden>📍 </span>
-              {t.footerTagline}
-            </p>
-          </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 md:px-6">
+        <p className="text-sm leading-relaxed text-brand-green-dark/90">{t.intro}</p>
+        <div className="mt-5 space-y-5">
+          {t.sections.map((sec) => (
+            <section key={sec.title} className="rounded-xl border border-brand-mist bg-white/80 p-4">
+              <div className="flex items-center gap-2">
+                <span aria-hidden>{sec.icon}</span>
+                <h3 className="font-display text-base font-bold text-brand-green-dark">
+                  {sec.title}
+                </h3>
+              </div>
+              <ul className="mt-3 list-inside list-disc space-y-1.5 text-sm text-brand-green-dark/90">
+                {sec.bullets.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
         </div>
-      </ScrollArea>
+        <div className="mt-5 rounded-xl border-2 border-brand-mist bg-amber-50/80 p-4">
+          <p className="flex items-center gap-2 font-display text-sm font-bold text-brand-green-dark">
+            <span aria-hidden>⚡</span>
+            {t.importantTitle}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-brand-green-dark/90">
+            {t.importantBody}
+          </p>
+        </div>
+        <div className="mt-4 space-y-1 pb-2 text-center text-sm text-brand-green-dark/80">
+          <p>
+            <span aria-hidden>🚀 </span>
+            {t.footerName}
+          </p>
+          <p>
+            <span aria-hidden>📍 </span>
+            {t.footerTagline}
+          </p>
+        </div>
+      </div>
       <div className="shrink-0 space-y-4 border-t border-brand-mist bg-brand-sand/40 px-5 py-4 md:px-6">
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox
