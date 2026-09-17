@@ -88,7 +88,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     </div>
     {tab === "search" ? <div role="tabpanel" id="panel-search" aria-labelledby="tab-search">
       <h2 className="font-display text-2xl font-bold">Find your bed by the beach</h2>
-      <p className="mt-1 text-sm">Choose your dates, compare our stays and make yourself at home. Dorm beds and double beds · No private rooms.</p>
       <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-3">
         <label className="col-span-2 min-w-0 text-sm font-semibold min-[360px]:col-span-1 lg:col-span-2">
           Dates
@@ -174,7 +173,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
           </div>}
         </>}
       </div>}
-      <p className="mt-4 text-sm">Guests aged 18–35 only. No children. The online bed-selection limit is set by Goko. Our team must confirm actual guest count and your stay; online checkout is not enabled yet.</p>
     </div> : <div role="tabpanel" id="panel-booking" aria-labelledby="tab-booking">
       <h2 className="font-display text-2xl font-bold">Find your booking</h2>
       <p className="mt-1 text-sm">Enter your confirmation number and the email used for your booking. We’ll email a verification code from booking@gokohostel.com.</p>

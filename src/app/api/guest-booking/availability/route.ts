@@ -11,6 +11,6 @@ export async function GET(req: NextRequest) {
     if (new Set(entries.map(([key]) => key)).size !== entries.length) return NextResponse.json({ error: "Duplicate search fields" }, { status: 400, headers });
     return NextResponse.json(await searchGuestRooms(Object.fromEntries(entries)), { headers });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof ZodError ? error.issues[0]?.message : "Availability is temporarily unavailable. Please contact Goko." }, { status: error instanceof ZodError ? 400 : 503, headers });
+    return NextResponse.json({ error: error instanceof ZodError ? error.issues[0]?.message : "Could not load availability. Please try again." }, { status: error instanceof ZodError ? 400 : 503, headers });
   }
 }
