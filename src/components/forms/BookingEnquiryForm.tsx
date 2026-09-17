@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { site } from "@/lib/site";
+import { bookingEnquirySchema, formatBookingEnquiryBody, type BookingEnquiryPayload } from "@/lib/bookingEnquiry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,21 +12,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn, todayIST } from "@/lib/utils";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 
-const schema = z.object({
-  name: z.string().trim().min(2, "Please enter your name"),
-  email: z.string().trim().email("Valid email required"),
-  phone: z.string().trim().min(8, "Phone number required"),
-  checkIn: z.string().optional(),
-  checkOut: z.string().optional(),
-  guests: z.string().optional(),
-  message: z.string().trim().min(10, "Tell us a bit more (10+ characters)"),
-});
-
-type FormState = z.infer<typeof schema>;
-
 export function BookingEnquiryForm() {
-  const form = useForm<FormState>({
-    resolver: zodResolver(schema),
+  const form = useForm<BookingEnquiryPayload>({
+    resolver: zodResolver(bookingEnquirySchema),
     defaultValues: {
       name: "",
       email: "",
@@ -35,39 +23,46 @@ export function BookingEnquiryForm() {
       checkOut: "",
       guests: "",
       message: "",
+      _hp: "",
     },
   });
 
   const [submitted, setSubmitted] = useState<"whatsapp" | "email" | null>(null);
-
-  function buildBody(data: FormState) {
-    const lines = [
-      `Booking enquiry — ${site.shortName}`,
-      `Name: ${data.name}`,
-      `Email: ${data.email}`,
-      `Phone: ${data.phone}`,
-    ];
-    if (data.checkIn) lines.push(`Check-in: ${data.checkIn}`);
-    if (data.checkOut) lines.push(`Check-out: ${data.checkOut}`);
-    if (data.guests) lines.push(`Guests: ${data.guests}`);
-    lines.push("", data.message);
-    return lines.join("\n");
-  }
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
   function openWhatsApp() {
     void form.handleSubmit((data) => {
-      const text = encodeURIComponent(buildBody(data));
+      const text = encodeURIComponent(formatBookingEnquiryBody(data));
       window.open(`${site.whatsAppUrl}?text=${text}`, "_blank", "noopener,noreferrer");
       setSubmitted("whatsapp");
+      setSubmitError(null);
     })();
   }
 
-  function sendEmail() {
-    void form.handleSubmit((data) => {
-      const body = encodeURIComponent(buildBody(data));
-      const subject = encodeURIComponent(`Booking enquiry — ${data.name}`);
-      window.location.href = `mailto:${site.contactEmail}?subject=${subject}&body=${body}`;
-      setSubmitted("email");
+  function sendEnquiry() {
+    void form.handleSubmit(async (data) => {
+      setSubmitted(null);
+      setSubmitError(null);
+      setSending(true);
+      try {
+        const res = await fetch("/api/booking-enquiry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          setSubmitError(json.error ?? "Could not send enquiry. Try WhatsApp instead.");
+          return;
+        }
+        setSubmitted("email");
+        form.reset();
+      } catch {
+        setSubmitError("Could not send enquiry. Try WhatsApp instead.");
+      } finally {
+        setSending(false);
+      }
     })();
   }
 
@@ -78,6 +73,14 @@ export function BookingEnquiryForm() {
       className="mx-auto max-w-xl space-y-5 rounded-3xl border border-brand-mist bg-white p-6 shadow-card md:p-8"
       onSubmit={(e) => e.preventDefault()}
     >
+      <input
+        type="text"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="hidden"
+        {...form.register("_hp")}
+      />
       <div className="space-y-2">
         <Label htmlFor="enq-name" className="text-brand-green">
           Name
@@ -192,6 +195,7 @@ export function BookingEnquiryForm() {
           className="flex-1"
           onClick={() => {
             setSubmitted(null);
+            setSubmitError(null);
             openWhatsApp();
           }}
         >
@@ -201,19 +205,22 @@ export function BookingEnquiryForm() {
           type="button"
           variant="ctaOutline"
           className="flex-1"
-          onClick={() => {
-            setSubmitted(null);
-            sendEmail();
-          }}
+          disabled={sending}
+          onClick={sendEnquiry}
         >
-          Open email draft
+          {sending ? "Sending…" : "Send enquiry"}
         </Button>
       </div>
+      {submitError ? (
+        <p className="text-center text-sm text-brand-red" role="alert">
+          {submitError}
+        </p>
+      ) : null}
       {submitted ? (
         <p className="text-center text-sm text-brand-green-dark/80" role="status">
           {submitted === "whatsapp"
             ? "If WhatsApp did not open, check your pop-up settings."
-            : "Your mail app should open with a pre-filled message."}
+            : "Thanks — we received your enquiry and sent a confirmation to your email."}
         </p>
       ) : null}
     </form>

@@ -36,7 +36,7 @@ export const site = {
   googleBusinessUrl: "https://maps.app.goo.gl/t5Bgbrx66h1fsS9t7",
   ogImage: "/images/IMG_7403.jpg",
   whatsAppUrl: "https://wa.me/919833624363",
-  contactEmail: "thegokosocial@gmail.com",
+  contactEmail: "info@gokohostel.com",
   googleReviewsSearchUrl:
     "https://www.google.com/search?q=Goko+Hostel+Gokarna+reviews",
   /** Google Tag Manager container ID */

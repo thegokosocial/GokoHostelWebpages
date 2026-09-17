@@ -2,7 +2,7 @@
 
 **Git-safe.** Names and what they do. **Values** live in gitignored [secrets-and-access.md](secrets-and-access.md), Mac `.env.local`, Pi `.env.local`, and Wrangler secrets. Do not paste passwords here.
 
-Committed bindings (not env): `wrangler.jsonc` — Worker name, D1 `goko-hostel-db`, R2 `goko-media`.
+Committed bindings (not env): `wrangler.jsonc` — Worker name, D1 `goko-hostel-db`, R2 `goko-media`, Email Sending `EMAIL`.
 
 ---
 
@@ -50,7 +50,7 @@ DB staff: `users.password_hash` = SHA-256(password + `goko-salt-2026`). Kitchen 
 | `CLOUDFLARE_DATABASE_ID` | D1 UUID (also in `wrangler.jsonc`) |
 | `CLOUDFLARE_D1_TOKEN` | Token for seed/scripts |
 
-Worker itself uses binding `DB`, not these.
+Worker itself uses bindings `DB` and `EMAIL`, not these HTTP vars. Email flow: [flows-email.md](flows-email.md).
 
 ---
 

@@ -1,4 +1,4 @@
-Contact: mailto:thegokosocial@gmail.com
+Contact: mailto:info@gokohostel.com
 Contact: https://wa.me/919833624363
 Preferred-Languages: en
 Canonical: https://www.gokohostel.com/.well-known/security.txt

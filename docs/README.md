@@ -64,3 +64,4 @@ Handoff in short: trust `src/` over docs; trust local `MAINTAINER.local.md` for 
 | [flows-cms.md](flows-cms.md) | Events / Community, R2 |
 | [flows-sync.md](flows-sync.md) | Cloudflare ↔ Pi |
 | [flows-reviews-formc.md](flows-reviews-formc.md) | Reviews + FRRO Form C |
+| [flows-email.md](flows-email.md) | Cloudflare Email Sending + Routing (`info@`, `admin@`) |

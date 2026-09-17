@@ -23,7 +23,7 @@ All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these 
 | `/things-to-do` | content | `heroVideo={null}` still |
 | `/faqs` | content | hero B |
 | `/reviews` | content | default loop |
-| `/booking-enquiry` | form → WhatsApp / email | default loop |
+| `/booking-enquiry` | form → WhatsApp or `POST /api/booking-enquiry` (Cloudflare Email Sending) | default loop |
 | `/book` | branded Goko direct-booking entry → enquiry / WhatsApp | Native date/room checkout and payments not yet implemented |
 
 `robots.ts` **disallows:** `/self-checkin`, `/admin`, `/api/`, `/food-order`, `/kitchen`, `/my-bills`, `/review/`.
@@ -97,7 +97,7 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | |
 | `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar, and payroll summaries; attendance history is also available in Management → Audit → Attendance to users with `canViewAudit` |
-| `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; assigned users update their own tasks; task managers create, assign, archive, reopen, and record linked purchase expenses |
+| `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; title-only tasks may remain unassigned until later; assigned users update their own tasks; task managers create, assign/reassign/unassign, archive, reopen, and record linked purchase expenses |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
 | `bookingSettings` | `BookingSettings` | admin only; Cloudflare only | Draft native booking policies and credential-presence metadata; invalid drafts show a sanitized error and block editing/readiness, with load retry; checkout remains disabled |

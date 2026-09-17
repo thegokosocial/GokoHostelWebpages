@@ -34,6 +34,11 @@
 			"bucket_name": "goko-media"
 		}
 	],
+	"send_email": [
+		{
+			"name": "EMAIL"
+		}
+	],
 	// v1 created OpenNext's ISR Durable Object (Workers Free 10ms cannot SSR those pages).
 	// v2 deletes it. Do not re-add DO / incremental-cache R2 bindings.
 	"migrations": [
