@@ -89,6 +89,19 @@ describe("dateRangePicker helpers", () => {
     });
   });
 
+  it("does not auto-fill checkout when DayPicker sends same-day from and to", () => {
+    const sameDay = applyRangeSelection(
+      { from: new Date(2026, 8, 30), to: new Date(2026, 8, 30) },
+      { minNights: 1, maxNights: 30 },
+    );
+    expect(sameDay).toEqual({
+      startDate: "2026-09-30",
+      endDate: "",
+      complete: false,
+      valid: false,
+    });
+  });
+
   it("commits guest Oct 1–3 only when range is complete", () => {
     const complete = applyRangeSelection(
       { from: new Date(2026, 9, 1), to: new Date(2026, 9, 3) },

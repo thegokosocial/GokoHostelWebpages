@@ -12,6 +12,8 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toMatch(/const field = "[^"]*min-h-12[^"]*min-w-0[^"]*text-base/);
     expect(panel).toContain("DateRangePicker");
     expect(panel).toContain("maxNights={30}");
+    expect(readFileSync("src/components/dates/DateRangePicker.tsx", "utf8")).toContain("min={minNights}");
+    expect(readFileSync("src/components/dates/DateRangePicker.tsx", "utf8")).toContain("max={maxNights ?? undefined}");
     expect(panel).toContain('type="tel"');
     expect(panel).toContain('inputMode="numeric"'); expect(panel).toContain('autoComplete="one-time-code"');
   });

@@ -109,9 +109,15 @@ export function applyRangeSelection(
     return { startDate: "", endDate: "", complete: false, valid: false };
   }
   const startDate = toCalendarDateString(range.from);
+  const minNights = opts.minNights ?? 1;
   if (!range.to) {
     return { startDate, endDate: "", complete: false, valid: false };
   }
-  const normalized = normalizeStayRange(startDate, toCalendarDateString(range.to), opts);
+  const endIso = toCalendarDateString(range.to);
+  // DayPicker with min=0 sets from=to on first click; never auto-complete checkout.
+  if (endIso <= startDate && minNights > 0) {
+    return { startDate, endDate: "", complete: false, valid: false };
+  }
+  const normalized = normalizeStayRange(startDate, endIso, opts);
   return { ...normalized, complete: true };
 }

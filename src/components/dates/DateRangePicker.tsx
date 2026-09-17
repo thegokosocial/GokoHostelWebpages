@@ -115,6 +115,8 @@ export function DateRangePicker({
     <Calendar
       mode="range"
       numberOfMonths={monthCount}
+      min={minNights}
+      max={maxNights ?? undefined}
       selected={selected.from ? { from: selected.from, to: selected.to } : undefined}
       onSelect={handleSelect}
       disabled={disabled ? true : disabledMatcher}
