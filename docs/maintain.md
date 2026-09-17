@@ -130,6 +130,15 @@ npx wrangler d1 execute goko-hostel-db --remote --command "PRAGMA table_info(the
 npx wrangler d1 execute goko-hostel-db --remote --command "INSERT INTO d1_migrations (name, applied_at) VALUES ('00XX_name.sql', datetime('now'))"
 ```
 
+**Trigger migrations (`0059`, `0060`):** `wrangler d1 migrations apply --remote` can fail with `incomplete input: SQLITE_ERROR` because D1’s remote `/query` splitter mishandles `CREATE TRIGGER … BEGIN …; … END;` bodies. The SQL is valid — apply each file with the import path, then stamp:
+
+```bash
+npx wrangler d1 execute goko-hostel-db --remote --file migrations/0059_native_inventory_hold_primitive.sql
+npx wrangler d1 execute goko-hostel-db --remote --command "INSERT INTO d1_migrations (name, applied_at) VALUES ('0059_native_inventory_hold_primitive.sql', datetime('now'))"
+```
+
+Repeat per file. Keep `migrations/*.sql` LF (`/.gitattributes`). `0061_guest_booking_lookup.sql` applies normally via `migrations apply`.
+
 Local Wrangler D1: `npm run db:migrate:local`.
 
 D1 HTTP from this Mac (seed/scripts): set `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, `CLOUDFLARE_D1_TOKEN` from [secrets-and-access.md](secrets-and-access.md). Do not put the token in git.
