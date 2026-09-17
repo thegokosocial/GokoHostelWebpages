@@ -8,7 +8,7 @@ The independent payment **model**, not a live gateway implementation, now binds 
 
 Follow-up validation: **92 files / 1,433 Vitest tests passed**, including 94 focused foundation/persistence tests; original 66 model scenarios passed; **19 adversarial groups passed, zero findings**. The repeated-capture group exercises 20 distinct captures plus replay for each fulfilled/cancelled/unfulfilled path, checking per-payment capacities after every event. TypeScript, diff checks and the production build passed after the final query optimization. Existing unrelated lint warnings remain.
 
-No deployment, migration or real payment/refund occurred. Native checkout is still missing and disabled, so the release verdict remains **not approved for native money handling**. An invalid persisted draft requires reviewed maintenance repair; automatic reset is intentionally unavailable. Multi-admin optimistic locking and real D1/provider/UI end-to-end tests remain release work. The rest of this document preserves the **initial review snapshot**, not current unresolved defects.
+No deployment, migration or real payment/refund occurred. Native checkout is still missing and disabled, so the release verdict remains **not approved for native money handling**. An invalid persisted draft requires reviewed maintenance repair; automatic reset is intentionally unavailable. A subsequent implementation now includes multi-admin revision/CAS protection and an isolated admin-only Razorpay test preview with durable recovery; [scope and checks](integrations-razorpay.md). Actual native D1/provider/UI end-to-end verification remains release work. The rest of this document preserves the **initial review snapshot**, not current unresolved defects.
 
 ## Verdict
 

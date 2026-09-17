@@ -62,6 +62,8 @@ Bookings, Timeline, and Inventory custom date ranges are view filters. They do n
 
 `/api/admin/booking-settings`: `getSettings`, `saveSettings`, and `checkGatewayReadiness` require authenticated **admin role**, and all return 403 on Pi. Management's `bookingSettings` tab is also admin-only/Cloudflare-only. No new permission key or fallback is introduced for this foundation. Invalid saved drafts fail closed with 409 `BOOKING_SETTINGS_INVALID`; partial saves preserve other saved fields. `/api/booking/config` and `/api/booking/destination` are public but expose only validated guest routing, not the authenticated Channel Manager config. Their dedicated query selects only guest destination/API base columns, never password or webhook-secret columns. Readiness currently means configuration presence only, never capture/webhook/provider verification. Native checkout is disabled. See [Website booking foundation](flows-website-booking.md).
 
+Booking Settings saves additionally require the revision returned by `getSettings`; stale/missing revisions and intervening database writes return 409 `BOOKING_SETTINGS_CONFLICT` without overwriting drafts. `/api/admin/booking-payments` is authenticated **admin-role-only** for every test action (connectivity, list, create, get, claim checkout, verify callback, reconcile, refund, retry webhook); manager/staff permissions and compatibility aliases never grant access. All gateway routes/services reject Pi. New test orders/checkout claims/refunds require `RAZORPAY_TEST_PREVIEW_ENABLED=true`; reconciliation survives disabling it with original test keys. No stored payment permission is introduced for this isolated preview. `/api/webhooks/razorpay` is public but requires exact-byte test-secret HMAC and a valid event ID; test/live secrets must be distinct. It does not accept a client-selected environment or activate guest/live payments. See [Razorpay workflows and release boundary](integrations-razorpay.md).
+
 `/api/admin/reviews`: admin **or** `canViewReviews`.
 
 `/api/admin/import` and `/api/admin/upload`: env `ADMIN_PASSWORD` / `MANAGER_PASSWORD` only — **not** DB users.
@@ -73,6 +75,8 @@ Sync: `ADMIN_PASSWORD` **or** `SYNC_SECRET`.
 Aiosell webhook: D1 `channel_config.webhookSecret` via `Authorization` or `x-api-key` (raw or `Bearer …`). 503 if inactive or secret empty. 401 on mismatch.
 
 ---
+
+New Razorpay test order/checkout/refund operations additionally require a current test webhook secret distinct from all configured current/previous live secrets and successful preflight of every gateway table/column. These setup checks do not weaken the admin-role or Pi denial gates and cannot enable guest/live checkout.
 
 ## Full permission keys (Users UI)
 
@@ -212,3 +216,12 @@ Entire route: `canManageAccountSettings` (or legacy `canManageAccounts`) or admi
 Check-in, food menu/order/status/bills, `/api/site`, `/api/media`, `/api/settings`, `/api/validate-id`, review token page, Aiosell webhook (provider auth, not staff password).
 
 Kitchen is staff-passworded but not full admin RBAC. Its `updateStatusBulk` action only permits the forward stage transitions placed → preparing, preparing → ready, and ready → served; it skips orders that have moved out of the requested stage so stale screens cannot move them backward or across stages.
+# Internal native hold milestone (17 September 2026)
+
+Accepted-quote persistence/recovery verifies original hold ownership and rejects Pi. It adds no route, active permission or compatibility alias; internal acceptance is opt-in. SQL protects immutable evidence, but that does not authorize payment/booking fulfilment. See [accepted-quote workflow](native-accepted-quotes.md).
+
+Internal quote/refund calculators add no permission or endpoint. Checked-in/out cancellation calculations are rejected for staff-workflow handling; this is a lifecycle guard, not a substitute for authorization. Future refund APIs still require explicit money-action permission maps and atomic claims. See [scope](native-booking-quotes-and-refunds.md).
+
+Read-only recovery now requires the original UUID request key and matching owner-token hash in the storage query; missing requests/wrong owners return the same 404. Hold-aware advisory selection remains internal and opt-in. Both reject Pi before storage access; neither adds a route or bypasses existing staff authorization. No public guest capability is enabled. Storage failures are sanitized.
+
+The [physical inventory hold primitive](native-inventory-hold-foundation.md) adds no page, public/admin API action or permission key. Creation is Cloudflare-only and default-disabled via `GOKO_NATIVE_HOLD_INTERNAL_ENABLED`; recovery/release require the original hashed owner token. No guest authorization, payment permission or production checkout is implemented by this primitive. Existing permission aliases and page gates are unchanged. Public exposure requires the remaining pool/quota, fulfilment, abuse-protection and Pi ownership release gates first.

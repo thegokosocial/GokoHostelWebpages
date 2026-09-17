@@ -3,6 +3,7 @@ import SQLite from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 import * as schema from "@/db/schema";
 import { WEBSITE_BOOKING_SETTINGS_KEY } from "@/lib/websiteBookingSettings";
 
@@ -15,13 +16,16 @@ vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => state.pi }));
 // disposable SQLite. Authentication is stubbed; no production database is used.
 import { getSetting, setSetting, upsertChannelConfig } from "@/db/queries";
 import { POST as settingsApi } from "@/app/api/admin/booking-settings/route";
+import { compareAndSetWebsiteSettings } from "@/lib/websiteBookingSettingsStore";
 import { GET as configApi } from "@/app/api/booking/config/route";
 import { GET as destinationApi } from "@/app/api/booking/destination/route";
 
 let sqlite: SQLite.Database;
-function request(action: string, settings?: unknown) {
+function request(action: string, settings?: unknown, suppliedRevision?: string) {
+  const raw = sqlite.open ? (sqlite.prepare("SELECT value FROM settings WHERE key=?").get(WEBSITE_BOOKING_SETTINGS_KEY) as { value: string } | undefined)?.value ?? null : null;
+  const revision = suppliedRevision ?? createHash("sha256").update(raw === null ? "missing" : `saved:${raw}`).digest("hex");
   return new NextRequest("https://review.invalid/api/admin/booking-settings", {
-    method: "POST", body: JSON.stringify({ password: "DUMMY_REVIEW_AUTH", action, settings }),
+    method: "POST", body: JSON.stringify({ password: "DUMMY_REVIEW_AUTH", action, settings, revision }),
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -47,6 +51,35 @@ beforeEach(() => {
 afterEach(() => { if (sqlite.open) sqlite.close(); vi.unstubAllEnvs(); });
 
 describe("Real SQLite website booking foundation workflows", () => {
+  it("rejects a stale administrator edit without losing the first editor's changes", async () => {
+    const loaded = await (await settingsApi(request("getSettings"))).json();
+    expect(loaded.revision).toMatch(/^[a-f0-9]{64}$/);
+    expect((await settingsApi(request("saveSettings", { advancePercent: 75 }, loaded.revision))).status).toBe(200);
+    const response = await settingsApi(request("saveSettings", { advancePercent: 20 }, loaded.revision));
+    expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ code: "BOOKING_SETTINGS_CONFLICT" });
+    expect(JSON.parse((await getSetting(WEBSITE_BOOKING_SETTINGS_KEY))!).advancePercent).toBe(75);
+  });
+  it("requires a supplied revision for old save clients instead of silently overwriting a policy", async () => {
+    const response = await settingsApi(new NextRequest("https://review.invalid/api/admin/booking-settings", {
+      method: "POST", body: JSON.stringify({ password: "DUMMY_REVIEW_AUTH", action: "saveSettings", settings: {} }),
+    }));
+    expect(response.status).toBe(409); expect(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY)).toBeNull();
+  });
+  it("single-statement compare-and-set rejects an intervening create or update", async () => {
+    expect(await compareAndSetWebsiteSettings(null, '{"advancePercent":75}')).toBe(true);
+    expect(await compareAndSetWebsiteSettings(null, '{"advancePercent":10}')).toBe(false);
+    const previous = await getSetting(WEBSITE_BOOKING_SETTINGS_KEY);
+    expect(await compareAndSetWebsiteSettings(previous, '{"advancePercent":50}')).toBe(true);
+    expect(await compareAndSetWebsiteSettings(previous, '{"advancePercent":20}')).toBe(false);
+    expect(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY)).toBe('{"advancePercent":50}');
+  });
+  it("concurrent administrators using the same revision cannot save different drafts", async () => {
+    const loaded = await (await settingsApi(request("getSettings"))).json();
+    const edits = [25, 50, 75].map((advancePercent) => request("saveSettings", { advancePercent }, loaded.revision));
+    const responses = await Promise.all(edits.map((r) => settingsApi(r)));
+    expect(responses.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(responses.filter((r) => r.status === 409)).toHaveLength(2);
+  });
   it("round-trips draft policy and environment through the actual API and query layer", async () => {
     expect((await settingsApi(request("saveSettings", { advancePercent: 75, gatewayEnvironment: "live", policyText: "Reviewed draft only" }))).status).toBe(200);
     const saved = JSON.parse((await getSetting(WEBSITE_BOOKING_SETTINGS_KEY))!);

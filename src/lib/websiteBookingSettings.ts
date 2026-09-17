@@ -19,6 +19,12 @@ export const websiteBookingSettingsSchema = z.object({
 export type WebsiteBookingSettings = z.infer<typeof websiteBookingSettingsSchema>;
 export const DEFAULT_WEBSITE_BOOKING_SETTINGS = websiteBookingSettingsSchema.parse({});
 
+/** Opaque revision binds an edit to the exact saved draft, including absence. */
+export async function websiteBookingSettingsRevision(raw: string | null) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw === null ? "missing" : `saved:${raw}`));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export class InvalidWebsiteBookingSettingsError extends Error {
   constructor() {
     super("Saved booking settings are invalid. Review the stored draft before replacing it; defaults have not been activated.");

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex, check } from "drizzle-orm/sqlite-core";
 
 // Sync columns shared across synced tables
 const syncColumns = {
@@ -99,6 +99,64 @@ export const settings = sqliteTable("settings", {
   syncUpdatedAt: text("sync_updated_at"),
   syncSource: text("sync_source").default("cloudflare"),
 });
+
+// Test gateway evidence is intentionally excluded from Cloudflare/Pi sync.
+// Internal hold primitive: not exposed to guests or synchronized to Pi.
+export const nativeInventoryHolds = sqliteTable("native_inventory_holds", {
+  id: text("id").primaryKey(), requestKey: text("request_key").notNull().unique(),
+  requestHash: text("request_hash").notNull(), ownerHash: text("owner_hash").notNull(),
+  bedIds: text("bed_ids").notNull(), checkinDate: text("checkin_date").notNull(), checkoutDate: text("checkout_date").notNull(),
+  expiresAt: integer("expires_at").notNull(), state: text("state").notNull().default("held"), createdAt: integer("created_at").notNull(),
+}, (t) => [index("idx_native_hold_dates").on(t.state, t.checkinDate, t.checkoutDate, t.expiresAt),
+  check("native_hold_beds", sql`json_valid(${t.bedIds}) AND json_type(${t.bedIds}) = 'array' AND json_array_length(${t.bedIds}) BETWEEN 1 AND 4`),
+  check("native_hold_dates", sql`${t.checkoutDate} > ${t.checkinDate}`),
+  check("native_hold_state", sql`${t.state} IN ('held','released')`),
+  check("native_hold_expiry", sql`${t.expiresAt} > ${t.createdAt} AND ${t.expiresAt} <= ${t.createdAt} + 900`),
+]);
+
+export const nativeAcceptedQuotes = sqliteTable("native_accepted_quotes", {
+  id: text("id").primaryKey().notNull(),
+  holdId: text("hold_id").notNull().unique().references(() => nativeInventoryHolds.id),
+  quoteJson: text("quote_json").notNull(), acceptedAt: integer("accepted_at").notNull(),
+}, (t) => [check("native_quote_json", sql`json_valid(${t.quoteJson}) AND json_type(${t.quoteJson}) = 'object'`)]);
+
+export const gatewayPreviewAttempts = sqliteTable("gateway_preview_attempts", {
+  id: text("id").primaryKey(), requestKey: text("request_key").notNull().unique(),
+  environment: text("environment").notNull().default("test"), keyId: text("key_id").notNull(),
+  receipt: text("receipt").notNull().unique(), amountPaise: integer("amount_paise").notNull().default(100),
+  orderId: text("order_id").unique(), state: text("state").notNull().default("creating"),
+  checkoutStartedAt: text("checkout_started_at"),
+  createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  check("gateway_preview_test_only", sql`${t.environment} = 'test'`),
+  check("gateway_preview_test_key", sql`${t.keyId} LIKE 'rzp_test_%'`),
+  check("gateway_preview_fixed_amount", sql`${t.amountPaise} = 100`),
+  check("gateway_preview_attempt_state", sql`${t.state} IN ('creating','order_unknown','created')`),
+]);
+export const gatewayPreviewPayments = sqliteTable("gateway_preview_payments", {
+  id: text("id").primaryKey(), attemptId: text("attempt_id").notNull().references(() => gatewayPreviewAttempts.id),
+  amountPaise: integer("amount_paise").notNull(), status: text("status").notNull(),
+  captured: integer("captured").notNull().default(0), refundedPaise: integer("refunded_paise").notNull().default(0),
+  verifiedAt: text("verified_at").notNull(),
+}, (t) => [index("idx_gateway_preview_payments_attempt").on(t.attemptId),
+  check("gateway_preview_payment_amount", sql`${t.amountPaise} = 100`),
+  check("gateway_preview_payment_status", sql`${t.status} IN ('created','authorized','captured','refunded','failed')`),
+  check("gateway_preview_captured_flag", sql`${t.captured} IN (0,1)`),
+  check("gateway_preview_refunded_amount", sql`${t.refundedPaise} BETWEEN 0 AND 100`),
+]);
+export const gatewayPreviewRefunds = sqliteTable("gateway_preview_refunds", {
+  paymentId: text("payment_id").primaryKey().references(() => gatewayPreviewPayments.id),
+  id: text("id").notNull().unique(), receipt: text("receipt").notNull().unique(), providerId: text("provider_id").unique(),
+  state: text("state").notNull().default("submitting"), createdBy: text("created_by").notNull(), updatedAt: text("updated_at").notNull(),
+}, (t) => [check("gateway_preview_refund_state", sql`${t.state} IN ('submitting','unknown','pending','processed','failed')`)]);
+export const gatewayPreviewWebhooks = sqliteTable("gateway_preview_webhooks", {
+  eventId: text("event_id").primaryKey(), payloadHash: text("payload_hash").notNull(), eventType: text("event_type").notNull(),
+  orderId: text("order_id"), paymentId: text("payment_id"), attemptId: text("attempt_id"),
+  state: text("state").notNull().default("received"), receivedAt: text("received_at").notNull(), updatedAt: text("updated_at").notNull(),
+  refundId: text("refund_id"),
+}, (t) => [index("idx_gateway_preview_webhooks_state").on(t.state, t.receivedAt),
+  check("gateway_preview_webhook_state", sql`${t.state} IN ('received','retry','processed','ignored')`),
+]);
 
 export const apiStats = sqliteTable("api_stats", {
   id: integer("id").primaryKey({ autoIncrement: true }),

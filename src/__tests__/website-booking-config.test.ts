@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 import { bookingDestination, NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
 import { websiteBookingSettingsSchema, gatewayConfiguration } from "@/lib/websiteBookingSettings";
 
@@ -7,7 +8,9 @@ const mocks = vi.hoisted(() => ({
   getChannelConfig: vi.fn(), getSetting: vi.fn(), setSetting: vi.fn(),
   upsertChannelConfig: vi.fn(),
   authenticateUser: vi.fn(), isPiRuntime: vi.fn(),
+  compareAndSetWebsiteSettings: vi.fn(),
 }));
+vi.mock("@/lib/websiteBookingSettingsStore", () => ({ compareAndSetWebsiteSettings: mocks.compareAndSetWebsiteSettings }));
 vi.mock("@/db/queries", () => ({
   getGuestBookingConfig: mocks.getChannelConfig,
   getChannelConfig: mocks.getChannelConfig, getSetting: mocks.getSetting, setSetting: mocks.setSetting,
@@ -22,6 +25,9 @@ import { POST as bookingSettings } from "@/app/api/admin/booking-settings/route"
 import { POST as channelManager } from "@/app/api/admin/channel-manager/route";
 
 function request(body: unknown) {
+  if (body && typeof body === "object" && "action" in body && body.action === "saveSettings" && !("revision" in body)) {
+    body = { ...body, revision: createHash("sha256").update("missing").digest("hex") };
+  }
   return new NextRequest("https://www.gokohostel.com/api/admin/booking-settings", {
     method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" },
   });
@@ -31,6 +37,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.getChannelConfig.mockResolvedValue(null);
   mocks.getSetting.mockResolvedValue(null);
+  mocks.compareAndSetWebsiteSettings.mockResolvedValue(true);
   mocks.authenticateUser.mockResolvedValue({ role: "admin", permissions: {} });
   mocks.isPiRuntime.mockReturnValue(false);
 });
@@ -153,13 +160,13 @@ describe("Draft booking settings", () => {
   it("saves only a validated draft in the existing settings table", async () => {
     const response = await bookingSettings(request({ password: "test", action: "saveSettings", settings: { advancePercent: 100 } }));
     expect(response.status).toBe(200);
-    expect(mocks.setSetting).toHaveBeenCalledWith("website_booking_settings_v1", expect.stringContaining('"advancePercent":100'));
+    expect(mocks.compareAndSetWebsiteSettings).toHaveBeenCalledWith(null, expect.stringContaining('"advancePercent":100'));
     expect(await response.json()).toMatchObject({ policyStatus: "draft" });
   });
   it("rejects stored credentials before any database mutation", async () => {
     const response = await bookingSettings(request({ password: "test", action: "saveSettings", settings: { keySecret: "secret" } }));
     expect(response.status).toBe(400);
-    expect(mocks.setSetting).not.toHaveBeenCalled();
+    expect(mocks.compareAndSetWebsiteSettings).not.toHaveBeenCalled();
   });
   it.each(["manager", "staff"])("denies %s even with broad legacy permissions", async (role) => {
     mocks.authenticateUser.mockResolvedValue({ role, permissions: { canManageInventory: true, canManageAccounts: true } });
@@ -182,11 +189,16 @@ describe("Draft booking settings", () => {
   it("rejects Pi writes", async () => {
     mocks.isPiRuntime.mockReturnValue(true);
     expect((await bookingSettings(request({ password: "test", action: "saveSettings", settings: {} }))).status).toBe(403);
-    expect(mocks.setSetting).not.toHaveBeenCalled();
+    expect(mocks.compareAndSetWebsiteSettings).not.toHaveBeenCalled();
   });
   it("labels the readiness action as configuration-only, not a live gateway check", async () => {
     const response = await bookingSettings(request({ password: "test", action: "checkGatewayReadiness" }));
     expect(await response.json()).toMatchObject({ gateway: { nativeCheckoutReady: false, status: "implementation_pending" }, message: expect.stringContaining("no payment or provider request") });
+  });
+  it("reports a write-time settings conflict rather than successful save", async () => {
+    mocks.compareAndSetWebsiteSettings.mockResolvedValue(false);
+    const response = await bookingSettings(request({ password: "test", action: "saveSettings", settings: { advancePercent: 75 } }));
+    expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ code: "BOOKING_SETTINGS_CONFLICT" });
   });
   it("rejects unknown actions", async () => {
     expect((await bookingSettings(request({ password: "test", action: "enableCheckout" }))).status).toBe(400);

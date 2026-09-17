@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts`. Applied SQL: `migrations/0001_initial.sql` … `0056_tasks_optional_assignee.sql`. What production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the current migration set (it skips only CMS/splits migrations as configured).
+**Git-safe.** Schema: `src/db/schema.ts`. Repository SQL: `migrations/0001_initial.sql` … `0060_native_accepted_quotes.sql`. Repository migrations are not proof of deployment; what production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the common migration set (it skips only CMS/splits migrations as configured); gateway/native tables remain unused/unsynced on Pi and their services reject Pi.
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 
@@ -80,6 +80,25 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `inventory_overrides` | Online/offline ceilings. |
 | `inventory_dirty` | Pending Aiosell push keys. |
 | `channel_sync_log` | PMS HTTP audit. `direction` push\|pull; `type` inventory / rate / restriction / reservation / fetch / noshow (auto-push suffix e.g. `inventory (auto)`). Payloads stored as sent. Last 30 days kept (pruned on insert and list). |
+
+### Razorpay test preview (Cloudflare-owned, never synced)
+
+| Table | Role |
+|-------|------|
+| `gateway_preview_attempts` | Unique request key/receipt, original test key ID, fixed 100-paise order creation/recovery and one-use checkout claim. SQL checks prohibit live environment/other amounts. |
+| `gateway_preview_payments` | Provider payment ID → attempt FK; validated capture latch and monotonic refunded paise, no guest/card PII or booking-account mutation. |
+| `gateway_preview_refunds` | One full test refund reservation per payment FK; unique local/provider IDs and receipt; unresolved results remain reserved and processed state is terminal. |
+| `gateway_preview_webhooks` | Unique event ID, raw-byte SHA-256 digest, minimal resource IDs and retry/processed/ignored state. Not a raw-PII store or bank receipt. |
+
+Source SQL: `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_id.sql`; these repository migrations have not been applied live in this turn. Webhooks retain exact refund identity for current API corroboration. These tables lack sync columns and are absent from sync allowlists. Gateway APIs/services reject Pi even if the common migrator creates empty copies. See [integration/recovery details](integrations-razorpay.md).
+
+### Internal native physical holds (Cloudflare-owned, never synced)
+
+The [quote/refund calculators](native-booking-quotes-and-refunds.md) add no schema themselves. The separate `native_accepted_quotes` table (0060) now persists one protected snapshot per unique hold FK; active-hold/date matching is guarded on insert, and updates/deletes are rejected. It has no sync columns/allowlist entry and is not a provisional PMS booking, atomic refund claim or payment/bank evidence. Migration 0060 was applied only to disposable local test databases. See [accepted-quote workflow](native-accepted-quotes.md).
+
+Read-only owner recovery retains original hold evidence after disable/release/expiry. An internal advisory selector excludes active overlapping leases using the database clock. New creation/selection preflights all hold columns and six expected-table trigger installations. No new migration, synchronization, shared-calendar/PMS calculation or quota guarantee is added by these services.
+
+Internal native milestone: `native_inventory_holds` (0059) stores immutable request/owner fingerprints, 1–4 physical IDs and a maximum 900-second lease. Same-database SQL triggers reject overlapping active assignments, blocks and holds, and guard subsequent assignment/block writes. It is not synchronized and does not yet enforce aggregate online quotas, fulfilment or cross-database Pi ownership. No public API uses it; default-disabled. See [scope](native-inventory-hold-foundation.md). Migration 0059 was exercised only in disposable local databases, not deployed.
 
 ### CMS (Cloudflare D1 only — not on Pi)
 

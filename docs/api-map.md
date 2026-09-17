@@ -42,6 +42,12 @@ API failures retain the existing `{ error: string }` field and progressively add
 
 ## Staff (password)
 
+`acceptNativeQuote` and `getNativeAcceptedQuote` now persist/recover one protected owner-bound quote per native hold (migration 0060). They remain internal: no public/admin API action, PMS booking or provider request. Acceptance requires hold/quote guard preflight and active-hold matching at the SQL boundary. See [workflow and limits](native-accepted-quotes.md).
+
+Native quote/refund calculators (`buildNativeBookingQuote`, `calculateNativeCancellationRefund`) are internal only: no API action, provider POST, inventory mutation or settlement/account entry. Their inputs must come from authoritative server rates/published accepted policies and verified captured/refund evidence, not guest payloads. See [calculator workflows](native-booking-quotes-and-refunds.md).
+
+Native physical hold creation/release, read-only owner recovery (`getNativeInventoryHold`) and hold-aware advisory selection (`getNativeSelectionAvailability`) exist only as internal services (`nativeInventoryHold.ts`), with no public/admin API action or payment wiring. New holds/selection require internal opt-in and hold-column/expected-table trigger preflight; recovery/release survive disable. Migration 0059 adds shared assignment/block guards for active holds. See [scope and release gates](native-inventory-hold-foundation.md); API checkout/guest fulfilment remain unimplemented.
+
 | Route | Auth | Purpose |
 |-------|------|---------|
 | `/api/food/kitchen` | `authenticateKitchen` | Queue, status, mods, busy, menu |
@@ -60,7 +66,9 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/admin/website` | **admin role**, 403 on Pi | CMS JSON |
 | `/api/admin/website/upload` | admin, 403 on Pi, 503 if no R2 | CMS JPEG |
 | `/api/admin/channel-manager` | admin role; `getSyncLogs` uses `canViewLogs` | Aiosell config, room/rate maps, daily rates, sync logs |
-| `/api/admin/booking-settings` | admin role, 403 on Pi | `getSettings`, `saveSettings`, `checkGatewayReadiness`; validated partial updates preserve other saved fields; invalid persisted drafts → 409 `BOOKING_SETTINGS_INVALID` without overwrite/default activation; credential-presence metadata only; no provider request or active checkout |
+| `/api/admin/booking-settings` | admin role, 403 on Pi | `getSettings` returns draft/revision; `saveSettings` requires that revision and atomically preserves other fields; stale/missing revision → 409 `BOOKING_SETTINGS_CONFLICT`; invalid persisted drafts → 409 `BOOKING_SETTINGS_INVALID`; `checkGatewayReadiness` checks credential presence only, not provider connectivity |
+| `/api/admin/booking-payments` | admin role, 403 on Pi | Test-only `checkTestConnectivity`, `listTestAttempts`, `createTestAttempt`, `getTestRequest` (recover by request key without creating), `getTestAttempt`, `claimTestCheckout`, `verifyTestCallback`, `reconcileTestAttempt`, `refundTestPayment`, `retryTestWebhook`; new orders/claims/refunds require deployment opt-in, distinct current test webhook secret and all-table/column preflight; fixed ₹1 simulated amount; no PMS/account changes or live credential fallback |
+| `/api/webhooks/razorpay` | public POST with exact-byte test-secret HMAC; 403 on Pi | TEST inbox and API-verified processing; exact refund ID retained/fetched; capture/processed-refund events retry until evidence visible; required signature/event headers; 64 KiB byte limit; duplicate/conflicting event detection; transient/unmatched processing → 503; unsupported signed events ignored; not a live payment/settlement processor |
 | `/api/admin/reviews` | admin or `canViewReviews` | Ask-review list, WhatsApp, analytics, settings |
 | `/api/admin/qr-history` | user auth | `list` / `save` / `delete` |
 | `/api/admin/quick-links` | `canViewQuickLinks`; mutations admin-only | Sections and link/QR cards: `list`, `saveSection`, `deleteSection`, `saveItem`, `deleteItem`, `reorder` |

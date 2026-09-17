@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { isPiRuntime } from "@/lib/runtime";
-import { getSetting, setSetting } from "@/db/queries";
+import { getSetting } from "@/db/queries";
+import { compareAndSetWebsiteSettings } from "@/lib/websiteBookingSettingsStore";
 import { site } from "@/lib/site";
 import {
   WEBSITE_BOOKING_SETTINGS_KEY, websiteBookingSettingsSchema,
   readWebsiteBookingSettings, gatewayConfiguration,
   InvalidWebsiteBookingSettingsError,
+  websiteBookingSettingsRevision,
 } from "@/lib/websiteBookingSettings";
 
 export async function POST(req: NextRequest) {
@@ -26,9 +28,11 @@ export async function POST(req: NextRequest) {
   try {
     switch (body.action) {
       case "getSettings": {
-        const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
+        const raw = await getSetting(WEBSITE_BOOKING_SETTINGS_KEY);
+        const settings = readWebsiteBookingSettings(raw);
         return NextResponse.json({
           settings,
+          revision: await websiteBookingSettingsRevision(raw),
           gateway: gatewayConfiguration(settings.gatewayEnvironment, process.env),
           webhookUrl: `${site.url}/api/webhooks/razorpay`,
           policyStatus: "draft",
@@ -38,17 +42,21 @@ export async function POST(req: NextRequest) {
         if (!body.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) {
           return NextResponse.json({ error: "Booking settings must be an object" }, { status: 400 });
         }
-        const current = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
+        const raw = await getSetting(WEBSITE_BOOKING_SETTINGS_KEY);
+        const current = readWebsiteBookingSettings(raw);
+        const conflict = () => NextResponse.json({ error: "Booking settings changed or no edit revision was supplied. Reload the saved draft and review your changes before saving.", code: "BOOKING_SETTINGS_CONFLICT" }, { status: 409, headers: { "Cache-Control": "no-store" } });
+        if (typeof body.revision !== "string" || body.revision !== await websiteBookingSettingsRevision(raw)) return conflict();
         const parsed = websiteBookingSettingsSchema.safeParse({ ...current, ...body.settings });
         if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid booking settings" }, { status: 400 });
-        await setSetting(WEBSITE_BOOKING_SETTINGS_KEY, JSON.stringify(parsed.data));
-        return NextResponse.json({ success: true, settings: parsed.data, gateway: gatewayConfiguration(parsed.data.gatewayEnvironment, process.env), policyStatus: "draft" });
+        const nextRaw = JSON.stringify(parsed.data);
+        if (!await compareAndSetWebsiteSettings(raw, nextRaw)) return conflict();
+        return NextResponse.json({ success: true, settings: parsed.data, revision: await websiteBookingSettingsRevision(nextRaw), gateway: gatewayConfiguration(parsed.data.gatewayEnvironment, process.env), policyStatus: "draft" }, { headers: { "Cache-Control": "no-store" } });
       }
       case "checkGatewayReadiness": {
         const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
         return NextResponse.json({
           gateway: gatewayConfiguration(settings.gatewayEnvironment, process.env),
-          message: "Configuration presence checked only. Provider connectivity, capture verification, webhook processing and checkout are not implemented yet; no payment or provider request was made.",
+          message: "Configuration presence checked only; no payment or provider request was made. Use the authenticated test preview for Razorpay API connectivity and simulated checkout. Native fulfilment, live payments and bank settlement remain blocked.",
         }, { headers: { "Cache-Control": "no-store" } });
       }
       default: return NextResponse.json({ error: "Unknown booking settings action" }, { status: 400 });

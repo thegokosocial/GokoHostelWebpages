@@ -1,6 +1,6 @@
 # Website booking: implemented foundation
 
-Implementation status: **partial; native reservations and Razorpay payments are not implemented or launch-ready.** The full target and recovery workflows remain in [the reviewed plan](plan-first-party-booking-and-payments.md). Do not treat the specification's 66 mock scenarios as production checkout tests.
+Implementation status: **partial; native reservations/live guest payments are not launch-ready.** An isolated authenticated Razorpay test checkout/ledger/webhook/refund recovery path is now implemented in Booking Settings; see [test integration and its safety boundary](integrations-razorpay.md). The full target and native recovery workflows remain in [the reviewed plan](plan-first-party-booking-and-payments.md). Do not treat the specification's 66 mock scenarios as production checkout tests.
 
 The [deep review](review-website-booking-2026-09-17.md) records the initial six findings and their subsequent fixes. The expanded adversarial regression script now exercises 19 groups, including repeated captures, per-payment caps, odd paise, and refund/hold transitions. Passing model tests still do not certify the unimplemented native payment flow.
 
@@ -26,13 +26,13 @@ Sections:
 
 - **Booking & Policies:** draft advance/full-payment/pay-at-property preferences, bounded hold/review windows, cancellation deadline/refund percentage and policy text. Values are validated by a shared strict Zod schema. Defaults are 50% advance, 15-minute hold, 30-minute maximum review window, 48-hour deadline, and 100% eligible refund. These values are drafts only and do not create guest-facing refund promises.
 - **Rooms & Rates:** links to existing Inventory, Website CMS and Channel Manager; no second rate catalogue. Native guest-category publishing/mapping remains pending.
-- **Payments & Readiness:** test/live selection and deployment-secret setup guidance. The configuration check reports presence and matching key-ID environment only; it does **not** authenticate with Razorpay, verify webhooks, or make a payment. Checkout remains disabled even when all credentials are present.
+- **Payments & Readiness:** test/live draft selection and deployment-secret guidance. The configuration check still reports presence only. A separate admin-only test panel now offers actual test API connectivity, simulated ₹1 Standard Checkout, durable test ledger, refund and webhook recovery after reviewed migration/deployment and opt-in. Public/native/live checkout remains disabled regardless of draft environment or credential presence.
 
-Drafts live in the existing `settings` row `website_booking_settings_v1`. No schema migration is needed for this foundation. It is deliberately absent from `SYNCABLE_SETTINGS`; Pi cannot replicate or overwrite it. Secrets are not accepted by the schema or stored in D1. Secret names are `RAZORPAY_TEST_KEY_ID`, `RAZORPAY_TEST_KEY_SECRET`, `RAZORPAY_TEST_WEBHOOK_SECRET` and the corresponding `RAZORPAY_LIVE_*` names. Metadata shows only the public key ID and booleans for secret presence. Do not register the planned `/api/webhooks/razorpay` path until the actual webhook implementation exists.
+Drafts live in the existing `settings` row `website_booking_settings_v1`. No schema migration is needed for draft settings; the test payment ledger separately requires repository migrations `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_id.sql` (not applied live here). Settings and test evidence are excluded from sync. Secrets are not accepted/stored in D1. Secret names are `RAZORPAY_TEST_KEY_ID`, `RAZORPAY_TEST_KEY_SECRET`, `RAZORPAY_TEST_WEBHOOK_SECRET` and corresponding `RAZORPAY_LIVE_*` names; metadata shows only public key/presence. The implemented `/api/webhooks/razorpay` path is **Test-mode-only** and must not be registered as a live processor. Exact capture/refund evidence must be visible before capture/processed-event acknowledgement; retained events are recoverable after new tests are disabled. See test setup/recovery guidance before any deployment.
 
 ## Follow-up safeguards
 
-Only an absent booking-settings row receives defaults. Invalid JSON, invalid types/ranges, or unsupported stored fields return sanitized 409 `BOOKING_SETTINGS_INVALID` for load/save/readiness. The stored row is preserved, the UI blocks editing and offers load retry, and no defaults/readiness are activated. An invalid persisted draft requires reviewed maintenance repair; there is deliberately no automatic reset. Valid partial updates merge with existing preferences rather than resetting unrelated policies/environment. Concurrent administrators should coordinate draft edits: optimistic version locking is not implemented yet and must be addressed before shared published financial-policy workflows.
+Only an absent booking-settings row receives defaults. Invalid JSON/types/ranges/unsupported fields return sanitized 409 `BOOKING_SETTINGS_INVALID`, preserve the row and require reviewed repair; there is no automatic reset. Valid partial edits preserve other preferences. `getSettings` now returns an edit revision, required for `saveSettings`; stale/missing revisions or intervening writes return 409 `BOOKING_SETTINGS_CONFLICT`. A single-statement compare-and-set protects concurrent administrators. The UI blocks further saving and offers reload; older save clients must adopt the revision contract. Published financial policies/snapshots remain pending.
 
 Public routing uses `getGuestBookingConfig`, selecting only `booking_engine_url` and `api_base_url`. Integration passwords/webhook secrets are neither selected nor returned. Credential metadata rejects empty/malformed public key IDs and whitespace-only secrets, but remains a presence check, not proof of provider authentication. Saving a draft refreshes the UI's environment metadata; native checkout remains disabled.
 
@@ -44,16 +44,26 @@ The specification model now reserves each refund against a captured payment, all
 
 ## Remaining implementation gates
 
+Accepted quote/policy snapshot persistence is now implemented as an internal owner-bound service backed by migration 0060, with unique hold binding, SQL expiry/release checks, immutable retained evidence and retry/recovery. This does not yet create a provisional PMS booking or enable checkout. See [accepted-contract workflow](native-accepted-quotes.md).
+
+Internal quote and cancellation calculators now implement exact server-input validation, per-unit/per-night totals, whole-rupee tax/advance rounding with safe paise outputs, accepted-policy copies and deadline/refund bounds. They are not connected to guest checkout or persisted contracts and do not atomically reserve/submit refunds. See [quote and cancellation workflows](native-booking-quotes-and-refunds.md).
+
+The internal hold foundation now includes read-only owner recovery for lost responses and a sanitized advisory selector that excludes overlapping active native holds. New selection/creation fails closed on incomplete database guards; complete Double units are required. These services remain unexposed and do not update shared admin/calendar/Aiosell availability, guarantee category quotas or fulfil a booking. See [internal workflows and tests](native-inventory-hold-foundation.md).
+
+Native implementation has started with an [internal physical-unit hold primitive](native-inventory-hold-foundation.md) and migration 0059. It is disabled by default, has no public endpoint and is not yet integrated into category/pool quotas, PMS inventory or fulfilment. Database guards protect assignments/blocks in the same database only; Pi coordination remains unresolved.
+
+Test-preview production preparation now includes actual local D1/workerd binding races and fail-closed schema/webhook preflight before new operations. This does not implement the native workflows below or certify remote D1/Razorpay/browser behavior; see the [production-readiness review](review-payment-production-readiness-2026-09-17.md).
+
 - Shared nightly pricing, sellable-unit mapping and atomic multi-unit/night hold guards across native, admin, blocks and OTA writers.
 - Provisional website bookings in the existing PMS, token-protected confirmation/recovery and cancellation routes.
-- Razorpay order creation, verified captures, durable raw webhook inbox, idempotent reconciliation, expiry and late-capture handling.
+- Generalize the isolated Razorpay test-order/capture/inbox/reconciliation implementation into native booking-owned ledgers, with expiry, late-capture and fulfilment/refund recovery. Live and public test checkout remain blocked.
 - Refund ledger, excess/operational refunds, settlement-vs-capture accounting, notification delivery, Pi ownership rules and staff payment permissions/UI.
-- Gateway health check, reviewed/published policy, actual availability/checkout UI and outage pay-at-property workflow.
+- Live gateway health checks, reviewed/published policy, actual guest availability/checkout UI and outage pay-at-property workflow. Test API connectivity exists but is not a live-health/capture/settlement certificate.
 - Real SQLite/D1 lifecycle tests, payment-provider sandbox/end-to-end tests and release checks from the plan. The foundation tests cover routing/configuration only.
 
 No live configuration, deployment, migration, or real payment has been performed for this foundation.
 
-## Validation (17 September 2026)
+## Foundation validation (historical first phase, 17 September 2026)
 
 - `npx vitest run`: 91 test files, 1,406 tests passed, including 67 focused foundation checks. The focused tests exercise real routing/validation/action-handler code with mocked database/authentication, not D1 payment/inventory integration.
 - `npx tsc --noEmit`, `git diff --check`, and `git diff --cached --check`: passed.

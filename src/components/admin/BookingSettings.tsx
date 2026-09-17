@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
+import { RazorpayTestPreview } from "@/components/admin/RazorpayTestPreview";
 
 type Gateway = ReturnType<typeof gatewayConfiguration>;
 type Section = "policies" | "rooms" | "payments";
@@ -15,6 +16,7 @@ export function BookingSettings({ password, username }: { password: string; user
   const [gateway, setGateway] = useState<Gateway | null>(null);
   const [busy, setBusy] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  const [revision, setRevision] = useState("");
   const [message, setMessage] = useState("");
   const [reload, setReload] = useState(0);
 
@@ -25,15 +27,18 @@ export function BookingSettings({ password, username }: { password: string; user
       signal: AbortSignal.timeout(15000),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Booking settings request failed");
+    if (!res.ok) {
+      if (data.code === "BOOKING_SETTINGS_CONFLICT") { setLoaded(false); setRevision(""); }
+      throw new Error(data.error || "Booking settings request failed");
+    }
     return data;
   }
 
   useEffect(() => {
     let active = true;
-    setBusy(true); setLoaded(false); setMessage(""); setGateway(null);
+    setBusy(true); setLoaded(false); setRevision(""); setMessage(""); setGateway(null);
     call("getSettings").then((data) => {
-      if (active) { setSettings(data.settings); setGateway(data.gateway); setLoaded(true); }
+      if (active) { setSettings(data.settings); setRevision(data.revision); setGateway(data.gateway); setLoaded(true); }
     }).catch((error) => { if (active) setMessage(error instanceof Error ? error.message : "Unable to load settings. Refresh this tab to retry; unsaved defaults are not active."); })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
@@ -44,8 +49,9 @@ export function BookingSettings({ password, username }: { password: string; user
   async function save() {
     setBusy(true); setMessage("");
     try {
-      const data = await call("saveSettings", { settings });
+      const data = await call("saveSettings", { settings, revision });
       setSettings(data.settings);
+      setRevision(data.revision);
       setGateway(data.gateway);
       setMessage("Draft settings saved. Native checkout remains disabled.");
     } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to save settings"); }
@@ -115,7 +121,7 @@ export function BookingSettings({ password, username }: { password: string; user
             <li><code>RAZORPAY_LIVE_KEY_ID</code>, <code>RAZORPAY_LIVE_KEY_SECRET</code>, <code>RAZORPAY_LIVE_WEBHOOK_SECRET</code></li>
           </ul>
           <p>Goko guest link: <code>{NATIVE_BOOKING_URL}</code></p>
-          <p>Planned webhook path: <code>/api/webhooks/razorpay</code> (not implemented; do not register yet).</p>
+          <p>Implemented TEST webhook path: <code>/api/webhooks/razorpay</code>. Register in Test mode only after reviewed migration/deployment. Live guest checkout remains blocked.</p>
           <p>Capture and bank settlement are separate: confirmed customer payment is not a bank credit. Real-bank net settlement configuration will be added with the payment ledger.</p>
           {gateway && <dl className="grid gap-1">
             <div><dt className="inline">Checked environment: </dt><dd className="inline">{gateway.environment}</dd></div>
@@ -129,5 +135,6 @@ export function BookingSettings({ password, username }: { password: string; user
       </>}
       <Button type="button" onClick={save}>Save draft settings</Button>
     </fieldset>
+    {section === "payments" && <RazorpayTestPreview password={password} username={username} />}
   </div>;
 }

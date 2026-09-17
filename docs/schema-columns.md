@@ -937,6 +937,66 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `paid_amount` | integer | NOT NULL default 0 |
 | `owed_amount` | integer | NOT NULL default 0 |
 
+## Razorpay test preview columns
+
+All four tables below are isolated test evidence from `0057_razorpay_test_preview.sql`, with exact webhook refund identity added by `0058_razorpay_webhook_refund_id.sql`; they are not synchronized. Source and SQL checks constrain environment/amount/state. They do not replace booking or accounting tables.
+
+### `gateway_preview_attempts`
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `id` | text | PK, NOT NULL; local UUID |
+| `request_key` | text | NOT NULL, unique browser idempotency UUID |
+| `environment` | text | NOT NULL default `test`; CHECK test-only |
+| `key_id` | text | NOT NULL; original public test key; CHECK test prefix |
+| `receipt` | text | NOT NULL, unique remote recovery receipt |
+| `amount_paise` | integer | NOT NULL default 100; CHECK exactly 100 |
+| `order_id` | text | nullable unique provider ID |
+| `state` | text | NOT NULL default `creating`; CHECK creating/order_unknown/created |
+| `checkout_started_at` | text | nullable; atomically claimed once |
+| `created_by` | text | NOT NULL; administrator display name |
+| `created_at` | text | NOT NULL, ISO |
+| `updated_at` | text | NOT NULL, ISO |
+
+### `gateway_preview_payments`
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `id` | text | PK, NOT NULL; provider payment ID |
+| `attempt_id` | text | NOT NULL FK → test attempts |
+| `amount_paise` | integer | NOT NULL, CHECK exactly 100 |
+| `status` | text | NOT NULL, CHECK created/authorized/captured/refunded/failed |
+| `captured` | integer | NOT NULL default 0; CHECK 0/1; verified capture latch |
+| `refunded_paise` | integer | NOT NULL default 0; CHECK 0–100; provider-observed monotonic amount |
+| `verified_at` | text | NOT NULL, ISO |
+
+### `gateway_preview_refunds`
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `payment_id` | text | PK, NOT NULL FK → test payments; one full reservation |
+| `id` | text | NOT NULL, unique local UUID |
+| `receipt` | text | NOT NULL, unique recovery receipt |
+| `provider_id` | text | nullable unique refund ID |
+| `state` | text | NOT NULL default `submitting`; CHECK submitting/unknown/pending/processed/failed |
+| `created_by` | text | NOT NULL; administrator display name |
+| `updated_at` | text | NOT NULL, ISO |
+
+### `gateway_preview_webhooks`
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `event_id` | text | PK, NOT NULL; provider event header |
+| `payload_hash` | text | NOT NULL; SHA-256 of authenticated exact bytes |
+| `event_type` | text | NOT NULL |
+| `order_id` | text | nullable recovery ID |
+| `payment_id` | text | nullable recovery ID |
+| `attempt_id` | text | nullable local recovery note UUID |
+| `state` | text | NOT NULL default `received`; CHECK received/retry/processed/ignored |
+| `received_at` | text | NOT NULL, ISO |
+| `updated_at` | text | NOT NULL, ISO |
+| `refund_id` | text | nullable exact provider refund ID; migration 0058; required for refund-event API verification |
+
 ## `split_settlements`
 
 | SQL column | Type | Notes |
@@ -953,3 +1013,34 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `hostel_expense_id` | integer |  |
 | `split_expense_id` | integer |  |
 | `deleted_at` | text |  |
+# `native_inventory_holds` — internal foundation, migration 0059
+
+## `native_accepted_quotes` — internal owner-bound snapshots, migration 0060
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `id` | text | Non-null primary key UUID |
+| `hold_id` | text | Non-null unique FK to native inventory hold |
+| `quote_json` | text | Non-null JSON object; validated canonical quote and copied policy |
+| `accepted_at` | integer | Non-null epoch seconds |
+
+Insert guard requires active unexpired hold/date matching using database time. Update/delete guards protect retained original evidence; the FK retains its hold. No sync columns/allowlist entry or guest endpoint. New acceptance preflights hold and quote columns/expected-table trigger installations. Recovery revalidates computed totals against the stored input and fails closed on corruption. This is not a PMS booking, capture/settlement record or atomic refund claim. See [workflow](native-accepted-quotes.md).
+
+## Native inventory hold columns
+
+Read-only recovery filters request UUID plus owner hash; internal advisory selection filters active state, database-clock expiry and exclusive stay overlap. New creation/selection requires column and expected-table trigger presence checks. This service extension adds no columns or migration and does not certify trigger-body integrity, category quotas or Pi coordination.
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `id` | text | Non-null primary key UUID |
+| `request_key` | text | Unique non-null request UUID; never renewed on retry |
+| `request_hash` | text | Non-null canonical selection SHA-256 |
+| `owner_hash` | text | Non-null SHA-256 of caller's random 256-bit token; raw token never stored |
+| `bed_ids` | text | Non-null JSON array, 1–4 physical integer IDs; insert trigger requires existing distinct IDs |
+| `checkin_date` | text | Non-null inclusive arrival; service validates real calendar date |
+| `checkout_date` | text | Non-null exclusive departure, later than arrival |
+| `expires_at` | integer | Non-null epoch seconds; after creation and at most 900 seconds later |
+| `state` | text | Non-null `held` (default) or `released`; expiration derived from database time |
+| `created_at` | integer | Non-null epoch seconds |
+
+Index: state/arrival/departure/expiry. Triggers enforce same-database hold/assignment/active-block exclusion on overlapping nights and immutable allocation/ownership/expiry; released rows cannot be revived. Assignment and block insert/update guards protect against independent writers. No sync columns/allowlist entry. No aggregate quota, Pi coordination, public endpoint or payment fulfilment yet; default-disabled internal service. See [workflow and limitations](native-inventory-hold-foundation.md).

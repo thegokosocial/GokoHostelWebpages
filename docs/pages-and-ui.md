@@ -100,7 +100,7 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do
 | `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; title-only tasks may remain unassigned until later; assigned users update their own tasks; task managers create, assign/reassign/unassign, archive, reopen, and record linked purchase expenses |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
-| `bookingSettings` | `BookingSettings` | admin only; Cloudflare only | Draft native booking policies and credential-presence metadata; invalid drafts show a sanitized error and block editing/readiness, with load retry; checkout remains disabled |
+| `bookingSettings` | `BookingSettings` | admin only; Cloudflare only | Revision-protected draft policies, credential-presence metadata, Payments & Readiness → authenticated Razorpay ₹1 test checkout/ledger/recovery; invalid/conflicting drafts block editing with reload; public/live guest checkout remains disabled |
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |
 | `quickLinks` | `QuickLinks` | `canViewQuickLinks` | mobile-friendly sections of links and QR/image cards; admins edit |
 
@@ -109,6 +109,8 @@ The public guest page is `/quick-links`. It displays active sections and cards f
 ---
 
 ## Booking dashboard files
+
+Management → Booking Settings → Payments & Readiness test operations fail closed without the complete gateway schema (migrations 0057/0058), a current distinct test webhook secret and deployment opt-in. The panel cannot enable native/live guest checkout. Setup and local runtime verification are documented in [Razorpay integration](integrations-razorpay.md).
 
 `src/components/admin/booking-dashboard/`
 
@@ -167,3 +169,12 @@ Phone-safe overlays: parent `flex items-center justify-center` + `modalVariants`
 ## Mobile shell invariants
 
 The shared public shell keeps anchor targets below the sticky header, preserves the browser text scale on mobile, and offsets fixed WhatsApp/back-to-top controls for device safe areas. Footer links and booking actions use touch-sized inline targets. These are presentation-only changes: routes, APIs, auth, permissions, booking, check-in, food, and payment workflows remain unchanged.
+# Internal native hold milestone (17 September 2026)
+
+Accepted quotes can now be persisted/recovered internally against an owner-bound hold. There is still no guest quote-acceptance UI/API or payment confirmation; `/book` remains enquiry-only. See [implemented service and remaining UI gates](native-accepted-quotes.md).
+
+Server quote/refund arithmetic is implemented internally, with no new UI, guest route or enabled payment flow. The existing `/book` enquiry page is unchanged. See [calculator workflows and remaining integrations](native-booking-quotes-and-refunds.md).
+
+Internal hold-aware selection and original-request recovery have no UI or API exposure. The public `/book` page remains an enquiry entry point, not a room/payment checkout. Admin/calendar/Aiosell availability is not changed by the internal selector. See [new internal workflow](native-inventory-hold-foundation.md).
+
+The [physical inventory hold primitive](native-inventory-hold-foundation.md) adds no page, public/admin API action or permission key. Creation is Cloudflare-only and default-disabled via `GOKO_NATIVE_HOLD_INTERNAL_ENABLED`; recovery/release require the original hashed owner token. No guest authorization, payment permission or production checkout is implemented by this primitive. Existing permission aliases and page gates are unchanged. Public exposure requires the remaining pool/quota, fulfilment, abuse-protection and Pi ownership release gates first.
