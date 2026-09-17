@@ -179,7 +179,7 @@ export default function HomePage() {
           <SectionHeader
             eyebrow="Stay"
             title="Room types"
-            subtitle="Swipe through photos, compare vibes, then lock in your bed—instant confirmation on our booking partner."
+            subtitle="Swipe through photos, compare vibes, then check dates and availability. Your stay is reserved only after confirmation."
           />
           <div className="mt-14">
             <RoomTabs />
@@ -374,8 +374,7 @@ export default function HomePage() {
               Ready when you are
             </h2>
             <p className="mx-auto mt-5 max-w-xl text-lg text-brand-green-dark/80">
-              Instant confirmation on our booking partner when you&apos;re ready to stay
-              with us.
+              Choose your dates and beds above, or contact our team to confirm your Goko stay.
             </p>
             <div className="mt-10 flex flex-wrap justify-center gap-3">
               <BookNowButton>Book now</BookNowButton>

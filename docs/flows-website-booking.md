@@ -40,7 +40,7 @@ The specification model now reserves each refund against a captured payment, all
 
 ## Native page today
 
-`/book` is a safe, branded entry page describing the current limitations and linking directly to enquiry/WhatsApp and existing dorm information. It does not display invented availability or prices, request a card/payment, or claim to confirm a booking. Booking Enquiry also no longer promises instant confirmation from an unconfigured provider.
+The homepage hero and `/book` expose Find a stay / My booking: dates/guests-only search, photo-led listings after availability search, visible eligible rate rows, bounded Add/minus selection and an estimated-tax summary (XL desktop sidebar). Switching rates reprices existing selected beds without doubling stock. Review requires enough capacity; payment remains disabled. Email-verified existing PMS lookup is unchanged. See [guest UI workflows, activation and limits](guest-booking-ui.md). Missing tariffs never use sample prices. `/book/preview` is a labelled local fixture gated by `GOKO_BOOKING_UI_PREVIEW=true`. No native booking is created or confirmed. Automatic confirmation email still requires a transactional fulfilment outbox; enquiries and verification emails are not confirmations.
 
 ## Remaining implementation gates
 

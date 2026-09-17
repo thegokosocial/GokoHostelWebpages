@@ -20,6 +20,14 @@ function getEmailBinding(): CloudflareEnv["EMAIL"] {
   return email;
 }
 
+export async function sendBookingLookupCode(recipient: string, code: string): Promise<void> {
+  if (!/^\d{6}$/.test(code)) throw new Error("Invalid verification code");
+  await getEmailBinding().send({ from: { email: INFO_EMAIL, name: site.shortName }, to: recipient,
+    subject: "Your Goko booking verification code",
+    text: `Your verification code is ${code}. It expires in 10 minutes and can be used once. Do not share it. If you did not request this code, ignore this email.`,
+  });
+}
+
 export async function sendBookingEnquiryEmails(payload: BookingEnquiryPayload): Promise<void> {
   const email = getEmailBinding();
   const body = formatBookingEnquiryBody(payload);

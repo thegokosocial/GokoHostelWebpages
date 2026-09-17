@@ -13,6 +13,13 @@ const syncColumnsWithDelete = {
   deletedAt: text("deleted_at"),
 };
 
+// Ephemeral cloud-only booking email verification; excluded from Pi synchronization.
+export const guestBookingLookupChallenges = sqliteTable("guest_booking_lookup_challenges", {
+  id: text("id").primaryKey().notNull(), requestKey: text("request_key").notNull().unique(),
+  bookingId: integer("booking_id").notNull().references(() => bookings.id), codeHash: text("code_hash").notNull(),
+  expiresAt: integer("expires_at").notNull(), attempts: integer("attempts").notNull().default(0), used: integer("used").notNull().default(0),
+}, table => [check("guest_lookup_attempts", sql`${table.attempts} BETWEEN 0 AND 5`), check("guest_lookup_used", sql`${table.used} IN (0,1)`)]);
+
 export const checkins = sqliteTable("checkins", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   submittedAt: text("submitted_at").notNull(),

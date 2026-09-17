@@ -1044,3 +1044,6 @@ Read-only recovery filters request UUID plus owner hash; internal advisory selec
 | `created_at` | integer | Non-null epoch seconds |
 
 Index: state/arrival/departure/expiry. Triggers enforce same-database hold/assignment/active-block exclusion on overlapping nights and immutable allocation/ownership/expiry; released rows cannot be revived. Assignment and block insert/update guards protect against independent writers. No sync columns/allowlist entry. No aggregate quota, Pi coordination, public endpoint or payment fulfilment yet; default-disabled internal service. See [workflow and limitations](native-inventory-hold-foundation.md).
+# guest_booking_lookup_challenges (migration 0061)
+
+`id` text PK; `request_key` text unique digest; `booking_id` integer FK bookings; `code_hash` text; `expires_at` epoch seconds; `attempts` integer default 0 constrained 0–5; `used` integer default 0 constrained 0/1. Cloud-only ephemeral verification; no sync columns/contact/plaintext OTP. Runtime secret and delivery binding are not database columns.

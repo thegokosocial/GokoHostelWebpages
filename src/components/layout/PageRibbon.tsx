@@ -1,6 +1,7 @@
 import { HeroBackdrop } from "@/components/media/HeroBackdrop";
 import { cn } from "@/lib/utils";
 import { heroLoopVideo, type HeroLoopVideo } from "@/lib/site";
+import type { ReactNode } from "react";
 
 type PageRibbonProps = {
   title: string;
@@ -11,6 +12,7 @@ type PageRibbonProps = {
   className?: string;
   /** Set false to use only `image` (no loop). Defaults to legacy Webflow yard clip. */
   heroVideo?: HeroLoopVideo | null;
+  children?: ReactNode;
 };
 
 export function PageRibbon({
@@ -20,11 +22,13 @@ export function PageRibbon({
   imageAlt = "",
   className,
   heroVideo = heroLoopVideo,
+  children,
 }: PageRibbonProps) {
   return (
     <section
       className={cn(
-        "relative flex min-h-[88vh] items-center justify-center overflow-hidden md:min-h-[92vh]",
+        "relative flex min-h-[88vh] items-center justify-center md:min-h-[92vh]",
+        children ? "overflow-clip" : "overflow-hidden",
         className
       )}
     >
@@ -48,8 +52,8 @@ export function PageRibbon({
         className="pointer-events-none absolute -right-16 bottom-1/4 z-[1] h-48 w-48 rounded-full bg-white/15 blur-2xl"
         aria-hidden
       />
-      <div className="relative z-[2] max-w-4xl px-4 py-16 text-center">
-        <h1 className="font-display text-display-lg font-bold text-white [text-shadow:2px_2px_14px_rgba(0,0,0,0.35)]">
+      <div className={cn("relative z-[2] px-4 text-center", children ? "w-full max-w-6xl py-8 md:py-16" : "max-w-4xl py-16")}>
+        <h1 className={cn("font-display font-bold text-white [text-shadow:2px_2px_14px_rgba(0,0,0,0.35)]", children ? "text-3xl sm:text-display-lg" : "text-display-lg")}>
           {title}
         </h1>
         {subtitle ? (
@@ -57,6 +61,7 @@ export function PageRibbon({
             {subtitle}
           </p>
         ) : null}
+        {children ? <div className="mt-8 text-left">{children}</div> : null}
       </div>
     </section>
   );

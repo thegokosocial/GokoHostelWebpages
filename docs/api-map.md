@@ -155,3 +155,9 @@ curl -s https://www.gokohostel.com/api/admin/checkins \
   -H 'content-type: application/json' \
   -d "{\"password\":\"$ADMIN_PASSWORD\",\"action\":\"getDashboard\"}"
 ```
+# Guest booking browsing APIs
+
+- `GET /api/guest-booking/availability`: strict `checkinDate`, `checkoutDate`, `guests` query (no `units`); non-cacheable advisory online categories, eligible configured rate plans and configured tax. Beds are selected from results with stock/capacity limits in the advisory UI. No holds or payments. Cloud only.
+- `POST /api/guest-booking/lookup`: action `request` (`reference`, `email`) returns a generic opaque challenge; action `verify` (`challengeId`, six-digit `code`) returns minimized current booking details only after one-use email proof. 4 KiB body bound, same-origin browser checks, sanitized non-cacheable responses, cloud only. Missing migration/secret/email setup requires contact support.
+
+See [contracts, restrictions and rollout](guest-booking-ui.md). Neither API reuses or publicly exposes an administrator mutation endpoint.

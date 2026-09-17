@@ -1,5 +1,7 @@
 # Auth and RBAC
 
+Guest photo-listings add no permission keys: dates/guests-only availability remains public, cloud-only and read-only; plan/bed selection is advisory browser state. Lookup retains email-code verification. Payment and reservation writes remain disabled. See [guest booking UI](guest-booking-ui.md).
+
 Staff WhatsApp Business routing adds no permissions or aliases. Existing booking-template and review preparation gates remain authoritative; the prepared-draft panel is within the authenticated admin shell and retains drafts only for their owner. See [WhatsApp messaging](whatsapp-messaging.md).
 
 Notification presentation changes preserve existing push recipients and `/api/push` authentication; no permission keys are added. Lock-screen food alerts use first names only. See [Push notifications](push-notifications.md).
@@ -225,3 +227,6 @@ Internal quote/refund calculators add no permission or endpoint. Checked-in/out 
 Read-only recovery now requires the original UUID request key and matching owner-token hash in the storage query; missing requests/wrong owners return the same 404. Hold-aware advisory selection remains internal and opt-in. Both reject Pi before storage access; neither adds a route or bypasses existing staff authorization. No public guest capability is enabled. Storage failures are sanitized.
 
 The [physical inventory hold primitive](native-inventory-hold-foundation.md) adds no page, public/admin API action or permission key. Creation is Cloudflare-only and default-disabled via `GOKO_NATIVE_HOLD_INTERNAL_ENABLED`; recovery/release require the original hashed owner token. No guest authorization, payment permission or production checkout is implemented by this primitive. Existing permission aliases and page gates are unchanged. Public exposure requires the remaining pool/quota, fulfilment, abuse-protection and Pi ownership release gates first.
+# Public guest booking verification
+
+`/api/guest-booking/availability` is read-only public advisory data; no PMS guest/physical allocation details are serialized. `/api/guest-booking/lookup` is cloud-only reference/email OTP authentication, not admin-session or RBAC access. Single-use, ten-minute challenges permit five attempts and ten-minute per-booking email cooldown. No guest mutations/refunds/payment are authorized. Administrator keys and compatibility aliases are unchanged. Activation and edge abuse controls: [guest-booking-ui.md](guest-booking-ui.md).

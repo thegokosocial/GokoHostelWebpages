@@ -7,6 +7,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/Container";
 import { homeHero } from "@/content/home";
 import { heroLoopVideo } from "@/lib/site";
+import { BookingHeroPanel } from "@/components/booking/BookingHeroPanel";
 
 const heroEase = [0.33, 1, 0.68, 1] as const;
 
@@ -23,7 +24,7 @@ export function HomeHeroPremium() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="relative flex min-h-[88vh] items-end overflow-hidden md:min-h-[92vh]">
+    <section className="relative flex min-h-[88vh] items-end overflow-clip md:min-h-[92vh]">
       <div className="absolute inset-0 z-0 overflow-hidden">
         <HeroBackdrop
           image={homeHero.heroImage}
@@ -44,19 +45,19 @@ export function HomeHeroPremium() {
           reduce ? undefined : { duration: 14, repeat: Infinity, ease: "easeInOut" }
         }
       />
-      <Container className="relative z-[2] pb-16 pt-28 md:pb-24 md:pt-36">
+      <Container className="relative z-[2] pb-12 pt-16 md:pb-16 md:pt-36">
         {reduce ? (
           <div>
             <p className="font-display text-sm font-semibold uppercase tracking-[0.2em] text-white/80">
               Gokarna · Karnataka
             </p>
-            <h1 className="mt-3 max-w-4xl font-display text-display-lg font-bold text-white [text-shadow:2px_2px_20px_rgba(0,0,0,0.35)]">
+            <h1 className="mt-3 max-w-4xl font-display text-3xl font-bold text-white [text-shadow:2px_2px_20px_rgba(0,0,0,0.35)] sm:text-display-lg">
               {homeHero.title}
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-relaxed text-white/95 md:text-xl">
+            <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/95 sm:text-lg md:text-xl">
               {homeHero.subtitle}
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-8 hidden flex-wrap gap-3 sm:flex">
               <BookNowButton>{homeHero.ctaBook}</BookNowButton>
               <ButtonLink
                 href="/stay"
@@ -83,21 +84,21 @@ export function HomeHeroPremium() {
               Gokarna · Karnataka
             </motion.p>
             <motion.h1
-              className="mt-3 max-w-4xl font-display text-display-lg font-bold text-white [text-shadow:2px_2px_20px_rgba(0,0,0,0.35)]"
+              className="mt-3 max-w-4xl font-display text-3xl font-bold text-white [text-shadow:2px_2px_20px_rgba(0,0,0,0.35)] sm:text-display-lg"
               variants={fadeUp}
               custom={1}
             >
               {homeHero.title}
             </motion.h1>
             <motion.p
-              className="mt-5 max-w-2xl text-lg leading-relaxed text-white/95 md:text-xl"
+              className="mt-5 max-w-2xl text-base leading-relaxed text-white/95 sm:text-lg md:text-xl"
               variants={fadeUp}
               custom={2}
             >
               {homeHero.subtitle}
             </motion.p>
             <motion.div
-              className="mt-8 flex flex-wrap gap-3"
+              className="mt-8 hidden flex-wrap gap-3 sm:flex"
               variants={fadeUp}
               custom={3}
             >
@@ -112,6 +113,7 @@ export function HomeHeroPremium() {
             </motion.div>
           </motion.div>
         )}
+        <div className="mt-8"><BookingHeroPanel /></div>
       </Container>
     </section>
   );

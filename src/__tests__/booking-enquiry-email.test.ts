@@ -12,7 +12,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 }));
 
 import { POST } from "@/app/api/booking-enquiry/route";
-import { EmailUnavailableError, sendBookingEnquiryEmails, ADMIN_EMAIL, INFO_EMAIL } from "@/lib/email";
+import { EmailUnavailableError, sendBookingEnquiryEmails, sendBookingLookupCode, ADMIN_EMAIL, INFO_EMAIL } from "@/lib/email";
 
 const validPayload = {
   name: "Ada Lovelace",
@@ -50,6 +50,12 @@ describe("bookingEnquirySchema", () => {
 });
 
 describe("sendBookingEnquiryEmails", () => {
+  it("sends private lookup codes from info and rejects malformed codes", async () => {
+    await sendBookingLookupCode("ada@example.com", "012345");
+    expect(mocks.send).toHaveBeenCalledWith(expect.objectContaining({ from: { email: INFO_EMAIL, name: "Goko Hostel" }, to: "ada@example.com", text: expect.stringContaining("012345") }));
+    await expect(sendBookingLookupCode("ada@example.com", "bad")).rejects.toThrow();
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
   it("sends staff notification and guest auto-reply", async () => {
     await sendBookingEnquiryEmails(validPayload);
 

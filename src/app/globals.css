@@ -18,6 +18,14 @@ html {
   bottom: calc(1.5rem + env(safe-area-inset-bottom));
 }
 
+/* Booking controls take priority on phones; inline help remains accessible.
+   The observer marker clears when the panel leaves view, restoring floats. */
+@media (max-width: 767px) {
+  body:has([data-booking-in-view="true"]) .goko-floating-bottom {
+    display: none;
+  }
+}
+
 @media (min-width: 768px) {
   .goko-floating-bottom {
     bottom: calc(2rem + env(safe-area-inset-bottom));
