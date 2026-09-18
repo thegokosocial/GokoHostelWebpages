@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveCheckins, getGuestAllFoodOrders, getFoodOrderItemsBatch } from "@/db/queries";
+import { getActiveCheckins, getGuestAllFoodOrders, getFoodOrderItemsBatch, getSetting } from "@/db/queries";
 import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
 import { getDb } from "@/db/index";
 import { foodOrders, checkins } from "@/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
+import { brandingFromSettings, publicBillBranding, BILL_SETTINGS_KEYS } from "@/lib/foodBillFormat";
+import { foodTaxPercent } from "@/lib/foodLookup";
 
 export async function GET(req: NextRequest) {
   const phone = req.nextUrl.searchParams.get("phone") || "";
@@ -150,7 +152,17 @@ export async function GET(req: NextRequest) {
       (o) => o.paymentStatus === "paid" && o.status !== "cancelled"
     );
 
-    return NextResponse.json({ unpaidOrders, paidOrders, latestCheckinId });
+    const billSettings: Record<string, string> = {};
+    for (const key of BILL_SETTINGS_KEYS) {
+      billSettings[key] = (await getSetting(key)) ?? "";
+    }
+    const taxRate = foodTaxPercent(await getSetting("food_tax_rate"));
+    const billBranding = {
+      ...publicBillBranding(brandingFromSettings(billSettings)),
+      taxRate,
+    };
+
+    return NextResponse.json({ unpaidOrders, paidOrders, latestCheckinId, billBranding });
   } catch (error: any) {
     console.error("Bills API error:", error?.message || error);
     return NextResponse.json({ error: "Failed to fetch bills" }, { status: 500 });

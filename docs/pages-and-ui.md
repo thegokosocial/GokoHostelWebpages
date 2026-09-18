@@ -39,7 +39,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | `/self-checkin` | ID check-in; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
 | `/food-order` | Menu + cart; after selecting a category, the guest menu keeps the sorted category list in an independently scrollable vertical left rail beside a dish pane whose item list scrolls independently; the home category-card view is unchanged | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
-| `/my-bills` | Food bills | phone; back → previous page |
+| `/my-bills` | Food bills | phone; expanded card matches guest bill layout (header, CGST/SGST, payment QR when unpaid); back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
 | `/review/[token]` | Rating funnel | token |
 | `/admin` | PMS SPA | direct username/password form; password every API call |
@@ -92,7 +92,8 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do
 | `rates` | `AdminCheckRates` | management access | competitor scrape; visible |
 | `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | `/api/admin/food` per-action map; Menu Items can be searched live by English/Kannada item or category name; selected items may use price-on-request with an indicative range |
 | `website` | `AdminWebsite` | admin only | CMS; Cloudflare only |
-| `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | `/api/admin/food` |
+| `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | `/api/admin/food` kitchen/tax/hours |
+| `billSettings` | `AdminBillSettings` | `canManageFoodSettings` | Bill branding, UPI, payment QR (`food_bill_*` keys); R2 folder `bills` |
 | `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | |
@@ -142,7 +143,8 @@ Calendar POSTs use `fetchWithRetry("/api/admin/bookings", …)` — not `useAdmi
 | `types.ts` | `parseBedRow`, `CHECKIN_COLUMNS`, `hasPermission` |
 | `PwaInstallBanner.tsx` | registers `/sw.js` even on iOS Safari tabs; notification dialog is the only Install app entry (Safari Share → Add to Home Screen on iPhone); Enable gated to Home Screen app; public pages do not link the PWA manifest |
 | `SyncStatusBar.tsx` | Pi/CF badge |
-| `FoodBillGenerator.tsx` | jsPDF dynamic import |
+| `FoodBillGenerator.tsx` | jsPDF guest/combined bills; branding + CGST/SGST + payment QR |
+| `AdminBillSettings.tsx` | Management → Bill Settings |
 | `DailyLedger.tsx` / `DailyReconcile.tsx` / `AdminAddExpense.tsx` / `AdminFoodBill.tsx` / `AdminRoomRevenue.tsx` | Accounts tabs |
 | `RecordPaymentModal.tsx` | Shared Cash/Online/Split collect + refund; stay must pass `amountUnit="rupees"` (food default is paise) |
 

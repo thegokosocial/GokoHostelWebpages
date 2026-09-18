@@ -39,6 +39,14 @@ export function sanitizeSiteImageUrl(url: string): string {
   return mediaUrlToKey(s) ? s : "";
 }
 
+/** Payment QR for food bills — only `/api/media/bills/...`. */
+export function sanitizeBillPaymentQrUrl(url: string): string {
+  const s = String(url || "").trim();
+  if (!s) return "";
+  const key = mediaUrlToKey(s);
+  return key?.startsWith("bills/") ? s : "";
+}
+
 export function keyToMediaUrl(key: string): string {
   return `${MEDIA_URL_PREFIX}${key}`;
 }

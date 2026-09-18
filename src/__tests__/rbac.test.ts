@@ -80,6 +80,7 @@ const MENU_PERMISSIONS: Record<string, ActionPerm> = {
   toggleItemAvailability: "canToggleMenuAvailability", bulkToggleAvailability: "canToggleMenuAvailability",
   addStock: "canManageInventory", getLowStockItems: "canManageInventory",
   getFoodSettings: "canManageFoodSettings", updateFoodSettings: "canManageFoodSettings",
+  getBillBranding: ["canGenerateFoodBills", "canManageFoodSettings", "canViewFoodOrders"],
 };
 
 function checkPermission(
@@ -146,6 +147,13 @@ describe("RBAC: active permission catalog", () => {
     expect(checkPermission("staff", { canReconcile: true }, { cash: "canReconcileCash", online: "canReconcileOnline" }, "cash")).toBe("allowed");
     expect(checkPermission("staff", { canReconcileAccounts: true }, { cash: "canReconcileCash", online: "canReconcileOnline" }, "online")).toBe("allowed");
     expect(checkPermission("staff", { canManageAccounts: true }, { settings: "canManageAccountSettings" }, "settings")).toBe("allowed");
+  });
+
+  it("getBillBranding allows any of generate/settings/view-food", () => {
+    expect(checkPermission("staff", { canGenerateFoodBills: true }, MENU_PERMISSIONS, "getBillBranding")).toBe("allowed");
+    expect(checkPermission("staff", { canManageFoodSettings: true }, MENU_PERMISSIONS, "getBillBranding")).toBe("allowed");
+    expect(checkPermission("staff", { canViewFoodOrders: true }, MENU_PERMISSIONS, "getBillBranding")).toBe("allowed");
+    expect(checkPermission("staff", {}, MENU_PERMISSIONS, "getBillBranding")).toBe("forbidden");
   });
 });
 

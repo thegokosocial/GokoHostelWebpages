@@ -5,8 +5,15 @@ import { isPiRuntime } from "@/lib/runtime";
 import { getMediaBucket, putMediaObject } from "@/lib/mediaR2";
 import { isSafeMediaKey, keyToMediaUrl } from "@/lib/mediaKeys";
 
-const FOLDERS = new Set(["events", "community", "heroes", "menu", "quick-links"]);
+const FOLDERS = new Set(["events", "community", "heroes", "menu", "quick-links", "bills"]);
+const MULTI_IMAGE_FOLDERS = new Set(["quick-links", "bills"]);
 const MAX_BYTES = 5 * 1024 * 1024;
+
+function folderPermission(folder: string) {
+  if (folder === "menu") return "canManageMenuItems" as const;
+  if (folder === "bills") return "canManageFoodSettings" as const;
+  return "admin_only" as const;
+}
 
 export async function POST(req: NextRequest) {
   if (isPiRuntime()) {
@@ -27,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     const auth = await authenticateUser(password, username);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const access = actionAllowed(auth.role, auth.permissions, folder === "menu" ? "canManageMenuItems" : "admin_only");
+    const access = actionAllowed(auth.role, auth.permissions, folderPermission(folder));
     if (access !== "allowed") {
       return NextResponse.json({ error: access === "admin_required" ? "Admin access required" : "Insufficient permissions" }, { status: 403 });
     }
@@ -45,9 +52,10 @@ export async function POST(req: NextRequest) {
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ error: "Image is too large (max 5MB)" }, { status: 400 });
     }
-    const allowedTypes = folder === "quick-links" ? new Set(["image/jpeg", "image/png", "image/webp"]) : new Set(["image/jpeg"]);
+    const multi = MULTI_IMAGE_FOLDERS.has(folder);
+    const allowedTypes = multi ? new Set(["image/jpeg", "image/png", "image/webp"]) : new Set(["image/jpeg"]);
     if (!allowedTypes.has(file.type)) {
-      return NextResponse.json({ error: folder === "quick-links" ? "Upload a JPEG, PNG, or WebP image" : "Upload a processed JPEG" }, { status: 400 });
+      return NextResponse.json({ error: multi ? "Upload a JPEG, PNG, or WebP image" : "Upload a processed JPEG" }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
@@ -58,12 +66,13 @@ export async function POST(req: NextRequest) {
     const jpeg = head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
     const png = head.length >= 8 && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47 && head[4] === 0x0d && head[5] === 0x0a && head[6] === 0x1a && head[7] === 0x0a;
     const webp = head.length >= 12 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50;
-    if (!jpeg && !(folder === "quick-links" && (png || webp))) {
-      return NextResponse.json({ error: folder === "quick-links" ? "Upload a valid JPEG, PNG, or WebP image" : "Upload a processed JPEG" }, { status: 400 });
+    if (!jpeg && !(multi && (png || webp))) {
+      return NextResponse.json({ error: multi ? "Upload a valid JPEG, PNG, or WebP image" : "Upload a processed JPEG" }, { status: 400 });
     }
 
+    const ext = jpeg ? "jpg" : png ? "png" : "webp";
     const day = new Date().toISOString().slice(0, 10);
-    const key = `${folder}/${day}-${crypto.randomUUID()}.jpg`;
+    const key = `${folder}/${day}-${crypto.randomUUID()}.${ext}`;
     if (!isSafeMediaKey(key)) {
       return NextResponse.json({ error: "Invalid media key" }, { status: 400 });
     }

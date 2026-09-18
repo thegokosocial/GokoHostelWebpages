@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  DEFAULT_BILL_BRANDING,
+  formatGstRateLabel,
+  splitGstPaise,
+  splitGstRate,
+  type BillBranding,
+} from "@/lib/foodBillFormat";
+
 const PRINTER_SERVICE = "000018f0-0000-1000-8000-00805f9b34fb";
 const PRINTER_CHARACTERISTIC = "00002af1-0000-1000-8000-00805f9b34fb";
 
@@ -174,6 +182,7 @@ export interface BillData {
   date?: string;
   discountableSubtotal?: number;
   exemptSubtotal?: number;
+  branding?: BillBranding;
 }
 
 export interface OrderTicketData {
@@ -191,17 +200,17 @@ export async function printFoodBill(data: BillData): Promise<void> {
 
   const now = data.date || new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   const billNo = data.billNumber || `BILL-${Date.now()}`;
+  const branding = data.branding || DEFAULT_BILL_BRANDING;
 
   const parts: Uint8Array[] = [
     INIT,
     ALIGN_CENTER,
     BOLD_ON,
     DOUBLE_WIDTH_ON,
-    line("GOKO HOSTEL"),
+    line(branding.hostelName.length > 16 ? branding.hostelName.substring(0, 16) : branding.hostelName),
     DOUBLE_WIDTH_OFF,
-    line("GOKARNA"),
+    line(branding.location.length > LINE_WIDTH ? branding.location.substring(0, LINE_WIDTH) : branding.location),
     BOLD_OFF,
-    line("Beach-side dining"),
     line(separator("=")),
     ALIGN_LEFT,
     line(`Bill: ${billNo}`),
@@ -236,7 +245,12 @@ export async function printFoodBill(data: BillData): Promise<void> {
   if (data.discount && data.discount > 0) {
     parts.push(line(twoColumn("Discount:", `-${formatPaise(data.discount)}`)));
   }
-  parts.push(line(twoColumn(`Tax (${data.taxRate}%):`, formatPaise(data.tax))));
+  if (data.tax > 0) {
+    const { cgst, sgst } = splitGstPaise(data.tax);
+    const { cgstRate, sgstRate } = splitGstRate(data.taxRate);
+    parts.push(line(twoColumn(`CGST (${formatGstRateLabel(cgstRate)}%):`, formatPaise(cgst))));
+    parts.push(line(twoColumn(`SGST (${formatGstRateLabel(sgstRate)}%):`, formatPaise(sgst))));
+  }
   parts.push(BOLD_ON, DOUBLE_WIDTH_ON);
   parts.push(line(twoColumn("TOTAL:", formatPaise(data.total))));
   parts.push(DOUBLE_WIDTH_OFF, BOLD_OFF);
@@ -244,12 +258,18 @@ export async function printFoodBill(data: BillData): Promise<void> {
   if (data.paymentMethod) {
     parts.push(line(separator("-")));
     parts.push(line(`Payment: ${data.paymentMethod}`));
+  } else if (branding.upiId) {
+    parts.push(line(separator("-")));
+    parts.push(ALIGN_CENTER);
+    parts.push(line(`Pay: ${formatPaise(data.total)}`));
+    parts.push(line(branding.upiId.length > LINE_WIDTH ? branding.upiId.substring(0, LINE_WIDTH) : branding.upiId));
+    parts.push(ALIGN_LEFT);
   }
 
   parts.push(line(separator("=")));
   parts.push(ALIGN_CENTER);
-  parts.push(line("Thank you for dining!"));
-  parts.push(line("gokohostel.com"));
+  const footer = branding.footer.length > LINE_WIDTH ? branding.footer.substring(0, LINE_WIDTH) : branding.footer;
+  parts.push(line(footer));
   parts.push(FEED_CUT);
 
   await sendData(concat(...parts));
@@ -304,19 +324,22 @@ export async function printCombinedBill(
   paymentMethod?: string,
   discountableSubtotal?: number,
   exemptSubtotal?: number,
+  branding?: BillBranding,
+  grandTax?: number,
 ): Promise<void> {
   await connectPrinter();
 
   const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const b = branding || DEFAULT_BILL_BRANDING;
 
   const parts: Uint8Array[] = [
     INIT,
     ALIGN_CENTER,
     BOLD_ON,
     DOUBLE_WIDTH_ON,
-    line("GOKO HOSTEL"),
+    line(b.hostelName.length > 16 ? b.hostelName.substring(0, 16) : b.hostelName),
     DOUBLE_WIDTH_OFF,
-    line("GOKARNA"),
+    line(b.location.length > LINE_WIDTH ? b.location.substring(0, LINE_WIDTH) : b.location),
     BOLD_OFF,
     line("Combined Bill"),
     line(separator("=")),
@@ -347,6 +370,12 @@ export async function printCombinedBill(
   if (combinedDiscount > 0) {
     parts.push(line(twoColumn("Discount:", `-${formatPaise(combinedDiscount)}`)));
   }
+  if (grandTax && grandTax > 0) {
+    const { cgst, sgst } = splitGstPaise(grandTax);
+    const { cgstRate, sgstRate } = splitGstRate(taxRate);
+    parts.push(line(twoColumn(`CGST (${formatGstRateLabel(cgstRate)}%):`, formatPaise(cgst))));
+    parts.push(line(twoColumn(`SGST (${formatGstRateLabel(sgstRate)}%):`, formatPaise(sgst))));
+  }
   parts.push(BOLD_ON, DOUBLE_WIDTH_ON);
   parts.push(line(twoColumn("GRAND TOTAL:", formatPaise(grandTotal))));
   parts.push(DOUBLE_WIDTH_OFF, BOLD_OFF);
@@ -356,11 +385,18 @@ export async function printCombinedBill(
 
   if (paymentMethod) {
     parts.push(line(`Payment: ${paymentMethod}`));
+  } else if (b.upiId) {
+    parts.push(line(separator("-")));
+    parts.push(ALIGN_CENTER);
+    parts.push(line(`Pay: ${formatPaise(grandTotal)}`));
+    parts.push(line(b.upiId.length > LINE_WIDTH ? b.upiId.substring(0, LINE_WIDTH) : b.upiId));
+    parts.push(ALIGN_LEFT);
   }
 
   parts.push(line(separator("=")));
   parts.push(ALIGN_CENTER);
-  parts.push(line("Thank you for dining!"));
+  const footer = b.footer.length > LINE_WIDTH ? b.footer.substring(0, LINE_WIDTH) : b.footer;
+  parts.push(line(footer));
   parts.push(FEED_CUT);
 
   await sendData(concat(...parts));

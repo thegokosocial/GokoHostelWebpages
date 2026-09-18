@@ -89,7 +89,7 @@ export function ManagementAudit({ password, username, role }: { password: string
       {subTab === "inventory" && <InventoryAuditTrail apiCall={apiCall} />}
       {subTab === "bookings" && <BookingAuditTrail apiCall={bookingApiCall} />}
       {subTab === "attendance" && <AttendanceAuditTrail password={password} username={username} />}
-      {subTab === "food" && <OrderHistory apiCall={foodApiCall} />}
+      {subTab === "food" && <OrderHistory apiCall={foodApiCall} password={password} username={username} />}
     </div>
   );
 }

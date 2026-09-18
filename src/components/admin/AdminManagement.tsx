@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon, ReceiptIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role, type ManagementTab } from "./types";
 
@@ -20,6 +20,7 @@ const AdminBedHistory = dynamic(() => import("./AdminBedHistory").then((m) => m.
 const AdminCheckRates = dynamic(() => import("./AdminCheckRates").then((m) => m.AdminCheckRates), { loading: tabLoader, ssr: false });
 const AdminMenuManagement = dynamic(() => import("./AdminMenuManagement").then((m) => m.AdminMenuManagement), { loading: tabLoader, ssr: false });
 const AdminFoodSettings = dynamic(() => import("./AdminFoodSettings").then((m) => m.AdminFoodSettings), { loading: tabLoader, ssr: false });
+const AdminBillSettings = dynamic(() => import("./AdminBillSettings").then((m) => m.AdminBillSettings), { loading: tabLoader, ssr: false });
 const AdminBulkImport = dynamic(() => import("./AdminBulkImport").then((m) => m.AdminBulkImport), { loading: tabLoader, ssr: false });
 const QRGenerator = dynamic(() => import("./qr-generator").then((m) => m.QRGenerator), { loading: tabLoader, ssr: false });
 const AccountSettings = dynamic(() => import("./AccountSettings").then((m) => m.AccountSettings), { loading: tabLoader, ssr: false });
@@ -44,6 +45,7 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "menu", label: "Menu", icon: <UtensilsIcon className="h-3.5 w-3.5" />, permission: "canViewMenu" },
   { id: "website", label: "Website", icon: <GlobeIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "foodSettings", label: "Food Settings", icon: <SettingsIcon className="h-3.5 w-3.5" />, permission: "canManageFoodSettings" },
+  { id: "billSettings", label: "Bill Settings", icon: <ReceiptIcon className="h-3.5 w-3.5" />, permission: "canManageFoodSettings" },
   { id: "bulkUpload", label: "Bulk Upload", icon: <UploadIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "qrGenerator", label: "QR Codes", icon: <QrCodeIcon className="h-3.5 w-3.5" />, permission: "canUseQRGenerator" },
   { id: "accountSettings", label: "Account Settings", icon: <WalletIcon className="h-3.5 w-3.5" />, permission: "canManageAccountSettings" },
@@ -167,6 +169,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         {tab === "menu" && <AdminMenuManagement password={password} username={username} role={role} permissions={permissions} />}
         {tab === "website" && visibleTabs.some((t) => t.id === "website") && <AdminWebsite password={password} username={username} role={role} />}
         {tab === "foodSettings" && <AdminFoodSettings password={password} username={username} role={role} />}
+        {tab === "billSettings" && <AdminBillSettings password={password} username={username} />}
         {tab === "bulkUpload" && <AdminBulkImport password={password} username={username} role={role} />}
         {tab === "qrGenerator" && <QRGenerator password={password} username={username} role={role} />}
         {tab === "accountSettings" && <AccountSettings password={password} username={username} role={role} />}

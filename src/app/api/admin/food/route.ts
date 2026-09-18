@@ -10,8 +10,10 @@ import {
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { sanitizeFoodImageUrl } from "@/lib/foodImage";
-import { mediaUrlToKey } from "@/lib/mediaKeys";
+import { mediaUrlToKey, sanitizeBillPaymentQrUrl } from "@/lib/mediaKeys";
 import { deleteMediaKeys } from "@/lib/mediaR2";
+import { BILL_SETTINGS_KEYS, brandingFromSettings, parseAccentHex } from "@/lib/foodBillFormat";
+import { foodTaxPercent } from "@/lib/foodLookup";
 
 async function deleteMenuPhotos(urls: Array<string | null | undefined>) {
   const keys = urls
@@ -42,6 +44,7 @@ const FOOD_SETTINGS_KEYS = [
   "food_kitchen_busy",
   "food_customer_whatsapp",
   "food_show_out_of_stock",
+  ...BILL_SETTINGS_KEYS,
 ];
 
 const FOOD_ACTION_PERMISSIONS: Record<string, ActionPerm> = {
@@ -61,7 +64,20 @@ const FOOD_ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   getLowStockItems: "canManageInventory",
   getFoodSettings: "canManageFoodSettings",
   updateFoodSettings: "canManageFoodSettings",
+  getBillBranding: ["canGenerateFoodBills", "canManageFoodSettings", "canViewFoodOrders"],
 };
+
+async function deleteBillQr(urls: Array<string | null | undefined>) {
+  const keys = urls
+    .map((url) => mediaUrlToKey(String(url || "")))
+    .filter((key): key is string => Boolean(key?.startsWith("bills/")));
+  if (!keys.length) return;
+  try {
+    await deleteMediaKeys(keys);
+  } catch (error) {
+    console.error("Could not delete replaced bill QR:", error);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -258,15 +274,47 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ settings: result });
       }
 
+      case "getBillBranding": {
+        const settings: Record<string, string> = {};
+        for (const key of BILL_SETTINGS_KEYS) {
+          settings[key] = (await getSetting(key)) ?? "";
+        }
+        const taxRaw = (await getSetting("food_tax_rate")) ?? "";
+        return NextResponse.json({
+          settings,
+          taxRate: foodTaxPercent(taxRaw),
+          branding: brandingFromSettings(settings),
+        });
+      }
+
       case "updateFoodSettings": {
         const { settings: settingsData } = params;
         if (!settingsData || typeof settingsData !== "object") {
           return NextResponse.json({ error: "settings object is required" }, { status: 400 });
         }
-        for (const [key, value] of Object.entries(settingsData)) {
-          if (FOOD_SETTINGS_KEYS.includes(key)) {
+        const nextSettings = { ...(settingsData as Record<string, unknown>) };
+        let prevQrUrl = "";
+        if ("food_bill_payment_qr_url" in nextSettings) {
+          const nextUrl = sanitizeBillPaymentQrUrl(String(nextSettings.food_bill_payment_qr_url ?? ""));
+          nextSettings.food_bill_payment_qr_url = nextUrl;
+          prevQrUrl = (await getSetting("food_bill_payment_qr_url")) ?? "";
+        }
+        if ("food_bill_accent" in nextSettings) {
+          nextSettings.food_bill_accent = parseAccentHex(String(nextSettings.food_bill_accent || ""));
+        }
+        const allowed = new Set<string>(FOOD_SETTINGS_KEYS);
+        for (const [key, value] of Object.entries(nextSettings)) {
+          if (allowed.has(key)) {
             await setSetting(key, String(value));
           }
+        }
+        // Delete old R2 only after settings write succeeds
+        if (
+          "food_bill_payment_qr_url" in nextSettings &&
+          prevQrUrl &&
+          prevQrUrl !== String(nextSettings.food_bill_payment_qr_url || "")
+        ) {
+          await deleteBillQr([prevQrUrl]);
         }
         return NextResponse.json({ ok: true });
       }

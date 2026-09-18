@@ -4,6 +4,14 @@ import { useState, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Suspense } from "react";
+import {
+  DEFAULT_BILL_BRANDING,
+  billPaymentStatusLabel,
+  formatGstRateLabel,
+  splitGstPaise,
+  splitGstRate,
+} from "@/lib/foodBillFormat";
+import { foodTaxRateFromAmounts } from "@/lib/foodLookup";
 
 interface BillItem {
   menuItemId: number;
@@ -32,6 +40,16 @@ interface BillOrder {
   items: BillItem[];
 }
 
+type BillBrandingPublic = {
+  hostelName: string;
+  location: string;
+  accent: string;
+  upiId: string;
+  qrUrl: string;
+  footer: string;
+  taxRate: number;
+};
+
 function formatPhone(digits: string): string {
   if (digits.length <= 5) return digits;
   return digits.slice(0, 5) + " " + digits.slice(5);
@@ -56,12 +74,26 @@ function formatTime(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatRupees(paise: number): string {
+  return `₹${(paise / 100).toFixed(2)}`;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   placed: "Placed",
   preparing: "Preparing",
   ready: "Ready",
   served: "Served",
   cancelled: "Cancelled",
+};
+
+const DEFAULT_PUBLIC_BRANDING: BillBrandingPublic = {
+  hostelName: DEFAULT_BILL_BRANDING.hostelName,
+  location: DEFAULT_BILL_BRANDING.location,
+  accent: DEFAULT_BILL_BRANDING.accent,
+  upiId: "",
+  qrUrl: "",
+  footer: DEFAULT_BILL_BRANDING.footer,
+  taxRate: 0,
 };
 
 function MyBillsContent() {
@@ -82,6 +114,7 @@ function MyBillsContent() {
   const [unpaidOrders, setUnpaidOrders] = useState<BillOrder[]>([]);
   const [paidOrders, setPaidOrders] = useState<BillOrder[]>([]);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [billBranding, setBillBranding] = useState<BillBrandingPublic>(DEFAULT_PUBLIC_BRANDING);
 
   const fetchBills = useCallback(async (phoneDigits: string) => {
     setLoading(true);
@@ -92,6 +125,9 @@ function MyBillsContent() {
       const data = await res.json();
       setUnpaidOrders(data.unpaidOrders || []);
       setPaidOrders(data.paidOrders || []);
+      if (data.billBranding) {
+        setBillBranding({ ...DEFAULT_PUBLIC_BRANDING, ...data.billBranding });
+      }
       setSubmitted(true);
     } catch {
       setError("Unable to load bills. Please try again.");
@@ -316,6 +352,7 @@ function MyBillsContent() {
                       variant="unpaid"
                       expanded={expandedOrders.has(order.orderNumber)}
                       onToggle={() => toggleOrder(order.orderNumber)}
+                      branding={billBranding}
                     />
                   ))}
                 </div>
@@ -336,6 +373,7 @@ function MyBillsContent() {
                       variant="paid"
                       expanded={expandedOrders.has(order.orderNumber)}
                       onToggle={() => toggleOrder(order.orderNumber)}
+                      branding={billBranding}
                     />
                   ))}
                 </div>
@@ -372,39 +410,48 @@ function OrderCard({
   variant,
   expanded,
   onToggle,
+  branding,
 }: {
   order: BillOrder;
   variant: "unpaid" | "paid";
   expanded: boolean;
   onToggle: () => void;
+  branding: BillBrandingPublic;
 }) {
-  const accentBorder = variant === "unpaid" ? "border-l-amber-400" : "border-l-green-400";
-  const badgeStyle =
-    variant === "unpaid"
-      ? "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400"
-      : "bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400";
-  const badgeLabel =
-    variant === "paid"
-      ? "Paid"
-      : order.paymentStatus === "on_tab"
-        ? "On Tab"
-        : "Pending";
+  const accent = branding.accent || DEFAULT_BILL_BRANDING.accent;
+  const badgeLabel = billPaymentStatusLabel(order.paymentStatus);
+  const { cgst, sgst } = splitGstPaise(order.tax);
+  const rateForLabels = order.tax > 0
+    ? foodTaxRateFromAmounts(order.subtotal, order.tax)
+    : (branding.taxRate || 0);
+  const { cgstRate, sgstRate } = splitGstRate(rateForLabels);
+  const showPayment = variant === "unpaid" && (branding.qrUrl || branding.upiId);
+  const pendingPrice = order.items.some((item) => item.pricingStatus === "pending");
 
   return (
     <motion.div
       layout
-      className={`overflow-hidden rounded-xl border-l-4 bg-white dark:bg-card shadow-sm dark:shadow-none ${accentBorder} ${variant === "paid" ? "opacity-80" : ""}`}
+      className={`overflow-hidden rounded-2xl bg-white dark:bg-card shadow-sm dark:shadow-none ${variant === "paid" ? "opacity-90" : ""}`}
     >
+      <div className="px-4 py-3 text-center text-white" style={{ backgroundColor: accent }}>
+        <p className="text-base font-bold">{branding.hostelName}</p>
+        <p className="text-xs opacity-90">{branding.location}</p>
+      </div>
+
       <button
         onClick={onToggle}
         className="flex w-full items-center justify-between px-4 py-3.5 text-left"
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-sm font-bold text-gray-700 dark:text-gray-300">
+            <span className="text-sm font-bold text-gray-800 dark:text-gray-200">Goko order</span>
+            <span className="font-mono text-sm font-bold text-gray-600 dark:text-gray-300">
               #{order.orderNumber}
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badgeStyle}`}>
+            <span
+              className="rounded-full px-2 py-0.5 text-xs font-medium"
+              style={{ backgroundColor: `${accent}22`, color: accent }}
+            >
               {badgeLabel}
             </span>
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -429,13 +476,8 @@ function OrderCard({
               </span>
             )}
             <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              {order.items.some((item) => item.pricingStatus === "pending") ? "Price pending" : `₹${Math.round(order.total / 100)}`}
+              {pendingPrice ? "Price pending" : `₹${Math.round(order.total / 100)}`}
             </span>
-            {order.discount > 0 && (
-              <p className="text-[10px] text-green-600">
-                {Math.round((order.discount / (order.total + order.discount)) * 100)}% off (₹{Math.round(order.discount / 100)})
-              </p>
-            )}
           </div>
           <svg
             className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -458,42 +500,85 @@ function OrderCard({
             className="overflow-hidden"
           >
             <div className="border-t border-gray-100 dark:border-white/10 px-4 pb-4 pt-3">
-              <div className="space-y-1.5">
+              <div className="mb-2 grid grid-cols-[1fr_auto_auto] gap-x-3 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <span>Item</span>
+                <span className="w-8 text-center">Qty</span>
+                <span className="w-16 text-right">Amount</span>
+              </div>
+              <div className="space-y-2">
                 {order.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-400">
-                      {item.quantity}× {item.name}
+                  <div key={idx} className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-gray-50 dark:border-white/5 pb-2 text-sm last:border-0">
+                    <div className="min-w-0">
+                      <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
+                      {item.quantity > 1 && (
+                        <p className="text-[11px] text-gray-400">{item.quantity} x {formatRupees(item.price)}</p>
+                      )}
+                    </div>
+                    <span className="w-8 text-center text-gray-500">{item.quantity}</span>
+                    <span className="w-16 text-right text-gray-600 dark:text-gray-400">
+                      {item.pricingStatus === "pending" ? "—" : formatRupees(item.lineTotal)}
                     </span>
-                    <span className="flex-shrink-0 text-gray-500 dark:text-gray-400">{item.pricingStatus === "pending" ? "Price pending" : `₹${Math.round(item.lineTotal / 100)}`}</span>
                   </div>
                 ))}
               </div>
-              <div className="mt-3 border-t border-dashed border-gray-200 dark:border-white/10 pt-2">
-                <div className="flex justify-between text-xs text-gray-400">
+              <div className="mt-3 space-y-1 border-t border-gray-200 dark:border-white/10 pt-2">
+                <div className="flex justify-between text-xs text-gray-500">
                   <span>Subtotal</span>
-                  <span>₹{Math.round((order.subtotal + (order.discount || 0)) / 100)}</span>
+                  <span>{formatRupees(order.subtotal + (order.discount || 0))}</span>
                 </div>
                 {order.discount > 0 && (
                   <div className="flex justify-between text-xs text-green-600">
                     <span>Discount</span>
-                    <span>-₹{(order.discount / 100).toFixed(0)}</span>
+                    <span>-{formatRupees(order.discount)}</span>
                   </div>
                 )}
                 {order.tax > 0 && (
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>Tax</span>
-                    <span>₹{Math.round(order.tax / 100)}</span>
-                  </div>
+                  <>
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>CGST ({formatGstRateLabel(cgstRate)}%)</span>
+                      <span>{formatRupees(cgst)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>SGST ({formatGstRateLabel(sgstRate)}%)</span>
+                      <span>{formatRupees(sgst)}</span>
+                    </div>
+                  </>
                 )}
                 <div className="mt-1 flex justify-between text-sm font-semibold text-gray-800 dark:text-gray-200">
-                  <span>Total</span>
-                  <span>{order.items.some((item) => item.pricingStatus === "pending") ? "Price pending" : `₹${Math.round(order.total / 100)}`}</span>
+                  <span>Grand Total</span>
+                  <span>{pendingPrice ? "Price pending" : formatRupees(order.total)}</span>
                 </div>
               </div>
+
+              {showPayment && !pendingPrice && (
+                <div className="mt-4 text-center">
+                  {branding.qrUrl && (
+                    <img
+                      src={branding.qrUrl}
+                      alt="Payment QR"
+                      className="mx-auto h-40 w-40 rounded-lg border border-gray-100 bg-white object-contain p-2"
+                    />
+                  )}
+                  <p className="mt-2 text-sm text-gray-600">
+                    Scan to pay{" "}
+                    <span className="font-semibold" style={{ color: accent }}>
+                      {formatRupees(order.total)}
+                    </span>
+                  </p>
+                  {branding.upiId && (
+                    <p className="mt-0.5 text-xs text-gray-400">{branding.upiId}</p>
+                  )}
+                </div>
+              )}
+
               {variant === "paid" && order.paymentMethod && (
                 <p className="mt-2 text-xs text-gray-400">
                   Paid via {order.paymentMethod}
                 </p>
+              )}
+
+              {branding.footer && (
+                <p className="mt-3 text-center text-xs text-gray-400">{branding.footer}</p>
               )}
             </div>
           </motion.div>

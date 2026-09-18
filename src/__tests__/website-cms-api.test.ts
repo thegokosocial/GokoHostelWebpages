@@ -567,6 +567,33 @@ describe("POST /api/admin/website/upload", () => {
     expect(body.url).toMatch(/^\/api\/media\/events\/\d{4}-\d{2}-\d{2}-[0-9a-f-]{36}\.jpg$/i);
     expect(putMediaObject).toHaveBeenCalled();
   });
+
+  it("allows bills folder for canManageFoodSettings staff", async () => {
+    vi.mocked(authenticateUser).mockResolvedValue({
+      role: "staff",
+      displayName: "Staff",
+      permissions: { canManageFoodSettings: true },
+    });
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "bills");
+    fd.set("file", jpegFile());
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.url).toMatch(/^\/api\/media\/bills\/\d{4}-\d{2}-\d{2}-[0-9a-f-]{36}\.jpg$/i);
+  });
+
+  it("rejects bills folder without canManageFoodSettings", async () => {
+    vi.mocked(authenticateUser).mockResolvedValue(staff);
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "bills");
+    fd.set("file", jpegFile());
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    expect(res.status).toBe(403);
+    expect(putMediaObject).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/media/[...key]", () => {

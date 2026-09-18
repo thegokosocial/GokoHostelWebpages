@@ -7,6 +7,7 @@ import { cn, localDateStr } from "@/lib/utils";
 import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, TagIcon } from "lucide-react";
 import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicket, type BillItem } from "@/lib/thermalPrint";
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
+import { loadBillBranding } from "@/lib/loadBillBranding";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
@@ -15,6 +16,18 @@ import { usePanelHistory } from "@/hooks/usePanelHistory";
 import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/RecordPaymentModal";
 import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
+
+async function withBillBranding(
+  password: string,
+  username: string | undefined,
+  showError: (title: string, detail?: string) => void,
+) {
+  const loaded = await loadBillBranding(password, username);
+  if (!loaded.ok) {
+    showError("Bill branding", loaded.error || "Using defaults");
+  }
+  return loaded;
+}
 
 type FoodTab = "summary" | "place" | "combined" | "payment" | "active";
 
@@ -193,7 +206,7 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
       )}
       {tab === "place" && <PlaceOrder apiCall={apiCall} prefillGuest={prefillGuest} onPrefillConsumed={() => setPrefillGuest(null)} onOrderPlaced={() => setTab("summary")} />}
       {tab === "summary" && <OrderSummary apiCall={apiCall} password={password} username={username} onOrderMore={(guest) => { setPrefillGuest(guest); setTab("place"); }} onAddNewOrder={() => setTab("place")} role={role} permissions={permissions} />}
-      {tab === "combined" && <CombinedBill apiCall={apiCall} />}
+      {tab === "combined" && <CombinedBill apiCall={apiCall} password={password} username={username} />}
       {tab === "payment" && <PaymentSummary apiCall={apiCall} password={password} username={username} />}
     </div>
   );
@@ -1082,6 +1095,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         }
       }
       const printGross = subtotal + discount;
+      const { branding } = await withBillBranding(password, username, showError);
       await printFoodBill({
         guestName: group.guestName,
         guestPhone: group.contactInfo || undefined,
@@ -1095,6 +1109,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         discount: discount || undefined,
         discountableSubtotal: printGross - printExempt,
         exemptSubtotal: printExempt,
+        branding,
       });
       showSuccess("Bill printed successfully!");
     } catch (err: any) {
@@ -1162,6 +1177,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       }
     }
     const grossSub = orders.reduce((s, o) => s + o.subtotal + (o.discount || 0), 0);
+    const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError);
+    const unpaid = orders.some((o) => o.paymentStatus !== "paid");
     await generateGuestBill({
       guestName: group.guestName,
       guestPhone: group.contactInfo || "",
@@ -1177,6 +1194,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       billDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
       discountableSubtotal: grossSub - exemptSub,
       exemptSubtotal: exemptSub,
+      paymentStatus: unpaid ? "on_tab" : "paid",
+      branding,
+      paymentQrDataUrl: unpaid ? paymentQrDataUrl : undefined,
     });
   };
 
@@ -1732,7 +1752,7 @@ function VoidReasonPopup({ itemName, onVoid, onCancel, busy }: {
 
 // ─── Combined Bill ───────────────────────────────────────────────────────────
 
-function CombinedBill({ apiCall }: { apiCall: (body: any) => Promise<Response> }) {
+function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string }) {
   const { showError, showSuccess } = useAdminToast();
   const [guests, setGuests] = useState<GuestWithTab[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -1817,7 +1837,8 @@ function CombinedBill({ apiCall }: { apiCall: (body: any) => Promise<Response> }
       const cpOrders = preview.guests.flatMap((g: any) => g.orders || []);
       const cpSub = cpOrders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0);
       const cpTax = cpOrders.reduce((s: number, o: any) => s + (o.tax || 0), 0);
-      await printCombinedBill(guestData, preview.grandTotal, foodTaxRateFromAmounts(cpSub, cpTax), undefined, cpGross - cpExempt, cpExempt);
+      const { branding } = await withBillBranding(password, username, showError);
+      await printCombinedBill(guestData, preview.grandTotal, foodTaxRateFromAmounts(cpSub, cpTax), undefined, cpGross - cpExempt, cpExempt, branding, cpTax);
       showSuccess("Combined bill printed successfully!");
     } catch (err: any) {
       showError("Print failed", err.message || "Unknown error");
@@ -1927,6 +1948,7 @@ function CombinedBill({ apiCall }: { apiCall: (body: any) => Promise<Response> }
                 const combOrders = (preview.guests as any[]).flatMap((g: any) => g.orders || []);
                 const combSub = combOrders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0);
                 const combTax = combOrders.reduce((s: number, o: any) => s + (o.tax || 0), 0);
+                const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError);
                 const combinedData: CombinedBillData = {
                   guests: preview.guests.map((g: any) => ({
                     guestName: g.guestName as string,
@@ -1958,6 +1980,8 @@ function CombinedBill({ apiCall }: { apiCall: (body: any) => Promise<Response> }
                   billDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
                   discountableSubtotal: combGrossSub - combExemptSub,
                   exemptSubtotal: combExemptSub,
+                  branding,
+                  paymentQrDataUrl,
                 };
                 await generateCombinedBill(combinedData);
               }}
@@ -2776,7 +2800,7 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
 
 // ─── Order History ───────────────────────────────────────────────────────────
 
-export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Response> }) {
+export function OrderHistory({ apiCall, password, username }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string }) {
   const { showError, showSuccess } = useAdminToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3010,6 +3034,7 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
                               if (cid !== undefined && spExemptCats.has(cid)) spExempt += it.lineTotal;
                             }
                             const spGross = order.subtotal + (order.discount || 0);
+                            const { branding } = await withBillBranding(password, username, showError);
                             await printFoodBill({
                               billNumber: order.orderNumber,
                               guestName: order.guestName,
@@ -3030,6 +3055,7 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
                               discount: order.discount || undefined,
                               discountableSubtotal: spGross - spExempt,
                               exemptSubtotal: spExempt,
+                              branding,
                             });
                             showSuccess("Bill printed successfully!");
                           } catch (err: any) {
@@ -3073,6 +3099,7 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
                           total: order.total,
                           specialInstructions: order.specialInstructions || undefined,
                         }];
+                        const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError);
                         await generateGuestBill({
                           guestName: order.guestName,
                           guestPhone: order.guestPhone || "",
@@ -3085,6 +3112,10 @@ export function OrderHistory({ apiCall }: { apiCall: (body: any) => Promise<Resp
                           billDate: new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
                           discountableSubtotal: singleGross - singleExempt,
                           exemptSubtotal: singleExempt,
+                          paymentStatus: order.paymentStatus,
+                          paymentMethod: order.paymentMethod || undefined,
+                          branding,
+                          paymentQrDataUrl: order.paymentStatus === "paid" ? undefined : paymentQrDataUrl,
                         });
                       }}
                       className="flex items-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
