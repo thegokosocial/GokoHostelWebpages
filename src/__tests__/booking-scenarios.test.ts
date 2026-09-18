@@ -1056,6 +1056,62 @@ describe("walk-in advance payment", () => {
     const patch = q.updateBookingFull.mock.calls[0][1];
     expect(patch).not.toHaveProperty("amountPaid");
   });
+
+  it("implies nightly rate from old total when rate is 0 and stay shape changes", async () => {
+    q.getSetting.mockResolvedValue("0");
+    mockBeds([7, 8, 9]);
+    q.getAllBeds.mockResolvedValue([
+      { id: 7, bedId: "B-1", dormId: 1, type: "Bed" },
+      { id: 8, bedId: "B-2", dormId: 1, type: "Bed" },
+      { id: 9, bedId: "B-3", dormId: 1, type: "Bed" },
+    ]);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 10, guestName: "Guest", checkinDate: "2026-09-23", checkoutDate: "2026-09-24", status: "received",
+        source: "website", nightlyRate: 0, amountBeforeTax: 450, amountTax: 0, amountTotal: 450, amountPaid: 0, persons: 1,
+      },
+      assignments: [{ id: 1, status: "assigned", bedId: 7, dormId: 1 }],
+    });
+    q.assignBedToBooking.mockResolvedValue(true);
+    const res = await POST(req({
+      password: "x", action: "editReservation", bookingId: 10,
+      persons: 3, checkinDate: "2026-09-23", checkoutDate: "2026-09-25", addBedIds: [8, 9],
+    }));
+    expect(res.status).toBe(200);
+    // implied rate = 450 / (1 night * 1 bed) = 450; new = 450 * 2 nights * 3 beds = 2700
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({
+      nightlyRate: 450,
+      amountTotal: 2700,
+      persons: 3,
+    }));
+    expect(q.updateBookingFull.mock.calls[0][1]).not.toHaveProperty("amountPaid");
+  });
+
+  it("implies nightly rate from before-tax so tax is not double-applied", async () => {
+    q.getSetting.mockResolvedValue("5");
+    mockBeds([7]);
+    q.getAllBeds.mockResolvedValue([{ id: 7, bedId: "B-1", dormId: 1, type: "Bed" }]);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 10, guestName: "Guest", checkinDate: "2026-09-23", checkoutDate: "2026-09-24", status: "received",
+        source: "website", nightlyRate: 0, amountBeforeTax: 1000, amountTax: 50, amountTotal: 1050, amountPaid: 0, persons: 1,
+      },
+      assignments: [{ id: 1, status: "assigned", bedId: 7, dormId: 1 }],
+    });
+    const res = await POST(req({
+      password: "x", action: "editReservation", bookingId: 10,
+      persons: 1, checkinDate: "2026-09-23", checkoutDate: "2026-09-25",
+    }));
+    expect(res.status).toBe(200);
+    // beforeTax basis → rate 1000; 2 nights × 1 bed → before 2000, tax 100, total 2100
+    // (implying from amountTotal 1050 would wrongly yield total 2205)
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({
+      nightlyRate: 1000,
+      amountBeforeTax: 2000,
+      amountTax: 100,
+      amountTotal: 2100,
+    }));
+  });
 });
 
 describe("calendar nights enrichment", () => {

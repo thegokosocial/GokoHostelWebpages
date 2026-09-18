@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -687,6 +687,13 @@ export async function hardDeleteBookingCascade(bookingId: number): Promise<{ rec
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/no such table/i.test(message)) throw error;
+  }
+  // Detach website checkout rows so FK does not block; paid checkouts must be blocked by the caller.
+  try {
+    await db.update(nativeBookingCheckouts).set({ bookingId: null }).where(eq(nativeBookingCheckouts.bookingId, bookingId));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/no such table|no such column/i.test(message)) throw error;
   }
   await db.delete(bookings).where(eq(bookings.id, bookingId));
   return { receiptIds: receipts.map((r) => r.receiptId) };

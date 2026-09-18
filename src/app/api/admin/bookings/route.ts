@@ -1296,9 +1296,16 @@ export async function POST(req: NextRequest) {
         .map((v) => String(v || "").trim())
         .filter(Boolean);
       const walkinCheckins = await findWalkinCheckinsByBookingRefs(linkRefs);
-      if (!isRecordsLinkedWalkinBooking(detail.booking, walkinCheckins)) {
+      const isWebsite = String(detail.booking.source || "").toLowerCase() === "website";
+      const isRecordsWalkin = isRecordsLinkedWalkinBooking(detail.booking, walkinCheckins);
+      if (!isWebsite && !isRecordsWalkin) {
         return NextResponse.json({
-          error: "Only walk-in/offline bookings created from Records can be permanently deleted",
+          error: "Only Goko Website bookings or walk-in/offline bookings created from Records can be permanently deleted",
+        }, { status: 409 });
+      }
+      if (isWebsite && Number(detail.booking.amountPaid || 0) > 0) {
+        return NextResponse.json({
+          error: "Paid website bookings cannot be permanently deleted; cancel or refund first.",
         }, { status: 409 });
       }
       if (await bookingHasPlatformFinance(bookingId)) {
@@ -1310,7 +1317,9 @@ export async function POST(req: NextRequest) {
       const dates = bookingDateRange(detail.booking.checkinDate, detail.booking.checkoutDate);
       const dormIds = activeAssignmentDormIds(detail.assignments);
       const before = await otaFingerprint(dormIds, dates);
-      const linkedCheckin = walkinCheckins.find((c) => checkinLinksBooking(c, detail.booking));
+      const linkedCheckin = isRecordsWalkin
+        ? walkinCheckins.find((c) => checkinLinksBooking(c, detail.booking))
+        : undefined;
       const snapshot = {
         bookingId,
         guestName: detail.booking.guestName,
@@ -1322,21 +1331,24 @@ export async function POST(req: NextRequest) {
         amountTotal: detail.booking.amountTotal,
         amountPaid: detail.booking.amountPaid,
         status: detail.booking.status,
+        source: detail.booking.source,
         checkinId: linkedCheckin?.id ?? null,
         assignmentCount: (detail.assignments || []).filter((a) => a.status === "assigned").length,
       };
 
       const { receiptIds } = await hardDeleteBookingCascade(bookingId);
-      const reopenedCheckinIds = await reopenWalkinCheckinsForBooking({
-        bookingRef: detail.booking.bookingRef,
-        gokoBookingId: detail.booking.gokoBookingId,
-        cmBookingId: detail.booking.cmBookingId,
-        actingUser,
-      });
+      const reopenedCheckinIds = isRecordsWalkin
+        ? await reopenWalkinCheckinsForBooking({
+          bookingRef: detail.booking.bookingRef,
+          gokoBookingId: detail.booking.gokoBookingId,
+          cmBookingId: detail.booking.cmBookingId,
+          actingUser,
+        })
+        : [];
       await pushIfOtaChanged(before, dormIds, dates).catch(() => {});
       await addAuditEntry({
         username: actingUser,
-        action: "walkin_booking_hard_deleted",
+        action: isWebsite ? "website_booking_hard_deleted" : "walkin_booking_hard_deleted",
         target: `booking:${bookingId}`,
         details: JSON.stringify({ ...snapshot, receiptIds, reopenedCheckinIds }),
       });
@@ -1849,17 +1861,34 @@ export async function POST(req: NextRequest) {
           if (cleared) updates.rawData = cleared;
         }
       }
-      const effectiveRate = Number(nightlyRate !== undefined ? nightlyRate : (detail.booking.nightlyRate ?? 0));
       const stayShapeChanged = datesChanged || bedsChanged || nightlyRateChanged;
-      if (stayShapeChanged && amountBeforeTax === undefined && amountTotal === undefined && effectiveRate > 0) {
-        const nights = diffDays(checkinDate, checkoutDate);
-        const bedsCount = parseGokoWalkin(detail.booking.rawData)?.unitPricing ? 1 : Math.max(1, projectedBedIds.size);
-        const taxPercent = await loadBookingTaxPercent();
-        const priced = stayAmounts(effectiveRate * nights * bedsCount, detail.booking.rawData, taxPercent);
-        updates.amountBeforeTax = priced.totalBeforeTax;
-        updates.amountTax = priced.tax;
-        updates.amountTotal = priced.totalBeforeTax + priced.tax;
-        if (!nightlyRateChanged) changes.push(`Total → ₹${updates.amountTotal}`);
+      if (stayShapeChanged && amountBeforeTax === undefined && amountTotal === undefined) {
+        const oldCheckout = stayCheckout(detail.booking.checkinDate, detail.booking.checkoutDate);
+        const oldNights = oldCheckout ? Math.max(1, diffDays(detail.booking.checkinDate, oldCheckout)) : 1;
+        const oldBeds = Math.max(1, detail.assignments.filter((a) => a.status === "assigned").length || 1);
+        // Imply from before-tax so stayAmounts does not double-apply tax.
+        const oldBasis = Number(detail.booking.amountBeforeTax || 0) > 0
+          ? Number(detail.booking.amountBeforeTax)
+          : Number(detail.booking.amountTotal || 0);
+        let rate = Number(nightlyRate !== undefined ? nightlyRate : (detail.booking.nightlyRate ?? 0));
+        const explicitZeroRate = nightlyRateChanged && Number(nightlyRate) === 0;
+        if (!explicitZeroRate && rate <= 0 && oldBasis > 0) {
+          rate = Math.max(0, Math.round(oldBasis / (oldNights * oldBeds)));
+          if (rate > 0 && !nightlyRateChanged) {
+            updates.nightlyRate = rate;
+            changes.push(`Nightly rate → ${rate}`);
+          }
+        }
+        if (!explicitZeroRate && rate > 0) {
+          const nights = diffDays(checkinDate, checkoutDate);
+          const bedsCount = parseGokoWalkin(detail.booking.rawData)?.unitPricing ? 1 : Math.max(1, projectedBedIds.size);
+          const taxPercent = await loadBookingTaxPercent();
+          const priced = stayAmounts(rate * nights * bedsCount, detail.booking.rawData, taxPercent);
+          updates.amountBeforeTax = priced.totalBeforeTax;
+          updates.amountTax = priced.tax;
+          updates.amountTotal = priced.totalBeforeTax + priced.tax;
+          changes.push(`Total → ₹${updates.amountTotal}`);
+        }
       }
       let paymentReceipt: { receiptId: string; accountId: number; amount: number; kind: "stay" | "refund" } | null = null;
       if (amountPaid !== undefined) {

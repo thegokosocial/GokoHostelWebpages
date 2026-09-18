@@ -61,6 +61,49 @@ function dormIdFromKey(key: string): number {
   return Number(key.split(":")[0]) || 0;
 }
 
+/** Guest-safe room lines from live bed assignments (no physical bed IDs).
+ * Callers must pass one entry per sellable unit (doubles deduped), not per physical bed. */
+export function roomLinesFromAssignments(
+  assignments: Array<{ dormId: number; dormName?: string | null; status?: string | null; bedLabel?: string | null }>,
+  dormNames: Map<number, string>,
+  amountBeforeTax: number | null,
+): GuestRoomLine[] {
+  const active = assignments.filter((a) => (a.status ?? "assigned") === "assigned");
+  if (active.length === 0) return [];
+  const grouped = new Map<string, GuestRoomLine>();
+  for (const a of active) {
+    const dormId = a.dormId;
+    const labelHint = `${a.dormName || ""} ${a.bedLabel || ""}`.toLowerCase();
+    const type: "Double" | "Bed" = labelHint.includes("double") ? "Double" : "Bed";
+    const key = `${dormId}:${type}`;
+    const dorm = a.dormName || dormNames.get(dormId) || `Dorm ${dormId}`;
+    const bedLabel = type === "Double" ? "Whole double bed" : "Single dorm bed";
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.quantity += 1;
+      existing.label = `${existing.quantity} × ${dorm} · ${bedLabel}`;
+    } else {
+      grouped.set(key, {
+        dormId, type, quantity: 1, subtotalRupees: 0,
+        label: `1 × ${dorm} · ${bedLabel}`,
+      });
+    }
+  }
+  const rooms = [...grouped.values()];
+  const unitSlots = Math.max(1, rooms.reduce((n, r) => n + r.quantity, 0));
+  if (amountBeforeTax != null && amountBeforeTax > 0) {
+    let allocated = 0;
+    rooms.forEach((room, i) => {
+      if (i === rooms.length - 1) room.subtotalRupees = amountBeforeTax - allocated;
+      else {
+        room.subtotalRupees = Math.round((amountBeforeTax * room.quantity) / unitSlots);
+        allocated += room.subtotalRupees;
+      }
+    });
+  }
+  return rooms;
+}
+
 /** Build guest-facing room lines from an accepted quote + dorm names. */
 export function roomLinesFromQuote(
   quoteJson: string | null | undefined,

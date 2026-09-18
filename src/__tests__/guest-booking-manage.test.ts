@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  buildBookingChangeRequestText, formatPaymentChoice, guestActionFlags, roomLinesFromQuote,
+  buildBookingChangeRequestText, formatPaymentChoice, guestActionFlags, roomLinesFromQuote, roomLinesFromAssignments,
 } from "@/lib/guestBookingDetails";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS } from "@/lib/websiteBookingSettings";
 
@@ -25,6 +25,17 @@ describe("Guest booking manage details", () => {
     expect(lines.rooms).toHaveLength(1);
     expect(lines.rooms[0]).toMatchObject({ quantity: 2, subtotalRupees: 2000 });
     expect(lines.rooms[0].label).toContain("Shiva dorm");
+  });
+
+  it("counts one double unit from a single enriched assignment row", () => {
+    const rooms = roomLinesFromAssignments(
+      [{ dormId: 1, dormName: "Shiva", status: "assigned", bedLabel: "double" }],
+      new Map([[1, "Shiva"]]),
+      2000,
+    );
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0]).toMatchObject({ type: "Double", quantity: 1, subtotalRupees: 2000 });
+    expect(rooms[0].label).toContain("Whole double bed");
   });
 
   it("exposes canCancel when policy and status allow; canModify stays for internal amend helpers", () => {
@@ -91,7 +102,18 @@ describe("Guest booking manage details", () => {
     const detail = readFileSync("src/components/admin/booking-dashboard/BookingDetailPanel.tsx", "utf8");
     const modal = readFileSync("src/components/admin/booking-dashboard/EditBookingModal.tsx", "utf8");
     expect(detail).toContain('booking.source === "manual" || booking.source === "website"');
+    expect(detail).toContain('booking.source === "website"');
+    expect(detail).toContain("canHardDeleteWebsite");
     expect(modal).toContain('canEditPaid = booking.source === "manual"');
     expect(modal).toContain("Collect remaining");
+    expect(modal).toContain("AvailableBedsPicker");
+  });
+
+  it("guest confirmation shows Updated when stayUpdatedAt is set", () => {
+    const manage = readFileSync("src/components/booking/GuestBookingManage.tsx", "utf8");
+    expect(manage).toContain("stayUpdatedAt");
+    expect(manage).toContain("Updated");
+    expect(manage).toContain("Your stay was updated on");
+    expect(manage).toContain("Any extra amount is due at the hostel");
   });
 });

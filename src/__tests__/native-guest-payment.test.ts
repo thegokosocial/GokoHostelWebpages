@@ -134,6 +134,10 @@ beforeEach(() => {
       no_show_pms_error TEXT NOT NULL DEFAULT '', no_show_pms_attempted_at TEXT NOT NULL DEFAULT '',
       sync_updated_at TEXT, sync_source TEXT, sync_id TEXT, deleted_at TEXT
     );
+    CREATE TABLE booking_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, action TEXT, details TEXT,
+      performed_by TEXT, performed_at TEXT
+    );
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, sync_updated_at TEXT, sync_source TEXT);
     CREATE TABLE channel_config (
       id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT, hotel_code TEXT, pms_id TEXT,

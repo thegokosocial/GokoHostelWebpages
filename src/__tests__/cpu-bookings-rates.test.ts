@@ -1400,4 +1400,33 @@ describe("Bookings calendar and rates workflows", () => {
       paymentMethod: "",
     }));
   });
+
+  it("hard-deletes unpaid website bookings and blocks paid ones", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 20, guestName: "Web", contact: "", bookingRef: "GOKO-W", gokoBookingId: "GOKO-W", cmBookingId: "",
+        checkinDate: "2026-09-23", checkoutDate: "2026-09-24", amountTotal: 500, amountPaid: 0,
+        status: "received", source: "website",
+      },
+      assignments: [],
+    });
+    const ok = await POST(req({ password: "x", action: "hardDeleteRecordsWalkinBooking", bookingId: 20 }));
+    expect(ok.status).toBe(200);
+    expect(q.hardDeleteBookingCascade).toHaveBeenCalledWith(20);
+
+    q.hardDeleteBookingCascade.mockClear();
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 21, guestName: "WebPaid", contact: "", bookingRef: "GOKO-P", gokoBookingId: "GOKO-P", cmBookingId: "",
+        checkinDate: "2026-09-23", checkoutDate: "2026-09-24", amountTotal: 500, amountPaid: 500,
+        status: "received", source: "website",
+      },
+      assignments: [],
+    });
+    const blocked = await POST(req({ password: "x", action: "hardDeleteRecordsWalkinBooking", bookingId: 21 }));
+    expect(blocked.status).toBe(409);
+    expect(q.hardDeleteBookingCascade).not.toHaveBeenCalled();
+    const json = await blocked.json();
+    expect(json.error).toMatch(/Paid website/i);
+  });
 });

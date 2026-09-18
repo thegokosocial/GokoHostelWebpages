@@ -528,18 +528,18 @@ describe("Booking calendar UI permissions match the API keys", () => {
     const editor = readFile("src/components/admin/booking-dashboard/EditBookingModal.tsx");
     expect(editor).toContain('action: "getAvailableBeds"');
     expect(editor).toContain('onAction("editReservation"');
-    expect(editor).toContain("Availability is checked against existing bookings");
+    expect(editor).toContain("Totals recalculate from nightly rate");
     expect(editor).toContain("status stays");
     expect(editor).toContain("getNights(checkinDate, checkoutDate)");
     expect(editor).toContain('canEditPaid = booking.source === "manual"');
     expect(editor).toContain("Collect remaining");
     expect(editor).toContain('const nightlyRateChanged = Number(nightlyRate) !== Number(booking.nightlyRate ?? 0);');
-    expect(editor).toContain('...(nightlyRateChanged ? { nightlyRate: Number(nightlyRate) } : {}),');
+    expect(editor).toContain("nightlyRateChanged || Number(booking.nightlyRate ?? 0) === 0");
     expect(editor).toContain("Dates and bed changes can be saved together");
     expect(editor).toContain("bed(s) no longer available for these dates");
     expect(editor).toContain("Selected rooms sleep");
     expect(editor).toContain("After save: Total");
-    expect(editor).toContain("Use suggested");
+    expect(editor).toContain("AvailableBedsPicker");
     expect(editor).not.toContain("Save the date change first");
     expect(editor).not.toContain("Save date changes and bed changes separately");
     expect(editor).not.toContain("Current balance after this edit:");
@@ -554,6 +554,7 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(edit).toContain("const stayShapeChanged = datesChanged || bedsChanged || nightlyRateChanged");
     expect(edit).toContain("keptAssignments");
     expect(edit).toContain("projectedBedIds");
+    expect(edit).toContain("oldBasis");
   });
 
   it("walk-in New Booking has percent and amount discount tabs; tax is not hardcoded 12%", () => {

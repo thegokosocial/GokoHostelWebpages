@@ -9,13 +9,13 @@ import {
 import {
   addBooking, assignBedToBooking, getAllBeds, getAllDailyRates, getAllDorms, getAvailableBedsForRange,
   getRatePlanMappings, getRoomTypeMappings, getSetting, transitionBookingStatus, unassignBookingBeds,
-  unassignBookingBedsByBedIds, updateBookingFull, addBookingHistoryEntry,
+  unassignBookingBedsByBedIds, updateBookingFull, addBookingHistoryEntry, getBookingHistoryEntries,
 } from "@/db/queries";
 import { BOOKING_TAX_SETTING } from "@/lib/bookingPricing";
 import { generateGokoBookingId, generateGuestAccessToken, hashToken } from "@/lib/bookingReference";
 import { guestRateForStay, guestTaxPercent, searchGuestRooms } from "@/lib/guestBookingSearch";
 import {
-  guestActionFlags, maskGuestEmail, maskGuestPhone, roomLinesFromQuote,
+  guestActionFlags, maskGuestEmail, maskGuestPhone, roomLinesFromAssignments, roomLinesFromQuote,
 } from "@/lib/guestBookingDetails";
 import { occupiedNights, sellableUnits, type InventoryPool } from "@/lib/inventoryAvailability";
 import { acceptNativeQuote } from "@/lib/nativeAcceptedQuote";
@@ -221,9 +221,47 @@ async function publicSnapshot(row: Checkout, booking: typeof bookings.$inferSele
   }
   const dorms = await getAllDorms();
   const dormNames = new Map(dorms.map((d) => [d.id, d.name]));
-  const lines = roomLinesFromQuote(quoteJson, dormNames);
+  const quoteLines = roomLinesFromQuote(quoteJson, dormNames);
   const amountTotal = booking?.amountTotal ?? null;
   const amountPaid = booking?.amountPaid ?? null;
+  const amountBeforeTax = booking?.amountBeforeTax ?? quoteLines.beforeTaxRupees ?? null;
+  const amountTax = booking?.amountTax ?? quoteLines.taxRupees ?? null;
+  const nights = booking?.checkinDate && booking?.checkoutDate
+    ? occupiedNights(booking.checkinDate, booking.checkoutDate).length
+    : quoteLines.nights;
+  let rooms = quoteLines.rooms;
+  let stayUpdatedAt: string | null = null;
+  if (booking?.id) {
+    const assigned = await getDb().select().from(bookingBedAssignments)
+      .where(and(eq(bookingBedAssignments.bookingId, booking.id), eq(bookingBedAssignments.status, "assigned")));
+    const allBeds = await getAllBeds();
+    const units = sellableUnits(allBeds || []);
+    // One row per sellable unit so a double (2 bed assignments) is not counted twice.
+    const seenUnitKeys = new Set<string>();
+    const enriched: Array<{ dormId: number; dormName: string | null; status: string; bedLabel: string }> = [];
+    for (const a of assigned) {
+      const unit = units.find((u) => u.beds.some((b) => b.id === a.bedId));
+      const unitKey = unit?.key || `bed:${a.bedId}`;
+      if (seenUnitKeys.has(unitKey)) continue;
+      seenUnitKeys.add(unitKey);
+      enriched.push({
+        dormId: a.dormId,
+        dormName: dormNames.get(a.dormId) || null,
+        status: a.status,
+        bedLabel: unit?.type === "Double" ? "double" : "bed",
+      });
+    }
+    const liveRooms = roomLinesFromAssignments(enriched, dormNames, amountBeforeTax);
+    if (liveRooms.length > 0) rooms = liveRooms;
+    const history = await getBookingHistoryEntries(booking.id);
+    // Only stay-shape edits (not guest-name-only) surface the guest "Updated" cue.
+    const updated = history.find((h) => {
+      if (h.action === "website_amend") return true;
+      if (h.action !== "Reservation Edited") return false;
+      return /\b(Dates|Persons|Nightly|Total|Bed|Added|Removed|rooms?)\b/i.test(h.details || "");
+    });
+    stayUpdatedAt = updated?.performedAt ?? null;
+  }
   return {
     checkoutId: row.id,
     state: row.state,
@@ -242,19 +280,18 @@ async function publicSnapshot(row: Checkout, booking: typeof bookings.$inferSele
     dueAtPropertyPaise: amountTotal != null && amountPaid != null
       ? Math.max(0, Math.round(amountTotal * 100) - Math.round(amountPaid * 100))
       : null,
-    rooms: lines.rooms,
-    nights: lines.nights || (booking?.checkinDate && booking?.checkoutDate
-      ? occupiedNights(booking.checkinDate, booking.checkoutDate).length
-      : 0),
+    rooms,
+    nights,
     persons: booking?.persons ?? null,
     roomType: booking?.roomType ?? null,
-    beforeTaxRupees: lines.beforeTaxRupees ?? booking?.amountBeforeTax ?? null,
-    taxRupees: lines.taxRupees ?? booking?.amountTax ?? null,
-    taxPercent: lines.taxPercent,
+    beforeTaxRupees: amountBeforeTax,
+    taxRupees: amountTax,
+    taxPercent: quoteLines.taxPercent,
     gatewayEnvironment: row.environment,
     canCancel: flags.canCancel,
     canModify: false, // Guest stay changes → WhatsApp / admin Edit Booking; self-serve amend retired.
     cancellationDeadlineAt: flags.cancellationDeadlineAt,
+    stayUpdatedAt,
     ...extras,
   };
 }
@@ -316,6 +353,11 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   }
   const gokoId = generateGokoBookingId();
   const roomLabel = units.map((u) => `${u.type}`).join(", ");
+  const stayNightsCount = Math.max(1, occupiedNights(input.checkinDate, input.checkoutDate).length);
+  const bedSlots = Math.max(1, bedIds.length);
+  const nightlyRate = quote.beforeTaxRupees > 0
+    ? Math.max(0, Math.round(quote.beforeTaxRupees / (stayNightsCount * bedSlots)))
+    : 0;
   const bookingId = await addBooking({
     guestName: input.guest.name, contact: input.guest.phone, email: input.guest.email,
     platform: "Website", bookingRef: gokoId, gokoBookingId: gokoId,
@@ -323,7 +365,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
     roomType: roomLabel, persons: units.reduce((n, u) => n + (u.type === "Double" ? 2 : 1), 0),
     status: "hold", source: "website", paymentStatus: quote.dueNowPaise >= 100 ? "pending" : "pay_at_property",
     amountBeforeTax: quote.beforeTaxRupees, amountTax: quote.taxRupees, amountTotal: quote.totalRupees,
-    amountPaid: 0, currency: "INR",
+    amountPaid: 0, currency: "INR", nightlyRate,
     ratePlan: [...new Set(units.map((u) => String(u.ratePlanId)))].join(","),
     rawData: JSON.stringify({ nativeCheckout: true, paymentChoice: input.paymentChoice, holdId: hold.id }),
   });

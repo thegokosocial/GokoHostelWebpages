@@ -226,6 +226,9 @@ export function BookingDetailPanel({
   const canHardDeleteRecordsWalkin = isManualWalkinBooking(booking)
     && Boolean(String(booking.bookingRef || "").trim())
     && hasPermission(role, permissions, "canDeleteBooking");
+  const canHardDeleteWebsite = booking.source === "website"
+    && hasPermission(role, permissions, "canDeleteBooking");
+  const canHardDeleteBooking = canHardDeleteRecordsWalkin || canHardDeleteWebsite;
   const canReleaseForNoShow = booking.source === "channel_manager"
     && (booking.platform || "").toLowerCase().replace(/[._\s-]/g, "") === "bookingcom"
     && hasPermission(role, permissions, "canDeleteBooking");
@@ -537,14 +540,16 @@ export function BookingDetailPanel({
                 No Show
               </Button>
             )}
-            {canHardDeleteRecordsWalkin && (
+            {canHardDeleteBooking && (
               <Button
                 size="sm"
                 variant="destructive"
                 onClick={() => setConfirmAction({
                   action: "hardDeleteRecordsWalkinBooking",
-                  title: "Delete walk-in booking",
-                  description: `Permanently delete ${booking.guestName}'s Records walk-in booking and its room receipts? The check-in record is kept.`,
+                  title: canHardDeleteWebsite ? "Delete website booking" : "Delete walk-in booking",
+                  description: canHardDeleteWebsite
+                    ? `Permanently delete ${booking.guestName}'s Goko Website booking and release beds?`
+                    : `Permanently delete ${booking.guestName}'s Records walk-in booking and its room receipts? The check-in record is kept.`,
                   variant: "destructive",
                   confirmLabel: "Delete permanently",
                 })}

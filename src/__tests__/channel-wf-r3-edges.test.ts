@@ -32,6 +32,7 @@ const q = vi.hoisted(() => ({
   getAllDailyRates: vi.fn(),
   deactivateBedBlocksByBedIds: vi.fn(),
   shortenAssignedCheckout: vi.fn(),
+  reopenWalkinCheckinsForBooking: vi.fn(),
 }));
 
 const triggerInventoryPush = vi.hoisted(() => vi.fn());
@@ -81,6 +82,7 @@ vi.mock("@/db/queries", () => ({
   getAllDailyRates: q.getAllDailyRates,
   deactivateBedBlocksByBedIds: q.deactivateBedBlocksByBedIds,
   shortenAssignedCheckout: q.shortenAssignedCheckout,
+  reopenWalkinCheckinsForBooking: q.reopenWalkinCheckinsForBooking,
 }));
 
 import { POST as reservationsPOST, ingestFetchedReservations } from "@/app/api/aiosell/reservations/route";

@@ -35,6 +35,7 @@ export type GuestBookingStatus = {
   canCancel?: boolean;
   canModify?: boolean;
   cancellationDeadlineAt?: string | null;
+  stayUpdatedAt?: string | null;
   error?: string;
 };
 
@@ -73,6 +74,7 @@ export function GuestBookingManage({ status, busy, onCancel }: Props) {
       ? Math.max(0, status.amountTotal - status.amountPaid)
       : null;
   const deadline = formatDeadline(status.cancellationDeadlineAt);
+  const updatedAt = formatDeadline(status.stayUpdatedAt);
   const reference = status.reference || "—";
   const changeText = buildBookingChangeRequestText({
     reference,
@@ -112,6 +114,11 @@ export function GuestBookingManage({ status, busy, onCancel }: Props) {
           >
             {label}
           </span>
+          {updatedAt && confirmed && (
+            <span className="rounded-full bg-brand-sand px-3 py-1.5 text-xs font-semibold text-brand-green-dark">
+              Updated
+            </span>
+          )}
           {status.paymentChoice && (
             <span className="text-xs text-brand-green">{formatPaymentChoice(status.paymentChoice)}</span>
           )}
@@ -126,6 +133,12 @@ export function GuestBookingManage({ status, busy, onCancel }: Props) {
             ? ` · ${status.nights} ${status.nights === 1 ? "night" : "nights"}`
             : ""}
         </p>
+        {updatedAt && (
+          <p className="mt-2 text-sm text-brand-green">
+            Your stay was updated on {updatedAt}. The details below are current.
+            {dueRupees != null && dueRupees > 0 ? " Any extra amount is due at the hostel." : ""}
+          </p>
+        )}
         {(status.email || status.phone) && (
           <p className="mt-1 text-xs text-brand-green">
             {[status.email, status.phone].filter(Boolean).join(" · ")}

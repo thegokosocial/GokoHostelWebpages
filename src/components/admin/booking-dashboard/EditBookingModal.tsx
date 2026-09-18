@@ -1,16 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { XIcon, Loader2Icon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import type { DashboardBooking, BedAssignment } from "./types";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { getNights, formatCurrency } from "./utils";
 import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
-import { bookingTotals, parseGokoWalkin, walkinDiscountOnGross } from "@/lib/bookingPricing";
-
-type Unit = { key: string; label: string; dormId: number; dormName: string; type: string; capacity: number; bedIds: number[]; pool: string };
+import {
+  bookingTaxPercent,
+  bookingTotals,
+  DEFAULT_BOOKING_TAX_PERCENT,
+  parseGokoWalkin,
+  walkinDiscountOnGross,
+} from "@/lib/bookingPricing";
+import { AvailableBedsPicker, type AvailableBedUnit } from "./AvailableBedsPicker";
 
 export function EditBookingModal({ booking, assignments, password, username, onAction, onClose }: {
   booking: DashboardBooking;
@@ -20,17 +25,28 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   onAction: (action: string, bookingId: number, extra?: Record<string, unknown>) => Promise<boolean | void>;
   onClose: () => void;
 }) {
+  const oldNights = getNights(booking.checkinDate, booking.checkoutDate);
+  const oldBeds = Math.max(1, assignments.filter((a) => a.status === "assigned").length || 1);
+  const oldBasis = Number(booking.amountBeforeTax || 0) > 0
+    ? Number(booking.amountBeforeTax)
+    : Number(booking.amountTotal || 0);
+  const impliedRate = Number(booking.nightlyRate || 0) > 0
+    ? Number(booking.nightlyRate)
+    : (oldBasis > 0 ? Math.max(0, Math.round(oldBasis / (oldNights * oldBeds))) : 0);
+
   const [guestName, setGuestName] = useState(booking.guestName);
   const [contact, setContact] = useState(booking.contact || "");
   const [email, setEmail] = useState(booking.email || "");
   const [checkinDate, setCheckinDate] = useState(booking.checkinDate);
   const [checkoutDate, setCheckoutDate] = useState(booking.checkoutDate || addCalendarDays(booking.checkinDate, 1));
   const [persons, setPersons] = useState(String(booking.persons || 1));
-  const [nightlyRate, setNightlyRate] = useState(String(booking.nightlyRate || 0));
+  const [nightlyRate, setNightlyRate] = useState(String(impliedRate));
   const [amountPaid, setAmountPaid] = useState(String(booking.amountPaid || 0));
   const [lowerPaymentMode, setLowerPaymentMode] = useState<"correction" | "refund">("correction");
   const [specialRequests, setSpecialRequests] = useState(booking.specialRequests || "");
-  const [availableUnits, setAvailableUnits] = useState<Unit[]>([]);
+  const [availableUnits, setAvailableUnits] = useState<AvailableBedUnit[]>([]);
+  const [dormRates, setDormRates] = useState<Record<number, number>>({});
+  const [taxPercent, setTaxPercent] = useState(DEFAULT_BOOKING_TAX_PERCENT);
   const [addUnitKeys, setAddUnitKeys] = useState<string[]>([]);
   const [removeBedIds, setRemoveBedIds] = useState<number[]>([]);
   const [droppedAddCount, setDroppedAddCount] = useState(0);
@@ -58,12 +74,6 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const overCapacity = finalCapacity > 0 && Number.isInteger(personCount) && personCount > finalCapacity;
   const nights = validDates ? getNights(checkinDate, checkoutDate) : 0;
   const rate = Number(nightlyRate) || 0;
-  const oldNights = getNights(booking.checkinDate, booking.checkoutDate);
-  const oldBeds = Math.max(1, assignments.filter((a) => a.status === "assigned").length || 1);
-  const suggestedRate =
-    rate === 0 && Number(booking.amountTotal || 0) > 0 && oldNights > 0
-      ? Math.max(0, Math.round(Number(booking.amountTotal) / (oldNights * oldBeds)))
-      : 0;
 
   const moneyPreview = useMemo(() => {
     const paid = Number(booking.amountPaid || 0);
@@ -76,17 +86,43 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     const bedsForPrice = walkin?.unitPricing ? 1 : finalBedCount;
     const gross = rate * nights * bedsForPrice;
     const discount = walkinDiscountOnGross(gross, walkin);
-    const priced = bookingTotals(gross, { discount, taxPercent: walkin?.taxPercent });
-    const previewTotal = priced.total;
+    const priced = bookingTotals(gross, { discount, taxPercent: walkin?.taxPercent ?? taxPercent });
     return {
       currentTotal,
       paid,
       currentDue,
-      previewTotal,
-      previewDue: Math.max(0, previewTotal - paid),
+      previewTotal: priced.total,
+      previewDue: Math.max(0, priced.total - paid),
       totalUnchanged: false,
     };
-  }, [booking.amountPaid, booking.amountTotal, booking.rawData, finalBedCount, nights, rate]);
+  }, [booking.amountPaid, booking.amountTotal, booking.rawData, finalBedCount, nights, rate, taxPercent]);
+
+  const recalcNightlyFromSelection = useCallback((keys: string[], units: AvailableBedUnit[], rates: Record<number, number>, kept: BedAssignment[]) => {
+    const addUnits = units.filter((u) => keys.includes(u.key));
+    const addTotal = addUnits.reduce((sum, u) => sum + (rates[u.dormId] || 0), 0);
+    // Group kept beds so a double (2 assignments) contributes one unit rate.
+    const keptUnitKeys = new Set<string>();
+    let keptTotal = 0;
+    let keptBedSlots = 0;
+    for (const a of kept) {
+      const isDouble = /double/i.test(a.bedLabel || "");
+      const unitKey = isDouble ? `d:${a.dormId}:${a.bedLabel}` : `b:${a.bedId}`;
+      keptBedSlots += 1;
+      if (keptUnitKeys.has(unitKey)) continue;
+      keptUnitKeys.add(unitKey);
+      keptTotal += rates[a.dormId] || 0;
+    }
+    const unitRateSum = addTotal + keptTotal;
+    if (unitRateSum <= 0) return;
+    const walkin = parseGokoWalkin(booking.rawData);
+    if (walkin?.unitPricing) {
+      setNightlyRate(String(unitRateSum));
+      return;
+    }
+    // Per-bed storage (website): convert unit rates → per physical bed slot.
+    const bedSlots = Math.max(1, keptBedSlots + addUnits.reduce((n, u) => n + u.bedIds.length, 0));
+    setNightlyRate(String(Math.max(0, Math.round(unitRateSum / bedSlots))));
+  }, [booking.rawData]);
 
   useEffect(() => {
     if (!validDates || closed) {
@@ -102,8 +138,11 @@ export function EditBookingModal({ booking, assignments, password, username, onA
       .then(async (res) => res.ok ? res.json() : { units: [] })
       .then((data) => {
         if (cancelled) return;
-        const units: Unit[] = Array.isArray(data.units) ? data.units : [];
+        const units: AvailableBedUnit[] = Array.isArray(data.units) ? data.units : [];
+        const rates = (data.dormRates || {}) as Record<number, number>;
         setAvailableUnits(units);
+        setDormRates(rates);
+        if (data.taxRate != null) setTaxPercent(bookingTaxPercent(data.taxRate));
         setAddUnitKeys((current) => {
           const next = current.filter((key) => units.some((unit) => unit.key === key));
           setDroppedAddCount(current.length - next.length);
@@ -121,6 +160,14 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     return () => { cancelled = true; };
   }, [booking.id, checkinDate, checkoutDate, closed, password, username, validDates]);
 
+  const toggleAddUnit = (key: string) => {
+    setAddUnitKeys((current) => {
+      const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key];
+      recalcNightlyFromSelection(next, availableUnits, dormRates, keptAssignments);
+      return next;
+    });
+  };
+
   const save = async (paymentFields: Record<string, unknown> = {}) => {
     setError("");
     if (!validForm) { setError("Enter a guest name, valid dates, guest count, and nightly rate."); return; }
@@ -133,7 +180,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     const ok = await onAction("editReservation", booking.id, {
       guestName: guestName.trim(), contact: contact.trim(), email: email.trim(), specialRequests: specialRequests.trim(),
       persons: Number(persons), checkinDate, checkoutDate,
-      ...(nightlyRateChanged ? { nightlyRate: Number(nightlyRate) } : {}),
+      ...(nightlyRateChanged || Number(booking.nightlyRate ?? 0) === 0 ? { nightlyRate: Number(nightlyRate) } : {}),
       addBedIds: selectedAddUnits.flatMap((unit) => unit.bedIds), removeBedIds,
       ...(paymentChanged ? { amountPaid: parsedAmountPaid, ...paymentFields } : {}),
     });
@@ -185,14 +232,6 @@ export function EditBookingModal({ booking, assignments, password, username, onA
             </div>
             <label className="text-xs font-medium">Persons<input type="number" min={1} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={persons} onChange={(e) => setPersons(e.target.value)} /></label>
             <label className="text-xs font-medium">Nightly rate (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={nightlyRate} onChange={(e) => setNightlyRate(e.target.value)} /></label>
-            {suggestedRate > 0 && rate === 0 && (
-              <p className="text-[11px] text-muted-foreground sm:col-span-2">
-                Rate is ₹0 so the total will not auto-update.{" "}
-                <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => setNightlyRate(String(suggestedRate))}>
-                  Use suggested {formatCurrency(suggestedRate)}/night from current total
-                </button>
-              </p>
-            )}
             {canEditPaid ? (
               <label className="text-xs font-medium sm:col-span-2">Amount received (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} /><span className="mt-1 block text-[11px] font-normal text-muted-foreground">Final balance is recalculated from the saved pricing rules when you save.</span></label>
             ) : (
@@ -206,7 +245,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
             <div>Now: Total {formatCurrency(moneyPreview.currentTotal)} · Paid {formatCurrency(moneyPreview.paid)} · Due {formatCurrency(moneyPreview.currentDue)}</div>
             <div className="mt-0.5 font-medium text-foreground">
               After save: Total {formatCurrency(moneyPreview.previewTotal)} · Due {formatCurrency(moneyPreview.previewDue)}
-              {moneyPreview.totalUnchanged ? " (total unchanged while rate is ₹0)" : ""}
+              {moneyPreview.totalUnchanged ? " (enter a nightly rate to update the total)" : ""}
             </div>
           </div>
 
@@ -220,17 +259,22 @@ export function EditBookingModal({ booking, assignments, password, username, onA
 
           <div>
             <div className="text-xs font-semibold text-foreground">Assigned rooms / beds</div>
-            {assignments.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">No beds assigned.</p> : <div className="mt-1 space-y-1">{assignments.map((assignment) => <label key={assignment.id} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-xs"><input type="checkbox" disabled={closed} checked={!removeBedIds.includes(assignment.bedId)} onChange={() => setRemoveBedIds((current) => current.includes(assignment.bedId) ? current.filter((id) => id !== assignment.bedId) : [...current, assignment.bedId])} /><span className="font-medium">{assignment.dormName} - {assignment.bedLabel}</span><span className="ml-auto text-muted-foreground">{removeBedIds.includes(assignment.bedId) ? "remove" : "keep"}</span></label>)}</div>}
+            {assignments.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">No beds assigned.</p> : <div className="mt-1 space-y-1">{assignments.map((assignment) => <label key={assignment.id} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-xs"><input type="checkbox" disabled={closed} checked={!removeBedIds.includes(assignment.bedId)} onChange={() => setRemoveBedIds((current) => { const next = current.includes(assignment.bedId) ? current.filter((id) => id !== assignment.bedId) : [...current, assignment.bedId]; const kept = assignments.filter((a) => a.status === "assigned" && !next.includes(a.bedId)); recalcNightlyFromSelection(addUnitKeys, availableUnits, dormRates, kept); return next; })} /><span className="font-medium">{assignment.dormName} - {assignment.bedLabel}</span><span className="ml-auto text-muted-foreground">{removeBedIds.includes(assignment.bedId) ? "remove" : "keep"}</span></label>)}</div>}
           </div>
 
           <div>
-            <div className="flex items-center justify-between text-xs font-semibold text-foreground"><span>Add available rooms / beds</span>{loadingUnits && <Loader2Icon className="size-3 animate-spin" />}</div>
+            <div className="text-xs font-semibold text-foreground">Add available rooms / beds ({addUnitKeys.length} selected)</div>
             {closed ? (
               <p className="mt-1 text-xs text-muted-foreground">Closed bookings keep their historical bed assignments.</p>
-            ) : availableUnits.length === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">{loadingUnits ? "Checking availability for these dates…" : "No additional complete rooms/beds are available for this stay."}</p>
             ) : (
-              <div className="mt-1 space-y-1">{availableUnits.map((unit) => <label key={unit.key} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-xs"><input type="checkbox" checked={addUnitKeys.includes(unit.key)} onChange={() => setAddUnitKeys((current) => current.includes(unit.key) ? current.filter((key) => key !== unit.key) : [...current, unit.key])} /><span className="font-medium">{unit.dormName} - {unit.label}</span><span className="ml-auto text-muted-foreground">up to {unit.capacity}</span></label>)}</div>
+              <AvailableBedsPicker
+                units={availableUnits}
+                selectedKeys={addUnitKeys}
+                dormRates={dormRates}
+                loading={loadingUnits}
+                onToggle={toggleAddUnit}
+                emptyLabel="No additional complete rooms/beds are available for this stay."
+              />
             )}
             {droppedAddCount > 0 && (
               <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{droppedAddCount} bed(s) no longer available for these dates.</p>
@@ -245,7 +289,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
           )}
 
           <label className="block text-xs font-medium">Special requests<textarea rows={3} className="mt-1 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm" value={specialRequests} onChange={(e) => setSpecialRequests(e.target.value)} /></label>
-          <p className="text-[11px] text-muted-foreground">Dates and bed changes can be saved together. Availability is checked against existing bookings, blocks, holds, room capacity, and this booking. Discounts and tax follow the saved booking rules. Website stays keep online payments; use Collect remaining for any new balance.</p>
+          <p className="text-[11px] text-muted-foreground">Dates and bed changes can be saved together. Totals recalculate from nightly rate × nights × beds. Website stays keep online payments; use Collect remaining for any new balance.</p>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-950/30 dark:text-red-400">{error}</p>}
         </div>
         <div className="flex flex-col-reverse gap-2 border-t border-border p-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={() => void submit()} disabled={saving || !validForm || overCapacity}>{saving ? "Saving..." : "Save changes"}</Button></div>

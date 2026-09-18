@@ -131,7 +131,7 @@ The All Bookings read path requires `canViewBookings` and does not change bookin
 
 ### Manual booking editing
 
-The booking detail panel offers a status-preserving editor for manual/offline/walk-in and website bookings. Name, phone, email, dates, derived nights, persons, nightly rate, special requests, and room/bed units are validated server-side. Dates, persons, and beds can be saved together: capacity is checked on the final bed set before inventory mutates; date changes reassign kept beds (skipping beds marked for removal) then add/remove; PMS occupancy refreshes for old and new nights when inventory changes. Closed bookings allow guest/detail edits but retain historical assignments. Existing discount and tax rules are retained or recalculated by the server when nights, beds, or rate change with a positive nightly rate.
+The booking detail panel offers a status-preserving editor for manual/offline/walk-in and website bookings. Name, phone, email, dates, derived nights, persons, nightly rate, special requests, and room/bed units are validated server-side. Dates, persons, and beds can be saved together: capacity is checked on the final bed set before inventory mutates; date changes reassign kept beds (skipping beds marked for removal) then add/remove; stay-shape changes reprice totals (implying nightly rate from the prior before-tax amount when stored rate is 0). PMS occupancy refreshes for old and new nights when inventory changes. Closed bookings allow guest/detail edits but retain historical assignments. Unpaid website and Records walk-in bookings can be hard-deleted with `canDeleteBooking` (paid website bookings must cancel or refund first).
 
 ## Calendar PMS vs physical beds
 
