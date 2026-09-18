@@ -7,6 +7,7 @@ import { sellableUnits, stayNights, type InventoryBedRef } from "@/lib/inventory
 import { todayIST } from "@/lib/utils";
 import { BOOKING_TAX_SETTING, DEFAULT_BOOKING_TAX_PERCENT } from "@/lib/bookingPricing";
 import { WEBSITE_BOOKING_SETTINGS_KEY, readWebsiteBookingSettings, MAX_WEBSITE_BOOKING_BEDS } from "@/lib/websiteBookingSettings";
+import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
 
 const date = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/).refine(value => {
   const parsed = new Date(`${value}T00:00:00Z`);
@@ -94,5 +95,22 @@ export async function searchGuestRooms(input: unknown) {
     }
   }
   const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
-  return { rooms, maxSelectedBeds: settings.maxSelectedBeds, taxPercent: guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)), nights: stayNights(stay.checkinDate, stay.checkoutDate).length, currency: "INR", priceBasis: "tax-inclusive-estimate", nativeCheckoutReady: false as const };
+  let nativeCheckoutReady = false;
+  let paymentOptions = {
+    advancePercent: settings.advancePercent,
+    allowFullPayment: settings.allowFullPayment,
+    allowPayAtProperty: settings.allowPayAtProperty,
+  };
+  try {
+    const readiness = await evaluateNativeCheckoutReadiness();
+    nativeCheckoutReady = readiness.nativeCheckoutReady;
+    if (readiness.paymentOptions) paymentOptions = readiness.paymentOptions;
+  } catch { /* advisory search must not fail closed on readiness checks */ }
+  return {
+    rooms, maxSelectedBeds: settings.maxSelectedBeds,
+    taxPercent: guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)),
+    nights: stayNights(stay.checkinDate, stay.checkoutDate).length,
+    currency: "INR", priceBasis: "tax-inclusive-estimate",
+    nativeCheckoutReady, paymentOptions,
+  };
 }

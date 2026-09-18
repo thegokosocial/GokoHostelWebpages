@@ -1,12 +1,23 @@
 import { getGuestBookingConfig } from "@/db/queries";
 import { bookingDestination, BOOKING_ENQUIRY_PATH, type BookingDestination } from "@/lib/bookingDestination";
+import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
 
-export async function publicBookingConfig(): Promise<BookingDestination & { nativeCheckoutReady: boolean; configurationAvailable: boolean }> {
+export async function publicBookingConfig(): Promise<BookingDestination & {
+  nativeCheckoutReady: boolean; configurationAvailable: boolean;
+  paymentOptions?: { advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean } | null;
+}> {
   try {
     const config = await getGuestBookingConfig();
-    return { ...bookingDestination(config?.bookingEngineUrl, config?.apiBaseUrl), nativeCheckoutReady: false, configurationAvailable: true };
+    const destination = bookingDestination(config?.bookingEngineUrl, config?.apiBaseUrl);
+    let nativeCheckoutReady = false;
+    let paymentOptions = null as { advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean } | null;
+    try {
+      const readiness = await evaluateNativeCheckoutReadiness();
+      nativeCheckoutReady = readiness.nativeCheckoutReady && destination.mode === "native";
+      paymentOptions = readiness.paymentOptions;
+    } catch { /* keep false */ }
+    return { ...destination, nativeCheckoutReady, configurationAvailable: true, paymentOptions };
   } catch {
-    // Existing bad links or database outages must not resurrect the old provider.
-    return { mode: "enquiry", url: BOOKING_ENQUIRY_PATH, nativeCheckoutReady: false, configurationAvailable: false };
+    return { mode: "enquiry", url: BOOKING_ENQUIRY_PATH, nativeCheckoutReady: false, configurationAvailable: false, paymentOptions: null };
   }
 }

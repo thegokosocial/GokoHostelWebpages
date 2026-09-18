@@ -1049,3 +1049,28 @@ Index: state/arrival/departure/expiry. Triggers enforce same-database hold/assig
 Settings JSON extension (not a new SQL column): `website_booking_settings_v1.maxSelectedBeds`, integer 1–100, default 4 for absent fields; stock and combined whole-bed count constrain advisory guest selection. No SQL migration required for this field.
 
 `id` text PK; `request_key` text unique digest; `booking_id` integer FK bookings; `code_hash` text; `expires_at` epoch seconds; `attempts` integer default 0 constrained 0–5; `used` integer default 0 constrained 0/1. Cloud-only ephemeral verification; no sync columns/contact/plaintext OTP. Runtime secret and delivery binding are not database columns.
+
+# Native guest checkout (migration 0062)
+
+Cloudflare-only; excluded from Pi sync allowlist by omission.
+
+### `native_booking_checkouts`
+
+| Column | Notes |
+|--------|-------|
+| `id` | UUID PK |
+| `request_key` | Unique idempotency key |
+| `request_hash` / `owner_hash` / `guest_access_hash` | SHA-256 fingerprints (tokens never stored) |
+| `booking_id` / `hold_id` / `accepted_quote_id` | FKs |
+| `payment_choice` | `advance` \| `full` \| `property` |
+| `environment` | `test` \| `live` (v1 uses test) |
+| `state` | `preparing`…`fulfilled` / `captured_unfulfilled` / `cancelled` / `expired` |
+| `razorpay_order_id` / `razorpay_key_id` / `receipt` | Order linkage; test key prefix CHECK |
+| `due_now_paise` | 0 or ≥100 |
+| `checkout_started_at` | One-use Checkout claim |
+| `closure_reason` | `guest_cancelled` \| `hold_expired` \| `cannot_fulfil` |
+| `guest_name` / `guest_email` / `guest_phone` | Guest contact on the checkout row |
+
+### `native_booking_payments` / `native_booking_refunds` / `native_booking_webhooks`
+
+Mirror preview recovery semantics with **variable** amounts (≥100 paise). Webhook inbox keyed by `event_id`; route via `notes.goko_checkout_id`.

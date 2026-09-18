@@ -90,7 +90,18 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `gateway_preview_refunds` | One full test refund reservation per payment FK; unique local/provider IDs and receipt; unresolved results remain reserved and processed state is terminal. |
 | `gateway_preview_webhooks` | Unique event ID, raw-byte SHA-256 digest, minimal resource IDs and retry/processed/ignored state. Not a raw-PII store or bank receipt. |
 
-Source SQL: `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_id.sql`; these repository migrations have not been applied live in this turn. Webhooks retain exact refund identity for current API corroboration. These tables lack sync columns and are absent from sync allowlists. Gateway APIs/services reject Pi even if the common migrator creates empty copies. See [integration/recovery details](integrations-razorpay.md).
+Source SQL: `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_id.sql`. These tables lack sync columns and are absent from sync allowlists. Gateway APIs/services reject Pi even if the common migrator creates empty copies. See [integration/recovery details](integrations-razorpay.md).
+
+### Native guest checkout ledger (Cloudflare-owned, never synced)
+
+| Table | Role |
+|-------|------|
+| `native_booking_checkouts` | Idempotent `request_key`, owner/guest access hashes, FKs to booking/hold/accepted quote, payment choice, test/live environment, state machine, Razorpay order/key/receipt, `due_now_paise` (0 or ≥100), one-use `checkout_started_at`, closure reason. |
+| `native_booking_payments` | Provider payment ID → checkout FK; variable amount (≥100 paise); monotonic capture/refund evidence. |
+| `native_booking_refunds` | One refund reservation per payment; variable amount; submitting/unknown/pending/processed/failed. |
+| `native_booking_webhooks` | Unique event ID + payload hash; routes via `notes.goko_checkout_id`. |
+
+Source: `0062_native_guest_checkout.sql`. Orchestration in `nativeGuestCheckout.ts`. Readiness in `nativeCheckoutReadiness.ts`. Fulfilment **releases** the hold then assigns beds (0059 forbids assign-while-held). Separate from `gateway_preview_*`.
 
 ### Internal native physical holds (Cloudflare-owned, never synced)
 

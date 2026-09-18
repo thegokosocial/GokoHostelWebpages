@@ -27,14 +27,20 @@ declare global {
   }
 }
 const STORAGE_KEY = "gokoRazorpayTestRequestV1";
-const TEST_CARD_RUNBOOK = [
-  "Razorpay Dashboard must be in Test mode.",
-  "Select Card only in Checkout.",
-  "Card: 4111 1111 1111 1111 (or 4384 7968 2770 3274). Any future expiry and CVV.",
-  "OTP: 1234 when prompted.",
-  "On the mock bank page, click Success — not Failure.",
-  "After any failure, use Start fresh ₹1 test. Each order opens Checkout once.",
+const TEST_METHOD_RUNBOOK: { title: string; lines: string[] }[] = [
+  { title: "All methods", lines: [
+    "Razorpay Dashboard must be in Test mode. Checkout shows every method enabled on your test account.",
+    "After any failure, use Start fresh ₹1 test. Each order opens Checkout once.",
+  ] },
+  { title: "Card (domestic)", lines: [
+    "Visa: 4111 1111 1111 1111 or 4100 2800 0000 1007. Mastercard: 5267 3181 8797 5449.",
+    "Any future expiry and CVV. OTP: 1234. Mock bank page: click Success — not Failure.",
+    "Disable browser/1Password autofill so a real international card is not submitted.",
+  ] },
+  { title: "UPI", lines: ["UPI ID success@razorpay to pass.", "UPI ID failure@razorpay to simulate failure."] },
+  { title: "Netbanking & wallet", lines: ["Pick any listed bank or wallet.", "Razorpay opens a mock page — click Success or Failure."] },
 ];
+const TEST_CHECKOUT_METHODS = { card: true, upi: true, netbanking: true, wallet: true, emi: true, paylater: true };
 
 export function RazorpayTestPreview({ password, username }: { password: string; username?: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -153,12 +159,12 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
       return;
     } finally { if (token === generation.current) setBusy(false); }
     if (!claimed.checkout) return;
-    callbackReceived.current = false; setCheckoutOpen(true); setMessage("Test checkout open. Use Card only. OTP 1234. Click Success on the mock bank page.");
+    callbackReceived.current = false; setCheckoutOpen(true); setMessage("Test checkout open. Pick any enabled method — see runbook below. Mock pages: choose Success.");
     try {
       const checkout = new window.Razorpay({
         ...claimed.checkout, name: "Goko TEST ONLY", description: "₹1 simulated payment — no booking or real money",
         retry: { enabled: false },
-        method: { card: true, upi: false, netbanking: false, wallet: false, emi: false, paylater: false },
+        method: TEST_CHECKOUT_METHODS,
         handler: (response) => { callbackReceived.current = true; setCheckoutOpen(false);
           void run("verifyTestCallback", { attemptId, paymentId: response.razorpay_payment_id, orderId: response.razorpay_order_id, signature: response.razorpay_signature }); },
         modal: { ondismiss: () => { setCheckoutOpen(false); if (!callbackReceived.current) void run("reconcileTestAttempt", { attemptId }); } },
@@ -175,8 +181,11 @@ export function RazorpayTestPreview({ password, username }: { password: string; 
     <p>Fixed ₹1 simulated transaction using test keys only. No room is reserved, no PMS amount is changed, and no bank receipt is created. Live guest checkout remains blocked.</p>
     {!enabled && <p>Set <code>RAZORPAY_TEST_PREVIEW_ENABLED=true</code> on the Worker to enable new test orders and refunds. Reconciliation remains available after disabling new tests.</p>}
     <details className="rounded border bg-muted/30 p-3">
-      <summary className="cursor-pointer font-semibold">How to pass the ₹1 test (card)</summary>
-      <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs">{TEST_CARD_RUNBOOK.map((line) => <li key={line}>{line}</li>)}</ol>
+      <summary className="cursor-pointer font-semibold">How to pass the ₹1 test (all methods)</summary>
+      <div className="mt-2 space-y-3 text-xs">{TEST_METHOD_RUNBOOK.map((section) => <div key={section.title}>
+        <p className="font-semibold">{section.title}</p>
+        <ul className="mt-1 list-disc space-y-1 pl-5">{section.lines.map((line) => <li key={line}>{line}</li>)}</ul>
+      </div>)}</div>
     </details>
     {enabled && <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" onReady={() => setScriptReady(true)} onError={() => setMessage("Checkout script unavailable. Reconcile existing tests rather than assuming failure.")} />}
     <div className="flex flex-wrap gap-2">

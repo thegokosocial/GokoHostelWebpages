@@ -165,6 +165,84 @@ export const gatewayPreviewWebhooks = sqliteTable("gateway_preview_webhooks", {
   check("gateway_preview_webhook_state", sql`${t.state} IN ('received','retry','processed','ignored')`),
 ]);
 
+// Guest checkout ledger — Cloudflare-only; excluded from Pi sync allowlist by omission.
+export const nativeBookingCheckouts = sqliteTable("native_booking_checkouts", {
+  id: text("id").primaryKey(),
+  requestKey: text("request_key").notNull().unique(),
+  requestHash: text("request_hash").notNull(),
+  ownerHash: text("owner_hash").notNull(),
+  guestAccessHash: text("guest_access_hash").notNull(),
+  bookingId: integer("booking_id"),
+  holdId: text("hold_id"),
+  acceptedQuoteId: text("accepted_quote_id"),
+  paymentChoice: text("payment_choice").notNull(),
+  environment: text("environment").notNull().default("test"),
+  state: text("state").notNull().default("preparing"),
+  razorpayOrderId: text("razorpay_order_id").unique(),
+  razorpayKeyId: text("razorpay_key_id"),
+  receipt: text("receipt").unique(),
+  dueNowPaise: integer("due_now_paise").notNull(),
+  checkoutStartedAt: text("checkout_started_at"),
+  closureReason: text("closure_reason"),
+  guestName: text("guest_name").notNull(),
+  guestEmail: text("guest_email").notNull(),
+  guestPhone: text("guest_phone").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  index("idx_native_checkout_state").on(t.state, t.updatedAt),
+  index("idx_native_checkout_booking").on(t.bookingId),
+  check("native_checkout_choice", sql`${t.paymentChoice} IN ('advance','full','property')`),
+  check("native_checkout_env", sql`${t.environment} IN ('test','live')`),
+  check("native_checkout_state", sql`${t.state} IN ('preparing','order_unknown','ready','claimed','captured','fulfilled','captured_unfulfilled','cancelled','expired')`),
+  check("native_checkout_test_key", sql`${t.environment} != 'test' OR (${t.razorpayKeyId} IS NULL OR ${t.razorpayKeyId} LIKE 'rzp_test_%')`),
+  check("native_checkout_due", sql`${t.dueNowPaise} = 0 OR ${t.dueNowPaise} >= 100`),
+  check("native_checkout_closure", sql`${t.closureReason} IS NULL OR ${t.closureReason} IN ('guest_cancelled','hold_expired','cannot_fulfil')`),
+]);
+export const nativeBookingPayments = sqliteTable("native_booking_payments", {
+  id: text("id").primaryKey(),
+  checkoutId: text("checkout_id").notNull().references(() => nativeBookingCheckouts.id),
+  amountPaise: integer("amount_paise").notNull(),
+  status: text("status").notNull(),
+  captured: integer("captured").notNull().default(0),
+  refundedPaise: integer("refunded_paise").notNull().default(0),
+  verifiedAt: text("verified_at").notNull(),
+}, (t) => [
+  index("idx_native_booking_payments_checkout").on(t.checkoutId),
+  check("native_payment_amount", sql`${t.amountPaise} >= 100`),
+  check("native_payment_status", sql`${t.status} IN ('created','authorized','captured','refunded','failed')`),
+  check("native_payment_captured", sql`${t.captured} IN (0,1)`),
+  check("native_payment_refunded", sql`${t.refundedPaise} >= 0 AND ${t.refundedPaise} <= ${t.amountPaise}`),
+]);
+export const nativeBookingRefunds = sqliteTable("native_booking_refunds", {
+  paymentId: text("payment_id").primaryKey().references(() => nativeBookingPayments.id),
+  id: text("id").notNull().unique(),
+  receipt: text("receipt").notNull().unique(),
+  providerId: text("provider_id").unique(),
+  amountPaise: integer("amount_paise").notNull(),
+  state: text("state").notNull().default("submitting"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  check("native_refund_amount", sql`${t.amountPaise} >= 100`),
+  check("native_refund_state", sql`${t.state} IN ('submitting','unknown','pending','processed','failed')`),
+]);
+export const nativeBookingWebhooks = sqliteTable("native_booking_webhooks", {
+  eventId: text("event_id").primaryKey(),
+  payloadHash: text("payload_hash").notNull(),
+  eventType: text("event_type").notNull(),
+  orderId: text("order_id"),
+  paymentId: text("payment_id"),
+  refundId: text("refund_id"),
+  checkoutId: text("checkout_id"),
+  state: text("state").notNull().default("received"),
+  receivedAt: text("received_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  index("idx_native_booking_webhooks_state").on(t.state, t.receivedAt),
+  check("native_webhook_state", sql`${t.state} IN ('received','retry','processed','ignored')`),
+]);
+
 export const apiStats = sqliteTable("api_stats", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   month: text("month").notNull().unique(),

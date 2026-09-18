@@ -26,6 +26,7 @@ import {
   getCheckinById, updateCheckin, getBookingByRef,
 } from "@/db/queries";
 import { todayIST } from "@/lib/utils";
+import { generateGokoBookingId } from "@/lib/bookingReference";
 import { isStayPayMethod, isPrepaidStatus, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { bookingAmountsFromRaw, recognizePlatformBooking, recordPlatformAdjustment } from "@/lib/platformReceivables";
@@ -72,14 +73,6 @@ function activeAssignmentDormIds(assignments: { dormId: number; status?: string 
 
 function channelSource(source?: string | null): boolean {
   return source === "channel_manager";
-}
-
-function generateGokoBookingId(): string {
-  const dateStr = todayIST().replace(/-/g, "");
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let random = "";
-  for (let i = 0; i < 6; i++) random += chars[Math.floor(Math.random() * chars.length)];
-  return `GOKO${dateStr}${random}`;
 }
 
 async function loadBookingTaxPercent(): Promise<number> {

@@ -71,6 +71,15 @@ Worker itself uses bindings `DB` and `EMAIL`, not these HTTP vars. Email flow: [
 | `VAPID_PRIVATE_KEY` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web push; no-op if unset |
 | `CRON_SECRET` | Protects the internal scheduled reconciliation-reminder endpoint |
 | `ANALYZE` | `npm run analyze` bundle |
+| `GOKO_NATIVE_HOLD_INTERNAL_ENABLED` | Worker | `"true"` enables internal hold/quote creation (required for guest checkout) |
+| `GOKO_NATIVE_GUEST_CHECKOUT_ENABLED` | Worker | `"true"` enables public `/api/guest-booking/checkout` when readiness passes |
+| `RAZORPAY_TEST_KEY_ID` / `RAZORPAY_TEST_KEY_SECRET` | Worker secrets | Test-mode Razorpay API (must be `rzp_test_*`) |
+| `RAZORPAY_TEST_WEBHOOK_SECRET` (+ optional `_PREVIOUS`) | Worker secrets | Test webhook HMAC; must be distinct from live |
+| `RAZORPAY_TEST_ACCOUNT_ID` | optional | Reject webhooks from other Razorpay accounts |
+| `RAZORPAY_TEST_PREVIEW_ENABLED` | Worker | Admin ₹1 preview panel new orders/claims |
+| `RAZORPAY_LIVE_*` | Worker secrets | Live key presence for readiness UI only; live webhook path not implemented |
+| `GUEST_BOOKING_LOOKUP_SECRET` | Worker (≥32 chars) | OTP hashing for My booking lookup |
+| `GOKO_BOOKING_UI_PREVIEW` | local | Enables `/book/preview` (404 when unset) |
 
 Aiosell **production** hotel/password/webhook sit in D1 `channel_config`, not env. Sandbox UI defaults are in `src/lib/aiosell.ts` (already in git).
 

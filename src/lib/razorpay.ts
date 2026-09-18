@@ -118,6 +118,19 @@ export async function createRazorpayTestOrder(receipt: string, attemptId: string
     notes: { goko_preview_attempt: z.string().uuid().parse(attemptId) },
   }));
 }
+
+/** Variable-amount guest booking order (test credentials only in v1). Min ₹1. */
+export async function createRazorpayBookingOrder(input: {
+  amountPaise: number; receipt: string; checkoutId: string; environment?: "test" | "live";
+}) {
+  if (input.environment && input.environment !== "test") throw new RazorpayError("CONFIGURATION");
+  z.number().int().min(100).max(Number.MAX_SAFE_INTEGER).parse(input.amountPaise);
+  z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).parse(input.receipt);
+  return parse(razorpayOrderSchema, await request("orders", "POST", {
+    amount: input.amountPaise, currency: "INR", receipt: input.receipt, partial_payment: false,
+    notes: { goko_checkout_id: z.string().uuid().parse(input.checkoutId) },
+  }));
+}
 export async function findRazorpayTestOrders(receipt: string) {
   const items = parse(collection(razorpayOrderSchema), await request(`orders?receipt=${encodeURIComponent(receipt)}&count=100`)).items;
   if (items.length === 100) throw new RazorpayError("INVALID_RESPONSE");
@@ -150,4 +163,27 @@ export async function fetchRazorpayTestRefund(refundId: string) {
 export async function checkRazorpayTestConnectivity() {
   parse(collection(razorpayOrderSchema), await request("orders?count=1"));
   return { authenticated: true, environment: "test" as const, nativeCheckoutReady: false as const };
+}
+
+export async function findRazorpayBookingOrders(receipt: string) {
+  return findRazorpayTestOrders(receipt);
+}
+export async function fetchRazorpayBookingPayment(paymentId: string) {
+  return fetchRazorpayTestPayment(paymentId);
+}
+export async function fetchRazorpayBookingOrderPayments(orderId: string) {
+  return fetchRazorpayTestOrderPayments(orderId);
+}
+export async function createRazorpayBookingRefund(paymentId: string, amountPaise: number, receipt: string, refundId: string) {
+  z.number().int().min(100).parse(amountPaise);
+  return parse(razorpayRefundSchema, await request(`payments/${razorpayId("pay").parse(paymentId)}/refund`, "POST", {
+    amount: amountPaise, speed: "normal", receipt,
+    notes: { goko_booking_refund: z.string().uuid().parse(refundId) },
+  }));
+}
+export async function fetchRazorpayBookingRefunds(paymentId: string) {
+  return fetchRazorpayTestRefunds(paymentId);
+}
+export async function fetchRazorpayBookingRefund(refundId: string) {
+  return fetchRazorpayTestRefund(refundId);
 }

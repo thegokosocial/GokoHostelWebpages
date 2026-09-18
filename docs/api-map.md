@@ -22,7 +22,7 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/checkin/lookup` | GET `?phone=` | none | Returning guest prefill plus stored ID/visa links for preview and reuse |
 | `/api/validate-id` | POST multipart | none | Live ID/visa OCR |
 | `/api/settings` | GET | none | Public flags (`image_validation`, etc.) |
-| `/api/booking/config` | GET | none | Sanitized configured destination/mode, `configurationAvailable`, `nativeCheckoutReady: false`; no-store; unavailable/invalid configuration → 503; no integration secrets |
+| `/api/booking/config` | GET | none | Sanitized destination/mode, `configurationAvailable`, dynamic `nativeCheckoutReady` + `paymentOptions`; no-store; unavailable/invalid configuration → 503; no integration secrets |
 | `/api/booking/destination` | GET | none | Fresh configured guest destination, no-store 303; missing/invalid/configuration failure → Booking Enquiry; ignores public redirect queries |
 | `/api/food/menu` | GET | none | Menu + kitchen hours + busy + WhatsApp flags |
 | `/api/food/order` | POST JSON | none | Place fixed or price-on-request order (idempotency, stock, tab) |
@@ -155,13 +155,17 @@ curl -s https://www.gokohostel.com/api/admin/checkins \
   -H 'content-type: application/json' \
   -d "{\"password\":\"$ADMIN_PASSWORD\",\"action\":\"getDashboard\"}"
 ```
-# Guest booking browsing APIs
+# Guest booking browsing + checkout APIs
 
-Both `/book` and gated `/book/preview` call the same availability endpoint for connected-backend rates/stock/tax/limit; preview no longer injects fixture data or resets submitted dates. Preview blocks lookup email and all booking/payment writes. No new API, permission or cross-origin production proxy.
+Both `/book` and gated `/book/preview` call the same availability endpoint for connected-backend rates/stock/tax/limit; preview no longer injects fixture data or resets submitted dates. Preview still blocks lookup email and booking/payment writes.
 
-- `GET /api/guest-booking/availability`: strict `checkinDate`, `checkoutDate` only (no guests/units); non-cacheable online categories, eligible configured nightly tariffs, stay subtotals, tax and public `maxSelectedBeds`. Reads the existing website settings JSON (default 4 beds; corrupt settings fail closed). Beds are selected up to saved limit and stock. No holds or payments. Cloud only.
+- `GET /api/guest-booking/availability`: strict `checkinDate`, `checkoutDate` only; non-cacheable rooms/rates/tax/`maxSelectedBeds`, plus dynamic `nativeCheckoutReady` and `paymentOptions`. Cloud only.
+- `POST /api/guest-booking/checkout`: prepare (hold → quote → provisional booking → optional Razorpay order) or `action: "claim"` (one Checkout open). Returns owner/guest tokens once. Same-origin, 8 KiB, rate-limited. Requires readiness + `GOKO_NATIVE_GUEST_CHECKOUT_ENABLED`.
+- `POST /api/guest-booking/payment/verify` / `reconcile` / `status` / `cancel`: payment callback, recovery, token-gated status, guest cancel.
+- `POST /api/webhooks/razorpay`: test-mode; routes `notes.goko_checkout_id` → native ledger, else preview ledger.
 
-`POST /api/admin/booking-settings` existing admin-only `getSettings`/`saveSettings` include integer `maxSelectedBeds` 1–100 in the revision-protected JSON. This field governs browsing immediately on the next availability search; payment policies remain draft. No new permission or action.
-- `POST /api/guest-booking/lookup`: action `request` (`reference`, `email`) returns a generic opaque challenge; action `verify` (`challengeId`, six-digit `code`) returns minimized current booking details only after one-use email proof. 4 KiB body bound, same-origin browser checks, sanitized non-cacheable responses, cloud only. Missing migration/secret/email setup requires contact support.
+`POST /api/admin/booking-settings` returns readiness blockers from `evaluateNativeCheckoutReadiness`. `maxSelectedBeds` governs browsing; physical hold still caps at **4 bed IDs** (Doubles consume 2).
 
-See [contracts, restrictions and rollout](guest-booking-ui.md). Neither API reuses or publicly exposes an administrator mutation endpoint.
+- `POST /api/guest-booking/lookup`: OTP lookup unchanged (4 KiB, same-origin, cloud only).
+
+Landmines: release hold before assign (0059); never trust client bed IDs or subtotals; store `guestAccessToken` in sessionStorage (confirmation URL is reference-only). See [guest-booking-ui.md](guest-booking-ui.md).

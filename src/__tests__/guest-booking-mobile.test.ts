@@ -43,6 +43,17 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toMatch(/<button type="button" className=\{action\} disabled>Payment unavailable/);
     expect(panel).toContain('These details stay in this page only.');
   });
+  it("uses large payment radio targets and stores only guestAccessToken", () => {
+    expect(panel).toContain('min-h-12 cursor-pointer items-center gap-3');
+    expect(panel).toContain('has-[:checked]:border-brand-green');
+    expect(panel).toContain('retry: { enabled: false }');
+    expect(panel).toContain('sessionStorage.setItem(`goko_booking_${data.reference}`, JSON.stringify({\n          guestAccessToken: data.guestAccessToken,\n        }))');
+    expect(panel).not.toContain('ownerToken: data.ownerToken');
+    const confirmation = readFileSync("src/app/(marketing)/booking/[reference]/page.tsx", "utf8");
+    expect(confirmation).toContain('pb-[max(2.5rem,env(safe-area-inset-bottom))]');
+    expect(confirmation).toContain('guestAccessToken');
+    expect(confirmation).not.toContain('ownerToken');
+  });
   it("blocks search until both stay dates are chosen", () => {
     expect(panel).toContain("stayReady");
     expect(panel).toContain("disabled={busy || !stayReady}");

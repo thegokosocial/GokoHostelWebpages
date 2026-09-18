@@ -37,6 +37,17 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [reference, setReference] = useState(""), [email, setEmail] = useState("");
   const [challengeId, setChallengeId] = useState(""), [code, setCode] = useState("");
   const [booking, setBooking] = useState<BookingDetails | null>(null);
+  const [nativeCheckoutReady, setNativeCheckoutReady] = useState(false);
+  const [paymentOptions, setPaymentOptions] = useState<{ advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean } | null>(null);
+  const [paymentChoice, setPaymentChoice] = useState<"advance" | "full" | "property">("advance");
+  const [holdExpiresAt, setHoldExpiresAt] = useState<number | null>(null);
+  const [checkoutRequestKey, setCheckoutRequestKey] = useState<string | null>(null);
+  const [nowTick, setNowTick] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (!holdExpiresAt) return;
+    const id = window.setInterval(() => setNowTick(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [holdExpiresAt]);
   useEffect(() => {
     if (!panelRef.current || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting));
@@ -52,10 +63,16 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   async function search(event: FormEvent) {
     event.preventDefault();
     if (!stayReady) { setMessage("Choose your check-in and check-out dates."); return; }
-    setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false);
+    setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false); setHoldExpiresAt(null); setCheckoutRequestKey(null);
     try {
       const data = await readResponse(await fetch(`/api/guest-booking/availability?${new URLSearchParams(stay)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) }));
       setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...stay });
+      setNativeCheckoutReady(Boolean(data.nativeCheckoutReady));
+      setPaymentOptions(data.paymentOptions || null);
+      const choice = data.paymentOptions?.allowFullPayment ? "full"
+        : data.paymentOptions?.advancePercent > 0 ? "advance"
+        : data.paymentOptions?.allowPayAtProperty ? "property" : "advance";
+      setPaymentChoice(choice);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not search. Try WhatsApp."); }
     finally { setBusy(false); }
   }
@@ -80,7 +97,106 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     setSelection(current => canAddGuestRoom(rooms || [], current, room, maxSelectedBeds ?? 0) ? { ...current, [room.id]: (current[room.id] || 0) + 1 } : current);
     setPlans(current => ({ ...current, [room.id]: planId })); setReview(false);
   }
+  function loadRazorpay(): Promise<void> {
+    if (typeof window !== "undefined" && (window as unknown as { Razorpay?: unknown }).Razorpay) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Could not load payment checkout"));
+      document.body.appendChild(script);
+    });
+  }
+  async function openRazorpay(checkoutId: string, ownerToken: string, options: { key: string; order_id: string; amount: number; currency: string }, guestAccessToken: string, ref: string) {
+    await loadRazorpay();
+    const claimed = await readResponse(await fetch("/api/guest-booking/checkout", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "claim", checkoutId, ownerToken }),
+      cache: "no-store", signal: AbortSignal.timeout(15000),
+    }));
+    const checkout = claimed.checkout || options;
+    await new Promise<void>((resolve, reject) => {
+      const rzp = new (window as unknown as { Razorpay: new (o: Record<string, unknown>) => { open: () => void; on: (e: string, fn: (r: { error?: { description?: string } }) => void) => void } }).Razorpay({
+        key: checkout.key, amount: checkout.amount, currency: checkout.currency, order_id: checkout.order_id,
+        name: site.shortName, description: "Goko Hostel booking",
+        prefill: { name: guest.name, email: guest.email, contact: guest.phone },
+        handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+          try {
+            const verified = await readResponse(await fetch("/api/guest-booking/payment/verify", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                checkoutId, ownerToken,
+                paymentId: response.razorpay_payment_id, orderId: response.razorpay_order_id, signature: response.razorpay_signature,
+              }),
+              cache: "no-store", signal: AbortSignal.timeout(20000),
+            }));
+            sessionStorage.setItem(`goko_booking_${ref}`, JSON.stringify({ guestAccessToken }));
+            window.location.href = `/booking/${encodeURIComponent(verified.reference || ref)}`;
+            resolve();
+          } catch (error) { reject(error); }
+        },
+        modal: { ondismiss: async () => {
+          try {
+            await fetch("/api/guest-booking/reconcile", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ checkoutId, ownerToken }), cache: "no-store",
+            });
+          } catch { /* ignore */ }
+          reject(new Error("Payment window closed. If money was deducted, wait a moment and check My booking."));
+        } },
+        theme: { color: "#1B4D3E" },
+        retry: { enabled: false },
+        config: { display: { blocks: {}, hide: [], sequence: ["block.card", "block.upi", "block.netbanking", "block.wallet"], preferences: { show_default_blocks: true } } },
+      });
+      rzp.on("payment.failed", async () => {
+        try {
+          await fetch("/api/guest-booking/reconcile", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ checkoutId, ownerToken }), cache: "no-store",
+          });
+        } catch { /* ignore */ }
+      });
+      rzp.open();
+    });
+  }
+  async function confirmStay() {
+    if (preview) { setMessage("Demo only. Checkout is disabled in this preview."); return; }
+    if (!guest.name.trim() || !guest.email.trim()) { setMessage("Enter your name and email to continue."); return; }
+    if (!searchedStay || !rooms) return;
+    setBusy(true); setMessage("");
+    try {
+      const requestKey = checkoutRequestKey || crypto.randomUUID();
+      if (!checkoutRequestKey) setCheckoutRequestKey(requestKey);
+      const payload = {
+        requestKey,
+        checkinDate: searchedStay.checkinDate, checkoutDate: searchedStay.checkoutDate,
+        paymentChoice, guest,
+        rooms: rooms.filter((room) => selection[room.id]).map((room) => ({
+          roomId: room.id, quantity: selection[room.id], ratePlanId: chosenRate(room)!.id,
+        })),
+      };
+      const data = await readResponse(await fetch("/api/guest-booking/checkout", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload), cache: "no-store", signal: AbortSignal.timeout(30000),
+      }));
+      if (data.holdExpiresAt) setHoldExpiresAt(data.holdExpiresAt);
+      if (data.guestAccessToken && data.reference) {
+        sessionStorage.setItem(`goko_booking_${data.reference}`, JSON.stringify({
+          guestAccessToken: data.guestAccessToken,
+        }));
+      }
+      if (data.requiresPayment && data.razorpay && data.ownerToken && data.checkoutId) {
+        await openRazorpay(data.checkoutId, data.ownerToken, data.razorpay, data.guestAccessToken, data.reference);
+      } else if (data.reference) {
+        window.location.href = `/booking/${encodeURIComponent(data.reference)}`;
+      } else {
+        setMessage("Booking prepared. Check My booking if confirmation did not open.");
+      }
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not complete booking."); }
+    finally { setBusy(false); }
+  }
   const enquiry = searchedStay ? `Hi Goko, please confirm availability and rates for ${searchedStay.checkinDate} to ${searchedStay.checkoutDate}. Selection: ${rooms?.filter(room => selection[room.id]).map(room => `${selection[room.id]} × ${room.name} (${room.type === "Double" ? "double bed" : "dorm bed"})`).join(", ")}. Capacity up to ${capacity} guests; please confirm actual guest count with me.` : "";
+  const holdSecondsLeft = holdExpiresAt ? Math.max(0, holdExpiresAt - nowTick) : null;
   return <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
     {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
     <div className="mb-5 grid grid-cols-2 gap-2 sm:flex" role="tablist" aria-label="Booking options">
@@ -170,7 +286,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                 Beds {money(subtotal)} + tax ({taxPercent}%) {money(totals.tax)}.
               </p>
             ) : null}
-            <p className="hidden text-xs text-white/80 xl:block">Payment remains disabled.</p>
+            <p className="hidden text-xs text-white/80 xl:block">{nativeCheckoutReady ? "Secure checkout available." : "Payment remains disabled."}</p>
           </aside>
           </div>
           {review && ready && <div ref={reviewRef} tabIndex={-1} className="mt-5 scroll-mt-24 rounded-xl border border-brand-mist p-4 focus:outline-none focus:ring-2 focus:ring-brand-green sm:p-5">
@@ -179,13 +295,45 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             <ul className="mt-3 space-y-2 text-sm">{rooms.filter(room => selection[room.id]).map(room => <li key={room.id}>{selection[room.id]} × {room.name} · {chosenRate(room)?.name} · {money(selection[room.id] * chosenRate(room)!.subtotalRupees)}</li>)}</ul>
             {totals && <dl className="mt-4 space-y-2 border-t border-brand-mist pt-3 text-sm"><div className="flex justify-between"><dt>Bed subtotal</dt><dd>{money(totals.beforeTax)}</dd></div><div className="flex justify-between"><dt>Estimated tax ({taxPercent}%)</dt><dd>{money(totals.tax)}</dd></div><div className="flex justify-between text-lg font-semibold"><dt>Estimated total</dt><dd>{money(totals.total)}</dd></div></dl>}
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <label className="text-sm">Guest name<input className={field} autoComplete="name" maxLength={120} value={guest.name} onChange={e => setGuest(current => ({ ...current, name: e.target.value }))} /></label>
-              <label className="text-sm">Email<input className={field} type="email" autoComplete="email" maxLength={254} value={guest.email} onChange={e => setGuest(current => ({ ...current, email: e.target.value }))} /></label>
+              <label className="text-sm">Guest name<input className={field} required autoComplete="name" maxLength={120} value={guest.name} onChange={e => setGuest(current => ({ ...current, name: e.target.value }))} /></label>
+              <label className="text-sm">Email<input className={field} required type="email" autoComplete="email" maxLength={254} value={guest.email} onChange={e => setGuest(current => ({ ...current, email: e.target.value }))} /></label>
               <label className="text-sm">Phone<input className={field} type="tel" autoComplete="tel" maxLength={30} value={guest.phone} onChange={e => setGuest(current => ({ ...current, phone: e.target.value }))} /></label>
             </div>
-            <p className="mt-3 text-xs">These details stay in this page only. They are not saved as a booking or included in the WhatsApp link.</p>
-            <div className="mt-5 rounded-lg bg-brand-sand p-4 text-sm"><strong>Payment is currently disabled.</strong><p>No money will be collected and no reservation is created here. Our team can confirm your selection and final tax-inclusive price. Confirmation emails will be sent only after a booking is actually confirmed.</p></div>
-            <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap"><button type="button" className={action} disabled>Payment unavailable</button>{!preview && <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold" href={`${site.whatsAppUrl}?text=${encodeURIComponent(enquiry)}`} target="_blank" rel="noopener noreferrer">Ask Goko to confirm this stay</a>}</div>
+            {nativeCheckoutReady && paymentOptions ? <>
+              <fieldset className="mt-5 space-y-2 text-sm">
+                <legend className="font-semibold">Payment</legend>
+                {paymentOptions.advancePercent > 0 && (
+                  <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-brand-mist px-3 py-2 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green/5">
+                    <input type="radio" name="pay" className="size-4 shrink-0 accent-brand-green" checked={paymentChoice === "advance"} onChange={() => setPaymentChoice("advance")} />
+                    <span>Pay {paymentOptions.advancePercent}% advance now</span>
+                  </label>
+                )}
+                {paymentOptions.allowFullPayment && (
+                  <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-brand-mist px-3 py-2 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green/5">
+                    <input type="radio" name="pay" className="size-4 shrink-0 accent-brand-green" checked={paymentChoice === "full"} onChange={() => setPaymentChoice("full")} />
+                    <span>Pay full amount now</span>
+                  </label>
+                )}
+                {paymentOptions.allowPayAtProperty && (
+                  <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-brand-mist px-3 py-2 has-[:checked]:border-brand-green has-[:checked]:bg-brand-green/5">
+                    <input type="radio" name="pay" className="size-4 shrink-0 accent-brand-green" checked={paymentChoice === "property"} onChange={() => setPaymentChoice("property")} />
+                    <span>Reserve now, pay at property</span>
+                  </label>
+                )}
+              </fieldset>
+              {holdSecondsLeft != null && <p className="mt-3 text-xs" role="status">Hold expires in {Math.floor(holdSecondsLeft / 60)}:{String(holdSecondsLeft % 60).padStart(2, "0")}</p>}
+              <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap">
+                <button type="button" className={action} disabled={busy || !guest.name.trim() || !guest.email.trim()} onClick={confirmStay}>
+                  {busy ? "Please wait…" : paymentChoice === "property" ? "Confirm reservation" : "Pay now"}
+                </button>
+                {!preview && <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold" href={`${site.whatsAppUrl}?text=${encodeURIComponent(enquiry)}`} target="_blank" rel="noopener noreferrer">Ask Goko on WhatsApp</a>}
+              </div>
+              <p className="mt-3 text-xs">Test-mode payments only. Card, UPI, netbanking and wallets are available in Razorpay Checkout.</p>
+            </> : <>
+              <p className="mt-3 text-xs">These details stay in this page only. They are not saved as a booking or included in the WhatsApp link.</p>
+              <div className="mt-5 rounded-lg bg-brand-sand p-4 text-sm"><strong>Payment is currently disabled.</strong><p>No money will be collected and no reservation is created here. Our team can confirm your selection and final tax-inclusive price.</p></div>
+              <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap"><button type="button" className={action} disabled>Payment unavailable</button>{!preview && <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold" href={`${site.whatsAppUrl}?text=${encodeURIComponent(enquiry)}`} target="_blank" rel="noopener noreferrer">Ask Goko to confirm this stay</a>}</div>
+            </>}
           </div>}
         </>}
       </div>}

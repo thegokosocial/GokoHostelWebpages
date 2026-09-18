@@ -78,7 +78,13 @@ describe("Public configuration and redirect routes", () => {
   it("returns only public metadata, never the integration config", async () => {
     mocks.getChannelConfig.mockResolvedValue({ bookingEngineUrl: "/book", apiPassword: "private", webhookSecret: "secret", isActive: 0 });
     const response = await getConfig();
-    expect(await response.json()).toEqual({ mode: "native", url: "/book", nativeCheckoutReady: false, configurationAvailable: true });
+    const body = await response.json();
+    expect(body).toMatchObject({
+      mode: "native", url: "/book", nativeCheckoutReady: false, configurationAvailable: true,
+      paymentOptions: { advancePercent: 50, allowFullPayment: true, allowPayAtProperty: true },
+    });
+    expect(JSON.stringify(body)).not.toContain("private");
+    expect(JSON.stringify(body)).not.toContain("secret");
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
   it("redirects to the configured destination independently of channel manager activation", async () => {
@@ -102,7 +108,7 @@ describe("Public configuration and redirect routes", () => {
     mocks.getChannelConfig.mockRejectedValue(new Error("database with credentials failed"));
     const response = await getConfig();
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ mode: "enquiry", url: "/booking-enquiry", nativeCheckoutReady: false, configurationAvailable: false });
+    expect(await response.json()).toEqual({ mode: "enquiry", url: "/booking-enquiry", nativeCheckoutReady: false, configurationAvailable: false, paymentOptions: null });
   });
 });
 
@@ -201,7 +207,10 @@ describe("Draft booking settings", () => {
   });
   it("labels the readiness action as configuration-only, not a live gateway check", async () => {
     const response = await bookingSettings(request({ password: "test", action: "checkGatewayReadiness" }));
-    expect(await response.json()).toMatchObject({ gateway: { nativeCheckoutReady: false, status: "implementation_pending" }, message: expect.stringContaining("no payment or provider request") });
+    expect(await response.json()).toMatchObject({
+      gateway: { nativeCheckoutReady: false, status: "blocked" },
+      message: expect.stringContaining("No payment or provider request"),
+    });
   });
   it("reports a write-time settings conflict rather than successful save", async () => {
     mocks.compareAndSetWebsiteSettings.mockResolvedValue(false);

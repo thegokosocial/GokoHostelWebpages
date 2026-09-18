@@ -6,10 +6,11 @@ import { compareAndSetWebsiteSettings } from "@/lib/websiteBookingSettingsStore"
 import { site } from "@/lib/site";
 import {
   WEBSITE_BOOKING_SETTINGS_KEY, websiteBookingSettingsSchema,
-  readWebsiteBookingSettings, gatewayConfiguration,
+  readWebsiteBookingSettings,
   InvalidWebsiteBookingSettingsError,
   websiteBookingSettingsRevision,
 } from "@/lib/websiteBookingSettings";
+import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
 
 export async function POST(req: NextRequest) {
   let body;
@@ -30,12 +31,14 @@ export async function POST(req: NextRequest) {
       case "getSettings": {
         const raw = await getSetting(WEBSITE_BOOKING_SETTINGS_KEY);
         const settings = readWebsiteBookingSettings(raw);
+        const readiness = await evaluateNativeCheckoutReadiness();
         return NextResponse.json({
           settings,
           revision: await websiteBookingSettingsRevision(raw),
-          gateway: gatewayConfiguration(settings.gatewayEnvironment, process.env),
+          gateway: readiness.gateway,
+          readiness: { nativeCheckoutReady: readiness.nativeCheckoutReady, blockers: readiness.blockerMessages },
           webhookUrl: `${site.url}/api/webhooks/razorpay`,
-          policyStatus: "draft",
+          policyStatus: readiness.nativeCheckoutReady ? "active_test" : "draft",
         }, { headers: { "Cache-Control": "no-store" } });
       }
       case "saveSettings": {
@@ -50,13 +53,25 @@ export async function POST(req: NextRequest) {
         if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid booking settings" }, { status: 400 });
         const nextRaw = JSON.stringify(parsed.data);
         if (!await compareAndSetWebsiteSettings(raw, nextRaw)) return conflict();
-        return NextResponse.json({ success: true, settings: parsed.data, revision: await websiteBookingSettingsRevision(nextRaw), gateway: gatewayConfiguration(parsed.data.gatewayEnvironment, process.env), policyStatus: "draft" }, { headers: { "Cache-Control": "no-store" } });
+        const readiness = await evaluateNativeCheckoutReadiness();
+        return NextResponse.json({
+          success: true, settings: parsed.data,
+          revision: await websiteBookingSettingsRevision(nextRaw),
+          gateway: readiness.gateway,
+          readiness: { nativeCheckoutReady: readiness.nativeCheckoutReady, blockers: readiness.blockerMessages },
+          policyStatus: readiness.nativeCheckoutReady ? "active_test" : "draft",
+        }, { headers: { "Cache-Control": "no-store" } });
       }
       case "checkGatewayReadiness": {
-        const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
+        // Fail closed on corrupt drafts before reporting readiness blockers.
+        readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
+        const readiness = await evaluateNativeCheckoutReadiness();
         return NextResponse.json({
-          gateway: gatewayConfiguration(settings.gatewayEnvironment, process.env),
-          message: "Configuration presence checked only; no payment or provider request was made. Use the authenticated test preview for Razorpay API connectivity and simulated checkout. Native fulfilment, live payments and bank settlement remain blocked.",
+          gateway: readiness.gateway,
+          readiness: { nativeCheckoutReady: readiness.nativeCheckoutReady, blockers: readiness.blockerMessages },
+          message: readiness.nativeCheckoutReady
+            ? "Native guest checkout is ready in test mode. Live payments remain blocked until a separate cutover. No live charge was made."
+            : `Checkout blocked: ${readiness.blockerMessages.join("; ") || "incomplete configuration"}. No payment or provider request was made.`,
         }, { headers: { "Cache-Control": "no-store" } });
       }
       default: return NextResponse.json({ error: "Unknown booking settings action" }, { status: 400 });

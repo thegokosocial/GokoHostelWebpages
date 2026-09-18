@@ -14,6 +14,7 @@ export function BookingSettings({ password, username }: { password: string; user
   const [section, setSection] = useState<Section>("policies");
   const [settings, setSettings] = useState<WebsiteBookingSettings>({ ...DEFAULT_WEBSITE_BOOKING_SETTINGS });
   const [gateway, setGateway] = useState<Gateway | null>(null);
+  const [readiness, setReadiness] = useState<{ nativeCheckoutReady: boolean; blockers: string[] } | null>(null);
   const [busy, setBusy] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [revision, setRevision] = useState("");
@@ -38,7 +39,10 @@ export function BookingSettings({ password, username }: { password: string; user
     let active = true;
     setBusy(true); setLoaded(false); setRevision(""); setMessage(""); setGateway(null);
     call("getSettings").then((data) => {
-      if (active) { setSettings(data.settings); setRevision(data.revision); setGateway(data.gateway); setLoaded(true); }
+      if (active) {
+        setSettings(data.settings); setRevision(data.revision); setGateway(data.gateway);
+        setReadiness(data.readiness || null); setLoaded(true);
+      }
     }).catch((error) => { if (active) setMessage(error instanceof Error ? error.message : "Unable to load settings. Refresh this tab to retry; unsaved defaults are not active."); })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
@@ -53,7 +57,10 @@ export function BookingSettings({ password, username }: { password: string; user
       setSettings(data.settings);
       setRevision(data.revision);
       setGateway(data.gateway);
-      setMessage("Settings saved. Maximum bed selection applies to new availability searches; payment policies remain draft and checkout stays disabled.");
+      setReadiness(data.readiness || null);
+      setMessage(data.readiness?.nativeCheckoutReady
+        ? "Settings saved. Native guest checkout is ready in test mode."
+        : "Settings saved. Checkout stays blocked until readiness blockers are cleared.");
     } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to save settings"); }
     finally { setBusy(false); }
   }
@@ -62,7 +69,7 @@ export function BookingSettings({ password, username }: { password: string; user
     setBusy(true); setMessage("");
     try {
       const data = await call("checkGatewayReadiness");
-      setGateway(data.gateway); setMessage(data.message);
+      setGateway(data.gateway); setReadiness(data.readiness || null); setMessage(data.message);
     } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to check configuration"); }
     finally { setBusy(false); }
   }
@@ -129,10 +136,11 @@ export function BookingSettings({ password, username }: { password: string; user
             <div><dt className="inline">Public key ID: </dt><dd className="inline">{gateway.publicKeyId || "Not configured / wrong environment"}</dd></div>
             <div><dt className="inline">Server key secret: </dt><dd className="inline">{gateway.keySecretConfigured ? "Present" : "Missing"}</dd></div>
             <div><dt className="inline">Webhook secret: </dt><dd className="inline">{gateway.webhookSecretConfigured ? "Present" : "Missing"}</dd></div>
-            <div><dt className="inline">Checkout: </dt><dd className="inline">Disabled — implementation pending</dd></div>
+            <div><dt className="inline">Checkout: </dt><dd className="inline">{readiness?.nativeCheckoutReady ? "Ready (test mode)" : "Blocked"}</dd></div>
+            {readiness?.blockers?.length ? <div className="mt-2"><dt className="font-semibold">Blockers</dt><ul className="mt-1 list-disc pl-5">{readiness.blockers.map((b) => <li key={b}>{b}</li>)}</ul></div> : null}
           </dl>}
         </div>
-        <Button type="button" variant="outline" onClick={check}>Check saved credential configuration (no charge)</Button>
+        <Button type="button" variant="outline" onClick={check}>Check native checkout readiness</Button>
       </>}
       <Button type="button" onClick={save}>Save booking settings</Button>
     </fieldset>
