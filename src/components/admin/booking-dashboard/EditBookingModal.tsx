@@ -37,13 +37,14 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const [error, setError] = useState("");
   const [paymentAdjustment, setPaymentAdjustment] = useState<{ mode: "collect" | "refund"; amount: number } | null>(null);
 
+  const canEditPaid = booking.source === "manual";
   const originalCheckout = booking.checkoutDate || booking.checkinDate;
   const datesChanged = checkinDate !== booking.checkinDate || checkoutDate !== originalCheckout;
   const validDates = Boolean(checkinDate && checkoutDate && checkoutDate > checkinDate);
   const parsedAmountPaid = amountPaid === "" ? NaN : Number(amountPaid);
-  const validAmountPaid = Number.isInteger(parsedAmountPaid) && parsedAmountPaid >= 0;
+  const validAmountPaid = !canEditPaid || (Number.isInteger(parsedAmountPaid) && parsedAmountPaid >= 0);
   const validForm = Boolean(guestName.trim() && validDates && Number.isInteger(Number(persons)) && Number(persons) > 0 && Number.isInteger(Number(nightlyRate)) && Number(nightlyRate) >= 0 && validAmountPaid);
-  const paymentChanged = validAmountPaid && parsedAmountPaid !== Number(booking.amountPaid || 0);
+  const paymentChanged = canEditPaid && validAmountPaid && parsedAmountPaid !== Number(booking.amountPaid || 0);
   const selectedAddUnits = useMemo(() => availableUnits.filter((unit) => addUnitKeys.includes(unit.key)), [availableUnits, addUnitKeys]);
   const closed = ["checked_out", "cancelled", "no_show"].includes(booking.status);
 
@@ -100,7 +101,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/30 p-2 backdrop-blur-sm sm:items-center sm:p-4" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="my-2 w-full max-w-lg overflow-hidden rounded-xl border border-border bg-popover shadow-xl sm:my-0 sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-border p-4">
-          <div><h3 className="font-display text-lg font-bold text-foreground">Edit Booking</h3><p className="text-xs text-muted-foreground">Manual offline / walk-in booking · status stays {booking.status.replaceAll("_", " ")}</p></div>
+          <div><h3 className="font-display text-lg font-bold text-foreground">Edit Booking</h3><p className="text-xs text-muted-foreground">{booking.source === "website" ? "Website booking" : "Manual offline / walk-in"} · status stays {booking.status.replaceAll("_", " ")}. Raising the total leaves paid as-is — remaining due shows as Collect remaining.</p></div>
           <Button variant="ghost" size="icon-sm" onClick={onClose}><XIcon className="size-4" /><span className="sr-only">Close</span></Button>
         </div>
         <div className="max-h-[calc(100dvh-8rem)] space-y-4 overflow-y-auto p-4">
@@ -124,10 +125,16 @@ export function EditBookingModal({ booking, assignments, password, username, onA
             </div>
             <label className="text-xs font-medium">Persons<input type="number" min={1} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={persons} onChange={(e) => setPersons(e.target.value)} /></label>
             <label className="text-xs font-medium">Nightly rate (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={nightlyRate} onChange={(e) => setNightlyRate(e.target.value)} /></label>
-            <label className="text-xs font-medium sm:col-span-2">Amount received (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} /><span className="mt-1 block text-[11px] font-normal text-muted-foreground">Final balance is recalculated from the saved pricing rules when you save.</span></label>
+            {canEditPaid ? (
+              <label className="text-xs font-medium sm:col-span-2">Amount received (₹)<input type="number" min={0} step={1} inputMode="numeric" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} /><span className="mt-1 block text-[11px] font-normal text-muted-foreground">Final balance is recalculated from the saved pricing rules when you save.</span></label>
+            ) : (
+              <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
+                Online paid amount stays ₹{Number(booking.amountPaid || 0)}. After you raise the total, collect the difference with Collect remaining.
+              </p>
+            )}
           </div>
 
-          {paymentChanged && parsedAmountPaid < Number(booking.amountPaid || 0) && (
+          {canEditPaid && paymentChanged && parsedAmountPaid < Number(booking.amountPaid || 0) && (
             <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs dark:border-amber-900 dark:bg-amber-950/20">
               <div className="font-semibold text-amber-900 dark:text-amber-100">Amount is lower than the saved payment</div>
               <label className="flex items-start gap-2"><input type="radio" name="lower-payment-mode" checked={lowerPaymentMode === "correction"} onChange={() => setLowerPaymentMode("correction")} /><span><span className="font-medium">Correct the saved amount</span><span className="block text-muted-foreground">Use this when the original advance was entered incorrectly. No money is refunded.</span></span></label>
@@ -146,7 +153,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
           </div>
 
           <label className="block text-xs font-medium">Special requests<textarea rows={3} className="mt-1 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm" value={specialRequests} onChange={(e) => setSpecialRequests(e.target.value)} /></label>
-          <p className="text-[11px] text-muted-foreground">Dates and bed changes are checked against existing bookings, blocks, holds, room capacity, and the booking itself. Discounts and tax are preserved/recalculated from the saved walk-in booking rules.</p>
+          <p className="text-[11px] text-muted-foreground">Dates and bed changes are checked against existing bookings, blocks, holds, room capacity, and the booking itself. Discounts and tax follow the saved booking rules. Website stays keep online payments; use Collect remaining for any new balance.</p>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-950/30 dark:text-red-400">{error}</p>}
         </div>
         <div className="flex flex-col-reverse gap-2 border-t border-border p-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={() => void submit()} disabled={saving || !validForm}>{saving ? "Saving..." : "Save changes"}</Button></div>

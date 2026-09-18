@@ -42,18 +42,11 @@ The specification model now reserves each refund against a captured payment, all
 
 When readiness passes: Search → select → Review → payment choice → prepare checkout (hold + quote + provisional booking) → Razorpay or pay-at-property fulfil → `/booking/[reference]` + confirmation email (best-effort, deferred via `waitUntil`). Fulfilment assigns held beds online first, then offline / same-dorm alternatives; only then `captured_unfulfilled` (history `website_unfulfilled`, Unassigned for staff). Active native holds lower Aiosell online availability for the hold window; `createNativeInventoryHold` (new insert), `releaseNativeInventoryHold`, and `cancelAbandonedWebsiteHolds` call `pushIfOtaChanged` (deferred after D1 commit where possible). Hold lease uses Admin `holdMinutes` (5–15, capped at 900s). Unpaid expired website holds are cancelled opportunistically on search/prepare. Guest refresh / Razorpay dismiss before capture → `abandonUnpaidGuestCheckout` releases the hold (checks Razorpay first; fulfils if already paid). Review UI: hold expired → **Recheck availability**; payment blocked → **Recheck payment readiness**. When readiness fails: payment disabled, WhatsApp enquiry available. Preview still blocks checkout writes.
 
-Confirmation / manage at `/booking/[reference]` uses `GuestBookingManage` with enriched `publicSnapshot` (rooms, nights, tax, paid, due, `canCancel` / `canModify`, deadline). **Edit stay** opens `GuestBookingAmendPanel` when `canModify` (received bookings only). Cancel remains a secondary underlined control. My booking OTP: Admin **Booking & Policies → Require email OTP for My booking lookup** (`requireLookupOtp`, default **on**). When on, OTP verify for a website booking mints a fresh `guestAccessToken`. When off, reference + email alone returns the booking (and mint token if a checkout row exists).
+Confirmation / manage at `/booking/[reference]` uses `GuestBookingManage` with enriched `publicSnapshot` (rooms, nights, tax, paid, due, `canCancel`, deadline). Guest stay changes use **Change stay on WhatsApp** + **Copy booking details** (public `canModify` is always false; `POST /api/guest-booking/amend` returns 403). Cancel remains a full button when `canCancel`. Staff edit website bookings via Admin **Edit Booking** (`source` manual or website): raising totals leaves online `amountPaid` unchanged so remaining due = total − paid (**Collect remaining** / guest **Due at property**). My booking OTP: Admin **Booking & Policies → Require email OTP for My booking lookup** (`requireLookupOtp`, default **on**). When on, OTP verify for a website booking mints a fresh `guestAccessToken`. When off, reference + email alone returns the booking (and mint token if a checkout row exists).
 
-### Guest self-serve amend (migration 0063)
+### Guest self-serve amend (retired)
 
-Within the same online cancel/modify window (`canModify`), website guests can change dates and/or room selection:
-
-1. `POST /api/guest-booking/amend` `availability` — search excluding this booking’s assigned beds from conflicts.
-2. `quote` — server re-quote; returns `deltaPaise = newTotalPaise − amountPaidPaise` (no hold).
-3. `prepare` — new checkout row with `amends_checkout_id`, hold with `exclude_booking_id`, accepted quote; `due_now_paise = max(0, delta)` (Razorpay order when ≥100 paise).
-4. Delta > 0: claim → pay → `/api/guest-booking/payment/verify` → `fulfilGuestAmend`. Delta ≤ 0: `confirm` (no payment); negative delta refunds via the cancel refund helpers.
-5. Fulfil: release hold → unassign old beds → assign new (online then offline fallback) → update booking dates/amounts/roomType → history `website_amend` → Aiosell push → `sendBookingAmendedEmail`.
-
+Migration **0063** columns and internal `prepareGuestAmend` / `fulfilGuestAmend` helpers remain for compatibility. The guest UI and public amend route no longer offer self-serve date/room changes — use WhatsApp (guest) or Admin Edit Booking (staff).
 ## Remaining implementation gates
 
 Native guest checkout (test + live cutover) is wired: migrations **0059–0062**, public APIs, `/book` UI, webhook branch, confirmation email, Booking Settings Test↔Live flip. Production Worker secrets include Razorpay test/live credentials, `RAZORPAY_LIVE_WEBHOOK_SECRET`, and `GUEST_BOOKING_LOOKUP_SECRET`.

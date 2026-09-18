@@ -521,8 +521,8 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(panel).toContain("parseGokoWalkin");
   });
 
-  it("offers manual offline/walk-in bookings a status-preserving editor", () => {
-    expect(panel).toContain('const canEditBooking = booking.source === "manual"');
+  it("offers manual and website bookings a status-preserving editor", () => {
+    expect(panel).toContain('booking.source === "manual" || booking.source === "website"');
     expect(panel).toContain("canEditBooking");
     expect(panel).toContain("EditBookingModal");
     const editor = readFile("src/components/admin/booking-dashboard/EditBookingModal.tsx");
@@ -531,7 +531,8 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(editor).toContain("Dates and bed changes are checked against existing bookings");
     expect(editor).toContain("status stays");
     expect(editor).toContain("getNights(checkinDate, checkoutDate)");
-    expect(editor).toContain('const validAmountPaid = Number.isInteger(parsedAmountPaid) && parsedAmountPaid >= 0;');
+    expect(editor).toContain('canEditPaid = booking.source === "manual"');
+    expect(editor).toContain("Collect remaining");
     expect(editor).toContain('const nightlyRateChanged = Number(nightlyRate) !== Number(booking.nightlyRate ?? 0);');
     expect(editor).toContain('...(nightlyRateChanged ? { nightlyRate: Number(nightlyRate) } : {}),');
     expect(editor).not.toContain("Current balance after this edit:");

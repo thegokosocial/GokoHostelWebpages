@@ -253,7 +253,7 @@ async function publicSnapshot(row: Checkout, booking: typeof bookings.$inferSele
     taxPercent: lines.taxPercent,
     gatewayEnvironment: row.environment,
     canCancel: flags.canCancel,
-    canModify: flags.canModify,
+    canModify: false, // Guest stay changes → WhatsApp / admin Edit Booking; self-serve amend retired.
     cancellationDeadlineAt: flags.cancellationDeadlineAt,
     ...extras,
   };

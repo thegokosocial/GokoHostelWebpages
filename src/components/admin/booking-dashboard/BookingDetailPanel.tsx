@@ -221,7 +221,8 @@ export function BookingDetailPanel({
     && (booking.status === "checked_in" || booking.status === "checked_out")
     && (hasPermission(role, permissions, "canAddBooking") || hasPermission(role, permissions, "canCheckIn"));
   const collectedHint = formatCurrency(booking.amountPaid || 0);
-  const canEditBooking = booking.source === "manual" && hasPermission(role, permissions, "canAddBooking");
+  const canEditBooking = (booking.source === "manual" || booking.source === "website")
+    && hasPermission(role, permissions, "canAddBooking");
   const canHardDeleteRecordsWalkin = isManualWalkinBooking(booking)
     && Boolean(String(booking.bookingRef || "").trim())
     && hasPermission(role, permissions, "canDeleteBooking");

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { formatPaymentChoice, guestActionFlags, roomLinesFromQuote } from "@/lib/guestBookingDetails";
+import {
+  buildBookingChangeRequestText, formatPaymentChoice, guestActionFlags, roomLinesFromQuote,
+} from "@/lib/guestBookingDetails";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS } from "@/lib/websiteBookingSettings";
 
 describe("Guest booking manage details", () => {
@@ -25,7 +27,7 @@ describe("Guest booking manage details", () => {
     expect(lines.rooms[0].label).toContain("Shiva dorm");
   });
 
-  it("exposes canCancel/canModify when policy and status allow", () => {
+  it("exposes canCancel when policy and status allow; canModify stays for internal amend helpers", () => {
     const flags = guestActionFlags({
       checkoutState: "fulfilled",
       bookingStatus: "received",
@@ -43,23 +45,38 @@ describe("Guest booking manage details", () => {
     expect(formatPaymentChoice("property")).toBe("Pay at property");
   });
 
-  it("confirmation page uses GuestBookingManage with amend panel and demoted cancel", () => {
+  it("builds WhatsApp change-request text with reference and stay", () => {
+    const text = buildBookingChangeRequestText({
+      reference: "GOKO-1",
+      guestName: "Ada",
+      checkinDate: "2026-10-01",
+      checkoutDate: "2026-10-03",
+      nights: 2,
+      rooms: [{ label: "2 × Shiva dorm · Single bed" }],
+      amountTotal: 1000,
+      amountPaid: 500,
+      dueRupees: 500,
+    });
+    expect(text).toContain("GOKO-1");
+    expect(text).toContain("I'd like to change");
+    expect(text).toContain("Due at property: ₹500");
+  });
+
+  it("confirmation page uses WhatsApp change CTA, copy details, and Cancel button (no amend panel)", () => {
     const manage = readFileSync("src/components/booking/GuestBookingManage.tsx", "utf8");
     const page = readFileSync("src/app/(marketing)/booking/[reference]/page.tsx", "utf8");
-    const amend = readFileSync("src/components/booking/GuestBookingAmendPanel.tsx", "utf8");
+    const amendRoute = readFileSync("src/app/api/guest-booking/amend/route.ts", "utf8");
     expect(page).toContain("GuestBookingManage");
-    expect(page).toContain("GuestBookingAmendPanel");
-    expect(page).not.toContain("Cancel booking");
-    expect(manage).toContain("Edit stay");
-    expect(manage).toContain("onEditStay");
-    expect(manage).not.toContain("Stay changes will be available soon");
+    expect(page).not.toContain("GuestBookingAmendPanel");
+    expect(manage).toContain("Change stay on WhatsApp");
+    expect(manage).toContain("Copy booking details");
     expect(manage).toContain("Cancel booking");
-    expect(manage).toContain("canModify");
-    expect(manage).toContain("cancellationDeadlineAt");
+    expect(manage).not.toContain("Edit stay");
+    expect(manage).not.toContain("onEditStay");
     expect(manage).toContain("dueAtPropertyPaise");
-    expect(manage).toMatch(/text-brand-red underline/);
-    expect(amend).toContain("/api/guest-booking/amend");
-    expect(amend).toContain("Pay difference");
+    expect(manage).toContain("buildBookingChangeRequestText");
+    expect(amendRoute).toContain("status: 403");
+    expect(amendRoute).toContain("WhatsApp");
   });
 
   it("My booking stores manage token and redirects to confirmation", () => {
@@ -68,5 +85,13 @@ describe("Guest booking manage details", () => {
     expect(panel).toContain("sessionStorage.setItem(`goko_booking_${ref}`");
     expect(panel).toContain("window.location.assign(href)");
     expect(panel).toContain("Manage booking");
+  });
+
+  it("admin Edit Booking is available for website and manual sources", () => {
+    const detail = readFileSync("src/components/admin/booking-dashboard/BookingDetailPanel.tsx", "utf8");
+    const modal = readFileSync("src/components/admin/booking-dashboard/EditBookingModal.tsx", "utf8");
+    expect(detail).toContain('booking.source === "manual" || booking.source === "website"');
+    expect(modal).toContain('canEditPaid = booking.source === "manual"');
+    expect(modal).toContain("Collect remaining");
   });
 });

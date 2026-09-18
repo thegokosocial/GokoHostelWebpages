@@ -131,7 +131,7 @@ export function guestActionFlags(input: {
     cancellationDeadlineAt = new Date(calc.deadlineEpochMs).toISOString();
   }
   const canAct = checkoutOk && statusOk && eligible;
-  // Amend only after fulfilment (received); provisional holds use cancel + rebook.
+  // canModify retained for internal amend helpers/tests; guest UI always hides self-serve edit.
   return { canCancel: canAct, canModify: canAct && statusReceived, cancellationDeadlineAt };
 }
 
@@ -140,6 +140,45 @@ export function formatPaymentChoice(choice: string | null | undefined) {
   if (choice === "full") return "Paid in full online";
   if (choice === "property") return "Pay at property";
   return choice || "—";
+}
+
+/** Prefill text for WhatsApp / clipboard when a guest wants to change a stay. */
+export function buildBookingChangeRequestText(input: {
+  reference: string;
+  guestName: string;
+  checkinDate: string | null;
+  checkoutDate: string | null;
+  nights?: number | null;
+  rooms?: { label: string }[];
+  amountTotal?: number | null;
+  amountPaid?: number | null;
+  dueRupees?: number | null;
+}) {
+  const due = input.dueRupees ?? (
+    input.amountTotal != null && input.amountPaid != null
+      ? Math.max(0, input.amountTotal - input.amountPaid)
+      : null
+  );
+  const roomLines = input.rooms?.length
+    ? input.rooms.map((r) => `• ${r.label}`).join("\n")
+    : "• (see confirmation page)";
+  return [
+    `Hi Goko, I'd like to change my booking ${input.reference}.`,
+    "",
+    `Guest: ${input.guestName}`,
+    `Stay: ${input.checkinDate || "—"} → ${input.checkoutDate || "—"}${
+      input.nights != null && input.nights > 0
+        ? ` (${input.nights} ${input.nights === 1 ? "night" : "nights"})`
+        : ""
+    }`,
+    "Rooms:",
+    roomLines,
+    input.amountTotal != null ? `Total: ₹${input.amountTotal}` : null,
+    input.amountPaid != null ? `Paid: ₹${input.amountPaid}` : null,
+    due != null && due > 0 ? `Due at property: ₹${due}` : null,
+    "",
+    "Please help me update dates or beds. Thank you!",
+  ].filter((line): line is string => line != null).join("\n");
 }
 
 export function buildBookingEmailBody(input: {
