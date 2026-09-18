@@ -32,16 +32,17 @@ const CHECKINS_PERMISSIONS: Record<string, ActionPerm> = {
 };
 
 const FOOD_ORDERS_PERMISSIONS: Record<string, ActionPerm> = {
-  listOrders: "canViewFoodOrders", getOrderDetails: "canViewFoodOrders",
+  listOrders: ["canViewFoodOrders", "canMarkPaid"], getOrderDetails: "canViewFoodOrders",
   getOrderModifications: "canViewFoodOrders", getActiveGuests: "canViewFoodOrders",
-  getGuestsWithTabs: "canViewFoodOrders", getGuestTab: "canViewFoodOrders",
-  getGuestAllOrders: "canViewFoodOrders", getWalkinOrders: "canViewFoodOrders",
-  getCombinedBill: "canViewFoodOrders", getMenu: "canViewFoodOrders",
-  updateOrderStatus: ["canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
-  voidItem: ["canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canPlaceOrders", "canViewFoodOrders"],
-  reassignOrder: ["canPlaceOrders", "canViewFoodOrders"],
+  getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"],
+  getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
+  getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid"],
+  updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
+  voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
+  setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
+  reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
-  applyDiscount: "canMarkPaid", removeDiscount: "canMarkPaid",
+  applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
 };
 
 const EXPENSES_PERMISSIONS: Record<string, ActionPerm> = {
@@ -244,11 +245,15 @@ describe("RBAC: Staff with specific permissions", () => {
     expect(checkPermission(role, { canViewTimeline: true }, CHECKINS_PERMISSIONS, "assignBed")).toBe("forbidden");
   });
 
-  it("staff with canMarkPaid can handle payments but not view orders without canViewFoodOrders", () => {
+  it("staff with canMarkPaid can list orders for Payment Summary without canViewFoodOrders", () => {
     const permissions = { canMarkPaid: true };
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "markOrderPaid")).toBe("allowed");
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "applyDiscount")).toBe("allowed");
-    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "listOrders")).toBe("forbidden");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "listOrders")).toBe("allowed");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getMenu")).toBe("allowed");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getGuestsWithTabs")).toBe("allowed");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getWalkinOrders")).toBe("allowed");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getOrderDetails")).toBe("forbidden");
   });
 
   it("staff with both food permissions can view and pay", () => {

@@ -62,7 +62,7 @@ Actions: `listOrders`, `updateStatus`, `toggleItemAvailability`, `rejectItem`, `
 
 Poll `listOrders` ~5s. Audio on new. Columns: New (`placed`) / Preparing / Ready. Approval section if `food_approval_in_kitchen`. Bluetooth ESC/POS (`thermalPrint.ts`); Kannada from `food_kannada_kitchen_print` / `food_kannada_kitchen_display` (default **on** unless setting is the string `"false"`).
 
-Admin Food Orders embeds kitchen + tabs + place-for-guest + combined PDF/thermal + mark paid (cash/online/split). Food Orders → Edit Order → Set price finalizes pending market-price lines; payment and final billing require all active lines to be priced. Indicative ranges are maintained in Management → Menu and are informational only.
+Admin Food Orders embeds kitchen + tabs + place-for-guest + combined PDF/thermal + mark paid (cash/online/split). **Order Summary** guest drawer footer is Print (thermal) / **Bill** / Order More. Bill opens an in-drawer guest-style tab (same `GuestFoodBillCard` as My Bills) with Pay → `RecordPaymentModal` and Discount → `DiscountModal`. PDF / Cash / Online / Discount / group Kitchen are removed from that footer (per-order kitchen print remains). Pending special-price (`pricingStatus === "pending"`) lines are amber-highlighted; Bill is blocked until Set price clears them. Food Orders → Edit Order → Set price finalizes pending market-price lines; payment and final billing require all active lines to be priced. Indicative ranges are maintained in Management → Menu and are informational only.
 
 ---
 
@@ -96,6 +96,8 @@ Exact names in code. UI defaults in `AdminFoodSettings.tsx`.
 
 **Bill Settings** (Management tab, same `canManageFoodSettings`): edit `food_bill_*` keys; payment QR upload/replace/delete auto-persists to settings (R2 folder `bills`) without waiting for Save All. Other text fields still use Save All. Staff with only `canGenerateFoodBills` load branding via `getBillBranding` (not full `getFoodSettings`). Paid PDFs/thermal omit the Scan-to-pay / UPI block.
 
-**Guest bill layout:** left accent rail (not full-bleed orange) → Food tab meta (no order IDs) → status outline → single ITEM/QTY/AMOUNT list (items coalesced across orders; voided lines omitted by `/api/food/bills` and `mergeBillLineItems`) → Subtotal / Discount / CGST + SGST → Grand Total → QR + UPI. My Bills shows one Open tab card + one Paid card with the same combined layout. Kitchen tickets unchanged. Bill branding keys are **not** in Pi `SYNCABLE_SETTINGS` (QR is R2/cloud-only).
+**Guest bill layout:** left accent rail (not full-bleed orange) → Food tab meta (no order IDs) → status outline → single ITEM/QTY/AMOUNT list (items coalesced across orders; voided lines omitted by `/api/food/bills` and `mergeBillLineItems`) → Subtotal / Discount / CGST + SGST → Grand Total → QR + UPI. My Bills and admin Order Summary **Bill** share `GuestFoodBillCard`. Kitchen tickets unchanged. Bill branding keys are **not** in Pi `SYNCABLE_SETTINGS` (QR is R2/cloud-only).
+
+**Payment Summary:** loads via `listOrders` (`all_history`) + `getGuestsWithTabs` + `getMenu` (+ walk-in / tab fallback if history empty). Those read actions accept `canViewFoodOrders` **or** `canMarkPaid` so pay-capable staff without view-orders do not see a blank tab.
 
 **Sync drift:** `syncEngine` `SYNCABLE_SETTINGS` still lists `food_kannada_labels` (old name). Print/display keys are **not** in that list. Pi may not get Kannada flags. Do not document `food_kannada_labels` as the live UI key.

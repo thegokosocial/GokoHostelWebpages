@@ -4,10 +4,12 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn, localDateStr } from "@/lib/utils";
-import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, TagIcon } from "lucide-react";
+import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, TagIcon, AlertTriangleIcon, ReceiptIcon } from "lucide-react";
 import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicket, type BillItem } from "@/lib/thermalPrint";
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
 import { loadBillBranding } from "@/lib/loadBillBranding";
+import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/food/GuestFoodBillCard";
+import { DEFAULT_BILL_BRANDING, type BillBranding } from "@/lib/foodBillFormat";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
@@ -789,8 +791,19 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [modHistoryOrderId, setModHistoryOrderId] = useState<number | null>(null);
   const [modHistoryData, setModHistoryData] = useState<OrderModification[]>([]);
   const [modHistoryLoading, setModHistoryLoading] = useState(false);
+  const [drawerView, setDrawerView] = useState<"orders" | "bill">("orders");
+  const [spBillWarning, setSpBillWarning] = useState(false);
+  const [billBranding, setBillBranding] = useState<BillBranding>(DEFAULT_BILL_BRANDING);
+  const [billQrDataUrl, setBillQrDataUrl] = useState<string | undefined>();
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
+
+  useEffect(() => {
+    if (!selectedGroupKey) {
+      setDrawerView("orders");
+      setSpBillWarning(false);
+    }
+  }, [selectedGroupKey]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -928,9 +941,15 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     ? [...getGroupOrders(selectedGroup)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : [];
 
+  useEffect(() => {
+    if (!groupHasPendingSpecialPrice(selectedGroupOrders)) setSpBillWarning(false);
+  }, [selectedGroupOrders]);
+
   const selectGroup = async (group: SummaryGroup) => {
     setSelectedGroupKey(group.key);
     setModHistoryOrderId(null);
+    setDrawerView("orders");
+    setSpBillWarning(false);
 
     if (group.guestType === "hostel" && !hostelOrdersMap[parseInt(group.key.replace("hostel_", ""), 10)]) {
       const checkinId = parseInt(group.key.replace("hostel_", ""), 10);
@@ -1041,7 +1060,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     setActionBusy(`price_${itemId}`);
     try {
       const res = await apiCall({ action: "setFoodOrderItemPrice", orderId, orderItemId: itemId, price: Math.round(rupees * 100) });
-      if (res.ok) { if (selectedGroup) await refreshAfterEdit(selectedGroup); showSuccess("Final price saved"); }
+      if (res.ok) {
+        if (selectedGroup) await refreshAfterEdit(selectedGroup);
+        showSuccess("Final price saved");
+        setSpBillWarning(false);
+      }
       else { const data = await res.json().catch(() => ({})); showError(data.error || "Could not save price"); }
     } finally { setActionBusy(null); }
   };
@@ -1049,6 +1072,22 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const actualGroupTotal = selectedGroupOrders.length > 0
     ? selectedGroupOrders.reduce((sum, o) => sum + o.total, 0)
     : selectedGroup?.totalAmount || 0;
+
+  const groupHasSpPending = groupHasPendingSpecialPrice(selectedGroupOrders);
+
+  const openBillView = async () => {
+    if (!selectedGroup) return;
+    if (groupHasSpPending) {
+      setSpBillWarning(true);
+      setDrawerView("orders");
+      return;
+    }
+    const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError);
+    setBillBranding(branding);
+    setBillQrDataUrl(paymentQrDataUrl);
+    setSpBillWarning(false);
+    setDrawerView("bill");
+  };
 
   const markGroupPaid = async (group: SummaryGroup, paymentMethod: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string) => {
     const orders = getGroupOrders(group);
@@ -1117,87 +1156,6 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     } finally {
       setPrintingGroup(null);
     }
-  };
-
-  const handleKitchenPrint = async (group: SummaryGroup) => {
-    const orders = getGroupOrders(group);
-    const activeOrders = orders.filter(o => o.status !== "cancelled" && o.status !== "served");
-    if (activeOrders.length === 0) { showError("No active orders to print for kitchen"); return; }
-    setPrintingGroup(group.key);
-    try {
-      for (const order of activeOrders) {
-        const items = order.items.filter(i => i.status !== "voided").map(i => ({ name: i.itemName, quantity: i.quantity }));
-        if (items.length === 0) continue;
-        await printOrderTicket({
-          orderNumber: order.orderNumber,
-          guestName: group.guestName,
-          guestType: group.guestType === "hostel" ? "hostel" : "walkin",
-          roomInfo: group.roomInfo || undefined,
-          items,
-          specialInstructions: order.specialInstructions || undefined,
-          createdAt: order.createdAt,
-        });
-      }
-      showSuccess("Kitchen ticket(s) printed!");
-    } catch (err: any) {
-      showError("Print failed", err.message || "Unknown error");
-    } finally {
-      setPrintingGroup(null);
-    }
-  };
-
-  const handlePdfGroup = async (group: SummaryGroup) => {
-    const orders = getGroupOrders(group);
-    if (orders.length === 0) return;
-    if (orders.some((o) => o.items.some((i) => i.status !== "voided" && i.pricingStatus === "pending"))) { showError("Price pending", "Set final prices before generating the bill"); return; }
-    const exemptCatIds = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
-    const miCatMap = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
-    const billOrders: BillOrder[] = orders.map(o => ({
-      orderNumber: o.orderNumber,
-      createdAt: o.createdAt,
-      items: o.items.filter(i => i.status !== "voided").map(i => ({
-        itemName: i.itemName,
-        quantity: i.quantity,
-        itemPrice: i.itemPrice,
-        lineTotal: i.lineTotal,
-        status: i.status,
-      })),
-      subtotal: o.subtotal,
-      tax: o.tax,
-      total: o.total,
-      discount: o.discount || 0,
-      specialInstructions: o.specialInstructions || undefined,
-    }));
-    let exemptSub = 0;
-    for (const o of orders) {
-      for (const item of o.items) {
-        if (item.status === "voided") continue;
-        const catId = miCatMap.get(item.menuItemId);
-        if (catId !== undefined && exemptCatIds.has(catId)) exemptSub += item.lineTotal;
-      }
-    }
-    const grossSub = orders.reduce((s, o) => s + o.subtotal + (o.discount || 0), 0);
-    const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError);
-    const unpaid = orders.some((o) => o.paymentStatus !== "paid");
-    await generateGuestBill({
-      guestName: group.guestName,
-      guestPhone: group.contactInfo || "",
-      roomInfo: group.roomInfo || undefined,
-      orders: billOrders,
-      grandSubtotal: orders.reduce((s, o) => s + o.subtotal, 0),
-      grandTax: orders.reduce((s, o) => s + o.tax, 0),
-      grandTotal: orders.reduce((s, o) => s + o.total, 0),
-      taxRate: foodTaxRateFromAmounts(
-        orders.reduce((s, o) => s + o.subtotal, 0),
-        orders.reduce((s, o) => s + o.tax, 0),
-      ),
-      billDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-      discountableSubtotal: grossSub - exemptSub,
-      exemptSubtotal: exemptSub,
-      paymentStatus: unpaid ? "on_tab" : "paid",
-      branding,
-      paymentQrDataUrl: unpaid ? paymentQrDataUrl : undefined,
-    });
   };
 
   if (loading) return <LoadingState />;
@@ -1341,12 +1299,110 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
             {/* Total bar */}
             <div className="flex items-center justify-between bg-brand-sand/30 px-4 py-2.5">
-              <span className="text-sm text-brand-green-dark/70">{selectedGroup.orderCount} order{selectedGroup.orderCount !== 1 ? "s" : ""}</span>
+              <span className="text-sm text-brand-green-dark/70">
+                {drawerView === "bill" ? "Bill" : `${selectedGroup.orderCount} order${selectedGroup.orderCount !== 1 ? "s" : ""}`}
+              </span>
               <span className="text-xl font-bold text-brand-green">₹{(actualGroupTotal / 100).toFixed(0)}</span>
             </div>
 
+            {drawerView === "bill" ? (
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                <GuestFoodBillCard
+                  orders={selectedGroupOrders.map((o) => ({
+                    guestName: selectedGroup.guestName,
+                    roomInfo: selectedGroup.roomInfo || o.roomInfo,
+                    paymentStatus: o.paymentStatus,
+                    paymentMethod: o.paymentMethod,
+                    createdAt: o.createdAt,
+                    subtotal: o.subtotal,
+                    tax: o.tax,
+                    total: o.total,
+                    discount: o.discount || 0,
+                    items: o.items.map((i) => ({
+                      itemName: i.itemName,
+                      quantity: i.quantity,
+                      itemPrice: i.itemPrice,
+                      lineTotal: i.lineTotal,
+                      status: i.status,
+                      pricingStatus: i.pricingStatus,
+                    })),
+                  }))}
+                  variant="unpaid"
+                  branding={{
+                    hostelName: billBranding.hostelName,
+                    location: billBranding.location,
+                    accent: billBranding.accent,
+                    upiId: billBranding.upiId,
+                    qrUrl: billQrDataUrl || billBranding.paymentQrUrl,
+                    footer: billBranding.footer,
+                    taxRate: foodTaxRateFromAmounts(
+                      selectedGroupOrders.reduce((s, o) => s + o.subtotal, 0),
+                      selectedGroupOrders.reduce((s, o) => s + o.tax, 0),
+                    ),
+                  }}
+                  alwaysExpanded
+                  footerActions={
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setDrawerView("orders")}
+                        className="rounded-lg border border-brand-mist px-3 py-2 text-sm font-medium text-brand-green-dark/70 hover:bg-brand-sand"
+                      >
+                        Back
+                      </button>
+                      {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
+                        <button
+                          type="button"
+                          onClick={() => setDiscountModalGroup(selectedGroup)}
+                          disabled={busy === selectedGroup.key}
+                          className="flex items-center gap-1.5 rounded-lg border border-purple-500 bg-purple-50 dark:bg-purple-950 px-3 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 disabled:opacity-50"
+                        >
+                          <TagIcon className="h-3.5 w-3.5" />
+                          {selectedGroupOrders.reduce((s, o) => s + (o.discount || 0), 0) > 0
+                            ? `Discount · -₹${(selectedGroupOrders.reduce((s, o) => s + (o.discount || 0), 0) / 100).toFixed(0)}`
+                            : "Discount"}
+                        </button>
+                      )}
+                      {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (groupHasSpPending) {
+                              setSpBillWarning(true);
+                              setDrawerView("orders");
+                              return;
+                            }
+                            setPaymentModalMethod("online");
+                            setPaymentModalGroup(selectedGroup);
+                          }}
+                          disabled={busy === selectedGroup.key || groupHasSpPending}
+                          className="flex items-center gap-1.5 rounded-lg border border-green-500 bg-green-50 dark:bg-green-950 px-3 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 disabled:opacity-50"
+                        >
+                          <BanknoteIcon className="h-3.5 w-3.5" /> Pay · ₹{(actualGroupTotal / 100).toFixed(0)}
+                        </button>
+                      )}
+                    </>
+                  }
+                />
+              </div>
+            ) : (
+            <>
             {/* Orders list */}
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-2">
+              {(spBillWarning || groupHasSpPending) && (
+                <div className="rounded-xl border border-amber-300/80 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5">
+                  <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                    Special price
+                    <AlertTriangleIcon className="h-3.5 w-3.5" />
+                    <span className="font-normal normal-case">set price before opening bill</span>
+                  </p>
+                  {spBillWarning && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                      One or more items still need a final price. Use Set price on each special-price line, then open Bill again.
+                    </p>
+                  )}
+                </div>
+              )}
               {loadingOrders === selectedGroup.key ? (
                 <div className="flex justify-center py-8"><Loader2Icon className="h-5 w-5 animate-spin text-brand-green" /></div>
               ) : (
@@ -1403,8 +1459,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         {order.items.map((item) => {
                           const isVoided = item.status === "voided";
                           const isItemEditing = isEditing && !isVoided;
+                          const spPending = !isVoided && item.pricingStatus === "pending";
                           return (
-                          <div key={item.id}>
+                          <div key={item.id} className={cn(spPending && "rounded-md border border-amber-300/70 bg-amber-50/80 dark:bg-amber-950/30 px-1.5 py-1")}>
                             {item.notes && <div className="mb-0.5 pl-1 text-[10px] italic text-brand-green-dark/50">Note: {item.notes}</div>}
                             {isVoided ? (
                               <div className="flex items-center justify-between text-xs">
@@ -1438,8 +1495,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                   <span className="min-w-0 truncate text-brand-green-dark/60">{item.itemName}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                  {item.pricingStatus === "pending" ? (
-                                    <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-brand-green/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-green-dark hover:bg-brand-green/20 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
+                                  {spPending ? (
+                                    <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-300 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
                                   ) : <span className="text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>}
                                   <button
                                     type="button"
@@ -1452,11 +1509,14 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex items-center justify-between text-xs text-brand-green-dark/60">
-                                <span>{item.quantity}× {item.itemName}</span>
-                                {item.pricingStatus === "pending" ? (
-                                  <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-brand-green/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-green-dark hover:bg-brand-green/20 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
-                                ) : <span>₹{(item.lineTotal / 100).toFixed(0)}</span>}
+                              <div className="flex items-center justify-between text-xs">
+                                <span className={cn(spPending ? "font-medium text-amber-800 dark:text-amber-300" : "text-brand-green-dark/60")}>
+                                  {item.quantity}× {item.itemName}
+                                  {spPending && <AlertTriangleIcon className="ml-1 inline h-3 w-3 text-amber-600" />}
+                                </span>
+                                {spPending ? (
+                                  <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-300 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
+                                ) : <span className="text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>}
                               </div>
                             )}
                             {voidingItemId === item.id && (
@@ -1526,36 +1586,6 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
             {/* Footer action buttons */}
             {selectedGroupOrders.length > 0 && (
               <div className="border-t border-brand-mist p-3 flex flex-wrap gap-2">
-                {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (() => {
-                  const totalGroupDiscount = selectedGroupOrders.reduce((s, o) => s + (o.discount || 0), 0);
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => setDiscountModalGroup(selectedGroup)}
-                      disabled={busy === selectedGroup.key}
-                      className="flex items-center gap-1.5 rounded-lg border border-purple-500 bg-purple-50 dark:bg-purple-950 px-3 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 disabled:opacity-50"
-                    >
-                      <TagIcon className="h-3.5 w-3.5" />
-                      {totalGroupDiscount > 0 ? `Discount · -₹${(totalGroupDiscount / 100).toFixed(0)}` : "Discount"}
-                    </button>
-                  );
-                })()}
-                <button
-                  type="button"
-                  onClick={() => { setPaymentModalMethod("cash"); setPaymentModalGroup(selectedGroup); }}
-                  disabled={busy === selectedGroup.key}
-                  className="flex items-center gap-1.5 rounded-lg border border-green-500 bg-green-50 dark:bg-green-950 px-3 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 disabled:opacity-50"
-                >
-                  <BanknoteIcon className="h-3.5 w-3.5" /> Cash · ₹{(actualGroupTotal / 100).toFixed(0)}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setPaymentModalMethod("online"); setPaymentModalGroup(selectedGroup); }}
-                  disabled={busy === selectedGroup.key}
-                  className="flex items-center gap-1.5 rounded-lg border border-blue-500 bg-blue-50 dark:bg-blue-950 px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 disabled:opacity-50"
-                >
-                  <SmartphoneIcon className="h-3.5 w-3.5" /> Online
-                </button>
                 {btSupported && (
                   <button
                     type="button"
@@ -1567,23 +1597,12 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     {printingGroup === selectedGroup.key ? "Printing..." : "Print"}
                   </button>
                 )}
-                {btSupported && (
-                  <button
-                    type="button"
-                    onClick={() => handleKitchenPrint(selectedGroup)}
-                    disabled={printingGroup === selectedGroup.key}
-                    className="flex items-center gap-1.5 rounded-lg border border-orange-200 dark:border-orange-800 px-3 py-2 text-sm font-medium text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950 disabled:opacity-50"
-                  >
-                    <PrinterIcon className="h-3.5 w-3.5" />
-                    Kitchen
-                  </button>
-                )}
                 <button
                   type="button"
-                  onClick={() => handlePdfGroup(selectedGroup)}
-                  className="flex items-center gap-1.5 rounded-lg border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
+                  onClick={() => openBillView()}
+                  className="flex items-center gap-1.5 rounded-lg border border-brand-green bg-brand-green/10 px-3 py-2 text-sm font-medium text-brand-green-dark hover:bg-brand-green/20"
                 >
-                  <DownloadIcon className="h-3.5 w-3.5" /> PDF
+                  <ReceiptIcon className="h-3.5 w-3.5" /> Bill
                 </button>
                 <button
                   type="button"
@@ -1606,6 +1625,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                   <PlusIcon className="h-3.5 w-3.5" /> Order More
                 </button>
               </div>
+            )}
+            </>
             )}
           </div>
         </div>
@@ -2018,6 +2039,7 @@ interface PaymentGroup {
 }
 
 function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string }) {
+  const { showError } = useAdminToast();
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [hostelGuestInfo, setHostelGuestInfo] = useState<Map<number, GuestWithTab>>(new Map());
   const [detailOrders, setDetailOrders] = useState<Record<string, Order[]>>({});
@@ -2053,31 +2075,71 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [hostelRes, ordersRes, menuRes] = await Promise.all([
+      const [hostelRes, ordersRes, menuRes, walkinRes] = await Promise.all([
         apiCall({ action: "getGuestsWithTabs" }),
         apiCall({ action: "listOrders", status: "all_history", limit: 200 }),
         apiCall({ action: "getMenu" }),
+        apiCall({ action: "getWalkinOrders" }),
       ]);
+      const map = new Map<number, GuestWithTab>();
       if (hostelRes.ok) {
         const data = await hostelRes.json();
-        const map = new Map<number, GuestWithTab>();
         for (const g of (data.guests || []) as GuestWithTab[]) map.set(g.checkinId, g);
         setHostelGuestInfo(map);
+      } else {
+        const data = await hostelRes.json().catch(() => ({}));
+        showError("Payment Summary", data.error || "Could not load guest tabs");
       }
+
+      let orders: Order[] = [];
       if (ordersRes.ok) {
         const data = await ordersRes.json();
-        setAllOrders(data.orders || []);
+        orders = data.orders || [];
+      } else {
+        const data = await ordersRes.json().catch(() => ({}));
+        showError("Payment Summary", data.error || "Could not load order history");
       }
+
+      // Belt-and-suspenders: if history empty/failed, seed unpaid from walk-ins + hostel tabs
+      if (orders.length === 0) {
+        const seeded: Order[] = [];
+        if (walkinRes.ok) {
+          const data = await walkinRes.json();
+          seeded.push(...(data.orders || []));
+        } else {
+          const data = await walkinRes.json().catch(() => ({}));
+          if (data.error) showError("Payment Summary", data.error);
+        }
+        if (map.size > 0) {
+          const tabBatches = await Promise.all(
+            [...map.keys()].map(async (checkinId) => {
+              const res = await apiCall({ action: "getGuestAllOrders", checkinId });
+              if (!res.ok) return [] as Order[];
+              const data = await res.json();
+              return ((data.orders || []) as Order[]).filter(
+                (o) => o.paymentStatus !== "paid" && o.status !== "cancelled",
+              );
+            }),
+          );
+          seeded.push(...tabBatches.flat());
+        }
+        orders = seeded;
+      }
+      setAllOrders(orders);
+
       if (menuRes.ok) {
         const data = await menuRes.json();
         setPaidVisibilityDays(parseInt(data.paymentHistoryDays) || 7);
         setCategories(data.categories || []);
         setMenuItems((data.items || []).map((i: any) => ({ id: i.id, categoryId: i.categoryId, name: i.name, nameKannada: i.nameKannada || "", description: i.description || "", price: i.price, priceText: i.priceText || "", tags: i.tags || "[]", isAvailable: i.isAvailable })));
+      } else {
+        const data = await menuRes.json().catch(() => ({}));
+        showError("Payment Summary", data.error || "Could not load menu settings");
       }
     } finally {
       setLoading(false);
     }
-  }, [apiCall]);
+  }, [apiCall, showError]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2615,6 +2677,7 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
 type HistoryRange = "7" | "15" | "30" | "custom";
 
 function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Promise<Response>; onClose: () => void }) {
+  const { showError } = useAdminToast();
   const [range, setRange] = useState<HistoryRange>("7");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -2640,9 +2703,13 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setOrders([]);
+        showError("Payment History", data.error || "Could not load history");
       }
     } finally { setLoading(false); }
-  }, [apiCall, getDateRange]);
+  }, [apiCall, getDateRange, showError]);
 
   useEffect(() => { if (range !== "custom") loadHistory(); }, [range]);
 
