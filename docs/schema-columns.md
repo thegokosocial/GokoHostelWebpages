@@ -394,6 +394,8 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `item_price` | integer | NOT NULL default 0 |
 | `quantity` | integer | NOT NULL default 1 |
 | `line_total` | integer | NOT NULL default 0 |
+| `pricing_status` | text | NOT NULL default "fixed" (`fixed` / `pending`) |
+| `notes` | text | NOT NULL default ""; optional Set-price custom badge (max 24) |
 | `status` | text | NOT NULL default "active" |
 | `sync_id` | text |  |
 | `sync_updated_at` | text |  |

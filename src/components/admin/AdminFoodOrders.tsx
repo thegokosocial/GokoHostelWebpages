@@ -783,6 +783,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [paymentModalGroup, setPaymentModalGroup] = useState<SummaryGroup | null>(null);
   const [paymentModalMethod, setPaymentModalMethod] = useState<string>("online");
   const [discountModalGroup, setDiscountModalGroup] = useState<SummaryGroup | null>(null);
+  const [priceModalItem, setPriceModalItem] = useState<{ orderId: number; itemId: number; itemName: string } | null>(null);
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
   const [voidingItemId, setVoidingItemId] = useState<number | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -1052,15 +1053,19 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     }
   };
 
-  const handleSetItemPrice = async (orderId: number, itemId: number, itemName: string) => {
-    const value = window.prompt(`Final price per unit for ${itemName} (₹):`);
-    if (value === null) return;
-    const rupees = Number(value);
-    if (!Number.isFinite(rupees) || rupees <= 0) { showError("Enter a valid positive price"); return; }
+  const handleSetItemPrice = async (orderId: number, itemId: number, priceRupees: number, label: string) => {
+    if (!Number.isFinite(priceRupees) || priceRupees <= 0) { showError("Enter a valid positive price"); return; }
     setActionBusy(`price_${itemId}`);
     try {
-      const res = await apiCall({ action: "setFoodOrderItemPrice", orderId, orderItemId: itemId, price: Math.round(rupees * 100) });
+      const res = await apiCall({
+        action: "setFoodOrderItemPrice",
+        orderId,
+        orderItemId: itemId,
+        price: Math.round(priceRupees * 100),
+        label: label.trim(),
+      });
       if (res.ok) {
+        setPriceModalItem(null);
         if (selectedGroup) await refreshAfterEdit(selectedGroup);
         showSuccess("Final price saved");
         setSpBillWarning(false);
@@ -1493,10 +1498,13 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                     className="flex h-5 w-5 items-center justify-center rounded border border-brand-mist text-brand-green-dark/60 hover:bg-gray-100 dark:hover:bg-[#1c1c1c] disabled:opacity-50"
                                   >+</button>
                                   <span className="min-w-0 truncate text-brand-green-dark/60">{item.itemName}</span>
+                                  {item.notes?.trim() && (
+                                    <span className="flex-shrink-0 rounded-full bg-violet-100 dark:bg-violet-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700 dark:text-violet-300">{item.notes.trim()}</span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   {spPending ? (
-                                    <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-300 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
+                                    <button type="button" onClick={() => setPriceModalItem({ orderId: order.id, itemId: item.id, itemName: item.itemName })} disabled={actionBusy === `price_${item.id}`} className="rounded bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-300 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
                                   ) : <span className="text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>}
                                   <button
                                     type="button"
@@ -1510,13 +1518,18 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                               </div>
                             ) : (
                               <div className="flex items-center justify-between text-xs">
-                                <span className={cn(spPending ? "font-medium text-amber-800 dark:text-amber-300" : "text-brand-green-dark/60")}>
-                                  {item.quantity}× {item.itemName}
-                                  {spPending && <AlertTriangleIcon className="ml-1 inline h-3 w-3 text-amber-600" />}
+                                <span className={cn("min-w-0", spPending ? "font-medium text-amber-800 dark:text-amber-300" : "text-brand-green-dark/60")}>
+                                  <span className="inline-flex max-w-full flex-wrap items-center gap-1">
+                                    <span className="truncate">{item.quantity}× {item.itemName}</span>
+                                    {item.notes?.trim() && (
+                                      <span className="flex-shrink-0 rounded-full bg-violet-100 dark:bg-violet-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700 dark:text-violet-300">{item.notes.trim()}</span>
+                                    )}
+                                    {spPending && <AlertTriangleIcon className="h-3 w-3 flex-shrink-0 text-amber-600" />}
+                                  </span>
                                 </span>
                                 {spPending ? (
-                                  <button type="button" onClick={() => handleSetItemPrice(order.id, item.id, item.itemName)} disabled={actionBusy === `price_${item.id}`} className="rounded bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-300 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
-                                ) : <span className="text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>}
+                                  <button type="button" onClick={() => setPriceModalItem({ orderId: order.id, itemId: item.id, itemName: item.itemName })} disabled={actionBusy === `price_${item.id}`} className="ml-2 flex-shrink-0 rounded bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-300 disabled:opacity-50">{actionBusy === `price_${item.id}` ? "Saving…" : "Set price"}</button>
+                                ) : <span className="ml-2 flex-shrink-0 text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>}
                               </div>
                             )}
                             {voidingItemId === item.id && (
@@ -1692,6 +1705,15 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           />
         );
       })()}
+
+      {priceModalItem && (
+        <SetPriceModal
+          itemName={priceModalItem.itemName}
+          busy={actionBusy === `price_${priceModalItem.itemId}`}
+          onSave={(priceRupees, label) => void handleSetItemPrice(priceModalItem.orderId, priceModalItem.itemId, priceRupees, label)}
+          onClose={() => setPriceModalItem(null)}
+        />
+      )}
 
       {/* Floating Add New Order button */}
       {onAddNewOrder && !selectedGroup && (
@@ -3261,6 +3283,132 @@ export function formatAdminModification(mod: OrderModification): string {
     default:
       return `${actor}: ${mod.action} on ${mod.itemName || "order"}`;
   }
+}
+
+// ─── Set Price Modal ─────────────────────────────────────────────────────────
+
+const QUICK_PRICE_LABELS = ["Outside", "Market", "Special", "Catch", "Custom"];
+
+function SetPriceModal({
+  itemName,
+  busy,
+  onSave,
+  onClose,
+}: {
+  itemName: string;
+  busy: boolean;
+  onSave: (priceRupees: number, label: string) => void;
+  onClose: () => void;
+}) {
+  const [priceInput, setPriceInput] = useState("");
+  const [label, setLabel] = useState("");
+  const priceRupees = Number(priceInput);
+  const canSave = Number.isFinite(priceRupees) && priceRupees > 0 && !busy;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={busy ? undefined : onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="set-price-title"
+        className="relative w-full max-w-sm rounded-t-2xl sm:rounded-2xl bg-white dark:bg-card shadow-2xl dark:shadow-none animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-h-[90vh] flex flex-col safe-area-pb"
+      >
+        <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-brand-mist sm:hidden" />
+        <div className="flex items-center justify-between border-b border-brand-mist px-5 py-4">
+          <div className="min-w-0 pr-2">
+            <h3 id="set-price-title" className="text-base font-bold text-brand-green-dark">Set final price</h3>
+            <p className="truncate text-xs text-brand-green-dark/50">{itemName}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={busy} className="flex-shrink-0 rounded-lg p-1.5 hover:bg-brand-sand disabled:opacity-50">
+            <XIcon className="h-5 w-5 text-brand-green-dark/60" />
+          </button>
+        </div>
+
+        <div className="space-y-4 overflow-y-auto px-5 py-4">
+          <div>
+            <label htmlFor="set-price-rupees" className="mb-1.5 block text-xs font-medium text-brand-green-dark/70">Price per unit (₹)</label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-brand-green-dark/50">₹</span>
+              <input
+                id="set-price-rupees"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="1"
+                autoFocus
+                value={priceInput}
+                onChange={(e) => setPriceInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && canSave) onSave(priceRupees, label);
+                }}
+                placeholder="0"
+                className="w-full rounded-xl border border-brand-mist bg-white dark:bg-card py-3 pl-8 pr-3 text-lg font-bold text-brand-green-dark outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/20"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="set-price-label" className="mb-1.5 block text-xs font-medium text-brand-green-dark/70">
+              Custom label <span className="font-normal text-brand-green-dark/40">(optional)</span>
+            </label>
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {QUICK_PRICE_LABELS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => setLabel(chip === "Custom" ? "" : chip)}
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                    label === chip
+                      ? "bg-violet-600 text-white"
+                      : "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-900",
+                  )}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+            <input
+              id="set-price-label"
+              type="text"
+              maxLength={24}
+              value={label}
+              onChange={(e) => setLabel(e.target.value.slice(0, 24))}
+              placeholder="e.g. Outside, Market rate…"
+              className="w-full rounded-xl border border-brand-mist bg-white dark:bg-card px-3 py-2.5 text-sm text-brand-green-dark outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/20"
+            />
+            {label.trim() && (
+              <p className="mt-2 flex items-center gap-1.5 text-[11px] text-brand-green-dark/50">
+                Preview
+                <span className="rounded-full bg-violet-100 dark:bg-violet-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700 dark:text-violet-300">{label.trim()}</span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2 border-t border-brand-mist px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 rounded-xl border border-brand-mist px-4 py-3 text-sm font-medium text-brand-green-dark/70 hover:bg-brand-sand disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(priceRupees, label)}
+            disabled={!canSave}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-green px-4 py-3 text-sm font-semibold text-white hover:bg-brand-green/90 disabled:opacity-50"
+          >
+            {busy ? <Loader2Icon className="h-4 w-4 animate-spin" /> : null}
+            Save price
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Discount Modal ──────────────────────────────────────────────────────────

@@ -416,7 +416,7 @@ export async function POST(req: NextRequest) {
       }
 
       case "setFoodOrderItemPrice": {
-        const { orderId, orderItemId, price } = rest;
+        const { orderId, orderItemId, price, label } = rest;
         const finalPrice = Number(price);
         if (!Number.isInteger(orderId) || !Number.isInteger(orderItemId) || !Number.isInteger(finalPrice) || finalPrice <= 0) {
           return NextResponse.json({ error: "A positive final price is required" }, { status: 400 });
@@ -426,8 +426,14 @@ export async function POST(req: NextRequest) {
         if (!order || !item) return NextResponse.json({ error: "Order item not found" }, { status: 404 });
         if (item.pricingStatus !== "pending") return NextResponse.json({ error: "Only pending prices can be finalized" }, { status: 400 });
         if (order.status === "cancelled" || order.paymentStatus === "paid") return NextResponse.json({ error: "This order cannot be repriced" }, { status: 400 });
+        const customLabel = typeof label === "string" ? label.trim().slice(0, 24) : "";
         const oldPrice = item.itemPrice;
-        await getDb().update(foodOrderItems).set({ itemPrice: finalPrice, lineTotal: finalPrice * item.quantity, pricingStatus: "fixed" }).where(eq(foodOrderItems.id, orderItemId));
+        await getDb().update(foodOrderItems).set({
+          itemPrice: finalPrice,
+          lineTotal: finalPrice * item.quantity,
+          pricingStatus: "fixed",
+          notes: customLabel,
+        }).where(eq(foodOrderItems.id, orderItemId));
         const activeItems = (await getFoodOrderItems(orderId)).filter((i) => i.status !== "voided");
         const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
         const exemptions = await getMenuItemCategoryExemptions(activeItems.map((i) => i.menuItemId));
@@ -437,9 +443,22 @@ export async function POST(req: NextRequest) {
         const tax = Math.round((subtotal * foodTaxPercent(await getSetting("food_tax_rate"))) / 100);
         const total = subtotal + tax;
         await updateFoodOrder(orderId, { subtotal, tax, total, discount });
-        await addOrderModification({ orderId, action: "price_finalized", itemId: orderItemId, oldValue: String(oldPrice), newValue: String(finalPrice), reason: "Final market price", modifiedBy: actorName });
-        await addAuditEntry({ username: actorName, action: "food_item_price_finalized", target: `order:${orderId}/item:${orderItemId}`, details: `Finalized ${item.itemName} at ₹${(finalPrice / 100).toFixed(2)} per unit` });
-        return NextResponse.json({ success: true, role, subtotal, tax, total });
+        await addOrderModification({
+          orderId,
+          action: "price_finalized",
+          itemId: orderItemId,
+          oldValue: String(oldPrice),
+          newValue: String(finalPrice),
+          reason: customLabel ? `Final market price · ${customLabel}` : "Final market price",
+          modifiedBy: actorName,
+        });
+        await addAuditEntry({
+          username: actorName,
+          action: "food_item_price_finalized",
+          target: `order:${orderId}/item:${orderItemId}`,
+          details: `Finalized ${item.itemName} at ₹${(finalPrice / 100).toFixed(2)} per unit${customLabel ? ` [${customLabel}]` : ""}`,
+        });
+        return NextResponse.json({ success: true, role, subtotal, tax, total, notes: customLabel });
       }
 
       case "updateItemQuantity": {

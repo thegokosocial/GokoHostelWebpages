@@ -52,9 +52,27 @@ describe("admin market-pricing workflows", () => {
   it("finalizes a pending line using quantity and recalculates totals", async () => {
     const response = await POST(req({ orderId: 10, orderItemId: 20, price: 45000 }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ subtotal: 90000, tax: 4500, total: 94500 });
+    expect(await response.json()).toMatchObject({ subtotal: 90000, tax: 4500, total: 94500, notes: "" });
     expect(q.updateFoodOrder).toHaveBeenCalledWith(10, { subtotal: 90000, tax: 4500, total: 94500, discount: 0 });
     expect(q.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({ action: "price_finalized", oldValue: "0", newValue: "45000" }));
+  });
+
+  it("stores an optional custom label on the line notes", async () => {
+    const response = await POST(req({ orderId: 10, orderItemId: 20, price: 20000, label: "  Outside split  " }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ notes: "Outside split" });
+    expect(pendingItem).toMatchObject({ itemPrice: 20000, lineTotal: 40000, pricingStatus: "fixed", notes: "Outside split" });
+    expect(q.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({
+      action: "price_finalized",
+      reason: "Final market price · Outside split",
+    }));
+  });
+
+  it("trims custom labels to 24 characters", async () => {
+    const long = "abcdefghijklmnopqrstuvwxyz";
+    const response = await POST(req({ orderId: 10, orderItemId: 20, price: 10000, label: long }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ notes: "abcdefghijklmnopqrstuvwx" });
   });
 
   it("blocks payment while any active line is still pending", async () => {
