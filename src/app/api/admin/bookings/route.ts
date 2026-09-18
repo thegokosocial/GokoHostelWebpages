@@ -24,7 +24,10 @@ import {
   getRoomTypeMappings, getRatePlanMappings, getAllDailyRates,
   deactivateBedBlocksByBedIds, shortenAssignedCheckout,
   getCheckinById, updateCheckin, getBookingByRef,
+  reopenWalkinCheckinsForBooking, hardDeleteBookingCascade, bookingHasPlatformFinance, findWalkinCheckinsByBookingRefs,
+  addAuditEntry,
 } from "@/db/queries";
+import { isRecordsLinkedWalkinBooking, checkinLinksBooking } from "@/lib/bookingResolution";
 import { todayIST } from "@/lib/utils";
 import { generateGokoBookingId } from "@/lib/bookingReference";
 import { isStayPayMethod, isPrepaidStatus, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
@@ -272,6 +275,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   getWhatsAppTemplates: "canViewBookings",
   saveWhatsAppTemplates: ["canManageBookingTemplates", "canViewBookings"],
   createBooking: "canAddBooking",
+  hardDeleteRecordsWalkinBooking: "canDeleteBooking",
   assignBeds: "canAddBooking",
   checkIn: ["canCheckIn", "canAddBooking"],
   collectStayPayment: ["canCheckIn", "canAddBooking"],
@@ -1254,7 +1258,76 @@ export async function POST(req: NextRequest) {
         eventId: `booking-cancel-${bookingId}-${fullCancel ? "full" : selectedAssignmentIds?.join("-")}`,
         category: "booking",
       });
-      return NextResponse.json({ success: true, warning: inventoryWarning(inventory) });
+      let reopenedCheckinIds: number[] = [];
+      if (fullCancel && detail) {
+        reopenedCheckinIds = await reopenWalkinCheckinsForBooking({
+          bookingRef: detail.booking.bookingRef,
+          gokoBookingId: detail.booking.gokoBookingId,
+          cmBookingId: detail.booking.cmBookingId,
+          actingUser,
+        });
+      }
+      return NextResponse.json({ success: true, warning: inventoryWarning(inventory), reopenedCheckinIds });
+    }
+
+    // --- Hard-delete Records-linked walk-in/offline booking ---
+
+    if (action === "hardDeleteRecordsWalkinBooking") {
+      const bookingId = Number(body.bookingId);
+      if (!Number.isInteger(bookingId) || bookingId <= 0) {
+        return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+      }
+      const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      const linkRefs = [detail.booking.bookingRef, detail.booking.gokoBookingId, detail.booking.cmBookingId]
+        .map((v) => String(v || "").trim())
+        .filter(Boolean);
+      const walkinCheckins = await findWalkinCheckinsByBookingRefs(linkRefs);
+      if (!isRecordsLinkedWalkinBooking(detail.booking, walkinCheckins)) {
+        return NextResponse.json({
+          error: "Only walk-in/offline bookings created from Records can be permanently deleted",
+        }, { status: 409 });
+      }
+      if (await bookingHasPlatformFinance(bookingId)) {
+        return NextResponse.json({
+          error: "This booking has platform finance history and cannot be deleted; use cancellation or an adjustment.",
+        }, { status: 409 });
+      }
+
+      const dates = bookingDateRange(detail.booking.checkinDate, detail.booking.checkoutDate);
+      const dormIds = activeAssignmentDormIds(detail.assignments);
+      const before = await otaFingerprint(dormIds, dates);
+      const linkedCheckin = walkinCheckins.find((c) => checkinLinksBooking(c, detail.booking));
+      const snapshot = {
+        bookingId,
+        guestName: detail.booking.guestName,
+        contact: detail.booking.contact,
+        bookingRef: detail.booking.bookingRef,
+        gokoBookingId: detail.booking.gokoBookingId,
+        checkinDate: detail.booking.checkinDate,
+        checkoutDate: detail.booking.checkoutDate,
+        amountTotal: detail.booking.amountTotal,
+        amountPaid: detail.booking.amountPaid,
+        status: detail.booking.status,
+        checkinId: linkedCheckin?.id ?? null,
+        assignmentCount: (detail.assignments || []).filter((a) => a.status === "assigned").length,
+      };
+
+      const { receiptIds } = await hardDeleteBookingCascade(bookingId);
+      const reopenedCheckinIds = await reopenWalkinCheckinsForBooking({
+        bookingRef: detail.booking.bookingRef,
+        gokoBookingId: detail.booking.gokoBookingId,
+        cmBookingId: detail.booking.cmBookingId,
+        actingUser,
+      });
+      await pushIfOtaChanged(before, dormIds, dates).catch(() => {});
+      await addAuditEntry({
+        username: actingUser,
+        action: "walkin_booking_hard_deleted",
+        target: `booking:${bookingId}`,
+        details: JSON.stringify({ ...snapshot, receiptIds, reopenedCheckinIds }),
+      });
+      return NextResponse.json({ success: true, reopenedCheckinIds, receiptIds });
     }
 
     // --- No Show ---

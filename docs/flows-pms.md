@@ -28,7 +28,7 @@ Aiosell availability (`getDateAwareAvailability`): total beds − active blocks 
 
 Inventory grid cells and the override modal use the same remaining: `remainingSplit(available, otaCeiling(...), onlineAssigned + unassignedOta)`. **Unassigned OTA** is channel_manager bookings for that room type with no **online** bed yet — a hold on the OTA ceiling, not a physical bed. The OTA/walk-in numbers inside the modal (`overrideRemainingInput` / `overridePreview`) must match the cell. Saving uses `overrideCeilingToSave` so the ceiling still subtracts unassigned OTA (do not persist `ceilingFromRemaining(typed, onlineAssigned)` alone). Physical identity is `total = booked + blocked + online + offline`; unassigned OTA is a separate row.
 
-Math: `src/lib/inventoryAvailability.ts` (tested).
+Math: `src/lib/inventoryAvailability.ts` (tested). Past nights (`date < todayIST`) are accounting-only in the booking picker: tagged `offline`, ignoring OTA holds/online ceiling for those nights. `otaFingerprint` / `pushIfOtaChanged` only consider nights `>= todayIST`, so a fully past walk-in create does not push Aiosell.
 
 ---
 

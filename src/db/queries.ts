@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -665,6 +665,83 @@ export async function updateBookingStatus(id: number, status: string) {
 export async function deleteBooking(id: number) {
   const db = getDb();
   return db.delete(bookings).where(eq(bookings.id, id));
+}
+
+/** Hard-delete a booking and booking-owned rows. Caller must enforce eligibility. */
+export async function hardDeleteBookingCascade(bookingId: number): Promise<{ receiptIds: string[] }> {
+  const db = getDb();
+  const receipts = await db.select({ receiptId: guestReceipts.receiptId })
+    .from(guestReceipts)
+    .where(and(eq(guestReceipts.sourceType, "booking"), eq(guestReceipts.sourceId, bookingId)));
+  await db.delete(bookingBedAssignments).where(eq(bookingBedAssignments.bookingId, bookingId));
+  await db.delete(bookingHistory).where(eq(bookingHistory.bookingId, bookingId));
+  await db.delete(guestReceipts).where(and(eq(guestReceipts.sourceType, "booking"), eq(guestReceipts.sourceId, bookingId)));
+  try {
+    await db.delete(guestBookingLookupChallenges).where(eq(guestBookingLookupChallenges.bookingId, bookingId));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/no such table/i.test(message)) throw error;
+  }
+  await db.delete(bookings).where(eq(bookings.id, bookingId));
+  return { receiptIds: receipts.map((r) => r.receiptId) };
+}
+
+export async function bookingHasPlatformFinance(bookingId: number): Promise<boolean> {
+  const db = getDb();
+  try {
+    const [receivable, allocation] = await Promise.all([
+      db.select({ id: platformReceivableEntries.id }).from(platformReceivableEntries).where(eq(platformReceivableEntries.bookingId, bookingId)).limit(1),
+      db.select({ id: platformSettlementAllocations.id }).from(platformSettlementAllocations).where(eq(platformSettlementAllocations.bookingId, bookingId)).limit(1),
+    ]);
+    return Boolean(receivable[0] || allocation[0]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no such table|no such column/i.test(message)) return false;
+    throw error;
+  }
+}
+
+/** Walk-in/Offline check-ins whose booking_id or booking_linked_ref matches any of the refs. */
+export async function findWalkinCheckinsByBookingRefs(refs: string[]) {
+  const cleaned = [...new Set(refs.map((r) => String(r || "").trim()).filter(Boolean))];
+  if (cleaned.length === 0) return [];
+  const db = getDb();
+  return db.select().from(checkins).where(
+    and(
+      or(eq(checkins.bookingPlatform, "Walk-in"), eq(checkins.bookingPlatform, "Offline booking"))!,
+      or(inArray(checkins.bookingId, cleaned), inArray(checkins.bookingLinkedRef, cleaned))!,
+    ),
+  );
+}
+
+/** Reopen Walk-in/Offline check-ins that were marked created/linked for this booking's refs. */
+export async function reopenWalkinCheckinsForBooking(opts: {
+  bookingRef?: string | null;
+  gokoBookingId?: string | null;
+  cmBookingId?: string | null;
+  actingUser: string;
+}): Promise<number[]> {
+  const refs = [...new Set(
+    [opts.bookingRef, opts.gokoBookingId, opts.cmBookingId]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean),
+  )];
+  if (refs.length === 0) return [];
+  const rows = (await findWalkinCheckinsByBookingRefs(refs)).filter(
+    (row) => row.status === "active" && (row.bookingResolution === "created" || row.bookingResolution === "linked"),
+  );
+  const now = new Date().toISOString();
+  const reopened: number[] = [];
+  for (const row of rows) {
+    await updateCheckin(row.id, {
+      bookingResolution: "pending",
+      bookingLinkedRef: "",
+      bookingResolutionAt: now,
+      bookingResolutionBy: opts.actingUser,
+    });
+    reopened.push(row.id);
+  }
+  return reopened;
 }
 
 export async function deleteEmailBookings() {
@@ -2163,7 +2240,7 @@ export async function getAvailableBedsForRange(
     );
     if (nights.length === 0) return [];
     const unassignedHolds = await getUnassignedOtaHoldsForRange(checkinDate, checkoutDate, excludeBookingId);
-    const tagged = tagBedsForPicker(physical, blockedOnly, allBeds, nights, blocks, assignments, overrides, unassignedHolds);
+    const tagged = tagBedsForPicker(physical, blockedOnly, allBeds, nights, blocks, assignments, overrides, unassignedHolds, todayIST());
     if (!omitOwnAssigned || ownAssignedBedIds.size === 0) return tagged;
     return tagged.filter((bed) => !ownAssignedBedIds.has(bed.id));
   });

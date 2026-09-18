@@ -23,9 +23,11 @@ import {
   RefreshCwIcon,
   MessageCircleIcon,
   SendIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { STATUS_COLORS, platformLogo, STATUS_LABELS, formatCurrency, getHostelToday, getNights, collectionCopy, displayedStayPayment } from "./utils";
 import { parseGokoWalkin, walkinDiscountOnGross } from "@/lib/bookingPricing";
+import { isManualWalkinBooking } from "@/lib/bookingResolution";
 import { stayDueAtHotel, stayRefundCap } from "@/lib/stayPayment";
 import { CheckInPopup } from "./CheckInPopup";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -112,7 +114,7 @@ export function BookingDetailPanel({
   const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setBusy(true);
     try {
-      await onAction(action, booking.id, extra);
+      return await onAction(action, booking.id, extra);
     } finally {
       setBusy(false);
     }
@@ -219,6 +221,9 @@ export function BookingDetailPanel({
     && (hasPermission(role, permissions, "canAddBooking") || hasPermission(role, permissions, "canCheckIn"));
   const collectedHint = formatCurrency(booking.amountPaid || 0);
   const canEditBooking = booking.source === "manual" && hasPermission(role, permissions, "canAddBooking");
+  const canHardDeleteRecordsWalkin = isManualWalkinBooking(booking)
+    && Boolean(String(booking.bookingRef || "").trim())
+    && hasPermission(role, permissions, "canDeleteBooking");
   const canReleaseForNoShow = booking.source === "channel_manager"
     && (booking.platform || "").toLowerCase().replace(/[._\s-]/g, "") === "bookingcom"
     && hasPermission(role, permissions, "canDeleteBooking");
@@ -532,6 +537,23 @@ export function BookingDetailPanel({
                 No Show
               </Button>
             )}
+            {canHardDeleteRecordsWalkin && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setConfirmAction({
+                  action: "hardDeleteRecordsWalkinBooking",
+                  title: "Delete walk-in booking",
+                  description: `Permanently delete ${booking.guestName}'s Records walk-in booking and its room receipts? The check-in record is kept.`,
+                  variant: "destructive",
+                  confirmLabel: "Delete permanently",
+                })}
+                disabled={busy}
+              >
+                <Trash2Icon className="size-3.5" />
+                Delete booking
+              </Button>
+            )}
             {booking.status === "no_show" && booking.noShowPmsStatus === "failed" && hasPermission(role, permissions, "canDeleteBooking") && (
               <Button size="sm" variant="outline" onClick={() => void handleAction("retryNoShow")} disabled={busy}>
                 <RefreshCwIcon className="size-3.5" /> Retry Aiosell no-show
@@ -699,7 +721,8 @@ export function BookingDetailPanel({
           onConfirm={async () => {
             const action = confirmAction.action;
             setConfirmAction(null);
-            await handleAction(action);
+            const ok = await handleAction(action);
+            if (ok && action === "hardDeleteRecordsWalkinBooking") onClose();
           }}
           onCancel={() => setConfirmAction(null)}
         />

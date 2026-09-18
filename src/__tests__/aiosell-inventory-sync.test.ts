@@ -44,6 +44,10 @@ vi.mock("@/lib/aiosell", async (importOriginal) => {
 vi.mock("@/lib/pmsLog", () => ({
   logPmsCall: vi.fn(),
 }));
+vi.mock("@/lib/utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/utils")>();
+  return { ...actual, todayIST: () => "2026-09-01" };
+});
 
 import { getDateAwareAvailability, getDateAwareAvailabilityRange, otaFingerprint, pushIfOtaChanged, retryDirtyInventory, triggerInventoryPush } from "@/lib/aiosellSync";
 import { logPmsCall } from "@/lib/pmsLog";
@@ -335,6 +339,12 @@ describe("pushIfOtaChanged", () => {
   it("skips empty dates or dorms", async () => {
     await pushIfOtaChanged("x", [], ["2026-09-05"]);
     await pushIfOtaChanged("x", [8], []);
+    expect(pushInventory).not.toHaveBeenCalled();
+  });
+
+  it("skips fully past nights without pushing", async () => {
+    const result = await pushIfOtaChanged("before", [8], ["2026-08-30", "2026-08-31"]);
+    expect(result).toMatchObject({ attempted: false, accepted: true });
     expect(pushInventory).not.toHaveBeenCalled();
   });
 });

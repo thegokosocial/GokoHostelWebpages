@@ -525,6 +525,9 @@ describe("Mock workflows", () => {
 describe("Wiring", () => {
   it("tags picker beds including blocked, stores inventory_pool, and only pushes PMS when OTA numbers change", () => {
     expect(queries).toContain("tagBedsForPicker(physical, blockedOnly");
+    expect(queries).toContain("todayIST()");
+    expect(queries).toContain("hardDeleteBookingCascade");
+    expect(queries).toContain("reopenWalkinCheckinsForBooking");
     expect(queries).toContain("getUnassignedOtaHoldsForRange");
     expect(queries).toContain("unassignedHolds");
     expect(queries).toContain("inventory_pool");
@@ -534,13 +537,17 @@ describe("Wiring", () => {
     expect(queries).toContain("[...new Set(rows.map(r => r.bedId))]");
     expect(route).toContain("assignTaggedBeds");
     expect(route).toContain('status: "cancelled"');
+    expect(route).toContain("hardDeleteRecordsWalkinBooking");
+    expect(route).toContain("reopenWalkinCheckinsForBooking");
     expect(route).toContain("pushIfOtaChanged");
     expect(route).toContain('if (pools.some((pool) => pool === "online"))');
     expect(route).toContain("occupiedNights");
     expect(sync).toContain("getOnlineAssignmentCountForDorm");
     expect(sync).toContain("getUnassignedOtaRoomCountForDorm");
     expect(sync).toContain("computeNightAvailability");
-    expect(sync).toContain("if (before !== after) return await triggerInventoryPush(dates, dormIds)");
+    expect(sync).toContain("if (before !== after) return await triggerInventoryPush(futureDates, dormIds)");
+    expect(sync).toContain("dates.filter((d) => d >= today)");
+    expect(sync).toContain("d >= today");
     expect(sync).toContain("mappings.some((m) => m.dormId === dormId)");
     expect(queries).toContain("if (nights.length === 0) return []");
     expect(route).toContain("checkoutDate must be after checkinDate");

@@ -409,6 +409,8 @@ export function tagBedsForPicker<T extends { id: number; dormId: number; bedId: 
   assignments: AssignmentRef[],
   overrides: OverrideRef[],
   unassignedHolds?: UnassignedOtaHold[],
+  /** When set, past nights (date < today) are accounting-only: offline pool, no OTA holds. */
+  today?: string,
 ): Array<T & { pool: InventoryPool }> {
   const freeByDorm = new Map<number, T[]>();
   for (const bed of physicalBeds) {
@@ -424,8 +426,23 @@ export function tagBedsForPicker<T extends { id: number; dormId: number; bedId: 
   }
   const dormIds = new Set([...freeByDorm.keys(), ...blockedByDorm.keys()]);
   const out: Array<T & { pool: InventoryPool }> = [];
+  const futureNights = today ? nights.filter((n) => n >= today) : nights;
+  const holdsForPool = today && unassignedHolds
+    ? unassignedHolds.filter((h) => h.date >= today)
+    : unassignedHolds;
+  const pastOnly = Boolean(today && nights.length > 0 && futureNights.length === 0);
   for (const dormId of dormIds) {
-    const slots = minPoolForStay(dormId, nights, allBeds, blocks, assignments, overrides, unassignedHolds);
+    const slots = pastOnly
+      ? { online: 0, offline: Number.POSITIVE_INFINITY }
+      : minPoolForStay(
+        dormId,
+        futureNights.length > 0 ? futureNights : nights,
+        allBeds,
+        blocks,
+        assignments,
+        overrides,
+        holdsForPool,
+      );
     const freeIds = new Set((freeByDorm.get(dormId) ?? []).map((b) => b.id));
     const blockedIds = new Set((blockedByDorm.get(dormId) ?? []).map((b) => b.id));
     const units = sellableUnits((allBeds as T[]).filter((b) => b.dormId === dormId));
@@ -440,7 +457,9 @@ export function tagBedsForPicker<T extends { id: number; dormId: number; bedId: 
       return freeBeds.length === unit.beds.length || (unit.type === "Double" && freeBeds.length > 0);
     });
     eligibleUnits.forEach((unit, i) => {
-      const pool = i < slots.online ? "online" : i < slots.online + slots.offline ? "offline" : null;
+      const pool = pastOnly
+        ? "offline"
+        : i < slots.online ? "online" : i < slots.online + slots.offline ? "offline" : null;
       if (!pool) return;
       unit.beds.filter((bed) => freeIds.has(bed.id)).forEach((bed) => out.push({ ...bed, pool }));
     });

@@ -16,7 +16,7 @@ import { checkinIdsMatchingContact } from "@/lib/foodTab";
 import { getReconciliationStatus } from "@/lib/reconciliation";
 import { activeCheckinIdsForContact, getPendingFoodTab } from "@/lib/foodTabDb";
 import { dedupeCheckins } from "@/lib/checkinDuplicate";
-import { bookingReference, getCheckinBookingMatch, isWalkinBookingCheckin } from "@/lib/bookingResolution";
+import { bookingReference, checkinLinksBooking, getCheckinBookingMatch, isManualWalkinBooking, isWalkinBookingCheckin, liveBookingCoversResolution, resolutionNeedsReopen } from "@/lib/bookingResolution";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
@@ -176,13 +176,65 @@ export async function POST(req: NextRequest) {
       ]);
       const months = await getCheckinMonths();
       const allBookings = await getAllBookings();
-      const bookingResolutions: Record<string, { state: string; match?: { id: number; reference: string; guestName: string; checkinDate: string; checkoutDate: string; platform: string; method: string } }> = {};
+      const bookingResolutions: Record<string, {
+        state: string;
+        match?: { id: number; reference: string; guestName: string; checkinDate: string; checkoutDate: string; platform: string; method: string };
+        linkedBookingId?: number;
+        deletableBookingId?: number;
+      }> = {};
       for (const checkin of dbRows) {
-        if (!isWalkinBookingCheckin(checkin) || checkin.bookingResolution !== "pending") continue;
+        if (!isWalkinBookingCheckin(checkin)) continue;
+        if (resolutionNeedsReopen(checkin.bookingResolution) && !liveBookingCoversResolution(checkin, allBookings)) {
+          const now = new Date().toISOString();
+          await updateCheckin(checkin.id, {
+            bookingResolution: "pending",
+            bookingLinkedRef: "",
+            bookingResolutionAt: now,
+            bookingResolutionBy: "system",
+          });
+          checkin.bookingResolution = "pending";
+          checkin.bookingLinkedRef = "";
+        }
+
+        const linkedBookings = allBookings.filter((b) => isManualWalkinBooking(b) && checkinLinksBooking(checkin, b));
+        const liveLinked = linkedBookings.find((b) => !["cancelled", "no_show"].includes(b.status));
+        const deletable = liveLinked || linkedBookings.find((b) => b.status === "cancelled") || linkedBookings[0];
+
+        if (checkin.bookingResolution !== "pending") {
+          if (liveLinked) {
+            bookingResolutions[String(checkin.id)] = {
+              state: "resolved",
+              linkedBookingId: liveLinked.id,
+              deletableBookingId: deletable?.id,
+              match: {
+                id: liveLinked.id,
+                reference: bookingReference(liveLinked),
+                guestName: liveLinked.guestName,
+                checkinDate: liveLinked.checkinDate,
+                checkoutDate: liveLinked.checkoutDate || addCalendarDays(liveLinked.checkinDate, 1),
+                platform: liveLinked.platform || "",
+                method: "linked",
+              },
+            };
+          }
+          continue;
+        }
         const match = getCheckinBookingMatch(checkin, allBookings);
         bookingResolutions[String(checkin.id)] = match
-          ? { state: "matched", match: { id: match.booking.id, reference: bookingReference(match.booking), guestName: match.booking.guestName, checkinDate: match.booking.checkinDate, checkoutDate: match.booking.checkoutDate || addCalendarDays(match.booking.checkinDate, 1), platform: match.booking.platform || "", method: match.method } }
-          : { state: "pending" };
+          ? {
+              state: "matched",
+              match: {
+                id: match.booking.id,
+                reference: bookingReference(match.booking),
+                guestName: match.booking.guestName,
+                checkinDate: match.booking.checkinDate,
+                checkoutDate: match.booking.checkoutDate || addCalendarDays(match.booking.checkinDate, 1),
+                platform: match.booking.platform || "",
+                method: match.method,
+              },
+              deletableBookingId: deletable?.id,
+            }
+          : { state: "pending", deletableBookingId: deletable?.id };
       }
       return NextResponse.json({ rows, role, tabs: months, currentTab: tabName, permissions, bookingResolutions });
     }

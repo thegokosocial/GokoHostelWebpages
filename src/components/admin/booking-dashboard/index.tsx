@@ -288,6 +288,11 @@ export function BookingDashboard({
             await loadData(true);
             if (view === "all") await loadAllBookings();
           }
+          if (action === "hardDeleteRecordsWalkinBooking") {
+            if (externalDetail?.booking.id === bookingId) setExternalDetail(null);
+            setSelectedBookingId(null);
+            return true;
+          }
           if (externalDetail?.booking.id === bookingId) {
             const detailRes = await apiCall({ action: "getDetail", bookingId });
             if (detailRes.ok) {

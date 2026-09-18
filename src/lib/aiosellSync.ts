@@ -66,8 +66,10 @@ export async function getDateAwareAvailabilityRange(
 }
 
 export async function otaFingerprint(dormIds: number[], dates: string[]): Promise<string> {
+  const today = todayIST();
   const dorms = [...new Set(dormIds.filter((id) => id > 0))];
-  const nights = [...new Set(dates.filter(Boolean))];
+  // Past nights are accounting-only for channel inventory — fingerprint live OTA nights only.
+  const nights = [...new Set(dates.filter((d) => d && d >= today))];
   const parts: string[] = [];
   for (const dormId of dorms) {
     for (const date of nights) {
@@ -78,9 +80,11 @@ export async function otaFingerprint(dormIds: number[], dates: string[]): Promis
 }
 
 export async function pushIfOtaChanged(before: string, dormIds: number[], dates: string[]): Promise<InventorySyncResult | void> {
-  if (dates.length === 0 || dormIds.length === 0) return { attempted: false, accepted: true };
-  const after = await otaFingerprint(dormIds, dates);
-  if (before !== after) return await triggerInventoryPush(dates, dormIds);
+  const today = todayIST();
+  const futureDates = dates.filter((d) => d >= today);
+  if (futureDates.length === 0 || dormIds.length === 0) return { attempted: false, accepted: true };
+  const after = await otaFingerprint(dormIds, futureDates);
+  if (before !== after) return await triggerInventoryPush(futureDates, dormIds);
   return { attempted: false, accepted: true };
 }
 
