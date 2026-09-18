@@ -2,7 +2,7 @@
 
 All app pushes use `src/lib/pushNotify.ts` and `public/sw.js`; no separate legacy display system is maintained. The header bell opens device notification settings, not an event inbox. Existing recipients and permissions are unchanged.
 
-The dialog always shows an **Install app** section while the admin UI is not running as an installed/standalone app: Chrome gets a native Install button when `beforeinstallprompt` is available, otherwise menu instructions; iPhone/iPad always get Share → Add to Home Screen steps. Enable notifications on iOS is disabled in a Safari tab and only runs from the Home Screen app (iOS/iPadOS 16.4+). Subscribe waits for `navigator.serviceWorker.ready` before `pushManager.subscribe`.
+The dialog always shows an **Install app** section (admin bell only). Chrome/Android gets a native Install button when `beforeinstallprompt` is available, otherwise menu instructions. **iPhone/iPad have no install API** — the dialog shows Safari Share → Add to Home Screen steps (detects non-Safari browsers and offers a copyable `/admin` link). Already-installed sessions show a short confirmation. The public website does **not** advertise a web app manifest or Apple web-app meta — those live on `src/app/admin/layout.tsx` only (with `apple-touch-icon` and `apple-mobile-web-app-capable`) — so guests do not get browser install pop-ups. Service worker registration still runs on iOS Safari tabs so Add to Home Screen can attach a real app; Enable notifications stays disabled until the Home Screen app is open (iOS/iPadOS 16.4+). Subscribe waits for `navigator.serviceWorker.ready` before `pushManager.subscribe`.
 
 ## Event inventory
 

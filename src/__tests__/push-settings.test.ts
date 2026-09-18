@@ -124,18 +124,33 @@ describe("notification settings workflows", () => {
 });
 describe("notification settings install and iOS contracts", () => {
   const uiSource = readFileSync(new URL("../components/admin/PwaInstallBanner.tsx", import.meta.url), "utf8");
+  const rootLayout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const adminLayout = readFileSync(new URL("../app/admin/layout.tsx", import.meta.url), "utf8");
 
-  it("always shows Install app guidance in the notification dialog when not installed", () => {
-    expect(uiSource).toContain("showInstallSection");
+  it("keeps Install app only in the admin notification dialog, not the public site", () => {
     expect(uiSource).toContain("Install app");
+    expect(uiSource).toContain("Install only lives here");
     expect(uiSource).toContain("Add to Home Screen");
-    expect(uiSource).not.toMatch(/showInstallButton\s*=\s*installPrompt/);
+    expect(uiSource).toContain("detectIosSafari");
+    expect(uiSource).toContain("Copy Admin link for Safari");
+    expect(uiSource).not.toMatch(/showInstallSection/);
+    expect(rootLayout).not.toContain('manifest: "/manifest.webmanifest"');
+    expect(rootLayout).not.toContain("appleWebApp");
+    expect(adminLayout).toContain('manifest: "/manifest.webmanifest"');
+    expect(adminLayout).toContain("appleWebApp");
+    expect(adminLayout).toContain("apple-touch-icon.png");
+  });
+
+  it("registers the service worker on iOS Safari tabs before Home Screen install", () => {
+    expect(uiSource).toContain("Always register the SW on admin");
+    expect(uiSource).toContain("pushBlocked");
+    expect(uiSource).toContain("navigator.serviceWorker.ready");
+    expect(uiSource).toContain("Push does not work from a normal Safari tab");
   });
 
   it("blocks iPhone Safari-tab enable and waits for service worker ready before subscribe", () => {
     expect(uiSource).toContain("iosPushBlockedReason");
     expect(uiSource).toContain("iosNeedsHomeScreen");
     expect(uiSource).toContain("navigator.serviceWorker.ready");
-    expect(uiSource).toContain("Safari browser tabs cannot enable push");
   });
 });

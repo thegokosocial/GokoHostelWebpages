@@ -24,10 +24,9 @@ export const metadata: Metadata = {
     template: `%s | ${site.shortName}`,
   },
   description: site.description,
-  manifest: "/manifest.webmanifest",
+  // No web app manifest here — installability is admin-only (see admin/layout.tsx)
+  // so public/marketing pages do not get Chrome/Safari install prompts.
   icons: { icon: "/logo.png", apple: "/icons/apple-touch-icon.png" },
-  appleWebApp: { capable: true, title: site.shortName, statusBarStyle: "black-translucent" },
-  other: { "mobile-web-app-capable": "yes" },
   openGraph: {
     type: "website",
     locale: "en_IN",

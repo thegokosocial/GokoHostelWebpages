@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { DownloadIcon, BellIcon, SmartphoneIcon, CheckCircleIcon, CircleAlertIcon, Loader2Icon, SendIcon, BellOffIcon, Volume2Icon } from "lucide-react";
+import { DownloadIcon, BellIcon, SmartphoneIcon, CheckCircleIcon, CircleAlertIcon, Loader2Icon, SendIcon, BellOffIcon, Volume2Icon, ShareIcon, CopyIcon } from "lucide-react";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -21,9 +21,20 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer as ArrayBuffer;
 }
 
+/** iPhone/iPod + iPad (including iPadOS desktop UA). */
 function detectIos(): boolean {
   if (typeof navigator === "undefined") return false;
-  return /iPhone|iPad|iPod/.test(navigator.userAgent) && !(window as unknown as { MSStream?: unknown }).MSStream;
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  // iPadOS 13+ often reports as MacIntel with touch
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
+/** True Safari on iOS (not Chrome/Firefox/Edge wrappers). */
+function detectIosSafari(): boolean {
+  if (!detectIos()) return false;
+  const ua = navigator.userAgent;
+  return !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\//.test(ua);
 }
 
 function detectStandalone(): boolean {
@@ -36,7 +47,7 @@ function detectStandalone(): boolean {
 function iosPushBlockedReason(isIos: boolean, isStandalone: boolean): string | null {
   if (!isIos) return null;
   if (!isStandalone) {
-    return "On iPhone/iPad, install Goko to the Home Screen first, then open it from there and tap Enable notifications. Safari browser tabs cannot enable push.";
+    return "On iPhone/iPad, install Goko to the Home Screen first (Safari → Share → Add to Home Screen), then open it from the Home Screen icon and tap Enable notifications.";
   }
   if (typeof window !== "undefined" && !("PushManager" in window)) {
     return "This iOS version does not support web push. Update to iOS/iPadOS 16.4 or later, then try again from the Home Screen app.";
@@ -59,6 +70,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIos, setIsIos] = useState(false);
+  const [isIosSafari, setIsIosSafari] = useState(false);
   const [vapidPublicKey, setVapidPublicKey] = useState("");
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
@@ -68,6 +80,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
   const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
   const [installed, setInstalled] = useState(false);
+  const [adminUrlCopied, setAdminUrlCopied] = useState(false);
   const promptRef = useRef<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
@@ -82,6 +95,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     const ios = detectIos();
     setIsStandalone(standalone);
     setIsIos(ios);
+    setIsIosSafari(detectIosSafari());
     if (typeof Notification !== "undefined") setNotificationPermission(Notification.permission);
 
     const handlePrompt = (e: Event) => {
@@ -92,16 +106,14 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     };
     window.addEventListener("beforeinstallprompt", handlePrompt);
 
-    const blocked = iosPushBlockedReason(ios, standalone);
-    if (blocked) {
-      // Do not attempt auto-subscribe in a Safari tab.
-      return () => window.removeEventListener("beforeinstallprompt", handlePrompt);
-    }
+    // Always register the SW on admin (including iOS Safari tabs) so Add to Home Screen
+    // can pick up a real app + worker. Only skip auto-subscribe when push is blocked.
+    const pushBlocked = Boolean(iosPushBlockedReason(ios, standalone));
 
     if ("serviceWorker" in navigator) {
       ensureServiceWorker().then(async (reg) => {
         setSwRegistration(reg);
-        if (!reg.pushManager) return;
+        if (pushBlocked || !reg.pushManager) return;
         let sub = await reg.pushManager.getSubscription();
         if (!sub && typeof Notification !== "undefined" && Notification.permission === "granted" && vapidPublicKey) {
           sub = await reg.pushManager.subscribe({
@@ -126,8 +138,10 @@ export function PwaInstallBanner({ password, username }: { password: string; use
             }
           }).catch(() => { setPushSubscribed(false); setPushError("Notification subscription needs attention"); });
         }
-      }).catch(() => setPushError("Notifications are unavailable in this browser"));
-    } else {
+      }).catch(() => {
+        if (!ios) setPushError("Notifications are unavailable in this browser");
+      });
+    } else if (!ios) {
       setPushError("Notifications are unavailable in this browser");
     }
 
@@ -135,6 +149,17 @@ export function PwaInstallBanner({ password, username }: { password: string; use
       window.removeEventListener("beforeinstallprompt", handlePrompt);
     };
   }, [password, username, vapidPublicKey]);
+
+  const copyAdminUrl = useCallback(async () => {
+    const url = typeof window !== "undefined" ? `${window.location.origin}/admin` : "https://www.gokohostel.com/admin";
+    try {
+      await navigator.clipboard.writeText(url);
+      setAdminUrlCopied(true);
+      setTimeout(() => setAdminUrlCopied(false), 2500);
+    } catch {
+      setPushError(`Copy this link into Safari: ${url}`);
+    }
+  }, []);
 
   const handleInstall = useCallback(async () => {
     const prompt = promptRef.current;
@@ -155,7 +180,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     setPushMessage("");
     try {
       if (isIos && !isStandalone) {
-        setPushError("On iPhone/iPad, install Goko to the Home Screen first, then open it from there and tap Enable notifications. Safari browser tabs cannot enable push.");
+        setPushError("On iPhone/iPad, install Goko from Safari (Share → Add to Home Screen), open the Home Screen icon, then tap Enable notifications.");
         return;
       }
       if (isIos && typeof window !== "undefined" && !("PushManager" in window)) {
@@ -261,11 +286,11 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     } finally { setPushAction(null); }
   }, [swRegistration, password, username, pushAction]);
 
-  const showInstallSection = !isStandalone && !installed;
   const canNativeInstall = Boolean(installPrompt);
   const iosNeedsHomeScreen = isIos && !isStandalone;
   const pushUnavailable = !vapidPublicKey;
   const enableDisabled = subscribing || pushUnavailable || iosNeedsHomeScreen;
+  const alreadyInstalled = isStandalone || installed;
   const statusLabel = pushSubscribed
     ? "Enabled on this device"
     : iosNeedsHomeScreen
@@ -305,33 +330,53 @@ export function PwaInstallBanner({ password, username }: { password: string; use
           {pushError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{pushError}</p>}
           {pushMessage && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{pushMessage}</p>}
 
-          {showInstallSection && (
-            <div className="rounded-xl border border-brand-mist bg-brand-sand/40 p-3 dark:bg-card">
-              <div className="mb-2 flex items-center gap-2">
-                <DownloadIcon className="h-4 w-4 text-brand-green" />
-                <h3 className="text-sm font-medium text-brand-green-dark">Install app</h3>
-              </div>
-              {isIos ? (
-                <ol className="space-y-1.5 text-xs leading-relaxed text-brand-green-dark/70">
-                  <li><strong>1.</strong> In Safari, tap Share → Add to Home Screen.</li>
-                  <li><strong>2.</strong> Open Goko from the Home Screen icon (not a Safari tab).</li>
-                  <li><strong>3.</strong> Return here and tap Enable notifications. Requires iOS/iPadOS 16.4+.</li>
-                </ol>
-              ) : (
-                <div className="space-y-2">
-                  {canNativeInstall ? (
-                    <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={handleInstall}>
-                      <DownloadIcon /> Install app
-                    </Button>
-                  ) : (
-                    <p className="text-xs leading-relaxed text-brand-green-dark/70">
-                      In Chrome, open the browser menu (⋮) and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. After installing, open Goko from the app icon for the most reliable alerts.
-                    </p>
-                  )}
-                </div>
-              )}
+          {/* Install only lives here (admin bell dialog) — not on the public website.
+              iOS has no install API; Safari Share → Add to Home Screen is the only path. */}
+          <div className="rounded-xl border border-brand-mist bg-brand-sand/40 p-3 dark:bg-card">
+            <div className="mb-2 flex items-center gap-2">
+              <DownloadIcon className="h-4 w-4 text-brand-green" />
+              <h3 className="text-sm font-medium text-brand-green-dark">Install app</h3>
             </div>
-          )}
+            {alreadyInstalled ? (
+              <p className="text-xs leading-relaxed text-brand-green-dark/70">
+                Goko is installed on this device. Open it from the Home Screen / app icon for the most reliable alerts.
+              </p>
+            ) : isIos ? (
+              <div className="space-y-3">
+                {!isIosSafari && (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+                    You are not in Safari. On iPhone, open <strong>Safari</strong>, go to Admin, then use Share → Add to Home Screen. Chrome/Firefox on iOS often cannot install a working Goko app for notifications.
+                  </p>
+                )}
+                <ol className="space-y-2 text-xs leading-relaxed text-brand-green-dark/70">
+                  <li className="flex gap-2">
+                    <ShareIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-green" />
+                    <span><strong>1.</strong> In <strong>Safari</strong> on this Admin page, tap the <strong>Share</strong> button (square with ↑).</span>
+                  </li>
+                  <li><strong>2.</strong> Scroll and tap <strong>Add to Home Screen</strong>, then Add. The icon should be named <strong>Goko</strong>.</li>
+                  <li><strong>3.</strong> Leave Safari and open <strong>Goko</strong> from the Home Screen (not from Safari tabs).</li>
+                  <li><strong>4.</strong> Open this bell again and tap <strong>Enable notifications</strong>. Needs iOS/iPadOS 16.4+.</li>
+                </ol>
+                {!isIosSafari && (
+                  <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => void copyAdminUrl()}>
+                    <CopyIcon /> {adminUrlCopied ? "Link copied" : "Copy Admin link for Safari"}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {canNativeInstall ? (
+                  <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={handleInstall}>
+                    <DownloadIcon /> Install app
+                  </Button>
+                ) : (
+                  <p className="text-xs leading-relaxed text-brand-green-dark/70">
+                    In Chrome, open the browser menu (⋮) and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. After installing, open Goko from the app icon for the most reliable alerts.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="flex flex-wrap gap-2">
             {!pushSubscribed ? (

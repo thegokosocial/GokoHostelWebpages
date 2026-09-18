@@ -140,7 +140,7 @@ Calendar POSTs use `fetchWithRetry("/api/admin/bookings", …)` — not `useAdmi
 |------|------|
 | `useAdminApi.ts` | **Only** `POST /api/admin/checkins` |
 | `types.ts` | `parseBedRow`, `CHECKIN_COLUMNS`, `hasPermission` |
-| `PwaInstallBanner.tsx` | registers `/sw.js` scope `/`; notification dialog is the only Install app entry point; iOS enable gated to Home Screen app; public pages do not link the PWA manifest |
+| `PwaInstallBanner.tsx` | registers `/sw.js` even on iOS Safari tabs; notification dialog is the only Install app entry (Safari Share → Add to Home Screen on iPhone); Enable gated to Home Screen app; public pages do not link the PWA manifest |
 | `SyncStatusBar.tsx` | Pi/CF badge |
 | `FoodBillGenerator.tsx` | jsPDF dynamic import |
 | `DailyLedger.tsx` / `DailyReconcile.tsx` / `AdminAddExpense.tsx` / `AdminFoodBill.tsx` / `AdminRoomRevenue.tsx` | Accounts tabs |
