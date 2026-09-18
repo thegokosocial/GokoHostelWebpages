@@ -2696,7 +2696,7 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
     if (!from || !to) return;
     setLoading(true);
     try {
-      const res = await apiCall({ action: "listOrders", dateFrom: from, dateTo: to, limit: 200 });
+      const res = await apiCall({ action: "listOrders", dateFrom: from, dateTo: to, limit: 200, includeItems: false });
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);
@@ -2876,6 +2876,7 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
   const [guestTypeFilter, setGuestTypeFilter] = useState("");
   const [searchFilter, setSearchFilter] = useState("");
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
+  const [expandLoading, setExpandLoading] = useState(false);
   const [btSupported, setBtSupported] = useState(false);
   const [printing, setPrinting] = useState<number | null>(null);
   const [modHistoryOrder, setModHistoryOrder] = useState<number | null>(null);
@@ -2907,7 +2908,7 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { action: "listOrders", limit: 100, auditHistory: true };
+      const params: any = { action: "listOrders", limit: 100, auditHistory: true, includeItems: false };
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       if (statusFilter) params.status = statusFilter;
@@ -2919,11 +2920,40 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);
+        setExpandedOrder(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setOrders([]);
+        showError("Order History", data.error || "Could not load orders");
       }
     } finally {
       setLoading(false);
     }
-  }, [apiCall, dateFrom, dateTo, statusFilter, guestTypeFilter, searchFilter]);
+  }, [apiCall, dateFrom, dateTo, statusFilter, guestTypeFilter, searchFilter, showError]);
+
+  const toggleExpandOrder = async (orderId: number) => {
+    if (expandedOrder === orderId) {
+      setExpandedOrder(null);
+      return;
+    }
+    setExpandedOrder(orderId);
+    const existing = orders.find((o) => o.id === orderId);
+    if (existing && existing.items && existing.items.length > 0) return;
+    setExpandLoading(true);
+    try {
+      const res = await apiCall({ action: "getOrderDetails", orderId });
+      if (res.ok) {
+        const data = await res.json();
+        const items = data.items || [];
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, items } : o)));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showError("Order History", data.error || "Could not load order details");
+      }
+    } finally {
+      setExpandLoading(false);
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -2993,7 +3023,7 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
             <div key={order.id} className="rounded-xl border border-brand-mist bg-white dark:bg-card overflow-hidden">
               <button
                 type="button"
-                onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+                onClick={() => void toggleExpandOrder(order.id)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-brand-sand/50"
               >
                 <div className="min-w-0 flex flex-wrap items-center gap-1.5">
@@ -3019,7 +3049,11 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
               </button>
               {expandedOrder === order.id && (
                 <div className="border-t border-brand-mist px-4 py-3 space-y-1">
-                  {order.items.map((item) => (
+                  {expandLoading && !(order.items && order.items.length) ? (
+                    <p className="text-xs text-brand-green-dark/50">Loading items...</p>
+                  ) : !(order.items && order.items.length) ? (
+                    <p className="text-xs text-brand-green-dark/50">No items</p>
+                  ) : order.items.map((item) => (
                     <div key={item.id} className="flex items-center justify-between text-xs">
                       <span className={cn("text-brand-green-dark/70", item.status === "voided" && "line-through opacity-50")}>
                         {item.quantity}× {item.itemName}
@@ -3087,6 +3121,10 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
                       <button
                         type="button"
                         onClick={async () => {
+                          if (!order.items?.length) {
+                            showError("Print", "Wait for items to load, then try again");
+                            return;
+                          }
                           setPrinting(order.id);
                           try {
                             const spExemptCats = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
@@ -3137,6 +3175,10 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
                     <button
                       type="button"
                       onClick={async () => {
+                        if (!order.items?.length) {
+                          showError("Bill", "Wait for items to load, then try again");
+                          return;
+                        }
                         if (order.items.some((i) => i.status !== "voided" && i.pricingStatus === "pending")) { showError("Price pending", "Set final prices before generating the bill"); return; }
                         const exemptCatIds3 = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
                         const miCatMap3 = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
