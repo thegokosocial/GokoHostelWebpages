@@ -521,6 +521,14 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(panel).toContain("parseGokoWalkin");
   });
 
+  it("reloads booking history after successful mutations so edits append in the panel", () => {
+    expect(panel).toContain('action: "getBookingHistory"');
+    expect(panel).toContain("const runAction = async");
+    expect(panel).toContain("if (ok) await loadHistory()");
+    expect(panel).toContain("return await runAction(action, booking.id, extra)");
+    expect(panel).toContain("onAction={runAction}");
+  });
+
   it("offers manual and website bookings a status-preserving editor", () => {
     expect(panel).toContain('booking.source === "manual" || booking.source === "website"');
     expect(panel).toContain("canEditBooking");

@@ -114,10 +114,22 @@ export function BookingDetailPanel({
     loadHistory();
   }, [loadHistory]);
 
+  // Parent refreshes booking/assignments after mutations but not history —
+  // each successful action must re-fetch so edits append instead of looking overwritten.
+  const runAction = async (
+    action: string,
+    bookingId: number,
+    extra?: Record<string, unknown>,
+  ) => {
+    const ok = await onAction(action, bookingId, extra);
+    if (ok) await loadHistory();
+    return ok;
+  };
+
   const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setBusy(true);
     try {
-      return await onAction(action, booking.id, extra);
+      return await runAction(action, booking.id, extra);
     } finally {
       setBusy(false);
     }
@@ -698,7 +710,7 @@ export function BookingDetailPanel({
           assignments={assignments}
           password={password}
           username={username}
-          onAction={onAction}
+          onAction={runAction}
           onClose={() => setShowEditBooking(false)}
         />
       )}
