@@ -10,6 +10,10 @@ import { ImageCarousel } from "@/components/media/ImageCarousel";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { todayIST } from "@/lib/utils";
 import { CheckoutWaitOverlay, type CheckoutWaitPhase } from "@/components/booking/CheckoutWaitOverlay";
+import {
+  armUnpaidCheckoutAbandon, clearUnpaidCheckoutAbandon, bindUnpaidCheckoutPageHide,
+  abandonUnpaidCheckoutBeacon,
+} from "@/lib/guestCheckoutAbandonClient";
 
 type BookingDetails = { reference: string | null; externalReference: string | null; guestName: string; checkinDate: string; checkoutDate: string; roomType: string; guests: number; status: string; paymentStatus: string | null; total: number | null; paid: number | null; refunded: number | null };
 const field = "mt-1 min-h-12 w-full min-w-0 max-w-full rounded-lg border border-brand-green/25 bg-white px-3 py-3 text-base text-brand-green-dark focus:outline-none focus:ring-2 focus:ring-brand-green";
@@ -55,6 +59,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     const id = window.setInterval(() => setNowTick(Math.floor(Date.now() / 1000)), 1000);
     return () => window.clearInterval(id);
   }, [holdExpiresAt]);
+  useEffect(() => bindUnpaidCheckoutPageHide(), []);
   useEffect(() => {
     if (!panelRef.current || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting));
@@ -146,6 +151,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   }
   async function openRazorpay(checkoutId: string, ownerToken: string, options: { key: string; order_id: string; amount: number; currency: string }, guestAccessToken: string, ref: string) {
     setCheckoutWait("awaiting_payment");
+    armUnpaidCheckoutAbandon({ checkoutId, ownerToken });
     await loadRazorpay();
     const claimed = await readResponse(await fetch("/api/guest-booking/checkout", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -169,6 +175,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
               }),
               cache: "no-store", signal: AbortSignal.timeout(20000),
             }));
+            clearUnpaidCheckoutAbandon();
             setCheckoutWait("finishing");
             sessionStorage.setItem(`goko_booking_${ref}`, JSON.stringify({ guestAccessToken }));
             window.location.href = `/booking/${encodeURIComponent(verified.reference || ref)}`;
@@ -177,11 +184,12 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         },
         modal: { ondismiss: async () => {
           try {
-            await fetch("/api/guest-booking/reconcile", {
+            await fetch("/api/guest-booking/abandon", {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ checkoutId, ownerToken }), cache: "no-store",
             });
           } catch { /* ignore */ }
+          clearUnpaidCheckoutAbandon();
           reject(new Error("Payment window closed. If money was deducted, wait a moment and check My booking."));
         } },
         theme: { color: "#1B4D3E" },
@@ -190,11 +198,12 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       });
       rzp.on("payment.failed", async () => {
         try {
-          await fetch("/api/guest-booking/reconcile", {
+          await fetch("/api/guest-booking/abandon", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ checkoutId, ownerToken }), cache: "no-store",
           });
         } catch { /* ignore */ }
+        clearUnpaidCheckoutAbandon();
       });
       rzp.open();
     });
@@ -235,13 +244,17 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       if (data.requiresPayment && data.razorpay && data.ownerToken && data.checkoutId) {
         await openRazorpay(data.checkoutId, data.ownerToken, data.razorpay, data.guestAccessToken, data.reference);
       } else if (data.reference) {
+        clearUnpaidCheckoutAbandon();
         setCheckoutWait("finishing");
         window.location.href = `/booking/${encodeURIComponent(data.reference)}`;
       } else {
+        clearUnpaidCheckoutAbandon();
         setCheckoutWait(null);
         setMessage("Booking prepared. Check My booking if confirmation did not open.");
       }
     } catch (error) {
+      // Release unpaid hold if we armed a session (claim/script failure, verify error, dismiss race).
+      abandonUnpaidCheckoutBeacon();
       setCheckoutWait(null);
       const text = error instanceof Error ? error.message : "Could not complete booking.";
       setMessage(text);

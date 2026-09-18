@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { GuestRoom } from "@/lib/guestBookingSearch";
 import { bookingTotals } from "@/lib/bookingPricing";
 import { canAddGuestRoom } from "@/lib/guestBookingSelection";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { CheckoutWaitOverlay, type CheckoutWaitPhase } from "@/components/booking/CheckoutWaitOverlay";
+import {
+  armUnpaidCheckoutAbandon, clearUnpaidCheckoutAbandon, bindUnpaidCheckoutPageHide,
+  abandonUnpaidCheckoutBeacon,
+} from "@/lib/guestCheckoutAbandonClient";
 import { site } from "@/lib/site";
 import { todayIST } from "@/lib/utils";
 
@@ -46,6 +50,8 @@ export function GuestBookingAmendPanel({
   const [checkoutWait, setCheckoutWait] = useState<CheckoutWaitPhase | null>(null);
   const [message, setMessage] = useState("");
   const [requestKey, setRequestKey] = useState<string | null>(null);
+
+  useEffect(() => bindUnpaidCheckoutPageHide(), []);
 
   const selectedCount = rooms?.reduce((sum, room) => sum + (selection[room.id] || 0), 0) || 0;
   const chosenRate = (room: GuestRoom) => room.rates?.find((r) => r.id === plans[room.id]) ?? room.rates?.[0];
@@ -142,6 +148,7 @@ export function GuestBookingAmendPanel({
 
       if (prepared.requiresPayment && prepared.razorpay && prepared.ownerToken && prepared.checkoutId) {
         setCheckoutWait("awaiting_payment");
+        armUnpaidCheckoutAbandon({ checkoutId: prepared.checkoutId, ownerToken: prepared.ownerToken });
         await loadRazorpay();
         const claimed = await readResponse(await fetch("/api/guest-booking/amend", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -174,11 +181,22 @@ export function GuestBookingAmendPanel({
                   }),
                   cache: "no-store", signal: AbortSignal.timeout(20000),
                 }));
+                clearUnpaidCheckoutAbandon();
                 onDone(verified);
                 resolve();
               } catch (error) { reject(error); }
             },
-            modal: { ondismiss: () => reject(new Error("Payment window closed.")) },
+            modal: { ondismiss: async () => {
+              try {
+                await fetch("/api/guest-booking/abandon", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ checkoutId: prepared.checkoutId, ownerToken: prepared.ownerToken }),
+                  cache: "no-store",
+                });
+              } catch { /* ignore */ }
+              clearUnpaidCheckoutAbandon();
+              reject(new Error("Payment window closed."));
+            } },
             theme: { color: "#1B4D3E" },
             retry: { enabled: false },
           });
@@ -193,9 +211,11 @@ export function GuestBookingAmendPanel({
           }),
           cache: "no-store", signal: AbortSignal.timeout(30000),
         }));
+        clearUnpaidCheckoutAbandon();
         onDone(confirmed);
       }
     } catch (error) {
+      abandonUnpaidCheckoutBeacon();
       setCheckoutWait(null);
       setMessage(error instanceof Error ? error.message : "Could not apply change.");
     } finally {

@@ -31,13 +31,17 @@ const COPY: Record<CheckoutWaitPhase, { title: string; body: string }> = {
 export function CheckoutWaitOverlay({ phase }: { phase: CheckoutWaitPhase | null }) {
   useEffect(() => {
     if (!phase) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    // Do not warn on `finishing` — that phase navigates to confirmation and must not block.
+    if (phase === "finishing") {
+      return () => { document.body.style.overflow = previous; };
+    }
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.body.style.overflow = previous;

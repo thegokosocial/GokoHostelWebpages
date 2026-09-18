@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { nativeInventoryHolds as holds } from "@/db/schema";
 import { getAllBeds, getAvailableBedsForRange } from "@/db/queries";
+import { afterResponse } from "@/lib/afterResponse";
 import { otaFingerprint, pushIfOtaChanged } from "@/lib/aiosellSync";
 import { occupiedNights, sellableUnits } from "@/lib/inventoryAvailability";
 import { isPiRuntime } from "@/lib/runtime";
@@ -148,7 +149,8 @@ export async function createNativeInventoryHold(input: z.input<typeof inputSchem
       excludeBookingId: parsed.excludeBookingId ?? null,
     }).onConflictDoNothing({ target: holds.requestKey }).returning();
     if (rows.length) {
-      if (before) await pushHoldOtaChange(bedIds, parsed.checkinDate, parsed.checkoutDate, before, allBeds);
+      // Inventory is held in D1 immediately; Aiosell push must not block checkout UX.
+      if (before) await afterResponse(pushHoldOtaChange(bedIds, parsed.checkinDate, parsed.checkoutDate, before, allBeds));
       return snapshot(rows[0]);
     }
   } catch (error) {
@@ -182,6 +184,6 @@ export async function releaseNativeInventoryHold(id: string, ownerToken: string)
   try { rows = await getDb().update(holds).set({ state: "released" }).where(and(eq(holds.id, id), eq(holds.ownerHash, ownerHash))).returning(); }
   catch { throw new NativeHoldError("Hold release result unavailable; recover the original request", 503); }
   if (!rows.length) throw new NativeHoldError("Hold not found", 404);
-  if (before) await pushHoldOtaChange(bedIds, owned.checkinDate, owned.checkoutDate, before, allBeds);
+  if (before) await afterResponse(pushHoldOtaChange(bedIds, owned.checkinDate, owned.checkoutDate, before, allBeds));
   return snapshot(rows[0]);
 }

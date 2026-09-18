@@ -5,7 +5,8 @@ import SQLite from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
 import {
-  prepareGuestCheckout, verifyGuestPayment, cancelGuestBooking, GuestCheckoutError,
+  prepareGuestCheckout, verifyGuestPayment, cancelGuestBooking, abandonUnpaidGuestCheckout,
+  GuestCheckoutError,
 } from "@/lib/nativeGuestCheckout";
 import { getSyncableTableNames } from "@/lib/syncEngine";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
@@ -319,6 +320,27 @@ describe("Native guest checkout end-to-end workflows", () => {
     expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "released" });
     expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
       .toEqual({ n: 0 });
+  });
+
+  it("abandon unpaid checkout releases hold", async () => {
+    const unpaid = await prepareGuestCheckout(selection("advance", 10));
+    expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "held" });
+    expect(await abandonUnpaidGuestCheckout(unpaid.checkoutId!, unpaid.ownerToken!))
+      .toEqual({ abandoned: true, state: "cancelled" });
+    expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "released" });
+    expect(sqlite.prepare("SELECT status FROM bookings").get()).toEqual({ status: "cancelled" });
+    expect(sqlite.prepare("SELECT state, closure_reason FROM native_booking_checkouts").get())
+      .toEqual({ state: "cancelled", closure_reason: "guest_cancelled" });
+  });
+
+  it("abandon after fulfil does not unwind the booking", async () => {
+    const paid = await prepareGuestCheckout(selection("full", 10));
+    await payAndVerify(paid);
+    expect(await abandonUnpaidGuestCheckout(paid.checkoutId!, paid.ownerToken!))
+      .toEqual({ abandoned: false, state: "fulfilled" });
+    expect(sqlite.prepare("SELECT status FROM bookings").get()).toEqual({ status: "received" });
+    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
+      .toEqual({ n: 1 });
   });
 
   it("guest cancel after deadline is rejected", async () => {

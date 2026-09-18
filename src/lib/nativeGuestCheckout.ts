@@ -25,6 +25,7 @@ import {
   releaseNativeInventoryHold,
 } from "@/lib/nativeInventoryHold";
 import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
+import { afterResponse } from "@/lib/afterResponse";
 import { otaFingerprint, pushIfOtaChanged } from "@/lib/aiosellSync";
 import { sendBookingAmendedEmail, sendBookingConfirmationEmail } from "@/lib/email";
 import { isPiRuntime } from "@/lib/runtime";
@@ -498,6 +499,93 @@ export async function reconcileGuestCheckout(checkoutId: string, ownerToken: str
   return await publicSnapshot(row, booking);
 }
 
+/**
+ * Guest closed Checkout / refreshed before capture: release inventory hold and cancel
+ * the unpaid provisional (or unpaid amend) checkout. If Razorpay already captured,
+ * fulfil instead of abandoning.
+ */
+export async function abandonUnpaidGuestCheckout(checkoutId: string, ownerToken: string) {
+  cloudOnly();
+  let row = await requireOwner(checkoutId, ownerToken);
+  if (["fulfilled", "captured_unfulfilled", "cancelled", "expired"].includes(row.state)) {
+    return { abandoned: false as const, state: row.state };
+  }
+
+  if (row.dueNowPaise >= 100 && row.razorpayOrderId) {
+    try {
+      row = await recoverOrder(row);
+      const env = checkoutEnv(row);
+      const evidence = await fetchRazorpayBookingOrderPayments(row.razorpayOrderId!, env);
+      for (const payment of evidence) await recordPayment(row, payment);
+      const captured = await getDb().select().from(payments)
+        .where(and(eq(payments.checkoutId, checkoutId), eq(payments.captured, 1))).limit(1);
+      if (captured.length) {
+        row = await getCheckoutById(checkoutId);
+        if (!["fulfilled", "captured_unfulfilled", "cancelled"].includes(row.state)) {
+          await fulfilGuestCheckout(checkoutId, ownerToken);
+        }
+        return { abandoned: false as const, state: "paid" as const };
+      }
+    } catch {
+      // Do not release inventory when capture status is unknown.
+      return { abandoned: false as const, state: "reconcile_unavailable" as const };
+    }
+  }
+
+  const localCaptured = await getDb().select().from(payments)
+    .where(and(eq(payments.checkoutId, checkoutId), eq(payments.captured, 1))).limit(1);
+  if (localCaptured.length) {
+    row = await getCheckoutById(checkoutId);
+    if (!["fulfilled", "captured_unfulfilled", "cancelled"].includes(row.state)) {
+      await fulfilGuestCheckout(checkoutId, ownerToken);
+    }
+    return { abandoned: false as const, state: "paid" as const };
+  }
+
+  if (row.holdId) {
+    try { await releaseNativeInventoryHold(row.holdId, ownerToken); }
+    catch {
+      await getDb().update(holds).set({ state: "released" })
+        .where(and(eq(holds.id, row.holdId), eq(holds.state, "held")));
+    }
+  }
+
+  const now = timestamp();
+  await getDb().update(checkouts).set({
+    state: "cancelled", closureReason: "guest_cancelled", updatedAt: now,
+  }).where(and(
+    eq(checkouts.id, checkoutId),
+    sql`${checkouts.state} NOT IN ('fulfilled','captured_unfulfilled','cancelled','expired')`,
+  ));
+
+  // Amend abandon: release the change hold only — keep the original booking.
+  if (!row.amendsCheckoutId && row.bookingId) {
+    const [booking] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
+    if (booking?.status === "hold" && (booking.amountPaid || 0) === 0) {
+      const moved = await transitionBookingStatus(row.bookingId, ["hold"], {
+        status: "cancelled", cancelledAt: now, holdExpiresAt: "",
+      });
+      if (moved) {
+        await addBookingHistoryEntry({
+          bookingId: row.bookingId,
+          action: "guest_abandoned",
+          details: "Guest left unpaid checkout; temporary hold released",
+          performedBy: "guest",
+        });
+      }
+    }
+  } else if (row.amendsCheckoutId && row.bookingId) {
+    await addBookingHistoryEntry({
+      bookingId: row.bookingId,
+      action: "guest_abandoned_amend",
+      details: `Unpaid amend checkout ${checkoutId} abandoned; hold released`,
+      performedBy: "guest",
+    });
+  }
+
+  return { abandoned: true as const, state: "cancelled" as const };
+}
+
 export async function verifyGuestPayment(checkoutId: string, ownerToken: string, paymentId: string, orderId: string, signature: string) {
   cloudOnly();
   const row = await requireOwner(checkoutId, ownerToken);
@@ -666,20 +754,23 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
         : `Native guest checkout ${checkoutId}`,
       performedBy: "website",
     });
-    try { await pushIfOtaChanged(before, dormIds, nights); } catch { /* best-effort */ }
     const [confirmed] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
-    if (confirmed) {
-      const snap = await publicSnapshot(row, confirmed);
-      await sendBookingConfirmationEmail({
-        guestName: row.guestName, guestEmail: row.guestEmail,
-        reference: confirmed.gokoBookingId || confirmed.bookingRef || String(confirmed.id),
-        checkinDate: confirmed.checkinDate, checkoutDate: confirmed.checkoutDate || "",
-        totalRupees: confirmed.amountTotal || 0, paidRupees: confirmed.amountPaid || 0,
-        nights: snap.nights, rooms: snap.rooms, persons: snap.persons,
-        beforeTaxRupees: snap.beforeTaxRupees, taxRupees: snap.taxRupees, taxPercent: snap.taxPercent,
-        paymentChoice: snap.paymentChoice, cancellationDeadlineAt: snap.cancellationDeadlineAt,
-      });
-    }
+    // Aiosell + email after beds are confirmed — do not block the guest wait overlay.
+    await afterResponse((async () => {
+      try { await pushIfOtaChanged(before, dormIds, nights); } catch { /* best-effort */ }
+      if (confirmed) {
+        const snap = await publicSnapshot(row, confirmed);
+        await sendBookingConfirmationEmail({
+          guestName: row.guestName, guestEmail: row.guestEmail,
+          reference: confirmed.gokoBookingId || confirmed.bookingRef || String(confirmed.id),
+          checkinDate: confirmed.checkinDate, checkoutDate: confirmed.checkoutDate || "",
+          totalRupees: confirmed.amountTotal || 0, paidRupees: confirmed.amountPaid || 0,
+          nights: snap.nights, rooms: snap.rooms, persons: snap.persons,
+          beforeTaxRupees: snap.beforeTaxRupees, taxRupees: snap.taxRupees, taxPercent: snap.taxPercent,
+          paymentChoice: snap.paymentChoice, cancellationDeadlineAt: snap.cancellationDeadlineAt,
+        });
+      }
+    })());
   } catch (error) {
     if (assigned.length) await unassignBookingBeds(row.bookingId);
     const hasCapture = row.dueNowPaise >= 100 && (await getDb().select().from(payments)
@@ -1164,22 +1255,24 @@ export async function fulfilGuestAmend(checkoutId: string, ownerToken?: string, 
         : `Guest amend ${checkoutId} delta=${deltaPaise}`,
       performedBy: "website",
     });
-    try { await pushIfOtaChanged(before, dormIds, [...new Set([...nights, ...oldNights])]); }
-    catch { /* best-effort */ }
-
-    const [confirmed] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
-    if (confirmed) {
-      const snap = await publicSnapshot(row, confirmed);
-      await sendBookingAmendedEmail({
-        guestName: row.guestName, guestEmail: row.guestEmail,
-        reference: confirmed.gokoBookingId || confirmed.bookingRef || String(confirmed.id),
-        checkinDate: confirmed.checkinDate, checkoutDate: confirmed.checkoutDate || "",
-        totalRupees: confirmed.amountTotal || 0, paidRupees: confirmed.amountPaid || 0,
-        nights: snap.nights, rooms: snap.rooms, persons: snap.persons,
-        beforeTaxRupees: snap.beforeTaxRupees, taxRupees: snap.taxRupees, taxPercent: snap.taxPercent,
-        paymentChoice: snap.paymentChoice, cancellationDeadlineAt: snap.cancellationDeadlineAt,
-      });
-    }
+    await afterResponse((async () => {
+      try { await pushIfOtaChanged(before, dormIds, [...new Set([...nights, ...oldNights])]); }
+      catch { /* best-effort */ }
+      const bookingId = row.bookingId!;
+      const [confirmed] = await getDb().select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+      if (confirmed) {
+        const snap = await publicSnapshot(row, confirmed);
+        await sendBookingAmendedEmail({
+          guestName: row.guestName, guestEmail: row.guestEmail,
+          reference: confirmed.gokoBookingId || confirmed.bookingRef || String(confirmed.id),
+          checkinDate: confirmed.checkinDate, checkoutDate: confirmed.checkoutDate || "",
+          totalRupees: confirmed.amountTotal || 0, paidRupees: confirmed.amountPaid || 0,
+          nights: snap.nights, rooms: snap.rooms, persons: snap.persons,
+          beforeTaxRupees: snap.beforeTaxRupees, taxRupees: snap.taxRupees, taxPercent: snap.taxPercent,
+          paymentChoice: snap.paymentChoice, cancellationDeadlineAt: snap.cancellationDeadlineAt,
+        });
+      }
+    })());
   } catch (error) {
     if (assigned.length) await unassignBookingBeds(row.bookingId);
     const hasCapture = row.dueNowPaise >= 100 && (await getDb().select().from(payments)
