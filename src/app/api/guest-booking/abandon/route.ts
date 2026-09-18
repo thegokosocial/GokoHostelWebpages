@@ -16,9 +16,13 @@ export async function POST(req: NextRequest) {
     assertGuestOrigin(req);
     const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
     if (!guestBookingRateLimit(ip, 30)) return NextResponse.json({ error: "Too many requests. Please wait a minute." }, { status: 429, headers });
-    const body = await readGuestJsonBody(req) as { checkoutId?: string; ownerToken?: string };
+    const body = await readGuestJsonBody(req) as { checkoutId?: string; ownerToken?: string; uncertain?: boolean };
     return NextResponse.json(
-      await abandonUnpaidGuestCheckout(String(body.checkoutId || ""), String(body.ownerToken || "")),
+      await abandonUnpaidGuestCheckout(
+        String(body.checkoutId || ""),
+        String(body.ownerToken || ""),
+        { uncertain: body.uncertain === true },
+      ),
       { headers },
     );
   } catch (error) {

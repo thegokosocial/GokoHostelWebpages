@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import { isCheckoutLeaveGuardDisarmed } from "@/lib/guestCheckoutAbandonClient";
 
 export type CheckoutWaitPhase =
   | "preparing"
+  | "confirming_stay"
   | "awaiting_payment"
   | "confirming"
   | "finishing";
@@ -12,6 +14,10 @@ const COPY: Record<CheckoutWaitPhase, { title: string; body: string }> = {
   preparing: {
     title: "Securing your beds",
     body: "Please wait while we reserve your stay. Do not press Back or close this page.",
+  },
+  confirming_stay: {
+    title: "Confirming your reservation",
+    body: "Please wait while we confirm your pay-at-property booking. Do not press Back or close this page.",
   },
   awaiting_payment: {
     title: "Complete payment securely",
@@ -33,11 +39,11 @@ export function CheckoutWaitOverlay({ phase }: { phase: CheckoutWaitPhase | null
     if (!phase) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Do not warn on `finishing` — that phase navigates to confirmation and must not block.
     if (phase === "finishing") {
       return () => { document.body.style.overflow = previous; };
     }
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (isCheckoutLeaveGuardDisarmed()) return;
       event.preventDefault();
       event.returnValue = "";
     };

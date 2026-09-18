@@ -39,7 +39,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | `/self-checkin` | ID check-in; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
 | `/food-order` | Menu + cart; after selecting a category, the guest menu keeps the sorted category list in an independently scrollable vertical left rail beside a dish pane whose item list scrolls independently; the home category-card view is unchanged | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
-| `/my-bills` | Food bills | phone; expanded card matches guest bill layout (header, CGST/SGST, payment QR when unpaid); back → previous page |
+| `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
 | `/review/[token]` | Rating funnel | token |
 | `/admin` | PMS SPA | direct username/password form; password every API call |
@@ -119,7 +119,7 @@ Management → Booking Settings → Payments & Readiness shows dynamic readiness
 |------|------|
 | `index.tsx` | Calendar shell; Calendar, operational Table, and date-scoped All Bookings views |
 | `BookingCalendarGrid.tsx` | Bars by dorm/night |
-| `BookingDetailPanel.tsx` | Check-in/out (food-tab warn), Collect, cancel-with-refund |
+| `BookingDetailPanel.tsx` | Check-in/out (food-tab warn), Collect, cancel-with-refund; website Razorpay IDs + orphan refund |
 | `CreateBookingModal.tsx` | Walk-in / engine; walk-in bookings include an optional advance-payment section between Special Requests and Discount. It records cash or online advance, selects an active online receiving account, and previews the remaining balance. |
 | `UnassignedBookings.tsx` | OTA leftover chips, Reject |
 | `BookingSearchBar.tsx` / `DateRangeSelector.tsx` / `BookingMobileDayView.tsx` / `BookingTableView.tsx` / `BookingTile.tsx` / `PlatformBadge.tsx` | chrome; All Bookings keeps the same row-click/detail-panel behavior, exposes every booking status, wraps its filters on narrow screens, and keeps the table header aligned at the top of its horizontal scroll container. Website (`platform=Website` / `booking_engine`) tiles show the Goko `/logo.png` badge |
@@ -127,7 +127,7 @@ Management → Booking Settings → Payments & Readiness shows dynamic readiness
 | `ConfirmDialog.tsx` | Overlay is `flex items-center justify-center` — **not** `left-1/2 -translate-x-1/2` (that combination with `modalVariants` `y` slides the dialog off a phone) |
 | `utils.ts` / `types.ts` | date math, types |
 
-`BookingDetailPanel.tsx` exposes **Edit Booking** for **manual** and **website** reservations when the user has `canAddBooking` (not channel_manager/OTA). The editor supports guest details, dates (with derived nights), persons, nightly rate, special requests, and add/remove room units in **one save** using the same OTA/walk-in/block chip picker as New Booking. Availability for the edited date range is always shown; bed picks are pruned (not wiped) when a date tweak makes a unit unavailable. Capacity is checked on the **final** bed set (kept − remove + add). Stay-shape changes **recalculate payment totals** (nightly × nights × beds, implying nightly from the prior before-tax amount when stored rate is ₹0) and leave website `amountPaid` unchanged so Due / Collect remaining rises. A money strip previews Total / Due after save. **Amount received** is editable only for manual stays. **Delete booking** hard-deletes Records-linked walk-ins and **unpaid** Goko Website bookings when the user has `canDeleteBooking` (not OTA; paid website bookings must cancel/refund first). Active occupancy-affecting changes trigger the existing PMS refresh path; closed historical bed assignments remain protected.
+`BookingDetailPanel.tsx` exposes **Edit Booking** for **manual** and **website** reservations when the user has `canAddBooking` (not channel_manager/OTA). The editor supports guest details, dates (with derived nights), persons, nightly rate, special requests, and add/remove room units in **one save** using the same OTA/walk-in/block chip picker as New Booking. Availability for the edited date range is always shown; bed picks are pruned (not wiped) when a date tweak makes a unit unavailable. Capacity is checked on the **final** bed set (kept − remove + add). Stay-shape changes **recalculate payment totals** (nightly × nights × beds, implying nightly from the prior before-tax amount when stored rate is ₹0) and leave website `amountPaid` unchanged so Due / Collect remaining rises. A money strip previews Total / Due after save. **Amount received** is editable only for manual stays. Website bookings show a **Website / Razorpay** section (Order ID, Payment ID(s), gateway env, dues, checkout id — copy buttons) from `rawData.websiteCheckout` for Razorpay dashboard cross-check; cancelled orphan captures show a banner and **Refund orphan capture** (`refundWebsiteOrphan`, `canDeleteBooking`). **Delete booking** hard-deletes Records-linked walk-ins and **unpaid** Goko Website bookings when the user has `canDeleteBooking` (not OTA; paid website bookings must cancel/refund first). Active occupancy-affecting changes trigger the existing PMS refresh path; closed historical bed assignments remain protected.
 
 Dashboard check-ins linked to a booking use the same Beds assignment flow as walk-ins. Booking-bed assignments remain reservation/inventory context and are displayed as planned room/bed details for offline, walk-in, and online guests; they are not displayed as physical occupancy. The Beds page shows that context while assigning, and checkout cards show it separately from room payment status. Each check-in is targeted by ID, so group members can be assigned independently. Double-bed physical slots are independent. Booking cancellation and physical checkout affect only their own ledger.
 
@@ -143,7 +143,7 @@ Calendar POSTs use `fetchWithRetry("/api/admin/bookings", …)` — not `useAdmi
 | `types.ts` | `parseBedRow`, `CHECKIN_COLUMNS`, `hasPermission` |
 | `PwaInstallBanner.tsx` | registers `/sw.js` even on iOS Safari tabs; notification dialog is the only Install app entry (Safari Share → Add to Home Screen on iPhone); Enable gated to Home Screen app; public pages do not link the PWA manifest |
 | `SyncStatusBar.tsx` | Pi/CF badge |
-| `FoodBillGenerator.tsx` | jsPDF guest/combined bills; branding + CGST/SGST + payment QR |
+| `FoodBillGenerator.tsx` | jsPDF guest/combined bills; left accent rail; coalesced items (no order IDs); branding + CGST/SGST + payment QR |
 | `AdminBillSettings.tsx` | Management → Bill Settings |
 | `DailyLedger.tsx` / `DailyReconcile.tsx` / `AdminAddExpense.tsx` / `AdminFoodBill.tsx` / `AdminRoomRevenue.tsx` | Accounts tabs |
 | `RecordPaymentModal.tsx` | Shared Cash/Online/Split collect + refund; stay must pass `amountUnit="rupees"` (food default is paise) |

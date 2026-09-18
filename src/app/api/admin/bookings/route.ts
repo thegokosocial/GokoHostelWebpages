@@ -52,6 +52,9 @@ import {
   parseBookingWhatsAppTemplates,
   validateBookingWhatsAppTemplates,
 } from "@/lib/bookingWhatsApp";
+import { isPiRuntime } from "@/lib/runtime";
+import { GuestCheckoutError, refundWebsiteOrphanCapture } from "@/lib/nativeGuestCheckout";
+import { RazorpayError } from "@/lib/razorpay";
 
 function bookingDateRange(checkinDate: string, checkoutDate?: string | null): string[] {
   return occupiedNights(checkinDate, checkoutDate);
@@ -293,6 +296,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   retryNoShow: "canDeleteBooking",
   hold: "canDeleteBooking",
   unassign: "canDeleteBooking",
+  refundWebsiteOrphan: "canDeleteBooking",
   rollbackCheckIn: "admin_only",
   rollbackCheckOut: "admin_only",
 };
@@ -1281,6 +1285,28 @@ export async function POST(req: NextRequest) {
         });
       }
       return NextResponse.json({ success: true, warning: inventoryWarning(inventory), reopenedCheckinIds });
+    }
+
+    if (action === "refundWebsiteOrphan") {
+      if (isPiRuntime()) {
+        return NextResponse.json({ error: "Website orphan refunds run on Cloudflare only" }, { status: 403 });
+      }
+      const bookingId = Number(body.bookingId);
+      if (!Number.isInteger(bookingId) || bookingId <= 0) {
+        return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+      }
+      try {
+        const result = await refundWebsiteOrphanCapture(bookingId, actingUser);
+        return NextResponse.json({ success: true, ...result });
+      } catch (error) {
+        if (error instanceof GuestCheckoutError) {
+          return NextResponse.json({ error: error.message }, { status: error.status });
+        }
+        if (error instanceof RazorpayError) {
+          return NextResponse.json({ error: error.message }, { status: error.httpStatus });
+        }
+        throw error;
+      }
     }
 
     // --- Hard-delete Records-linked walk-in/offline booking ---

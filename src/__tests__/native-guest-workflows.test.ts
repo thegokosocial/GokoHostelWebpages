@@ -326,7 +326,7 @@ describe("Native guest checkout end-to-end workflows", () => {
     const unpaid = await prepareGuestCheckout(selection("advance", 10));
     expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "held" });
     expect(await abandonUnpaidGuestCheckout(unpaid.checkoutId!, unpaid.ownerToken!))
-      .toEqual({ abandoned: true, state: "cancelled" });
+      .toEqual({ abandoned: true, state: "cancelled", orphanCapture: false });
     expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "released" });
     expect(sqlite.prepare("SELECT status FROM bookings").get()).toEqual({ status: "cancelled" });
     expect(sqlite.prepare("SELECT state, closure_reason FROM native_booking_checkouts").get())
@@ -337,10 +337,29 @@ describe("Native guest checkout end-to-end workflows", () => {
     const paid = await prepareGuestCheckout(selection("full", 10));
     await payAndVerify(paid);
     expect(await abandonUnpaidGuestCheckout(paid.checkoutId!, paid.ownerToken!))
-      .toEqual({ abandoned: false, state: "fulfilled" });
+      .toEqual({ abandoned: false, state: "fulfilled", orphanCapture: false });
     expect(sqlite.prepare("SELECT status FROM bookings").get()).toEqual({ status: "received" });
     expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
       .toEqual({ n: 1 });
+  });
+
+  it("uncertain abandon with Razorpay capture stamps orphan without beds", async () => {
+    const prepared = await prepareGuestCheckout(selection("full", 10));
+    const orderId = prepared.razorpay!.order_id;
+    payment(orderId, prepared.dueNowPaise);
+    const result = await abandonUnpaidGuestCheckout(
+      prepared.checkoutId!, prepared.ownerToken!, { uncertain: true },
+    );
+    expect(result).toEqual({ abandoned: true, state: "cancelled", orphanCapture: true });
+    expect(sqlite.prepare("SELECT status, amount_paid FROM bookings").get())
+      .toMatchObject({ status: "cancelled", amount_paid: 1000 });
+    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
+      .toEqual({ n: 0 });
+    expect(sqlite.prepare("SELECT action FROM booking_history WHERE action='website_orphan_capture'").get())
+      .toEqual({ action: "website_orphan_capture" });
+    const raw = sqlite.prepare("SELECT raw_data FROM bookings").get() as { raw_data: string };
+    expect(raw.raw_data).toContain("orphanCapture");
+    expect(raw.raw_data).toContain(orderId);
   });
 
   it("guest cancel after deadline is rejected", async () => {

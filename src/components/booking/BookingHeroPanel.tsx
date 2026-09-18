@@ -12,10 +12,17 @@ import { todayIST } from "@/lib/utils";
 import { CheckoutWaitOverlay, type CheckoutWaitPhase } from "@/components/booking/CheckoutWaitOverlay";
 import {
   armUnpaidCheckoutAbandon, clearUnpaidCheckoutAbandon, bindUnpaidCheckoutPageHide,
-  abandonUnpaidCheckoutBeacon,
+  abandonUnpaidCheckoutBeacon, disarmCheckoutLeaveGuard, releaseUncertainCheckout,
+  armCheckoutLeaveGuard,
 } from "@/lib/guestCheckoutAbandonClient";
 
 type BookingDetails = { reference: string | null; externalReference: string | null; guestName: string; checkinDate: string; checkoutDate: string; roomType: string; guests: number; status: string; paymentStatus: string | null; total: number | null; paid: number | null; refunded: number | null };
+type CheckoutOutcome =
+  | { kind: "failed"; text: string }
+  | { kind: "cancelled"; text: string }
+  | { kind: "uncertain"; text: string }
+  | null;
+const UNCERTAIN_COPY = "Booking not confirmed. If money was deducted it will be refunded — contact Goko Support. Do not pay again until we confirm.";
 const field = "mt-1 min-h-12 w-full min-w-0 max-w-full rounded-lg border border-brand-green/25 bg-white px-3 py-3 text-base text-brand-green-dark focus:outline-none focus:ring-2 focus:ring-brand-green";
 const action = "min-h-12 rounded-lg bg-brand-red px-4 py-3 font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 disabled:opacity-50";
 const money = (rupees: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(rupees);
@@ -23,6 +30,14 @@ async function readResponse(response: Response) {
   const data = await response.json().catch(() => { throw new Error("Could not reach Goko. Please try again or contact us."); });
   if (!response.ok) throw new Error(data.error || "Please try again.");
   return data;
+}
+
+function goToConfirmation(ref: string, guestAccessToken?: string | null) {
+  disarmCheckoutLeaveGuard();
+  if (guestAccessToken) {
+    sessionStorage.setItem(`goko_booking_${ref}`, JSON.stringify({ guestAccessToken }));
+  }
+  window.location.replace(`/booking/${encodeURIComponent(ref)}`);
 }
 
 export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate: string; checkoutDate: string } } }) {
@@ -53,6 +68,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [paymentChoice, setPaymentChoice] = useState<"advance" | "full" | "property">("advance");
   const [holdExpiresAt, setHoldExpiresAt] = useState<number | null>(null);
   const [checkoutRequestKey, setCheckoutRequestKey] = useState<string | null>(null);
+  const [checkoutOutcome, setCheckoutOutcome] = useState<CheckoutOutcome>(null);
   const [nowTick, setNowTick] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
     if (!holdExpiresAt) return;
@@ -60,6 +76,10 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     return () => window.clearInterval(id);
   }, [holdExpiresAt]);
   useEffect(() => bindUnpaidCheckoutPageHide(), []);
+  useEffect(() => {
+    if (!review || paymentChoice === "property") return;
+    void loadRazorpay().catch(() => { /* pay click will retry */ });
+  }, [review, paymentChoice]);
   useEffect(() => {
     if (!panelRef.current || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting));
@@ -151,15 +171,19 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   }
   async function openRazorpay(checkoutId: string, ownerToken: string, options: { key: string; order_id: string; amount: number; currency: string }, guestAccessToken: string, ref: string) {
     setCheckoutWait("awaiting_payment");
+    armCheckoutLeaveGuard();
     armUnpaidCheckoutAbandon({ checkoutId, ownerToken });
-    await loadRazorpay();
-    const claimed = await readResponse(await fetch("/api/guest-booking/checkout", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "claim", checkoutId, ownerToken }),
-      cache: "no-store", signal: AbortSignal.timeout(15000),
-    }));
+    const [claimed] = await Promise.all([
+      readResponse(await fetch("/api/guest-booking/checkout", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "claim", checkoutId, ownerToken }),
+        cache: "no-store", signal: AbortSignal.timeout(15000),
+      })),
+      loadRazorpay(),
+    ]);
     const checkout = claimed.checkout || options;
     await new Promise<void>((resolve, reject) => {
+      let failed = false;
       const rzp = new (window as unknown as { Razorpay: new (o: Record<string, unknown>) => { open: () => void; on: (e: string, fn: (r: { error?: { description?: string } }) => void) => void } }).Razorpay({
         key: checkout.key, amount: checkout.amount, currency: checkout.currency, order_id: checkout.order_id,
         name: site.shortName, description: "Goko Hostel booking",
@@ -175,14 +199,22 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
               }),
               cache: "no-store", signal: AbortSignal.timeout(20000),
             }));
+            if (verified.state !== "fulfilled" && verified.bookingStatus !== "received") {
+              throw Object.assign(new Error(UNCERTAIN_COPY), { uncertain: true, checkoutId, ownerToken });
+            }
             clearUnpaidCheckoutAbandon();
             setCheckoutWait("finishing");
-            sessionStorage.setItem(`goko_booking_${ref}`, JSON.stringify({ guestAccessToken }));
-            window.location.href = `/booking/${encodeURIComponent(verified.reference || ref)}`;
+            goToConfirmation(verified.reference || ref, guestAccessToken);
             resolve();
-          } catch (error) { reject(error); }
+          } catch (error) {
+            reject(Object.assign(
+              error instanceof Error ? error : new Error(String(error)),
+              { uncertain: true, checkoutId, ownerToken },
+            ));
+          }
         },
         modal: { ondismiss: async () => {
+          if (failed) return;
           try {
             await fetch("/api/guest-booking/abandon", {
               method: "POST", headers: { "Content-Type": "application/json" },
@@ -190,13 +222,14 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             });
           } catch { /* ignore */ }
           clearUnpaidCheckoutAbandon();
-          reject(new Error("Payment window closed. If money was deducted, wait a moment and check My booking."));
+          reject(Object.assign(new Error("Payment cancelled. You can try again when ready."), { softCancel: true }));
         } },
         theme: { color: "#1B4D3E" },
         retry: { enabled: false },
         config: { display: { blocks: {}, hide: [], sequence: ["block.card", "block.upi", "block.netbanking", "block.wallet"], preferences: { show_default_blocks: true } } },
       });
-      rzp.on("payment.failed", async () => {
+      rzp.on("payment.failed", async (result) => {
+        failed = true;
         try {
           await fetch("/api/guest-booking/abandon", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -204,6 +237,8 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
           });
         } catch { /* ignore */ }
         clearUnpaidCheckoutAbandon();
+        const reason = result?.error?.description || "Payment failed.";
+        reject(Object.assign(new Error(reason), { paymentFailed: true }));
       });
       rzp.open();
     });
@@ -219,10 +254,13 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       return;
     }
     if (!searchedStay || !rooms) return;
-    setBusy(true); setMessage(""); setCheckoutWait("preparing");
+    setBusy(true); setMessage(""); setCheckoutOutcome(null);
+    armCheckoutLeaveGuard();
+    setCheckoutWait(paymentChoice === "property" ? "confirming_stay" : "preparing");
+    let activeCheckout: { checkoutId: string; ownerToken: string } | null = null;
     try {
-      const requestKey = checkoutRequestKey || crypto.randomUUID();
-      if (!checkoutRequestKey) setCheckoutRequestKey(requestKey);
+      const requestKey = crypto.randomUUID();
+      setCheckoutRequestKey(requestKey);
       const payload = {
         requestKey,
         checkinDate: searchedStay.checkinDate, checkoutDate: searchedStay.checkoutDate,
@@ -236,30 +274,54 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         body: JSON.stringify(payload), cache: "no-store", signal: AbortSignal.timeout(30000),
       }));
       if (data.holdExpiresAt) setHoldExpiresAt(data.holdExpiresAt);
-      if (data.guestAccessToken && data.reference) {
-        sessionStorage.setItem(`goko_booking_${data.reference}`, JSON.stringify({
-          guestAccessToken: data.guestAccessToken,
-        }));
+      if (data.recovered && (data.state === "cancelled" || data.state === "expired" || data.bookingStatus === "cancelled")) {
+        throw new Error("That checkout was cancelled. Tap Try again to start a fresh booking.");
+      }
+      if (data.requiresPayment && !data.razorpay) {
+        if (data.checkoutId && data.ownerToken) {
+          activeCheckout = { checkoutId: data.checkoutId, ownerToken: data.ownerToken };
+          await releaseUncertainCheckout(data.checkoutId, data.ownerToken);
+        }
+        throw Object.assign(new Error(UNCERTAIN_COPY), { uncertain: true });
       }
       if (data.requiresPayment && data.razorpay && data.ownerToken && data.checkoutId) {
+        activeCheckout = { checkoutId: data.checkoutId, ownerToken: data.ownerToken };
         await openRazorpay(data.checkoutId, data.ownerToken, data.razorpay, data.guestAccessToken, data.reference);
-      } else if (data.reference) {
+      } else if (data.reference && (data.state === "fulfilled" || data.bookingStatus === "received")) {
         clearUnpaidCheckoutAbandon();
         setCheckoutWait("finishing");
-        window.location.href = `/booking/${encodeURIComponent(data.reference)}`;
+        goToConfirmation(data.reference, data.guestAccessToken);
       } else {
         clearUnpaidCheckoutAbandon();
         setCheckoutWait(null);
-        setMessage("Booking prepared. Check My booking if confirmation did not open.");
+        setCheckoutOutcome({ kind: "uncertain", text: UNCERTAIN_COPY });
       }
     } catch (error) {
-      // Release unpaid hold if we armed a session (claim/script failure, verify error, dismiss race).
-      abandonUnpaidCheckoutBeacon();
       setCheckoutWait(null);
-      const text = error instanceof Error ? error.message : "Could not complete booking.";
-      setMessage(text);
-      if (/hold|expired|reserved|unavailable|conflict/i.test(text)) {
-        setHoldExpiresAt((current) => current ?? Math.floor(Date.now() / 1000));
+      const err = error as Error & { paymentFailed?: boolean; softCancel?: boolean; uncertain?: boolean; checkoutId?: string; ownerToken?: string };
+      if (err.uncertain || /timeout|network|Failed to fetch|Could not reach/i.test(err.message || "")) {
+        const id = err.checkoutId || activeCheckout?.checkoutId;
+        const token = err.ownerToken || activeCheckout?.ownerToken;
+        if (id && token) await releaseUncertainCheckout(id, token);
+        else abandonUnpaidCheckoutBeacon();
+        setCheckoutOutcome({ kind: "uncertain", text: UNCERTAIN_COPY });
+        setMessage("");
+      } else if (err.paymentFailed) {
+        setCheckoutRequestKey(crypto.randomUUID());
+        setCheckoutOutcome({ kind: "failed", text: err.message || "Payment failed." });
+        setMessage("");
+      } else if (err.softCancel) {
+        setCheckoutRequestKey(crypto.randomUUID());
+        setCheckoutOutcome({ kind: "cancelled", text: err.message || "Payment cancelled." });
+        setMessage("");
+      } else {
+        abandonUnpaidCheckoutBeacon();
+        setCheckoutRequestKey(crypto.randomUUID());
+        const text = err.message || "Could not complete booking.";
+        setMessage(text);
+        if (/hold|expired|reserved|unavailable|conflict/i.test(text)) {
+          setHoldExpiresAt((current) => current ?? Math.floor(Date.now() / 1000));
+        }
       }
     }
     finally {
@@ -464,9 +526,53 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                   Fill in guest name, email and phone to enable Pay now. Mandatory fields are marked with *.
                 </p>
               )}
+              {checkoutOutcome && (
+                <div
+                  className={`mt-4 rounded-lg p-4 text-sm ${checkoutOutcome.kind === "uncertain" ? "border border-amber-300 bg-amber-50 text-amber-950" : "border border-brand-red/30 bg-red-50 text-brand-red"}`}
+                  role="alert"
+                >
+                  <strong>{checkoutOutcome.kind === "failed" ? "Payment failed" : checkoutOutcome.kind === "cancelled" ? "Payment cancelled" : "Booking not confirmed"}</strong>
+                  <p className="mt-1">{checkoutOutcome.text}</p>
+                  {checkoutOutcome.kind === "uncertain" && !preview && (
+                    <a
+                      className="mt-3 inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-4 py-2 font-semibold text-brand-green-dark"
+                      href={`${site.whatsAppUrl}?text=${encodeURIComponent("Hi Goko Support — I tried to book online and payment may have been deducted but my booking was not confirmed. Please check.")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Contact Goko Support
+                    </a>
+                  )}
+                  {(checkoutOutcome.kind === "failed" || checkoutOutcome.kind === "cancelled") && (
+                    <button
+                      type="button"
+                      className={`${action} mt-3`}
+                      disabled={busy || !guestDetailsComplete || !!checkoutWait}
+                      onClick={() => {
+                        setCheckoutOutcome(null);
+                        setMessage("");
+                        setCheckoutRequestKey(crypto.randomUUID());
+                        void confirmStay();
+                      }}
+                    >
+                      Try again
+                    </button>
+                  )}
+                  {checkoutOutcome.kind === "uncertain" && (
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-mist px-4 py-2 text-sm font-semibold"
+                      disabled={busy}
+                      onClick={() => { setCheckoutOutcome(null); setMessage(""); }}
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="mt-4">
-                <button type="button" className={action} disabled={busy || !guestDetailsComplete || !!checkoutWait} onClick={confirmStay}>
-                  {checkoutWait === "preparing" || checkoutWait === "confirming" || checkoutWait === "finishing"
+                <button type="button" className={action} disabled={busy || !guestDetailsComplete || !!checkoutWait || (checkoutOutcome?.kind === "uncertain")} onClick={confirmStay}>
+                  {checkoutWait === "preparing" || checkoutWait === "confirming" || checkoutWait === "finishing" || checkoutWait === "confirming_stay"
                     ? "Please wait…"
                     : checkoutWait === "awaiting_payment"
                       ? "Payment in progress…"

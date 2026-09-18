@@ -38,6 +38,7 @@ import {
 import {
   readWebsiteBookingSettings, websiteBookingSettingsRevision, WEBSITE_BOOKING_SETTINGS_KEY,
 } from "@/lib/websiteBookingSettings";
+import { mergeWebsiteCheckoutRaw, parseWebsiteCheckout } from "@/lib/websiteCheckoutSnapshot";
 import { todayIST } from "@/lib/utils";
 
 type Checkout = typeof checkouts.$inferSelect;
@@ -45,6 +46,97 @@ const timestamp = () => new Date().toISOString();
 const receiptFor = (id: string) => `gbk_${id.replace(/-/g, "").slice(0, 32)}`;
 const checkoutEnv = (row: Checkout): RazorpayEnvironment =>
   row.environment === "live" ? "live" : "test";
+
+async function snapshotWebsiteOntoBooking(
+  bookingId: number,
+  row: Checkout,
+  opts: { orphanCapture?: boolean; quoteJson?: string | null } = {},
+) {
+  const [booking] = await getDb().select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+  if (!booking) return;
+  const payRows = await getDb().select().from(payments).where(eq(payments.checkoutId, row.id));
+  const captured = payRows.filter((p) => p.captured === 1);
+  let quoteSummary: { nights: number; beforeTax: number; tax: number; total: number; unitsLabel?: string } | undefined;
+  const quoteJson = opts.quoteJson;
+  if (quoteJson) {
+    try {
+      const q = JSON.parse(quoteJson) as {
+        beforeTaxRupees?: number; taxRupees?: number; totalRupees?: number;
+        checkinDate?: string; checkoutDate?: string;
+        units?: Array<{ key: string }>;
+      };
+      const nights = q.checkinDate && q.checkoutDate
+        ? occupiedNights(q.checkinDate, q.checkoutDate).length
+        : 0;
+      quoteSummary = {
+        nights,
+        beforeTax: Number(q.beforeTaxRupees || 0),
+        tax: Number(q.taxRupees || 0),
+        total: Number(q.totalRupees || 0),
+        unitsLabel: (q.units || []).map((u) => u.key).join(", ") || undefined,
+      };
+    } catch { /* ignore */ }
+  }
+  const dueAtPropertyPaise = Math.max(
+    0,
+    Math.round(Number(booking.amountTotal || 0) * 100) - Math.round(Number(booking.amountPaid || 0) * 100),
+  );
+  const rawData = mergeWebsiteCheckoutRaw(booking.rawData, {
+    paymentChoice: row.paymentChoice,
+    checkoutId: row.id,
+    checkoutState: row.state,
+    gatewayEnvironment: row.environment,
+    razorpayOrderId: row.razorpayOrderId,
+    paymentIds: payRows.map((p) => p.id),
+    dueNowPaise: row.dueNowPaise,
+    dueAtPropertyPaise,
+    capturedPaise: captured.reduce((s, p) => s + p.amountPaise, 0),
+    orphanCapture: opts.orphanCapture === true,
+    receipt: row.receipt,
+    holdId: row.holdId,
+    acceptedQuoteId: row.acceptedQuoteId,
+    quoteSummary,
+  });
+  await updateBookingFull(bookingId, { rawData });
+}
+
+/** After cancel: if money was captured, stamp booking for admin refund / Razorpay lookup. */
+async function applyOrphanCaptureIfNeeded(row: Checkout) {
+  if (!row.bookingId) return false;
+  const captured = await getDb().select().from(payments)
+    .where(and(eq(payments.checkoutId, row.id), eq(payments.captured, 1)));
+  if (!captured.length) return false;
+  const paidRupees = captured.reduce((s, p) => s + p.amountPaise, 0) / 100;
+  const [booking] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
+  if (!booking) return false;
+  let quoteJson: string | null = null;
+  if (row.acceptedQuoteId) {
+    const [q] = await getDb().select().from(quotes).where(eq(quotes.id, row.acceptedQuoteId)).limit(1);
+    quoteJson = q?.quoteJson ?? null;
+  }
+  await updateBookingFull(row.bookingId, {
+    amountPaid: Math.max(Number(booking.amountPaid || 0), paidRupees),
+    paymentStatus: "paid",
+    paymentMethod: row.environment === "live" ? "razorpay_live" : "razorpay_test",
+  });
+  const already = parseWebsiteCheckout(booking.rawData)?.orphanCapture
+    || (await getBookingHistoryEntries(row.bookingId)).some((h) => h.action === "website_orphan_capture");
+  if (!already) {
+    await addBookingHistoryEntry({
+      bookingId: row.bookingId,
+      action: "website_orphan_capture",
+      details: `Payment captured after guest saw booking not confirmed; checkout ${row.id}; refund manually`,
+      performedBy: "website",
+    });
+  }
+  const fresh = await getCheckoutById(row.id);
+  await snapshotWebsiteOntoBooking(row.bookingId, { ...fresh, state: "cancelled" }, {
+    orphanCapture: true,
+    quoteJson,
+  });
+  return true;
+}
+
 const date = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/);
 const token64 = z.string().regex(/^[a-f0-9]{64}$/);
 const roomsSchema = z.array(z.object({
@@ -544,13 +636,22 @@ export async function reconcileGuestCheckout(checkoutId: string, ownerToken: str
 /**
  * Guest closed Checkout / refreshed before capture: release inventory hold and cancel
  * the unpaid provisional (or unpaid amend) checkout. If Razorpay already captured,
- * fulfil instead of abandoning.
+ * fulfil instead of abandoning — unless `uncertain` (guest already told booking not confirmed).
  */
-export async function abandonUnpaidGuestCheckout(checkoutId: string, ownerToken: string) {
+export async function abandonUnpaidGuestCheckout(
+  checkoutId: string,
+  ownerToken: string,
+  opts: { uncertain?: boolean } = {},
+) {
   cloudOnly();
+  const uncertain = opts.uncertain === true;
   let row = await requireOwner(checkoutId, ownerToken);
   if (["fulfilled", "captured_unfulfilled", "cancelled", "expired"].includes(row.state)) {
-    return { abandoned: false as const, state: row.state };
+    if (uncertain && row.state === "cancelled") {
+      const orphanCapture = await applyOrphanCaptureIfNeeded(row);
+      return { abandoned: false as const, state: row.state, orphanCapture };
+    }
+    return { abandoned: false as const, state: row.state, orphanCapture: false };
   }
 
   if (row.dueNowPaise >= 100 && row.razorpayOrderId) {
@@ -563,25 +664,29 @@ export async function abandonUnpaidGuestCheckout(checkoutId: string, ownerToken:
         .where(and(eq(payments.checkoutId, checkoutId), eq(payments.captured, 1))).limit(1);
       if (captured.length) {
         row = await getCheckoutById(checkoutId);
-        if (!["fulfilled", "captured_unfulfilled", "cancelled"].includes(row.state)) {
+        if (!uncertain && !["fulfilled", "captured_unfulfilled", "cancelled"].includes(row.state)) {
           await fulfilGuestCheckout(checkoutId, ownerToken);
+          return { abandoned: false as const, state: "paid" as const, orphanCapture: false };
         }
-        return { abandoned: false as const, state: "paid" as const };
+        // uncertain: fall through to cancel without fulfil
       }
     } catch {
-      // Do not release inventory when capture status is unknown.
-      return { abandoned: false as const, state: "reconcile_unavailable" as const };
+      if (!uncertain) {
+        // Do not release inventory when capture status is unknown (normal abandon).
+        return { abandoned: false as const, state: "reconcile_unavailable" as const, orphanCapture: false };
+      }
+      // uncertain: still release — guest was told booking is not confirmed.
     }
   }
 
   const localCaptured = await getDb().select().from(payments)
     .where(and(eq(payments.checkoutId, checkoutId), eq(payments.captured, 1))).limit(1);
-  if (localCaptured.length) {
+  if (localCaptured.length && !uncertain) {
     row = await getCheckoutById(checkoutId);
     if (!["fulfilled", "captured_unfulfilled", "cancelled"].includes(row.state)) {
       await fulfilGuestCheckout(checkoutId, ownerToken);
     }
-    return { abandoned: false as const, state: "paid" as const };
+    return { abandoned: false as const, state: "paid" as const, orphanCapture: false };
   }
 
   if (row.holdId) {
@@ -600,20 +705,38 @@ export async function abandonUnpaidGuestCheckout(checkoutId: string, ownerToken:
     sql`${checkouts.state} NOT IN ('fulfilled','captured_unfulfilled','cancelled','expired')`,
   ));
 
-  // Amend abandon: release the change hold only — keep the original booking.
+  row = await getCheckoutById(checkoutId);
+  let orphanCapture = false;
+
   if (!row.amendsCheckoutId && row.bookingId) {
     const [booking] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
-    if (booking?.status === "hold" && (booking.amountPaid || 0) === 0) {
+    if (localCaptured.length || (await getDb().select().from(payments)
+      .where(and(eq(payments.checkoutId, checkoutId), eq(payments.captured, 1))).limit(1)).length) {
+      orphanCapture = await applyOrphanCaptureIfNeeded(row);
+      if (booking?.status === "hold") {
+        await transitionBookingStatus(row.bookingId, ["hold"], {
+          status: "cancelled", cancelledAt: now, holdExpiresAt: "",
+        });
+      }
+    } else if (booking?.status === "hold" && (booking.amountPaid || 0) === 0) {
       const moved = await transitionBookingStatus(row.bookingId, ["hold"], {
         status: "cancelled", cancelledAt: now, holdExpiresAt: "",
       });
       if (moved) {
         await addBookingHistoryEntry({
           bookingId: row.bookingId,
-          action: "guest_abandoned",
-          details: "Guest left unpaid checkout; temporary hold released",
+          action: uncertain ? "guest_uncertain_payment" : "guest_abandoned",
+          details: uncertain
+            ? "Guest payment outcome unclear; hold released — do not pay again until support confirms"
+            : "Guest left unpaid checkout; temporary hold released",
           performedBy: "guest",
         });
+        let quoteJson: string | null = null;
+        if (row.acceptedQuoteId) {
+          const [q] = await getDb().select().from(quotes).where(eq(quotes.id, row.acceptedQuoteId)).limit(1);
+          quoteJson = q?.quoteJson ?? null;
+        }
+        await snapshotWebsiteOntoBooking(row.bookingId, row, { quoteJson });
       }
     }
   } else if (row.amendsCheckoutId && row.bookingId) {
@@ -625,7 +748,7 @@ export async function abandonUnpaidGuestCheckout(checkoutId: string, ownerToken:
     });
   }
 
-  return { abandoned: true as const, state: "cancelled" as const };
+  return { abandoned: true as const, state: "cancelled" as const, orphanCapture };
 }
 
 export async function verifyGuestPayment(checkoutId: string, ownerToken: string, paymentId: string, orderId: string, signature: string) {
@@ -639,7 +762,7 @@ export async function verifyGuestPayment(checkoutId: string, ownerToken: string,
   await recordPayment(row, evidence);
   if (evidence.captured && ["captured", "refunded"].includes(evidence.status)) {
     if (["cancelled", "expired"].includes(row.state)) {
-      // Capture retained; do not resurrect a cancelled/expired checkout via browser verify.
+      await applyOrphanCaptureIfNeeded(await getCheckoutById(checkoutId));
     } else {
       await fulfilGuestCheckout(checkoutId, ownerToken);
     }
@@ -797,6 +920,13 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
       performedBy: "website",
     });
     const [confirmed] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
+    let quoteJson: string | null = null;
+    if (row.acceptedQuoteId) {
+      const [q] = await getDb().select().from(quotes).where(eq(quotes.id, row.acceptedQuoteId)).limit(1);
+      quoteJson = q?.quoteJson ?? null;
+    }
+    const fulfilledRow = await getCheckoutById(checkoutId);
+    await snapshotWebsiteOntoBooking(row.bookingId, fulfilledRow, { quoteJson });
     // Aiosell + email after beds are confirmed — do not block the guest wait overlay.
     await afterResponse((async () => {
       try { await pushIfOtaChanged(before, dormIds, nights); } catch { /* best-effort */ }
@@ -1546,6 +1676,8 @@ export async function processNativeBookingWebhook(eventId: string) {
       } catch {
         // Capture retained; captured_unfulfilled or retry on next webhook/reconcile.
       }
+    } else if (captured.length && row.state === "cancelled") {
+      await applyOrphanCaptureIfNeeded(row);
     }
     await getDb().update(hooks).set({ state: "processed", updatedAt: timestamp() }).where(eq(hooks.eventId, eventId));
     return { state: "processed" };
@@ -1554,6 +1686,107 @@ export async function processNativeBookingWebhook(eventId: string) {
       .where(and(eq(hooks.eventId, eventId), ne(hooks.state, "processed")));
     throw error;
   }
+}
+
+/**
+ * Admin: refund Razorpay capture on a cancelled website booking (orphan / uncertain path).
+ * Uses native payment rows; updates bookings.amountRefunded. No inventory change.
+ */
+export async function refundWebsiteOrphanCapture(bookingId: number, performedBy: string) {
+  cloudOnly();
+  if (!Number.isInteger(bookingId) || bookingId < 1) {
+    throw new GuestCheckoutError("Invalid booking", 400);
+  }
+  const [booking] = await getDb().select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+  if (!booking) throw new GuestCheckoutError("Booking not found", 404);
+  if (booking.source !== "website") {
+    throw new GuestCheckoutError("Only Goko Website bookings can use orphan refund", 400);
+  }
+  if (booking.status !== "cancelled") {
+    throw new GuestCheckoutError("Orphan refund is only for cancelled website bookings", 400);
+  }
+  const alreadyRefunded = Number(booking.amountRefunded || 0);
+  const paid = Number(booking.amountPaid || 0);
+  const remainingRupees = Math.max(0, paid - alreadyRefunded);
+  if (remainingRupees < 1) {
+    throw new GuestCheckoutError("Nothing left to refund on this booking", 400);
+  }
+  const targetPaise = Math.round(remainingRupees * 100);
+  if (targetPaise < 100) {
+    throw new GuestCheckoutError("Refund amount is below Razorpay minimum", 400);
+  }
+
+  const cos = await getDb().select().from(checkouts).where(eq(checkouts.bookingId, bookingId));
+  if (!cos.length) throw new GuestCheckoutError("No website checkout found for this booking", 404);
+  const capturedRows = await getDb().select().from(payments).where(and(
+    inArray(payments.checkoutId, cos.map((c) => c.id)),
+    eq(payments.captured, 1),
+  ));
+  if (!capturedRows.length) {
+    throw new GuestCheckoutError("No captured Razorpay payment found — check dashboard with Order ID on this booking", 400);
+  }
+  const refundRows = await getDb().select().from(refunds)
+    .where(inArray(refunds.paymentId, capturedRows.map((p) => p.id)));
+  const processed = refundRows.filter((r) => r.state === "processed").reduce((s, r) => s + r.amountPaise, 0);
+  const reserved = refundRows.filter((r) => ["submitting", "unknown", "pending"].includes(r.state))
+    .reduce((s, r) => s + r.amountPaise, 0);
+  const capturedPaise = capturedRows.reduce((s, p) => s + p.amountPaise, 0);
+  const refundable = Math.max(0, capturedPaise - processed - reserved);
+  const amount = Math.min(targetPaise, refundable);
+  if (amount < 100) {
+    throw new GuestCheckoutError("No refundable Razorpay balance left (check pending refunds)", 400);
+  }
+  const payment = capturedRows.find((p) => {
+    const claimed = refundRows.filter((r) => r.paymentId === p.id).reduce((s, r) => s + r.amountPaise, 0);
+    return p.amountPaise - claimed >= amount;
+  }) || capturedRows[0];
+  const checkout = cos.find((c) => c.id === payment.checkoutId) || cos[0];
+  const refundId = crypto.randomUUID();
+  const inserted = await getDb().insert(refunds).values({
+    id: refundId, paymentId: payment.id, receipt: receiptFor(refundId),
+    amountPaise: amount, createdAt: timestamp(), updatedAt: timestamp(),
+  }).onConflictDoNothing({ target: refunds.paymentId }).returning();
+  if (!inserted.length) {
+    throw new GuestCheckoutError("A refund is already in progress for this payment", 409);
+  }
+  try {
+    const evidence = await createRazorpayBookingRefund(
+      payment.id, amount, inserted[0].receipt, refundId, checkoutEnv(checkout),
+    );
+    await recordBookingRefund(inserted[0], evidence);
+  } catch (error) {
+    await getDb().update(refunds).set({ state: "unknown", updatedAt: timestamp() })
+      .where(and(eq(refunds.paymentId, payment.id), eq(refunds.state, "submitting")));
+    throw error instanceof GuestCheckoutError || error instanceof RazorpayError
+      ? error
+      : new GuestCheckoutError("Razorpay refund failed — check dashboard and retry", 503);
+  }
+  const refundedRupees = amount / 100;
+  await updateBookingFull(bookingId, {
+    amountRefunded: alreadyRefunded + refundedRupees,
+    refundMethod: checkout.environment === "live" ? "razorpay_live" : "razorpay_test",
+  });
+  await addBookingHistoryEntry({
+    bookingId,
+    action: "website_orphan_refund",
+    details: `Refunded ₹${refundedRupees.toFixed(2)} via Razorpay payment ${payment.id}`,
+    performedBy: performedBy || "admin",
+  });
+  const fresh = await getCheckoutById(checkout.id);
+  let quoteJson: string | null = null;
+  if (fresh.acceptedQuoteId) {
+    const [q] = await getDb().select().from(quotes).where(eq(quotes.id, fresh.acceptedQuoteId)).limit(1);
+    quoteJson = q?.quoteJson ?? null;
+  }
+  await snapshotWebsiteOntoBooking(bookingId, fresh, {
+    orphanCapture: parseWebsiteCheckout((await getDb().select().from(bookings).where(eq(bookings.id, bookingId)).limit(1))[0]?.rawData)?.orphanCapture === true,
+    quoteJson,
+  });
+  return {
+    refundedRupees,
+    paymentId: payment.id,
+    amountRefunded: alreadyRefunded + refundedRupees,
+  };
 }
 
 /** Peek notes without full processing — used by webhook router. */

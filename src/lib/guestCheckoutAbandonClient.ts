@@ -1,15 +1,30 @@
-/** Browser helper: release unpaid checkout hold on leave/refresh (not after paid confirm). */
+/** Browser helper: unpaid abandon on leave + sync leave-guard for confirmation navigate. */
 
 type Session = { checkoutId: string; ownerToken: string };
 
 let unpaid: Session | null = null;
+let leaveGuardDisarmed = false;
 
 export function armUnpaidCheckoutAbandon(session: Session) {
   unpaid = session;
+  leaveGuardDisarmed = false;
 }
 
 export function clearUnpaidCheckoutAbandon() {
   unpaid = null;
+}
+
+/** Call synchronously before location.replace so beforeunload does not fire. */
+export function disarmCheckoutLeaveGuard() {
+  leaveGuardDisarmed = true;
+}
+
+export function isCheckoutLeaveGuardDisarmed() {
+  return leaveGuardDisarmed;
+}
+
+export function armCheckoutLeaveGuard() {
+  leaveGuardDisarmed = false;
 }
 
 export function abandonUnpaidCheckoutBeacon() {
@@ -29,6 +44,18 @@ export function abandonUnpaidCheckoutBeacon() {
     body,
     keepalive: true,
     cache: "no-store",
+  }).catch(() => {});
+}
+
+/** Uncertain verify timeout: release without fulfil — never use abandon beacon after pay attempt. */
+export async function releaseUncertainCheckout(checkoutId: string, ownerToken: string) {
+  clearUnpaidCheckoutAbandon();
+  await fetch("/api/guest-booking/abandon", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ checkoutId, ownerToken, uncertain: true }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
   }).catch(() => {});
 }
 

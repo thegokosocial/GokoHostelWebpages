@@ -24,10 +24,12 @@ import {
   MessageCircleIcon,
   SendIcon,
   Trash2Icon,
+  CopyIcon,
 } from "lucide-react";
 import { STATUS_COLORS, platformLogo, STATUS_LABELS, formatCurrency, getHostelToday, getNights, collectionCopy, displayedStayPayment } from "./utils";
 import { PlatformBadge } from "./PlatformBadge";
 import { parseGokoWalkin, walkinDiscountOnGross } from "@/lib/bookingPricing";
+import { parseWebsiteCheckout } from "@/lib/websiteCheckoutSnapshot";
 import { isManualWalkinBooking } from "@/lib/bookingResolution";
 import { stayDueAtHotel, stayRefundCap } from "@/lib/stayPayment";
 import { CheckInPopup } from "./CheckInPopup";
@@ -64,7 +66,7 @@ export function BookingDetailPanel({
   username?: string;
   whatsAppTemplates: BookingWhatsAppTemplate[];
 }) {
-  const { showError } = useAdminToast();
+  const { showError, showSuccess } = useAdminToast();
   const prepareWhatsApp = useStaffWhatsApp();
   const [history, setHistory] = useState<BookingHistoryEntry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -185,6 +187,22 @@ export function BookingDetailPanel({
 
   const nights = getNights(booking.checkinDate, booking.checkoutDate);
   const walkin = parseGokoWalkin(booking.rawData);
+  const websiteCheckout = booking.source === "website" ? parseWebsiteCheckout(booking.rawData) : null;
+  const orphanRefundDue = Boolean(
+    websiteCheckout
+    && booking.status === "cancelled"
+    && (booking.amountPaid || 0) > (booking.amountRefunded || 0)
+    && (websiteCheckout.orphanCapture || (websiteCheckout.paymentIds?.length ?? 0) > 0 || websiteCheckout.razorpayOrderId),
+  );
+  const canRefundWebsiteOrphan = orphanRefundDue && hasPermission(role, permissions, "canDeleteBooking");
+  const copyId = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      showSuccess(`${label} copied`);
+    } catch {
+      showError(`Could not copy ${label}`);
+    }
+  };
   const gross = booking.nightlyRate * nights * (walkin?.unitPricing ? 1 : Math.max(1, booking.persons));
   const discount = walkin
     ? walkinDiscountOnGross(gross, walkin)
@@ -366,6 +384,71 @@ export function BookingDetailPanel({
               <InfoRow label="Currency" value={booking.currency} />
             </Section>
 
+            {websiteCheckout && (
+              <Section icon={CreditCardIcon} title="Website / Razorpay">
+                {websiteCheckout.orphanCapture && (
+                  <p className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                    Orphan capture — guest was told booking not confirmed. Refund via Razorpay using the Payment ID below.
+                  </p>
+                )}
+                <InfoRow label="Payment choice" value={websiteCheckout.paymentChoice || "-"} />
+                <InfoRow label="Gateway" value={websiteCheckout.gatewayEnvironment || "-"} />
+                {websiteCheckout.razorpayOrderId && (
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <span className="text-muted-foreground">Razorpay Order ID</span>
+                      <p className="break-all font-mono text-foreground">{websiteCheckout.razorpayOrderId}</p>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon-sm" onClick={() => void copyId("Order ID", websiteCheckout.razorpayOrderId!)}>
+                      <CopyIcon className="size-3.5" />
+                      <span className="sr-only">Copy Order ID</span>
+                    </Button>
+                  </div>
+                )}
+                {(websiteCheckout.paymentIds || []).map((pid) => (
+                  <div key={pid} className="flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <span className="text-muted-foreground">Payment ID</span>
+                      <p className="break-all font-mono text-foreground">{pid}</p>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon-sm" onClick={() => void copyId("Payment ID", pid)}>
+                      <CopyIcon className="size-3.5" />
+                      <span className="sr-only">Copy Payment ID</span>
+                    </Button>
+                  </div>
+                ))}
+                {websiteCheckout.dueNowPaise != null && (
+                  <InfoRow label="Due online" value={formatCurrency(websiteCheckout.dueNowPaise / 100)} />
+                )}
+                {websiteCheckout.capturedPaise != null && websiteCheckout.capturedPaise > 0 && (
+                  <InfoRow label="Captured" value={formatCurrency(websiteCheckout.capturedPaise / 100)} />
+                )}
+                {websiteCheckout.dueAtPropertyPaise != null && websiteCheckout.dueAtPropertyPaise > 0 && (
+                  <InfoRow label="Due at property" value={formatCurrency(websiteCheckout.dueAtPropertyPaise / 100)} />
+                )}
+                {websiteCheckout.receipt && <InfoRow label="Receipt" value={websiteCheckout.receipt} />}
+                {websiteCheckout.checkoutId && (
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <span className="text-muted-foreground">Checkout ID</span>
+                      <p className="break-all font-mono text-foreground">{websiteCheckout.checkoutId}</p>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon-sm" onClick={() => void copyId("Checkout ID", websiteCheckout.checkoutId!)}>
+                      <CopyIcon className="size-3.5" />
+                      <span className="sr-only">Copy Checkout ID</span>
+                    </Button>
+                  </div>
+                )}
+                {websiteCheckout.checkoutState && <InfoRow label="Checkout state" value={websiteCheckout.checkoutState} />}
+                {websiteCheckout.quoteSummary && (
+                  <InfoRow
+                    label="Quote"
+                    value={`${websiteCheckout.quoteSummary.nights}n · ${formatCurrency(websiteCheckout.quoteSummary.total)}${websiteCheckout.quoteSummary.unitsLabel ? ` · ${websiteCheckout.quoteSummary.unitsLabel}` : ""}`}
+                  />
+                )}
+              </Section>
+            )}
+
             {/* Guest Contact */}
             <Section icon={UserIcon} title="Guest Contact">
               <div className="space-y-1.5">
@@ -538,6 +621,23 @@ export function BookingDetailPanel({
                 disabled={busy}
               >
                 No Show
+              </Button>
+            )}
+            {canRefundWebsiteOrphan && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmAction({
+                  action: "refundWebsiteOrphan",
+                  title: "Refund Razorpay orphan",
+                  description: `Refund ${formatCurrency((booking.amountPaid || 0) - (booking.amountRefunded || 0))} captured on this cancelled website booking via Razorpay? Use the Payment ID in Website / Razorpay to cross-check the dashboard.`,
+                  variant: "destructive",
+                  confirmLabel: "Refund via Razorpay",
+                })}
+                disabled={busy}
+              >
+                <BanknoteIcon className="size-3.5" />
+                Refund orphan capture
               </Button>
             )}
             {canHardDeleteBooking && (

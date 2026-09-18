@@ -102,7 +102,7 @@ Source SQL: `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_i
 | `native_booking_refunds` | One refund reservation per payment; variable amount; submitting/unknown/pending/processed/failed. |
 | `native_booking_webhooks` | Unique event ID + payload hash; routes via `notes.goko_checkout_id`. |
 
-Source: `0062_native_guest_checkout.sql` + `0063_guest_booking_amend.sql`. Orchestration in `nativeGuestCheckout.ts` (`prepareGuestAmend` / `fulfilGuestAmend`). Readiness in `nativeCheckoutReadiness.ts`. Fulfilment **releases** the hold then assigns beds (0059 forbids assign-while-held). Separate from `gateway_preview_*`.
+Source: `0062_native_guest_checkout.sql` + `0063_guest_booking_amend.sql`. Orchestration in `nativeGuestCheckout.ts` (`prepareGuestAmend` / `fulfilGuestAmend`). Readiness in `nativeCheckoutReadiness.ts`. Fulfilment **releases** the hold then assigns beds (0059 forbids assign-while-held). Durable Razorpay cross-check fields are merged into `bookings.rawData` as `websiteCheckout` / `nativeCheckout` (`websiteCheckoutSnapshot.ts`) on fulfil and orphan capture. Separate from `gateway_preview_*`.
 
 ### Internal native physical holds (Cloudflare-owned, never synced)
 
