@@ -9,6 +9,7 @@ Staff messaging uses the shared StaffWhatsAppProvider and staffWhatsApp link bui
 | Admin booking details → message → template | Prepares the message and directly attempts WhatsApp Business on Android from the template tap. Retains recovery controls. |
 | Admin Reviews → Send WhatsApp | Validates the number, calls existing `sendWhatsApp` API to prepare the review token, then shows Open WhatsApp Business. The explicit second tap preserves browser user activation. |
 | Guest food-order sharing | Existing standard WhatsApp link to kitchen; unchanged. |
+| Admin Food Orders → Bill / Combined Bill → WhatsApp | Mints opaque `food_bill_share_tokens` via `createBillShareLink`, opens `wa.me` with `/my-bills?t=` (not `?phone=`). Standard personal WhatsApp link (not StaffWhatsAppProvider / Business intent). |
 | Public booking enquiry | Existing template link to Goko; unchanged. |
 | Floating button, footer, booking gate popup, FAQs, directions | Existing public contact links; unchanged. |
 

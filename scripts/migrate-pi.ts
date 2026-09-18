@@ -32,7 +32,11 @@ let count = 0;
 for (const file of files) {
   if (applied.has(file)) continue;
 
-  if (file === "0035_site_cms.sql" || file === "0041_splits.sql") {
+  if (
+    file === "0035_site_cms.sql"
+    || file === "0041_splits.sql"
+    || file === "0064_food_bill_share_tokens.sql"
+  ) {
     console.log(`Skipping (Cloudflare-only): ${file}`);
     db.prepare("INSERT INTO _migrations (name) VALUES (?)").run(file);
     count++;

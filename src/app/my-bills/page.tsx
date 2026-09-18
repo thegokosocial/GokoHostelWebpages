@@ -66,8 +66,10 @@ function MyBillsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const phoneParam = searchParams.get("phone") || "";
+  const tokenParam = searchParams.get("t") || searchParams.get("token") || "";
 
   const [phone, setPhone] = useState(() => {
+    if (tokenParam) return "";
     if (phoneParam) return phoneParam;
     if (typeof window !== "undefined") {
       return localStorage.getItem("gokoFoodPhone") || "";
@@ -75,6 +77,7 @@ function MyBillsContent() {
     return "";
   });
   const [submitted, setSubmitted] = useState(false);
+  const [viaToken, setViaToken] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [unpaidOrders, setUnpaidOrders] = useState<BillOrder[]>([]);
@@ -82,26 +85,63 @@ function MyBillsContent() {
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [billBranding, setBillBranding] = useState<BillBrandingPublic>(DEFAULT_PUBLIC_BRANDING);
 
-  const fetchBills = useCallback(async (phoneDigits: string) => {
+  const applyBillsPayload = useCallback((data: {
+    unpaidOrders?: BillOrder[];
+    paidOrders?: BillOrder[];
+    billBranding?: Partial<BillBrandingPublic>;
+    viaToken?: boolean;
+    phone?: string;
+  }) => {
+    setUnpaidOrders(data.unpaidOrders || []);
+    setPaidOrders(data.paidOrders || []);
+    if (data.billBranding) {
+      setBillBranding({ ...DEFAULT_PUBLIC_BRANDING, ...data.billBranding });
+    }
+    setViaToken(!!data.viaToken);
+    if (data.viaToken) {
+      setPhone("");
+    } else if (data.phone) {
+      setPhone(data.phone);
+    }
+    setExpandedOrders(new Set((data.unpaidOrders || []).length ? ["unpaid-tab"] : []));
+    setSubmitted(true);
+  }, []);
+
+  const fetchBillsByPhone = useCallback(async (phoneDigits: string) => {
     setLoading(true);
     setError("");
     try {
       const res = await fetch(`/api/food/bills?phone=${encodeURIComponent(phoneDigits)}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setUnpaidOrders(data.unpaidOrders || []);
-      setPaidOrders(data.paidOrders || []);
-      if (data.billBranding) {
-        setBillBranding({ ...DEFAULT_PUBLIC_BRANDING, ...data.billBranding });
-      }
-      setExpandedOrders(new Set((data.unpaidOrders || []).length ? ["unpaid-tab"] : []));
-      setSubmitted(true);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to fetch");
+      applyBillsPayload({ ...data, viaToken: false, phone: phoneDigits });
     } catch {
       setError("Unable to load bills. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyBillsPayload]);
+
+  const fetchBillsByToken = useCallback(async (token: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/food/bills?t=${encodeURIComponent(token)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "This bill link is invalid or has expired");
+        setSubmitted(false);
+        setViaToken(false);
+        return;
+      }
+      applyBillsPayload({ ...data, viaToken: true });
+    } catch {
+      setError("Unable to load bills. Please try again.");
+      setSubmitted(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [applyBillsPayload]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,7 +151,7 @@ function MyBillsContent() {
       return;
     }
     localStorage.setItem("gokoFoodPhone", digits);
-    fetchBills(digits);
+    void fetchBillsByPhone(digits);
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,23 +170,32 @@ function MyBillsContent() {
   };
 
   useEffect(() => {
+    if (tokenParam) {
+      void fetchBillsByToken(tokenParam);
+      return;
+    }
     if (phoneParam && !submitted) {
       const digits = phoneParam.replace(/\D/g, "");
       if (digits.length >= 7) {
         setPhone(digits);
-        setSubmitted(true);
-        fetchBills(digits);
+        void fetchBillsByPhone(digits);
       }
     }
-  }, [phoneParam]);
+    // Intentional: run once from URL params on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenParam, phoneParam]);
 
   const handleChangeNumber = () => {
     setPhone("");
     setSubmitted(false);
+    setViaToken(false);
     setUnpaidOrders([]);
     setPaidOrders([]);
     setError("");
     localStorage.removeItem("gokoFoodPhone");
+    if (tokenParam) {
+      router.replace("/my-bills");
+    }
   };
 
   const handleBack = () => {
@@ -183,7 +232,22 @@ function MyBillsContent() {
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">View your food orders & bills</p>
         </div>
 
-        {!submitted ? (
+        {tokenParam && loading && !submitted ? (
+          <div className="rounded-2xl bg-white/95 dark:bg-card/95 p-8 text-center shadow-xl dark:shadow-none">
+            <p className="text-brand-green">Loading shared bill…</p>
+          </div>
+        ) : tokenParam && error && !submitted ? (
+          <div className="rounded-2xl bg-white/95 dark:bg-card/95 p-6 shadow-xl dark:shadow-none backdrop-blur-sm">
+            <p className="text-sm text-red-600">{error}</p>
+            <button
+              type="button"
+              onClick={handleChangeNumber}
+              className="mt-4 text-sm font-medium text-brand-green"
+            >
+              Look up by phone instead
+            </button>
+          </div>
+        ) : !submitted ? (
           <motion.form
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -219,9 +283,11 @@ function MyBillsContent() {
         ) : (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
             <div className="mb-4 flex items-center justify-between rounded-xl bg-white/80 dark:bg-card/80 px-4 py-2.5 backdrop-blur-sm">
-              <span className="text-sm text-gray-600 dark:text-gray-300">+91 {formatPhone(phone)}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-300">
+                {viaToken ? "Shared bill link" : `+91 ${formatPhone(phone)}`}
+              </span>
               <button type="button" onClick={handleChangeNumber} className="text-sm font-medium text-brand-green">
-                Change
+                {viaToken ? "Look up number" : "Change"}
               </button>
             </div>
 

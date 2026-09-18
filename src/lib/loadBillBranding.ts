@@ -13,6 +13,11 @@ export type LoadedBillBranding = {
   error?: string;
 };
 
+export type LoadBillBrandingOptions = {
+  /** When true (default), fetch QR as data URL for PDF/thermal embed. HTML bill views should pass false. */
+  embedQr?: boolean;
+};
+
 async function qrUrlToDataUrl(url: string): Promise<string | undefined> {
   if (!url) return undefined;
   try {
@@ -30,11 +35,13 @@ async function qrUrlToDataUrl(url: string): Promise<string | undefined> {
   }
 }
 
-/** Load bill branding for PDF/thermal. Soft-fails QR image fetch; surfaces API errors via `ok`. */
+/** Load bill branding. Soft-fails QR image fetch; surfaces API errors via `ok`. */
 export async function loadBillBranding(
   password: string,
   username?: string,
+  opts?: LoadBillBrandingOptions,
 ): Promise<LoadedBillBranding> {
+  const embedQr = opts?.embedQr !== false;
   try {
     const payload: Record<string, unknown> = { password, action: "getBillBranding" };
     if (username) payload.username = username;
@@ -53,7 +60,7 @@ export async function loadBillBranding(
     }
     const settings = (data.settings || {}) as Record<string, string>;
     const branding = brandingFromSettings(settings);
-    const paymentQrDataUrl = branding.paymentQrUrl
+    const paymentQrDataUrl = embedQr && branding.paymentQrUrl
       ? await qrUrlToDataUrl(branding.paymentQrUrl)
       : undefined;
     return { ok: true, branding, paymentQrDataUrl };

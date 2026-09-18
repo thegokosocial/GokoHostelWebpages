@@ -4,12 +4,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn, localDateStr } from "@/lib/utils";
-import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, TagIcon, AlertTriangleIcon, ReceiptIcon } from "lucide-react";
+import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, TagIcon, AlertTriangleIcon, ReceiptIcon, MessageCircleIcon } from "lucide-react";
 import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicket, type BillItem } from "@/lib/thermalPrint";
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
 import { loadBillBranding } from "@/lib/loadBillBranding";
 import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/food/GuestFoodBillCard";
 import { DEFAULT_BILL_BRANDING, type BillBranding } from "@/lib/foodBillFormat";
+import { buildBillWhatsAppHref } from "@/lib/billShare";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
@@ -18,13 +19,15 @@ import { usePanelHistory } from "@/hooks/usePanelHistory";
 import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/RecordPaymentModal";
 import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
+import { normalizePhone } from "@/lib/phoneUtils";
 
 async function withBillBranding(
   password: string,
   username: string | undefined,
   showError: (title: string, detail?: string) => void,
+  opts?: { embedQr?: boolean },
 ) {
-  const loaded = await loadBillBranding(password, username);
+  const loaded = await loadBillBranding(password, username, opts);
   if (!loaded.ok) {
     showError("Bill branding", loaded.error || "Using defaults");
   }
@@ -795,7 +798,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [drawerView, setDrawerView] = useState<"orders" | "bill">("orders");
   const [spBillWarning, setSpBillWarning] = useState(false);
   const [billBranding, setBillBranding] = useState<BillBranding>(DEFAULT_BILL_BRANDING);
-  const [billQrDataUrl, setBillQrDataUrl] = useState<string | undefined>();
+  const [billBrandingReady, setBillBrandingReady] = useState(false);
+  const [whatsAppBusy, setWhatsAppBusy] = useState(false);
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
@@ -1087,11 +1091,38 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       setDrawerView("orders");
       return;
     }
-    const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError);
-    setBillBranding(branding);
-    setBillQrDataUrl(paymentQrDataUrl);
+    if (!billBrandingReady) {
+      const { branding } = await withBillBranding(password, username, showError, { embedQr: false });
+      setBillBranding(branding);
+      setBillBrandingReady(true);
+    }
     setSpBillWarning(false);
     setDrawerView("bill");
+  };
+
+  const shareBillViaWhatsApp = async (guestPhone: string | null | undefined, guestName: string, checkinId?: number | null) => {
+    const phone = normalizePhone(guestPhone || "");
+    if (!phone) {
+      showError("WhatsApp", "No phone number on this guest");
+      return;
+    }
+    setWhatsAppBusy(true);
+    try {
+      const res = await apiCall({ action: "createBillShareLink", phone, checkinId: checkinId ?? undefined });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError("WhatsApp", data.error || "Could not create bill link");
+        return;
+      }
+      const href = buildBillWhatsAppHref({ guestPhone: phone, guestName, shareUrl: data.url });
+      if (!href) {
+        showError("WhatsApp", "Could not open WhatsApp for this number");
+        return;
+      }
+      window.open(href, "_blank", "noopener,noreferrer");
+    } finally {
+      setWhatsAppBusy(false);
+    }
   };
 
   const markGroupPaid = async (group: SummaryGroup, paymentMethod: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string) => {
@@ -1338,7 +1369,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     location: billBranding.location,
                     accent: billBranding.accent,
                     upiId: billBranding.upiId,
-                    qrUrl: billQrDataUrl || billBranding.paymentQrUrl,
+                    qrUrl: billBranding.paymentQrUrl,
                     footer: billBranding.footer,
                     taxRate: foodTaxRateFromAmounts(
                       selectedGroupOrders.reduce((s, o) => s + o.subtotal, 0),
@@ -1354,6 +1385,23 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         className="rounded-lg border border-brand-mist px-3 py-2 text-sm font-medium text-brand-green-dark/70 hover:bg-brand-sand"
                       >
                         Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const phone = selectedGroup.contactInfo
+                            || selectedGroupOrders.find((o) => o.guestPhone)?.guestPhone
+                            || "";
+                          const checkinId = selectedGroup.guestType === "hostel"
+                            ? parseInt(selectedGroup.key.replace("hostel_", ""), 10)
+                            : undefined;
+                          void shareBillViaWhatsApp(phone, selectedGroup.guestName, Number.isFinite(checkinId) ? checkinId : null);
+                        }}
+                        disabled={whatsAppBusy}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      >
+                        {whatsAppBusy ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
+                        WhatsApp
                       </button>
                       {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
                         <button
@@ -1806,6 +1854,9 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
   const [printingCombined, setPrintingCombined] = useState(false);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [billBranding, setBillBranding] = useState<BillBranding>(DEFAULT_BILL_BRANDING);
+  const [billBrandingReady, setBillBrandingReady] = useState(false);
+  const [whatsAppBusyKey, setWhatsAppBusyKey] = useState<string | null>(null);
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
@@ -1833,17 +1884,61 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
     setPreview(null);
   };
 
+  const ensureBillBranding = async () => {
+    if (billBrandingReady) return billBranding;
+    const { branding } = await withBillBranding(password, username, showError, { embedQr: false });
+    setBillBranding(branding);
+    setBillBrandingReady(true);
+    return branding;
+  };
+
   const loadPreview = async () => {
     if (selectedIds.length === 0) return;
     setLoadingPreview(true);
     try {
-      const res = await apiCall({ action: "getCombinedBill", checkinIds: selectedIds });
+      const [res] = await Promise.all([
+        apiCall({ action: "getCombinedBill", checkinIds: selectedIds }),
+        ensureBillBranding(),
+      ]);
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         setPreview(data);
+      } else {
+        setPreview(null);
+        showError("Combined Bill", data.error || "Could not load combined bill");
       }
     } finally {
       setLoadingPreview(false);
+    }
+  };
+
+  const shareGuestBill = async (g: any) => {
+    const phone = g.guestPhone
+      || (g.orders || []).find((o: any) => o.guestPhone)?.guestPhone
+      || guests.find((x) => x.checkinId === g.checkinId)?.contact
+      || "";
+    const key = String(g.checkinId);
+    setWhatsAppBusyKey(key);
+    try {
+      const normalized = normalizePhone(phone);
+      if (!normalized) {
+        showError("WhatsApp", "No phone number for this guest");
+        return;
+      }
+      const res = await apiCall({ action: "createBillShareLink", phone: normalized, checkinId: g.checkinId });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError("WhatsApp", data.error || "Could not create bill link");
+        return;
+      }
+      const href = buildBillWhatsAppHref({ guestPhone: normalized, guestName: g.guestName, shareUrl: data.url });
+      if (!href) {
+        showError("WhatsApp", "Could not open WhatsApp for this number");
+        return;
+      }
+      window.open(href, "_blank", "noopener,noreferrer");
+    } finally {
+      setWhatsAppBusyKey(null);
     }
   };
 
@@ -1880,7 +1975,7 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
       const cpOrders = preview.guests.flatMap((g: any) => g.orders || []);
       const cpSub = cpOrders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0);
       const cpTax = cpOrders.reduce((s: number, o: any) => s + (o.tax || 0), 0);
-      const { branding } = await withBillBranding(password, username, showError);
+      const { branding } = await withBillBranding(password, username, showError, { embedQr: true });
       await printCombinedBill(guestData, preview.grandTotal, foodTaxRateFromAmounts(cpSub, cpTax), undefined, cpGross - cpExempt, cpExempt, branding, cpTax);
       showSuccess("Combined bill printed successfully!");
     } catch (err: any) {
@@ -1889,6 +1984,19 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
       setPrintingCombined(false);
     }
   };
+
+  const cardBranding = (orders: any[]) => ({
+    hostelName: billBranding.hostelName,
+    location: billBranding.location,
+    accent: billBranding.accent,
+    upiId: billBranding.upiId,
+    qrUrl: billBranding.paymentQrUrl,
+    footer: billBranding.footer,
+    taxRate: foodTaxRateFromAmounts(
+      orders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0),
+      orders.reduce((s: number, o: any) => s + (o.tax || 0), 0),
+    ),
+  });
 
   if (loading) return <LoadingState />;
 
@@ -1923,7 +2031,7 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
           {selectedIds.length > 0 && (
             <button
               type="button"
-              onClick={loadPreview}
+              onClick={() => void loadPreview()}
               disabled={loadingPreview}
               className="mt-3 rounded-lg bg-brand-green px-4 py-2 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-50"
             >
@@ -1934,105 +2042,132 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
       )}
 
       {preview && (
-        <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-4">
-          <h4 className="mb-3 text-sm font-bold text-brand-green-dark">Bill Preview</h4>
-          {preview.guests.map((g: any) => (
-            <div key={g.checkinId} className="mb-3 border-b border-brand-mist pb-3 last:mb-0 last:border-0 last:pb-0">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-brand-green-dark">
-                  {g.guestName}
-                  <span className="ml-2 rounded-full bg-green-100 dark:bg-green-900/50 px-2 py-0.5 text-xs text-green-700 dark:text-green-400">Goko Guest</span>
-                </span>
-                <span className="text-sm font-bold">₹{(g.subtotal / 100).toFixed(0)}</span>
-              </div>
-              {g.roomInfo && <p className="text-xs text-brand-green-dark/50">{g.roomInfo}</p>}
-              <p className="text-xs text-brand-green-dark/40">
-                {g.orders.length} order(s)
-                {g.orders.some((o: any) => o.hasModifications) && (
-                  <span className="ml-1.5 rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">Modified</span>
-                )}
-              </p>
+        <div className="space-y-4">
+          <h4 className="text-sm font-bold text-brand-green-dark">Bill Preview</h4>
+          {preview.guests.map((g: any) => {
+            const orders = (g.orders || []) as any[];
+            return (
+              <GuestFoodBillCard
+                key={g.checkinId}
+                orders={orders.map((o) => ({
+                  guestName: g.guestName,
+                  roomInfo: g.roomInfo || o.roomInfo,
+                  paymentStatus: o.paymentStatus,
+                  paymentMethod: o.paymentMethod,
+                  createdAt: o.createdAt,
+                  subtotal: o.subtotal,
+                  tax: o.tax,
+                  total: o.total,
+                  discount: o.discount || 0,
+                  items: (o.items || []).map((i: any) => ({
+                    itemName: i.itemName || i.name,
+                    quantity: i.quantity,
+                    itemPrice: i.itemPrice ?? i.price,
+                    lineTotal: i.lineTotal,
+                    status: i.status,
+                    pricingStatus: i.pricingStatus,
+                    notes: i.notes,
+                  })),
+                }))}
+                variant="unpaid"
+                branding={cardBranding(orders)}
+                alwaysExpanded
+                footerActions={
+                  <button
+                    type="button"
+                    onClick={() => void shareGuestBill(g)}
+                    disabled={whatsAppBusyKey === String(g.checkinId)}
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  >
+                    {whatsAppBusyKey === String(g.checkinId) ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
+                    WhatsApp {g.guestName.split(" ")[0]}
+                  </button>
+                }
+              />
+            );
+          })}
+
+          <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-brand-green-dark">Grand Total</span>
+              <span className="text-lg font-bold text-brand-green">₹{(preview.grandTotal / 100).toFixed(0)}</span>
             </div>
-          ))}
-          <div className="mt-3 flex items-center justify-between border-t border-brand-mist pt-3">
-            <span className="text-sm font-bold text-brand-green-dark">Grand Total</span>
-            <span className="text-lg font-bold text-brand-green">₹{(preview.grandTotal / 100).toFixed(0)}</span>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {btSupported && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {btSupported && (
+                <button
+                  type="button"
+                  onClick={() => void handlePrintCombined()}
+                  disabled={printingCombined}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-gray-200 dark:border-white/10 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#0f0f0f] disabled:opacity-50"
+                >
+                  <PrinterIcon className="h-4 w-4" />
+                  {printingCombined ? "Printing..." : "Print Combined"}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handlePrintCombined}
-                disabled={printingCombined}
-                className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-gray-200 dark:border-white/10 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#0f0f0f] disabled:opacity-50"
-              >
-                <PrinterIcon className="h-4 w-4" />
-                {printingCombined ? "Printing..." : "Print Combined"}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={async () => {
-                if (!preview) return;
-                const exemptCatIds2 = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
-                const miCatMap2 = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
-                let combExemptSub = 0;
-                let combGrossSub = 0;
-                for (const g of preview.guests as any[]) {
-                  for (const o of (g.orders || []) as any[]) {
-                    combGrossSub += ((o.subtotal || 0) + (o.discount || 0));
-                    for (const i of (o.items || []) as any[]) {
-                      if (i.status === "voided") continue;
-                      const catId = miCatMap2.get(i.menuItemId);
-                      if (catId !== undefined && exemptCatIds2.has(catId)) combExemptSub += (i.lineTotal || 0);
+                onClick={async () => {
+                  if (!preview) return;
+                  const exemptCatIds2 = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
+                  const miCatMap2 = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
+                  let combExemptSub = 0;
+                  let combGrossSub = 0;
+                  for (const g of preview.guests as any[]) {
+                    for (const o of (g.orders || []) as any[]) {
+                      combGrossSub += ((o.subtotal || 0) + (o.discount || 0));
+                      for (const i of (o.items || []) as any[]) {
+                        if (i.status === "voided") continue;
+                        const catId = miCatMap2.get(i.menuItemId);
+                        if (catId !== undefined && exemptCatIds2.has(catId)) combExemptSub += (i.lineTotal || 0);
+                      }
                     }
                   }
-                }
-                const combOrders = (preview.guests as any[]).flatMap((g: any) => g.orders || []);
-                const combSub = combOrders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0);
-                const combTax = combOrders.reduce((s: number, o: any) => s + (o.tax || 0), 0);
-                const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError);
-                const combinedData: CombinedBillData = {
-                  guests: preview.guests.map((g: any) => ({
-                    guestName: g.guestName as string,
-                    guestPhone: (g.guestPhone || "") as string,
-                    roomInfo: g.roomInfo || undefined,
-                    orders: ((g.orders || []) as any[]).map((o: any) => ({
-                      orderNumber: o.orderNumber as string,
-                      createdAt: o.createdAt as string,
-                      items: ((o.items || []) as any[]).filter((i: any) => i.status !== "voided").map((i: any) => ({
-                        itemName: (i.itemName || i.name || "") as string,
-                        quantity: (i.quantity || 0) as number,
-                        itemPrice: (i.itemPrice || i.price || 0) as number,
-                        lineTotal: (i.lineTotal || 0) as number,
-                        status: (i.status || "active") as string,
+                  const combOrders = (preview.guests as any[]).flatMap((g: any) => g.orders || []);
+                  const combSub = combOrders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0);
+                  const combTax = combOrders.reduce((s: number, o: any) => s + (o.tax || 0), 0);
+                  const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError, { embedQr: true });
+                  const combinedData: CombinedBillData = {
+                    guests: preview.guests.map((g: any) => ({
+                      guestName: g.guestName as string,
+                      guestPhone: (g.guestPhone || "") as string,
+                      roomInfo: g.roomInfo || undefined,
+                      orders: ((g.orders || []) as any[]).map((o: any) => ({
+                        orderNumber: o.orderNumber as string,
+                        createdAt: o.createdAt as string,
+                        items: ((o.items || []) as any[]).filter((i: any) => i.status !== "voided").map((i: any) => ({
+                          itemName: (i.itemName || i.name || "") as string,
+                          quantity: (i.quantity || 0) as number,
+                          itemPrice: (i.itemPrice || i.price || 0) as number,
+                          lineTotal: (i.lineTotal || 0) as number,
+                          status: (i.status || "active") as string,
+                        })),
+                        subtotal: (o.subtotal || 0) as number,
+                        tax: (o.tax || 0) as number,
+                        total: (o.total || 0) as number,
+                        specialInstructions: o.specialInstructions || undefined,
                       })),
-                      subtotal: (o.subtotal || 0) as number,
-                      tax: (o.tax || 0) as number,
-                      total: (o.total || 0) as number,
-                      specialInstructions: o.specialInstructions || undefined,
+                      guestSubtotal: (g.subtotal || 0) as number,
+                      guestTax: (g.tax || 0) as number,
+                      guestTotal: (g.subtotal || 0) as number,
                     })),
-                    guestSubtotal: (g.subtotal || 0) as number,
-                    guestTax: (g.tax || 0) as number,
-                    guestTotal: (g.subtotal || 0) as number,
-                  })),
-                  grandSubtotal: combSub,
-                  grandTax: combTax,
-                  grandTotal: preview.grandTotal,
-                  taxRate: foodTaxRateFromAmounts(combSub, combTax),
-                  billDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-                  discountableSubtotal: combGrossSub - combExemptSub,
-                  exemptSubtotal: combExemptSub,
-                  branding,
-                  paymentQrDataUrl,
-                };
-                await generateCombinedBill(combinedData);
-              }}
-              className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
-            >
-              <DownloadIcon className="h-4 w-4" />
-              Download PDF
-            </button>
+                    grandSubtotal: combSub,
+                    grandTax: combTax,
+                    grandTotal: preview.grandTotal,
+                    taxRate: foodTaxRateFromAmounts(combSub, combTax),
+                    billDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+                    discountableSubtotal: combGrossSub - combExemptSub,
+                    exemptSubtotal: combExemptSub,
+                    branding,
+                    paymentQrDataUrl,
+                  };
+                  await generateCombinedBill(combinedData);
+                }}
+                className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
+              >
+                <DownloadIcon className="h-4 w-4" />
+                Download PDF
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -1357,6 +1357,31 @@ export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
       sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt);
+}
+
+// --- Food bill share tokens (Cloudflare-only) ---
+
+export async function createFoodBillShareToken(data: {
+  token: string; phone: string; checkinId?: number | null; expiresAt: string; createdBy: string;
+}) {
+  const db = getDb();
+  return db.insert(foodBillShareTokens).values({
+    token: data.token,
+    phone: data.phone,
+    checkinId: data.checkinId ?? null,
+    expiresAt: data.expiresAt,
+    createdBy: data.createdBy,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function getValidFoodBillShareToken(token: string) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const rows = await db.select().from(foodBillShareTokens)
+    .where(and(eq(foodBillShareTokens.token, token), gte(foodBillShareTokens.expiresAt, now)))
+    .limit(1);
+  return rows[0] || null;
 }
 
 export async function updateFoodOrder(id: number, data: Partial<typeof foodOrders.$inferInsert>) {

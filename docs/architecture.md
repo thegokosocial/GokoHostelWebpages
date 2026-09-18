@@ -178,7 +178,7 @@ Never run `next build` / `deploy:cf` in the same checkout as a live `npm run dev
 
 App clone + `.env.local` + SQLite file + nginx reverse proxy to `next start -p 3000` + PM2 process (live name historically `goko`) + optional Cloudflare Tunnel + optional dnsmasq LAN failover.
 
-Pi migrator **skips** `0035_site_cms.sql` and `0041_splits.sql` (still stamps `_migrations` so it will not retry). CMS and split tables are not in `syncEngine` and not in `seed-pi.ts`. Splits nav is hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Pi migrator **skips** `0035_site_cms.sql`, `0041_splits.sql`, and `0064_food_bill_share_tokens.sql` (still stamps `_migrations` so it will not retry). CMS, splits, and bill-share tables are not in `syncEngine` and not in `seed-pi.ts`. Splits nav is hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 Hardware, IPs, passwords: gitignored [secrets-and-access.md](secrets-and-access.md) + `MAINTAINER.local.md`. Do not copy secrets into this file.
 

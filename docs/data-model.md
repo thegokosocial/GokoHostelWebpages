@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts`. Repository SQL: `migrations/0001_initial.sql` … `0060_native_accepted_quotes.sql`. Repository migrations are not proof of deployment; what production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the common migration set (it skips only CMS/splits migrations as configured); gateway/native tables remain unused/unsynced on Pi and their services reject Pi.
+**Git-safe.** Schema: `src/db/schema.ts`. Repository SQL: `migrations/0001_initial.sql` … `0064_food_bill_share_tokens.sql`. Repository migrations are not proof of deployment; what production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the common migration set (it skips CMS/splits/bill-share migrations as configured); gateway/native tables remain unused/unsynced on Pi and their services reject Pi.
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 
@@ -145,6 +145,7 @@ Internal native milestone: `native_inventory_holds` (0059) stores immutable requ
 | `qr_history` | Saved QR configs. |
 | `push_subscriptions` | Web push. |
 | `review_requests` / `review_feedback` | Review funnel. |
+| `food_bill_share_tokens` | Opaque My Bills WhatsApp links (`token`, phone, optional checkin_id, expires_at). Cloudflare-only (0064); not Pi-synced. |
 | `quick_link_sections` | Custom admin sections for reusable links and QR/image cards. |
 | `quick_links` | Ordered link/QR cards; `is_active` hides a card from non-admin viewers. |
 | `sync_log` / `sync_conflicts` / `sync_id_map` | Pi ↔ CF. |
@@ -208,7 +209,7 @@ Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kan
 
 ## What Pi never has
 
-`site_events`, `site_community_spaces`, `site_page_copy`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`. Migrator skips `0035_site_cms.sql` and `0041_splits.sql` but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
+`site_events`, `site_community_spaces`, `site_page_copy`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`, `food_bill_share_tokens`. Migrator skips `0035_site_cms.sql`, `0041_splits.sql`, and `0064_food_bill_share_tokens.sql` but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
 # Cloud-only guest booking verification
 
 The existing settings row `website_booking_settings_v1` JSON now includes `maxSelectedBeds` (integer 1–100; absent field defaults to 4). No new table/migration is needed for the browsing limit. Existing revision-protected admin saves retain payment fields; availability exposes only the public limit, never the full settings JSON.

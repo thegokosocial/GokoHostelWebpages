@@ -31,7 +31,7 @@ Checkout warning: `getPendingFoodTab` in `src/lib/foodTabDb.ts` sums unpaid host
 
 `/food-order/status`: poll ~10s until `served` or `cancelled` (`shouldPollOrderStatus` in `orderStatus.ts`).
 
-`/my-bills`: `GET /api/food/bills?phone=`. Back uses `router.back()` (returns to `/food-order` menu when opened from there).
+`/my-bills`: `GET /api/food/bills?phone=` (guest types phone) or `GET /api/food/bills?t=` (opaque share token from staff WhatsApp). Token path returns `viaToken: true` and omits `phone` from the JSON; the page shows “Shared bill link” instead of the number. Tokens live in Cloudflare-only `food_bill_share_tokens` (migration **0064**, 7-day expiry); Pi migrator skips that file. Back uses `router.back()` (returns to `/food-order` menu when opened from there).
 
 ---
 
@@ -62,7 +62,7 @@ Actions: `listOrders`, `updateStatus`, `toggleItemAvailability`, `rejectItem`, `
 
 Poll `listOrders` ~5s. Audio on new. Columns: New (`placed`) / Preparing / Ready. Approval section if `food_approval_in_kitchen`. Bluetooth ESC/POS (`thermalPrint.ts`); Kannada from `food_kannada_kitchen_print` / `food_kannada_kitchen_display` (default **on** unless setting is the string `"false"`).
 
-Admin Food Orders embeds kitchen + tabs + place-for-guest + combined PDF/thermal + mark paid (cash/online/split). **Order Summary** guest drawer footer is Print (thermal) / **Bill** / Order More. Bill opens an in-drawer guest-style tab (same `GuestFoodBillCard` as My Bills) with Pay → `RecordPaymentModal` and Discount → `DiscountModal`. PDF / Cash / Online / Discount / group Kitchen are removed from that footer (per-order kitchen print remains). Pending special-price (`pricingStatus === "pending"`) lines are amber-highlighted; Bill is blocked until Set price clears them. **Set price** opens a mobile-friendly modal (not `window.prompt`) for final ₹/unit plus an optional custom badge label (stored in `food_order_items.notes`, max 24 chars; shown as a violet pill like Modified). Food Orders → Edit Order → Set price finalizes pending market-price lines; payment and final billing require all active lines to be priced. Indicative ranges are maintained in Management → Menu and are informational only.
+Admin Food Orders embeds kitchen + tabs + place-for-guest + combined PDF/thermal + mark paid (cash/online/split). **Order Summary** guest drawer footer is Print (thermal) / **Bill** / Order More. Bill opens an in-drawer guest-style tab (same `GuestFoodBillCard` as My Bills) with Pay → `RecordPaymentModal`, Discount → `DiscountModal`, and **WhatsApp** → `createBillShareLink` + `wa.me` (opaque `/my-bills?t=` URL; branding for the HTML bill caches without embedding the payment QR as a data URL). PDF / Cash / Online / Discount / group Kitchen are removed from that footer (per-order kitchen print remains). **Combined Bill** stacks one `GuestFoodBillCard` per selected guest (each with its own WhatsApp), plus Print Combined / Download PDF. Pending special-price (`pricingStatus === "pending"`) lines are amber-highlighted; Bill is blocked until Set price clears them. **Set price** opens a mobile-friendly modal (not `window.prompt`) for final ₹/unit plus an optional custom badge label (stored in `food_order_items.notes`, max 24 chars; shown as a violet pill like Modified). Food Orders → Edit Order → Set price finalizes pending market-price lines; payment and final billing require all active lines to be priced. Indicative ranges are maintained in Management → Menu and are informational only.
 
 ---
 

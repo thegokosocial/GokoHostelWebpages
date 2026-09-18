@@ -24,7 +24,7 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 **Never:** CMS `site_*`, **split_***, audit/system logs, api_stats, rate_scrapes, push, reviews, channel manager, inventory/rates/blocks, sync meta tables, **R2 objects**. Drive URLs on checkin and task rows *do* sync (files stay in Google). Task status/text works offline; attachment uploads require network access.
 
-Pi migrator stamps `0035_site_cms.sql` and `0041_splits.sql` without applying SQL (same as CMS). It **does** apply `0042_booking_stay_payments.sql` (those columns live on synced `bookings`). Splits nav is hidden on Pi.
+Pi migrator stamps `0035_site_cms.sql`, `0041_splits.sql`, and `0064_food_bill_share_tokens.sql` without applying SQL (Cloudflare-only). It **does** apply `0042_booking_stay_payments.sql` (those columns live on synced `bookings`). Splits nav is hidden on Pi.
 
 Integer PKs remapped via `sync_id` UUID + `sync_id_map`. FK remap table in `syncEngine.ts`. Conflicts → `sync_conflicts`.
 

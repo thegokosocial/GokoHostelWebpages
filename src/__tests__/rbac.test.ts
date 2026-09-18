@@ -43,6 +43,7 @@ const FOOD_ORDERS_PERMISSIONS: Record<string, ActionPerm> = {
   reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
   applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
+  createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
 };
 
 const EXPENSES_PERMISSIONS: Record<string, ActionPerm> = {

@@ -22,6 +22,7 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `menu_items` | 19 |
 | `food_orders` | 31 |
 | `food_order_items` | 11 |
+| `food_bill_share_tokens` | 6 |
 | `order_modifications` | 12 |
 | `qr_history` | 9 |
 | `accounts` | 15 |
@@ -400,6 +401,19 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `sync_id` | text |  |
 | `sync_updated_at` | text |  |
 | `sync_source` | text | default cloudflare |
+
+## `food_bill_share_tokens`
+
+Cloudflare-only (migration 0064). Not Pi-synced; Pi migrator stamps the filename without applying SQL.
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `token` | text | PK |
+| `phone` | text | NOT NULL (normalized) |
+| `checkin_id` | integer | optional |
+| `expires_at` | text | NOT NULL ISO |
+| `created_by` | text | NOT NULL default "" |
+| `created_at` | text | NOT NULL |
 
 ## `order_modifications`
 

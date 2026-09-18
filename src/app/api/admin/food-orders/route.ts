@@ -33,6 +33,7 @@ import {
   deleteFoodOrderItem,
   getMenuItemCategoryExemptions,
   getAuditRetentionCutoff,
+  createFoodBillShareToken,
 } from "@/db/queries";
 import { parseFoodCheckoutGraceDays, foodTaxPercent } from "@/lib/foodLookup";
 import { normalizePhone } from "@/lib/phoneUtils";
@@ -45,6 +46,7 @@ import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from 
 import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
 import { auditDateBounds } from "@/lib/auditRetention";
 import { dbRead } from "@/lib/dbRetry";
+import { billShareExpiresAt, generateBillShareToken, publicBillShareUrl } from "@/lib/billShare";
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
       getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"],
       getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
       getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid"],
+      createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
       updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
       voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
@@ -767,19 +770,65 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Set final prices before generating a combined bill" }, { status: 400 });
         }
 
-        const grouped: Record<number, { checkinId: number; guestName: string; roomInfo: string; orders: any[]; subtotal: number }> = {};
+        const grouped: Record<number, { checkinId: number; guestName: string; guestPhone: string; roomInfo: string; orders: any[]; subtotal: number }> = {};
         for (const o of withItems) {
           const cid = o.checkinId!;
           if (!grouped[cid]) {
-            grouped[cid] = { checkinId: cid, guestName: o.guestName, roomInfo: o.roomInfo || "", orders: [], subtotal: 0 };
+            grouped[cid] = {
+              checkinId: cid,
+              guestName: o.guestName,
+              guestPhone: o.guestPhone || "",
+              roomInfo: o.roomInfo || "",
+              orders: [],
+              subtotal: 0,
+            };
           }
+          if (!grouped[cid].guestPhone && o.guestPhone) grouped[cid].guestPhone = o.guestPhone;
           grouped[cid].orders.push(o);
           grouped[cid].subtotal += o.total;
         }
 
         const guests = Object.values(grouped);
+        const missingPhoneIds = guests.filter((g) => !g.guestPhone).map((g) => g.checkinId);
+        if (missingPhoneIds.length > 0) {
+          const db = getDb();
+          const rows = await db
+            .select({ id: checkins.id, contact: checkins.contact })
+            .from(checkins)
+            .where(inArray(checkins.id, missingPhoneIds));
+          const contactById = new Map(rows.map((r) => [r.id, normalizePhone(r.contact || "")]));
+          for (const g of guests) {
+            if (!g.guestPhone) g.guestPhone = contactById.get(g.checkinId) || "";
+          }
+        }
         const grandTotal = guests.reduce((sum, g) => sum + g.subtotal, 0);
         return NextResponse.json({ role, guests, grandTotal });
+      }
+
+      case "createBillShareLink": {
+        const { phone, checkinId } = rest;
+        const normalized = normalizePhone(String(phone || ""));
+        if (!normalized || normalized.length < 7) {
+          return NextResponse.json({ error: "A valid guest phone is required to share the bill" }, { status: 400 });
+        }
+        const token = generateBillShareToken();
+        const expiresAt = billShareExpiresAt(7);
+        await createFoodBillShareToken({
+          token,
+          phone: normalized,
+          checkinId: Number.isInteger(checkinId) ? checkinId : null,
+          expiresAt,
+          createdBy: actorName,
+        });
+        const origin = req.nextUrl.origin;
+        const url = publicBillShareUrl(origin, token);
+        await addAuditEntry({
+          username: actorName,
+          action: "food_bill_share_created",
+          target: `phone:${normalized}`,
+          details: `Bill share link expires ${expiresAt}`,
+        });
+        return NextResponse.json({ role, token, url, expiresAt, phone: normalized });
       }
 
       case "getMenu": {

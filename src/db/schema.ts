@@ -488,6 +488,19 @@ export const foodOrderItems = sqliteTable("food_order_items", {
   index("idx_food_order_items_order").on(table.orderId),
 ]);
 
+/** Opaque My Bills share links — Cloudflare-only, not Pi-synced. */
+export const foodBillShareTokens = sqliteTable("food_bill_share_tokens", {
+  token: text("token").primaryKey(),
+  phone: text("phone").notNull(),
+  checkinId: integer("checkin_id"),
+  expiresAt: text("expires_at").notNull(),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_food_bill_share_phone").on(table.phone),
+  index("idx_food_bill_share_expires").on(table.expiresAt),
+]);
+
 export const orderModifications = sqliteTable("order_modifications", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   orderId: integer("order_id").notNull().references(() => foodOrders.id),

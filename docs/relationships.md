@@ -114,6 +114,7 @@ erDiagram
   bookings ||--o{ booking_history : audit
   checkins ||--o{ food_orders : tab
   checkins ||--o{ review_requests : funnel
+  checkins ||--o{ food_bill_share_tokens : optional
   review_requests ||--o{ review_feedback : if_low_rating
   dorms ||--o{ room_type_mapping : channel_code
   room_type_mapping ||--o{ rate_plan_mapping : plans
