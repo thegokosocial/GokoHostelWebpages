@@ -139,6 +139,7 @@ describe("DateRangePicker adaptive layout contracts", () => {
     expect(pickerSource).toContain("ResizeObserver");
     expect(pickerSource).not.toContain('matchMedia("(min-width: 768px)")');
     expect(pickerSource).toContain("overflow-hidden");
+    expect(pickerSource).toContain("justify-center");
     expect(pickerSource).not.toContain("overflow-x-auto");
   });
 

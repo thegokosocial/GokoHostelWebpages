@@ -162,7 +162,7 @@ export function DateRangePicker({
   );
 
   const calendarShell = (
-    <div ref={setShellEl} className="w-full max-w-full overflow-hidden p-1">
+    <div ref={setShellEl} className="flex w-full max-w-full justify-center overflow-hidden px-1 py-2">
       {calendar}
     </div>
   );
@@ -173,7 +173,9 @@ export function DateRangePicker({
         <p className="text-sm font-medium text-muted-foreground">
           {formatTriggerLabel(startDate, endDate, labels)}
         </p>
-        <div className="rounded-xl border border-border bg-background">{calendarShell}</div>
+        <div className="rounded-xl border border-border bg-background shadow-sm dark:shadow-none">
+          {calendarShell}
+        </div>
       </div>
     );
   }
