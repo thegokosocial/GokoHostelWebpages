@@ -2,6 +2,8 @@
 
 All app pushes use `src/lib/pushNotify.ts` and `public/sw.js`; no separate legacy display system is maintained. The header bell opens device notification settings, not an event inbox. Existing recipients and permissions are unchanged.
 
+The dialog always shows an **Install app** section while the admin UI is not running as an installed/standalone app: Chrome gets a native Install button when `beforeinstallprompt` is available, otherwise menu instructions; iPhone/iPad always get Share → Add to Home Screen steps. Enable notifications on iOS is disabled in a Safari tab and only runs from the Home Screen app (iOS/iPadOS 16.4+). Subscribe waits for `navigator.serviceWorker.ready` before `pushManager.subscribe`.
+
 ## Event inventory
 
 | Family | Events / producers |

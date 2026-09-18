@@ -380,6 +380,14 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(records).toContain("setActiveRange({ start: rangeStart, end: rangeEnd });");
   });
 
+  it("distinguishes Records booking hard-delete from check-in delete icons", () => {
+    const records = fs.readFileSync(path.join(ROOT, "src/components/admin/AdminRecords.tsx"), "utf-8");
+    expect(records).toContain("CalendarXIcon");
+    expect(records).toContain("hardDeleteRecordsWalkinBooking");
+    expect(records).toContain("Delete check-in record");
+    expect(records).toContain("Delete record");
+  });
+
   it("keeps sticky admin table headers attached to the main scroll container", () => {
     const adminPage = fs.readFileSync(path.join(ROOT, "src/app/admin/page.tsx"), "utf-8");
     expect(adminPage).toContain('section === "records"');

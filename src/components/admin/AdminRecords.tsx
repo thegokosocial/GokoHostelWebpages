@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, EyeIcon, EyeOffIcon, PowerIcon, LinkIcon, CalendarPlusIcon } from "lucide-react";
+import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, CalendarXIcon, EyeIcon, EyeOffIcon, PowerIcon, LinkIcon, CalendarPlusIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
@@ -1185,7 +1185,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                             </>
                           )}
                           {hasPermission(role, permissions, "canDeleteBooking") && resolution?.deletableBookingId ? (
-                            <button type="button" onClick={() => void hardDeleteLinkedBooking(resolution.deletableBookingId!, row[3] || "Guest")} className="flex items-center gap-1 rounded-lg bg-red-50 dark:bg-red-950 px-2 py-1 text-[10px] font-medium text-red-700 dark:text-red-300 hover:bg-red-100"><Trash2Icon className="h-3 w-3" /> Delete booking</button>
+                            <button type="button" onClick={() => void hardDeleteLinkedBooking(resolution.deletableBookingId!, row[3] || "Guest")} className="flex items-center gap-1 rounded-lg bg-red-50 dark:bg-red-950 px-2 py-1 text-[10px] font-medium text-red-700 dark:text-red-300 hover:bg-red-100" title="Same as Delete booking on the Bookings page — removes the walk-in booking, keeps this check-in"><CalendarXIcon className="h-3 w-3" /> Delete booking</button>
                           ) : null}
                           {isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") && (
                             <button type="button" onClick={() => openFormC(origIdx, row)} className="flex items-center gap-1 rounded-lg bg-indigo-50 dark:bg-indigo-950 px-2 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50">
@@ -1201,8 +1201,8 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                             </button>
                           )}
                           {hasPermission(role, permissions, "canDeleteRecords") && (
-                            <button type="button" onClick={() => deleteRow(origIdx)} className="flex items-center gap-1 rounded-lg bg-red-50 dark:bg-red-950 px-2 py-1 text-[10px] font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50">
-                              <Trash2Icon className="h-3 w-3" /> Delete
+                            <button type="button" onClick={() => deleteRow(origIdx)} className="flex items-center gap-1 rounded-lg bg-red-50 dark:bg-red-950 px-2 py-1 text-[10px] font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50" title="Permanently delete this check-in record">
+                              <Trash2Icon className="h-3 w-3" /> Delete record
                             </button>
                           )}
                           {(verified === "pending" || verified === "spoof_warning") && (
@@ -1364,7 +1364,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                           </>
                         )}
                         {hasPermission(role, permissions, "canDeleteBooking") && resolution?.deletableBookingId ? (
-                          <button type="button" title="Delete walk-in booking" onClick={() => void hardDeleteLinkedBooking(resolution.deletableBookingId!, row[3] || "Guest")} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><Trash2Icon className="h-4 w-4" /></button>
+                          <button type="button" title="Delete walk-in booking (same as Bookings page — keeps this check-in)" onClick={() => void hardDeleteLinkedBooking(resolution.deletableBookingId!, row[3] || "Guest")} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><CalendarXIcon className="h-4 w-4" /></button>
                         ) : null}
                         {isForeignNationality(row[8]) && hasPermission(role, permissions, "canEditRecords") && (
                           <button type="button" onClick={() => openFormC(origIdx, row)}
@@ -1379,7 +1379,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                           <button type="button" onClick={() => startEdit(origIdx)} className="flex h-8 w-8 items-center justify-center rounded-lg text-brand-green/70 hover:bg-brand-green/[0.06]"><PencilIcon className="h-4 w-4" /></button>
                         )}
                         {hasPermission(role, permissions, "canDeleteRecords") && (
-                          <button type="button" onClick={() => deleteRow(origIdx)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-950"><Trash2Icon className="h-4 w-4" /></button>
+                          <button type="button" title="Delete check-in record" onClick={() => deleteRow(origIdx)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-950"><Trash2Icon className="h-4 w-4" /></button>
                         )}
                       </div>
                     </td>

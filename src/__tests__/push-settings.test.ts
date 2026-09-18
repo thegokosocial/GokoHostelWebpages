@@ -18,7 +18,8 @@ function settings(action: string, overrides: Record<string, unknown> = {}) {
   const getSubscription = vi.fn().mockResolvedValue({ endpoint: "https://push.example/sub", unsubscribe });
   const context = {
     password: "test-only", username: "admin", pushAction: null, subscribing: false, vapidPublicKey: "key",
-    navigator: {}, swRegistration: { pushManager: { getSubscription } },
+    isIos: false, isStandalone: true,
+    navigator: { serviceWorker: { ready: Promise.resolve() } }, swRegistration: { pushManager: { getSubscription } },
     fetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({ delivery: { delivered: 1 } }) }),
     setPushAction: vi.fn(), setPushError: vi.fn(), setPushMessage: vi.fn(), setPushSubscribed: vi.fn(),
     setSubscribing: vi.fn(), setNotificationPermission: vi.fn(), setSwRegistration: vi.fn(),
@@ -94,16 +95,47 @@ describe("notification settings workflows", () => {
     expect(ui.setPushAction).toHaveBeenLastCalledWith(null);
   });
   it("handles browsers without notification APIs", async () => {
-    const ui = settings("handleSubscribePush");
+    const ui = settings("handleSubscribePush", { navigator: {} });
     await ui.run();
     expect(ui.setPushError).toHaveBeenCalledWith(expect.stringContaining("not supported"));
     expect(ui.setSubscribing).toHaveBeenLastCalledWith(false);
   });
   it("handles denied permission without creating a subscription", async () => {
-    const ui = settings("handleSubscribePush", { navigator: { serviceWorker: {} }, Notification: { requestPermission: async () => "denied" } });
+    const ui = settings("handleSubscribePush", {
+      navigator: { serviceWorker: { ready: Promise.resolve() } },
+      Notification: { requestPermission: async () => "denied" },
+    });
     await ui.run();
     expect(ui.getSubscription).not.toHaveBeenCalled();
     expect(ui.setNotificationPermission).toHaveBeenCalledWith("denied");
     expect(ui.setSubscribing).toHaveBeenLastCalledWith(false);
+  });
+  it("blocks enable on iPhone Safari tabs before requesting permission", async () => {
+    const ui = settings("handleSubscribePush", {
+      isIos: true,
+      isStandalone: false,
+      Notification: { requestPermission: async () => "granted" },
+    });
+    await ui.run();
+    expect(ui.setPushError).toHaveBeenCalledWith(expect.stringContaining("Home Screen"));
+    expect(ui.setNotificationPermission).not.toHaveBeenCalled();
+    expect(ui.setSubscribing).toHaveBeenLastCalledWith(false);
+  });
+});
+describe("notification settings install and iOS contracts", () => {
+  const uiSource = readFileSync(new URL("../components/admin/PwaInstallBanner.tsx", import.meta.url), "utf8");
+
+  it("always shows Install app guidance in the notification dialog when not installed", () => {
+    expect(uiSource).toContain("showInstallSection");
+    expect(uiSource).toContain("Install app");
+    expect(uiSource).toContain("Add to Home Screen");
+    expect(uiSource).not.toMatch(/showInstallButton\s*=\s*installPrompt/);
+  });
+
+  it("blocks iPhone Safari-tab enable and waits for service worker ready before subscribe", () => {
+    expect(uiSource).toContain("iosPushBlockedReason");
+    expect(uiSource).toContain("iosNeedsHomeScreen");
+    expect(uiSource).toContain("navigator.serviceWorker.ready");
+    expect(uiSource).toContain("Safari browser tabs cannot enable push");
   });
 });

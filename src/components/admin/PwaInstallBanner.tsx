@@ -21,6 +21,40 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer as ArrayBuffer;
 }
 
+function detectIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) && !(window as unknown as { MSStream?: unknown }).MSStream;
+}
+
+function detectStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(display-mode: standalone)").matches
+    || (navigator as unknown as { standalone?: boolean }).standalone === true;
+}
+
+/** iOS web push needs 16.4+ and a Home Screen app; Safari tabs cannot subscribe. */
+function iosPushBlockedReason(isIos: boolean, isStandalone: boolean): string | null {
+  if (!isIos) return null;
+  if (!isStandalone) {
+    return "On iPhone/iPad, install Goko to the Home Screen first, then open it from there and tap Enable notifications. Safari browser tabs cannot enable push.";
+  }
+  if (typeof window !== "undefined" && !("PushManager" in window)) {
+    return "This iOS version does not support web push. Update to iOS/iPadOS 16.4 or later, then try again from the Home Screen app.";
+  }
+  return null;
+}
+
+async function ensureServiceWorker(): Promise<ServiceWorkerRegistration> {
+  if (!("serviceWorker" in navigator)) {
+    throw new Error("Push notifications are not supported by this browser");
+  }
+  const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
+  // iOS often fails subscribe until the worker is active.
+  await navigator.serviceWorker.ready;
+  registration.update().catch(() => {});
+  return registration;
+}
+
 export function PwaInstallBanner({ password, username }: { password: string; username?: string }) {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -44,11 +78,9 @@ export function PwaInstallBanner({ password, username }: { password: string; use
   }, []);
 
   useEffect(() => {
-    const standalone = window.matchMedia("(display-mode: standalone)").matches
-      || (navigator as any).standalone === true;
+    const standalone = detectStandalone();
+    const ios = detectIos();
     setIsStandalone(standalone);
-
-    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     setIsIos(ios);
     if (typeof Notification !== "undefined") setNotificationPermission(Notification.permission);
 
@@ -58,38 +90,41 @@ export function PwaInstallBanner({ password, username }: { password: string; use
       promptRef.current = promptEvent;
       setInstallPrompt(promptEvent);
     };
-
     window.addEventListener("beforeinstallprompt", handlePrompt);
 
+    const blocked = iosPushBlockedReason(ios, standalone);
+    if (blocked) {
+      // Do not attempt auto-subscribe in a Safari tab.
+      return () => window.removeEventListener("beforeinstallprompt", handlePrompt);
+    }
+
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).then(async (reg) => {
-        reg.update().catch(() => {});
+      ensureServiceWorker().then(async (reg) => {
         setSwRegistration(reg);
-        if (reg.pushManager) {
-          let sub = await reg.pushManager.getSubscription();
-          if (!sub && typeof Notification !== "undefined" && Notification.permission === "granted" && vapidPublicKey) {
-            sub = await reg.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-            });
-          }
-          if (sub) {
-            fetch("/api/push", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "subscribe", password, username,
-                subscription: sub.toJSON(), userLabel: username || "admin",
-              }),
-            }).then(async (res) => {
-              if (res.ok) {
-                setPushSubscribed(true);
-              } else {
-                setPushSubscribed(false);
-                setPushError((await res.json()).error || "Notification subscription needs attention");
-              }
-            }).catch(() => { setPushSubscribed(false); setPushError("Notification subscription needs attention"); });
-          }
+        if (!reg.pushManager) return;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub && typeof Notification !== "undefined" && Notification.permission === "granted" && vapidPublicKey) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+          });
+        }
+        if (sub) {
+          fetch("/api/push", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "subscribe", password, username,
+              subscription: sub.toJSON(), userLabel: username || "admin",
+            }),
+          }).then(async (res) => {
+            if (res.ok) {
+              setPushSubscribed(true);
+            } else {
+              setPushSubscribed(false);
+              setPushError((await res.json()).error || "Notification subscription needs attention");
+            }
+          }).catch(() => { setPushSubscribed(false); setPushError("Notification subscription needs attention"); });
         }
       }).catch(() => setPushError("Notifications are unavailable in this browser"));
     } else {
@@ -119,6 +154,15 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     setPushError("");
     setPushMessage("");
     try {
+      if (isIos && !isStandalone) {
+        setPushError("On iPhone/iPad, install Goko to the Home Screen first, then open it from there and tap Enable notifications. Safari browser tabs cannot enable push.");
+        return;
+      }
+      if (isIos && typeof window !== "undefined" && !("PushManager" in window)) {
+        setPushError("This iOS version does not support web push. Update to iOS/iPadOS 16.4 or later, then try again from the Home Screen app.");
+        return;
+      }
+
       if (!("serviceWorker" in navigator) || typeof Notification === "undefined") {
         throw new Error("Push notifications are not supported by this browser");
       }
@@ -126,13 +170,22 @@ export function PwaInstallBanner({ password, username }: { password: string; use
       const permission = await Notification.requestPermission();
       setNotificationPermission(permission);
       if (permission !== "granted") {
-        setPushError("Notifications are blocked in browser settings");
+        setPushError(isIos
+          ? "Notifications were not allowed. Open Settings → Notifications → Goko and enable Allow Notifications, then try again."
+          : "Notifications are blocked in browser settings");
         return;
       }
 
       const registration = swRegistration || await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
+      // iOS often fails subscribe until the worker is active.
+      await navigator.serviceWorker.ready;
       setSwRegistration(registration);
-      if (!registration.pushManager) throw new Error("Push notifications are not supported by this browser");
+      if (!registration.pushManager) {
+        throw new Error(isIos
+          ? "Push is unavailable in this app session. Close Goko fully, reopen it from the Home Screen, then try Enable again."
+          : "Push notifications are not supported by this browser");
+      }
+
       const subscription = await registration.pushManager.getSubscription()
         || await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -162,7 +215,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     } finally {
       setSubscribing(false);
     }
-  }, [swRegistration, vapidPublicKey, password, username, subscribing]);
+  }, [swRegistration, vapidPublicKey, password, username, subscribing, isIos, isStandalone]);
 
   const handleTestPush = useCallback(async () => {
     if (pushAction) return;
@@ -208,21 +261,26 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     } finally { setPushAction(null); }
   }, [swRegistration, password, username, pushAction]);
 
-  const showInstallButton = installPrompt && !isStandalone && !installed;
+  const showInstallSection = !isStandalone && !installed;
+  const canNativeInstall = Boolean(installPrompt);
+  const iosNeedsHomeScreen = isIos && !isStandalone;
   const pushUnavailable = !vapidPublicKey;
+  const enableDisabled = subscribing || pushUnavailable || iosNeedsHomeScreen;
   const statusLabel = pushSubscribed
     ? "Enabled on this device"
-    : notificationPermission === "denied"
-      ? "Blocked in browser settings"
-      : pushUnavailable
-        ? "Configuration unavailable"
-        : "Not enabled";
+    : iosNeedsHomeScreen
+      ? "Install to Home Screen first"
+      : notificationPermission === "denied"
+        ? "Blocked in browser settings"
+        : pushUnavailable
+          ? "Configuration unavailable"
+          : "Not enabled";
 
   return (
     <Dialog>
       <DialogTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="relative" aria-label="Notification settings" title={`Notifications: ${statusLabel}`} />}>
         <BellIcon className="h-4 w-4" />
-        <span className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${pushSubscribed ? "bg-emerald-500" : pushError || notificationPermission === "denied" ? "bg-red-500" : "bg-amber-400"}`} />
+        <span className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${pushSubscribed ? "bg-emerald-500" : pushError || notificationPermission === "denied" || iosNeedsHomeScreen ? "bg-red-500" : "bg-amber-400"}`} />
       </DialogTrigger>
 
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-md">
@@ -236,8 +294,8 @@ export function PwaInstallBanner({ password, username }: { password: string; use
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className={`flex items-center gap-3 rounded-xl border p-3 ${pushSubscribed ? "border-emerald-200 bg-emerald-50" : notificationPermission === "denied" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
-            {pushSubscribed ? <CheckCircleIcon className="h-5 w-5 text-emerald-600" /> : <CircleAlertIcon className={`h-5 w-5 ${notificationPermission === "denied" ? "text-red-600" : "text-amber-600"}`} />}
+          <div className={`flex items-center gap-3 rounded-xl border p-3 ${pushSubscribed ? "border-emerald-200 bg-emerald-50" : notificationPermission === "denied" || iosNeedsHomeScreen ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
+            {pushSubscribed ? <CheckCircleIcon className="h-5 w-5 text-emerald-600" /> : <CircleAlertIcon className={`h-5 w-5 ${notificationPermission === "denied" || iosNeedsHomeScreen ? "text-red-600" : "text-amber-600"}`} />}
             <div>
               <p className="font-medium text-brand-green-dark">{statusLabel}</p>
               <p className="text-xs text-brand-green-dark/60">This setting applies only to this device and browser.</p>
@@ -247,9 +305,37 @@ export function PwaInstallBanner({ password, username }: { password: string; use
           {pushError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{pushError}</p>}
           {pushMessage && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{pushMessage}</p>}
 
+          {showInstallSection && (
+            <div className="rounded-xl border border-brand-mist bg-brand-sand/40 p-3 dark:bg-card">
+              <div className="mb-2 flex items-center gap-2">
+                <DownloadIcon className="h-4 w-4 text-brand-green" />
+                <h3 className="text-sm font-medium text-brand-green-dark">Install app</h3>
+              </div>
+              {isIos ? (
+                <ol className="space-y-1.5 text-xs leading-relaxed text-brand-green-dark/70">
+                  <li><strong>1.</strong> In Safari, tap Share → Add to Home Screen.</li>
+                  <li><strong>2.</strong> Open Goko from the Home Screen icon (not a Safari tab).</li>
+                  <li><strong>3.</strong> Return here and tap Enable notifications. Requires iOS/iPadOS 16.4+.</li>
+                </ol>
+              ) : (
+                <div className="space-y-2">
+                  {canNativeInstall ? (
+                    <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={handleInstall}>
+                      <DownloadIcon /> Install app
+                    </Button>
+                  ) : (
+                    <p className="text-xs leading-relaxed text-brand-green-dark/70">
+                      In Chrome, open the browser menu (⋮) and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. After installing, open Goko from the app icon for the most reliable alerts.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             {!pushSubscribed ? (
-              <Button type="button" onClick={handleSubscribePush} disabled={subscribing || pushUnavailable}>
+              <Button type="button" onClick={handleSubscribePush} disabled={enableDisabled}>
                 {subscribing ? <Loader2Icon className="animate-spin" /> : <BellIcon />}
                 Enable notifications
               </Button>
@@ -259,21 +345,26 @@ export function PwaInstallBanner({ password, username }: { password: string; use
                 <Button type="button" disabled={!!pushAction} variant="outline" onClick={handleUnsubscribePush}>{pushAction === "disable" ? <Loader2Icon className="animate-spin" /> : <BellOffIcon />} Disable</Button>
               </>
             )}
-            {showInstallButton && (
-              <Button type="button" variant="outline" onClick={handleInstall}><DownloadIcon /> Install app</Button>
-            )}
           </div>
+          {iosNeedsHomeScreen && (
+            <p className="text-xs text-brand-green-dark/60">Enable is available after you open the installed Home Screen app.</p>
+          )}
 
           <div className="border-t pt-4">
             <div className="mb-3 flex items-center gap-2">
               <SmartphoneIcon className="h-4 w-4 text-brand-green" />
-              <h3 className="font-medium text-brand-green-dark">{isIos ? "iPhone and iPad setup" : "Android setup"}</h3>
+              <h3 className="font-medium text-brand-green-dark">{isIos ? "iPhone and iPad tips" : "Android tips"}</h3>
             </div>
             {isIos ? (
               <ol className="space-y-2 text-xs leading-relaxed text-brand-green-dark/70">
-                {!isStandalone && <li><strong>1.</strong> In Safari, tap Share → Add to Home Screen, then open Goko from the Home Screen. Push requires iOS/iPadOS 16.4 or later.</li>}
-                <li><strong>{isStandalone ? "1" : "2"}.</strong> Open this dialog in the installed Goko app and tap Enable notifications.</li>
-                <li><strong>{isStandalone ? "2" : "3"}.</strong> If blocked or silent, open Settings → Notifications → Goko and enable Allow Notifications, Sounds, and the preferred alert style.</li>
+                {isStandalone ? (
+                  <>
+                    <li><strong>1.</strong> Tap Enable notifications and choose Allow.</li>
+                    <li><strong>2.</strong> If blocked or silent, open Settings → Notifications → Goko and enable Allow Notifications, Sounds, and the preferred alert style.</li>
+                  </>
+                ) : (
+                  <li>Use the Install app steps above first. Push does not work from a normal Safari tab.</li>
+                )}
               </ol>
             ) : (
               <ol className="space-y-2 text-xs leading-relaxed text-brand-green-dark/70">
