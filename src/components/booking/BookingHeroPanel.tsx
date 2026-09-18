@@ -195,7 +195,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       let failed = false;
       const rzp = new (window as unknown as { Razorpay: new (o: Record<string, unknown>) => { open: () => void; on: (e: string, fn: (r: { error?: { description?: string } }) => void) => void } }).Razorpay({
         key: checkout.key, amount: checkout.amount, currency: checkout.currency, order_id: checkout.order_id,
-        name: site.shortName, description: "Goko Hostel booking",
+        name: site.shortName, description: ref ? `Booking ${ref}` : "Goko Hostel booking",
         prefill: { name: guest.name, email: guest.email, contact: guest.phone },
         handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
           try {

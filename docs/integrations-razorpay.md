@@ -2,7 +2,7 @@
 
 ## Status and safety boundary
 
-The repository now contains a working **test-mode integration path**, not a live guest booking/payment launch. Management → Booking Settings → Payments & Readiness includes a fixed ₹1 simulated Standard Checkout, provider authentication check, durable test-order/payment/refund records, webhook inbox and manual recovery controls. API/network behaviour is verified using mocked Razorpay responses, disposable SQLite and local D1/workerd bindings, not a real merchant account.
+Native guest checkout (test + live) creates Razorpay **booking** orders via `createRazorpayBookingOrder` with notes `goko_checkout_id` (webhook routing) and `goko_booking_id` (staff Razorpay dashboard search). Receipt remains `gbk_*`. Management → Booking Settings → Payments & Readiness also lists native attempts via `listWebsiteAttempts` (Website payments ledger). Separately, the **₹1 test preview** path (`gateway_preview_*`, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains an isolated simulated Standard Checkout with its own ledger — it does not mint PMS bookings.
 
 Public `/book` remains an enquiry entry. Saving `/book`, selecting `live` in draft policies, configuring live credentials or enabling Channel Manager **cannot** enable guest payments. Test evidence never changes PMS bookings, inventory, guest receipts, bank balances or Aiosell. The test API does not accept a client-supplied price, booking ID, environment or credential. Existing walk-in/offline APIs are not exposed publicly.
 

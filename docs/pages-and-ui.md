@@ -101,7 +101,7 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do
 | `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; title-only tasks may remain unassigned until later; assigned users update their own tasks; task managers create, assign/reassign/unassign, archive, reopen, and record linked purchase expenses |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
-| `bookingSettings` | `BookingSettings` | admin only; Cloudflare only | Revision-protected draft policies, credential-presence metadata, Payments & Readiness → authenticated Razorpay ₹1 test checkout/ledger/recovery; invalid/conflicting drafts block editing with reload; public/live guest checkout remains disabled |
+| `bookingSettings` | `BookingSettings` | admin only; Cloudflare only | Revision-protected draft policies, credential-presence metadata, Payments & Readiness → Website payments ledger (`listWebsiteAttempts`) plus authenticated Razorpay ₹1 test checkout/ledger/recovery when gateway mode is test; invalid/conflicting drafts block editing with reload |
 | `analytics` | `AdminAnalytics` | `canViewAnalytics` | existing managers retain compatibility access |
 | `quickLinks` | `QuickLinks` | `canViewQuickLinks` | mobile-friendly sections of links and QR/image cards; admins edit |
 
@@ -111,7 +111,7 @@ The public guest page is `/quick-links`. It displays active sections and cards f
 
 ## Booking dashboard files
 
-Management → Booking Settings → Payments & Readiness shows dynamic readiness blockers from `evaluateNativeCheckoutReadiness` (migrations 0059–0062, env flags, `/book` destination, Razorpay credentials + webhook secret for the selected Test/Live mode). Flip `gatewayEnvironment` and Save to switch public checkout. The admin Razorpay ₹1 preview block (0057/0058, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains separate — all-methods runbook, failure hints, webhook inbox. **Email Templates** edits confirmation/updated/cancelled email copy (confirmation sent on website create). **Text Templates** stores SMS drafts only (not sent). See [Razorpay integration](integrations-razorpay.md) and [guest booking UI](guest-booking-ui.md).
+Management → Booking Settings → Payments & Readiness shows dynamic readiness blockers from `evaluateNativeCheckoutReadiness` (migrations 0059–0062, env flags, `/book` destination, Razorpay credentials + webhook secret for the selected Test/Live mode). Flip `gatewayEnvironment` and Save to switch public checkout. **Website payments** (`WebsitePaymentsLedger`) lists recent native checkout attempts (test + live) with outcome, Goko booking ID, Razorpay order/payment IDs — admin-only via `listWebsiteAttempts`. The admin Razorpay ₹1 preview block (0057/0058, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains separate when mode is test — all-methods runbook, failure hints, webhook inbox. **Email Templates** edits confirmation/updated/cancelled email copy (confirmation sent on website create). **Text Templates** stores SMS drafts only (not sent). See [Razorpay integration](integrations-razorpay.md) and [guest booking UI](guest-booking-ui.md).
 
 `src/components/admin/booking-dashboard/`
 

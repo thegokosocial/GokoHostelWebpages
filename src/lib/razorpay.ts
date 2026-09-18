@@ -141,14 +141,18 @@ export async function createRazorpayTestOrder(receipt: string, attemptId: string
 
 /** Variable-amount guest booking order. Min ₹1. Uses stored gateway environment. */
 export async function createRazorpayBookingOrder(input: {
-  amountPaise: number; receipt: string; checkoutId: string; environment?: RazorpayEnvironment;
+  amountPaise: number; receipt: string; checkoutId: string; gokoBookingId: string; environment?: RazorpayEnvironment;
 }) {
   const environment = input.environment ?? "test";
   z.number().int().min(100).max(Number.MAX_SAFE_INTEGER).parse(input.amountPaise);
   z.string().regex(/^[A-Za-z0-9_-]{1,40}$/).parse(input.receipt);
+  const gokoBookingId = z.string().min(8).max(40).parse(input.gokoBookingId);
   return parse(razorpayOrderSchema, await request("orders", "POST", {
     amount: input.amountPaise, currency: "INR", receipt: input.receipt, partial_payment: false,
-    notes: { goko_checkout_id: z.string().uuid().parse(input.checkoutId) },
+    notes: {
+      goko_checkout_id: z.string().uuid().parse(input.checkoutId),
+      goko_booking_id: gokoBookingId,
+    },
   }, environment));
 }
 export async function findRazorpayTestOrders(receipt: string) {

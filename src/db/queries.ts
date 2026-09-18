@@ -2045,7 +2045,7 @@ export async function getBookingTableData(
         ),
       ),
       query
-        ? sql`(${bookings.guestName} LIKE ${`%${query}%`} OR ${bookings.bookingRef} LIKE ${`%${query}%`} OR ${bookings.contact} LIKE ${`%${query}%`})`
+        ? sql`(${bookings.guestName} LIKE ${`%${query}%`} OR ${bookings.bookingRef} LIKE ${`%${query}%`} OR ${bookings.gokoBookingId} LIKE ${`%${query}%`} OR ${bookings.contact} LIKE ${`%${query}%`})`
         : undefined,
     ];
     const baseWhere = and(...overlap);
@@ -2099,7 +2099,7 @@ export async function searchBookings(query: string) {
   const db = getDb();
   const q = `%${query}%`;
   return db.select().from(bookings).where(
-    sql`(${bookings.guestName} LIKE ${q} OR ${bookings.bookingRef} LIKE ${q} OR ${bookings.contact} LIKE ${q})`
+    sql`(${bookings.guestName} LIKE ${q} OR ${bookings.bookingRef} LIKE ${q} OR ${bookings.gokoBookingId} LIKE ${q} OR ${bookings.contact} LIKE ${q})`
   ).orderBy(desc(bookings.id)).limit(20);
 }
 

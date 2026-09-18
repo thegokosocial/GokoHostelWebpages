@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import {
@@ -300,7 +300,17 @@ async function attachOrder(row: Checkout, order: Awaited<ReturnType<typeof creat
   }).where(and(eq(checkouts.id, row.id),
     sql`(${checkouts.razorpayOrderId} IS NULL OR ${checkouts.razorpayOrderId} = ${order.id})`)).returning();
   if (!updated.length) throw new RazorpayError("MISMATCH");
-  return updated[0];
+  const ready = updated[0];
+  // Stamp Order ID on the booking before pay so staff can look up by GOKO id immediately.
+  if (ready.bookingId) {
+    let quoteJson: string | null = null;
+    if (ready.acceptedQuoteId) {
+      const [q] = await getDb().select().from(quotes).where(eq(quotes.id, ready.acceptedQuoteId)).limit(1);
+      quoteJson = q?.quoteJson ?? null;
+    }
+    await snapshotWebsiteOntoBooking(ready.bookingId, ready, { quoteJson });
+  }
+  return ready;
 }
 
 async function getCheckoutById(id: string) {
@@ -549,12 +559,15 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   if (quote.dueNowPaise >= 100) {
     try {
       row = await attachOrder(row, await createRazorpayBookingOrder({
-        amountPaise: quote.dueNowPaise, receipt: row.receipt!, checkoutId: id, environment: gatewayEnvironment,
+        amountPaise: quote.dueNowPaise, receipt: row.receipt!, checkoutId: id, gokoBookingId: gokoId, environment: gatewayEnvironment,
       }));
     } catch {
       await db.update(checkouts).set({ state: "order_unknown", updatedAt: timestamp() })
         .where(and(eq(checkouts.id, id), ne(checkouts.state, "ready")));
       row = (await getCheckoutById(id));
+      if (row.bookingId) {
+        await snapshotWebsiteOntoBooking(row.bookingId, row, { quoteJson: JSON.stringify(accepted.quote) });
+      }
     }
   } else {
     await fulfilGuestCheckout(id, ownerToken);
@@ -1201,12 +1214,19 @@ export async function prepareGuestAmend(raw: z.input<typeof amendSelectionSchema
   if (dueNowPaise >= 100) {
     try {
       row = await attachOrder(row, await createRazorpayBookingOrder({
-        amountPaise: dueNowPaise, receipt: row.receipt!, checkoutId: id, environment: gatewayEnvironment,
+        amountPaise: dueNowPaise,
+        receipt: row.receipt!,
+        checkoutId: id,
+        gokoBookingId: booking.gokoBookingId || booking.bookingRef || `booking-${booking.id}`,
+        environment: gatewayEnvironment,
       }));
     } catch {
       await db.update(checkouts).set({ state: "order_unknown", updatedAt: timestamp() })
         .where(and(eq(checkouts.id, id), ne(checkouts.state, "ready")));
       row = await getCheckoutById(id);
+      if (row.bookingId) {
+        await snapshotWebsiteOntoBooking(row.bookingId, row, { quoteJson: JSON.stringify(accepted.quote) });
+      }
     }
   }
   return {
@@ -1824,6 +1844,92 @@ export async function refundWebsiteOrphanCapture(bookingId: number, performedBy:
     paymentId: payment.id,
     amountRefunded: alreadyRefunded + refundedRupees,
   };
+}
+
+/** Staff-facing outcome for Management → Booking Settings → Website payments. */
+export function websiteCheckoutOutcome(
+  state: string,
+  hasCapturedPayment: boolean,
+  bookingStatus?: string | null,
+): "Passed" | "Failed" | "Unknown" | "Orphan" | "In progress" | "Pay at property" {
+  // Open checkout left behind after the booking was cancelled (abandon / staff cancel).
+  if (
+    bookingStatus === "cancelled" &&
+    (state === "ready" || state === "claimed" || state === "captured" || state === "preparing")
+  ) {
+    return hasCapturedPayment ? "Orphan" : "Failed";
+  }
+  if (state === "fulfilled") return "Passed";
+  if (state === "captured_unfulfilled") return "Passed";
+  if (state === "order_unknown") return "Unknown";
+  if (state === "cancelled" || state === "expired") {
+    return hasCapturedPayment ? "Orphan" : "Failed";
+  }
+  if (state === "ready" || state === "claimed" || state === "captured" || state === "preparing") {
+    return "In progress";
+  }
+  return "Unknown";
+}
+
+/** Recent native website checkout attempts for admin audit (test + live). */
+export async function listWebsiteCheckoutAttempts(limit = 50) {
+  cloudOnly();
+  const db = getDb();
+  const capped = Math.min(100, Math.max(1, Math.floor(limit)));
+  const rows = await db.select({
+    id: checkouts.id,
+    state: checkouts.state,
+    environment: checkouts.environment,
+    paymentChoice: checkouts.paymentChoice,
+    dueNowPaise: checkouts.dueNowPaise,
+    razorpayOrderId: checkouts.razorpayOrderId,
+    receipt: checkouts.receipt,
+    guestName: checkouts.guestName,
+    guestEmail: checkouts.guestEmail,
+    guestPhone: checkouts.guestPhone,
+    bookingId: checkouts.bookingId,
+    closureReason: checkouts.closureReason,
+    createdAt: checkouts.createdAt,
+    updatedAt: checkouts.updatedAt,
+    gokoBookingId: bookings.gokoBookingId,
+    bookingRef: bookings.bookingRef,
+    bookingStatus: bookings.status,
+  }).from(checkouts)
+    .leftJoin(bookings, eq(checkouts.bookingId, bookings.id))
+    .orderBy(desc(checkouts.createdAt))
+    .limit(capped);
+
+  const ids = rows.map((r) => r.id);
+  const payRows = ids.length
+    ? await db.select({
+      checkoutId: payments.checkoutId,
+      id: payments.id,
+      captured: payments.captured,
+      status: payments.status,
+      amountPaise: payments.amountPaise,
+    }).from(payments).where(inArray(payments.checkoutId, ids))
+    : [];
+  const byCheckout = new Map<string, typeof payRows>();
+  for (const p of payRows) {
+    const list = byCheckout.get(p.checkoutId) || [];
+    list.push(p);
+    byCheckout.set(p.checkoutId, list);
+  }
+
+  return rows.map((row) => {
+    const pays = byCheckout.get(row.id) || [];
+    const hasCaptured = pays.some((p) => p.captured === 1);
+    const outcome = row.dueNowPaise === 0 && row.state === "fulfilled"
+      ? "Pay at property" as const
+      : websiteCheckoutOutcome(row.state, hasCaptured, row.bookingStatus);
+    return {
+      ...row,
+      gokoBookingId: row.gokoBookingId || row.bookingRef || null,
+      outcome,
+      paymentIds: pays.map((p) => p.id),
+      capturedPaise: pays.filter((p) => p.captured === 1).reduce((s, p) => s + p.amountPaise, 0),
+    };
+  });
 }
 
 /** Peek notes without full processing — used by webhook router. */

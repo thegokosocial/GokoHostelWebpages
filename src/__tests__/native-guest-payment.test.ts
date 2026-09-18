@@ -8,6 +8,7 @@ import { hashToken } from "@/lib/bookingReference";
 import { createNativeInventoryHold } from "@/lib/nativeInventoryHold";
 import {
   claimGuestCheckout, reconcileGuestCheckout, verifyGuestPayment, GuestCheckoutError,
+  websiteCheckoutOutcome, listWebsiteCheckoutAttempts,
 } from "@/lib/nativeGuestCheckout";
 import { createRazorpayBookingOrder, RazorpayError } from "@/lib/razorpay";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
@@ -282,7 +283,8 @@ describe("Native guest payment verify / reconcile / min-amount", () => {
   it("createRazorpayBookingOrder rejects dueNowPaise between 1 and 99 (Razorpay min)", async () => {
     for (const amountPaise of [1, 50, 99]) {
       await expect(createRazorpayBookingOrder({
-        amountPaise, receipt: "gbk_min_test", checkoutId: crypto.randomUUID(), environment: "test",
+        amountPaise, receipt: "gbk_min_test", checkoutId: crypto.randomUUID(),
+        gokoBookingId: "GOKO20260919000001", environment: "test",
       })).rejects.toThrow();
     }
     expect(calls).toHaveLength(0);
@@ -303,16 +305,117 @@ describe("Native guest payment verify / reconcile / min-amount", () => {
       .rejects.toThrow(/unresolved|reconcile/i);
   });
 
-  it("createRazorpayBookingOrder notes include goko_checkout_id", async () => {
+  it("createRazorpayBookingOrder notes include goko_checkout_id and goko_booking_id", async () => {
     const checkoutId = crypto.randomUUID();
+    const gokoBookingId = "GOKO20260919ABCDEF";
     const order = await createRazorpayBookingOrder({
-      amountPaise: 10000, receipt: "gbk_note_check_receipt", checkoutId, environment: "test",
+      amountPaise: 10000, receipt: "gbk_note_check_receipt", checkoutId, gokoBookingId, environment: "test",
     });
     expect(calls.filter((c) => c.method === "POST" && c.path === "orders")).toHaveLength(1);
     expect(calls[0].body).toMatchObject({
       amount: 10000, currency: "INR", partial_payment: false,
-      notes: { goko_checkout_id: checkoutId },
+      notes: { goko_checkout_id: checkoutId, goko_booking_id: gokoBookingId },
     });
-    expect(order.notes).toMatchObject({ goko_checkout_id: checkoutId });
+    expect(order.notes).toMatchObject({ goko_checkout_id: checkoutId, goko_booking_id: gokoBookingId });
+  });
+
+  it("websiteCheckoutOutcome maps staff ledger labels", () => {
+    expect(websiteCheckoutOutcome("fulfilled", false)).toBe("Passed");
+    expect(websiteCheckoutOutcome("captured_unfulfilled", true)).toBe("Passed");
+    expect(websiteCheckoutOutcome("cancelled", false)).toBe("Failed");
+    expect(websiteCheckoutOutcome("cancelled", true)).toBe("Orphan");
+    expect(websiteCheckoutOutcome("expired", true)).toBe("Orphan");
+    expect(websiteCheckoutOutcome("order_unknown", false)).toBe("Unknown");
+    expect(websiteCheckoutOutcome("ready", false)).toBe("In progress");
+    expect(websiteCheckoutOutcome("claimed", false)).toBe("In progress");
+    expect(websiteCheckoutOutcome("claimed", false, "cancelled")).toBe("Failed");
+    expect(websiteCheckoutOutcome("claimed", true, "cancelled")).toBe("Orphan");
+    expect(websiteCheckoutOutcome("fulfilled", false, "cancelled")).toBe("Passed");
+  });
+
+  it("listWebsiteCheckoutAttempts mirrors live edge cases (stale claim, pay-at-property, missing booking)", async () => {
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO bookings (guest_name, platform, checkin_date, checkout_date, persons, status, source, created_at, goko_booking_id, booking_ref)
+       VALUES ('Stale Claim', 'Website', '2026-09-18', '2026-09-19', 1, 'cancelled', 'website', ?, 'GOKO20260918BKNTR0', 'GOKO20260918BKNTR0')`,
+    ).run(now);
+    const bid = (sqlite.prepare("SELECT id FROM bookings WHERE goko_booking_id=?").get("GOKO20260918BKNTR0") as { id: number }).id;
+
+    const insertCheckout = (row: Record<string, unknown>) => {
+      sqlite.prepare(`
+        INSERT INTO native_booking_checkouts (
+          id, request_key, request_hash, owner_hash, guest_access_hash, booking_id, payment_choice,
+          environment, state, razorpay_order_id, razorpay_key_id, receipt, due_now_paise,
+          guest_name, guest_email, guest_phone, created_at, updated_at, closure_reason
+        ) VALUES (
+          @id, @request_key, 'h', 'o', 'g', @booking_id, @payment_choice,
+          @environment, @state, @razorpay_order_id, 'rzp_test_x', @receipt, @due_now_paise,
+          @guest_name, @guest_email, '', @created_at, @updated_at, @closure_reason
+        )
+      `).run(row);
+    };
+
+    insertCheckout({
+      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+      request_key: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
+      booking_id: bid,
+      payment_choice: "advance",
+      environment: "test",
+      state: "claimed",
+      razorpay_order_id: "order_stale_claim",
+      receipt: "gbk_stale_claim",
+      due_now_paise: 20000,
+      guest_name: "Pawan test 1",
+      guest_email: "a@example.com",
+      created_at: "2026-09-18T09:00:00.000Z",
+      updated_at: now,
+      closure_reason: null,
+    });
+    insertCheckout({
+      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+      request_key: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2",
+      booking_id: null,
+      payment_choice: "property",
+      environment: "test",
+      state: "fulfilled",
+      razorpay_order_id: null,
+      receipt: null,
+      due_now_paise: 0,
+      guest_name: "pawan website-2",
+      guest_email: "b@example.com",
+      created_at: "2026-09-18T11:00:00.000Z",
+      updated_at: now,
+      closure_reason: null,
+    });
+    insertCheckout({
+      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3",
+      request_key: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3",
+      booking_id: bid,
+      payment_choice: "full",
+      environment: "live",
+      state: "fulfilled",
+      razorpay_order_id: "order_ok",
+      receipt: "gbk_ok",
+      due_now_paise: 57000,
+      guest_name: "Sunny",
+      guest_email: "c@example.com",
+      created_at: "2026-09-19T01:00:00.000Z",
+      updated_at: now,
+      closure_reason: null,
+    });
+    sqlite.prepare(`
+      INSERT INTO native_booking_payments (id, checkout_id, amount_paise, status, captured, refunded_paise, verified_at)
+      VALUES ('pay_ok', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 57000, 'captured', 1, 0, ?)
+    `).run(now);
+
+    const attempts = await listWebsiteCheckoutAttempts(50);
+    expect(attempts).toHaveLength(3);
+    const byId = Object.fromEntries(attempts.map((a) => [a.id, a]));
+    expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"].outcome).toBe("Failed");
+    expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"].gokoBookingId).toBe("GOKO20260918BKNTR0");
+    expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2"].outcome).toBe("Pay at property");
+    expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2"].gokoBookingId).toBeNull();
+    expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"].outcome).toBe("Passed");
+    expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"].paymentIds).toEqual(["pay_ok"]);
   });
 });
