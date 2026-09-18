@@ -1,7 +1,8 @@
 -- Guest self-serve booking amend: link amend checkouts + allow holds to overlap the booking being amended.
+-- Note: amends_checkout_id is nullable TEXT without an inline REFERENCES clause — D1 remote migrate rejected the self-FK form with SQLITE incomplete input.
 
-ALTER TABLE native_booking_checkouts ADD COLUMN amends_checkout_id TEXT REFERENCES native_booking_checkouts(id);
-CREATE INDEX idx_native_checkout_amends ON native_booking_checkouts(amends_checkout_id);
+ALTER TABLE native_booking_checkouts ADD COLUMN amends_checkout_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_native_checkout_amends ON native_booking_checkouts(amends_checkout_id);
 
 ALTER TABLE native_inventory_holds ADD COLUMN exclude_booking_id INTEGER;
 
@@ -38,5 +39,5 @@ WHEN NEW.id != OLD.id OR NEW.request_key != OLD.request_key OR NEW.request_hash 
   OR NEW.checkin_date != OLD.checkin_date OR NEW.checkout_date != OLD.checkout_date
   OR NEW.expires_at != OLD.expires_at OR NEW.created_at != OLD.created_at
   OR IFNULL(NEW.exclude_booking_id, -1) != IFNULL(OLD.exclude_booking_id, -1)
-  OR OLD.state = 'released' AND NEW.state != 'released'
+  OR (OLD.state = 'released' AND NEW.state != 'released')
 BEGIN SELECT RAISE(ABORT, 'NATIVE_HOLD_IMMUTABLE'); END;
