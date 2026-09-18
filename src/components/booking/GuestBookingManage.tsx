@@ -206,37 +206,42 @@ export function GuestBookingManage({ status, busy, onCancel }: Props) {
 
         {deadline && status.canCancel && (
           <p className="text-xs leading-relaxed text-brand-green">
-            Online cancellation available until {deadline} IST. To change dates or beds, message us on WhatsApp.
+            Online cancellation available until {deadline} IST.
           </p>
         )}
 
-        <div className="grid gap-2 border-t border-brand-mist pt-4 sm:grid-cols-2">
-          <a
-            className="inline-flex min-h-12 items-center justify-center rounded-lg bg-brand-green px-4 py-3 text-center font-semibold text-white"
-            href={whatsappHref}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Change stay on WhatsApp
-          </a>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void copyDetails()}
-            className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-4 py-3 font-semibold disabled:opacity-50"
-          >
-            {copied ? "Copied" : "Copy booking details"}
-          </button>
-          {status.canCancel && onCancel && (
+        <div className="space-y-3 border-t border-brand-mist pt-4">
+          <p className="text-sm leading-relaxed text-brand-green">
+            For any changes, modifications, or cancellations, copy the booking details and message us on WhatsApp.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <a
+              className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[#25D366] px-4 py-3 text-center font-semibold text-white"
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              WhatsApp
+            </a>
             <button
               type="button"
               disabled={busy}
-              onClick={onCancel}
-              className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-red/40 bg-white px-4 py-3 font-semibold text-brand-red disabled:opacity-50 sm:col-span-2"
+              onClick={() => void copyDetails()}
+              className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-4 py-3 font-semibold disabled:opacity-50"
             >
-              Cancel booking
+              {copied ? "Copied" : "Copy booking details"}
             </button>
-          )}
+            {status.canCancel && onCancel && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onCancel}
+                className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-red/40 bg-white px-4 py-3 font-semibold text-brand-red disabled:opacity-50 sm:col-span-2"
+              >
+                Cancel booking
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

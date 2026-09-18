@@ -77,7 +77,7 @@ export default function BookingConfirmationPage() {
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-green">Goko Hostel</p>
       <h1 className="mt-2 font-display text-3xl font-bold leading-tight sm:text-4xl">Your booking</h1>
       <p className="mt-2 text-sm text-brand-green sm:text-base">
-        Keep this confirmation for check-in. Need a change? Message us on WhatsApp with your details.
+        Keep this confirmation for check-in. For changes or cancellations, copy your details and WhatsApp us from the card below.
       </p>
 
       {busy && !status && <p className="mt-8 text-sm">Loading your confirmation…</p>}

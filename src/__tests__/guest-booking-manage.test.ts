@@ -73,19 +73,26 @@ describe("Guest booking manage details", () => {
     expect(text).toContain("Due at property: ₹500");
   });
 
-  it("confirmation page uses WhatsApp change CTA, copy details, and Cancel button (no amend panel)", () => {
+  it("confirmation page explains WhatsApp for changes, with copy + WhatsApp CTAs (no amend panel)", () => {
     const manage = readFileSync("src/components/booking/GuestBookingManage.tsx", "utf8");
     const page = readFileSync("src/app/(marketing)/booking/[reference]/page.tsx", "utf8");
+    const float = readFileSync("src/components/layout/WhatsAppFloat.tsx", "utf8");
     const amendRoute = readFileSync("src/app/api/guest-booking/amend/route.ts", "utf8");
     expect(page).toContain("GuestBookingManage");
     expect(page).not.toContain("GuestBookingAmendPanel");
-    expect(manage).toContain("Change stay on WhatsApp");
+    expect(manage).not.toContain("Change stay on WhatsApp");
+    expect(manage).toContain("For any changes, modifications, or cancellations");
+    expect(manage).toContain("copy the booking details and message us on WhatsApp");
+    expect(manage).toContain('bg-[#25D366]');
+    expect(manage).toMatch(/>\s*WhatsApp\s*</);
     expect(manage).toContain("Copy booking details");
     expect(manage).toContain("Cancel booking");
     expect(manage).not.toContain("Edit stay");
     expect(manage).not.toContain("onEditStay");
     expect(manage).toContain("dueAtPropertyPaise");
     expect(manage).toContain("buildBookingChangeRequestText");
+    expect(float).toContain('pathname?.startsWith("/booking/")');
+    expect(float).toContain("return null");
     expect(amendRoute).toContain("status: 403");
     expect(amendRoute).toContain("WhatsApp");
   });

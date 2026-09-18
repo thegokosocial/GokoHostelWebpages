@@ -1,8 +1,13 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { site } from "@/lib/site";
 
+/** Site-wide float; hidden on booking confirmation where an in-card WhatsApp CTA exists. */
 export function WhatsAppFloat() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/booking/")) return null;
+
   return (
     <a
       href={site.whatsAppUrl}

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     /* ignore parse errors — still return the product message */
   }
   return NextResponse.json(
-    { error: "Stay changes are handled by Goko on WhatsApp. Use Change stay on WhatsApp from your confirmation page." },
+    { error: "Stay changes are handled by Goko on WhatsApp. Copy your booking details from the confirmation page and message us." },
     { status: 403, headers },
   );
 }
