@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   applyRangeSelection,
@@ -10,6 +11,9 @@ import {
 } from "@/lib/dateRangePicker";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
+
+const pickerSource = readFileSync("src/components/dates/DateRangePicker.tsx", "utf8");
+const calendarSource = readFileSync("src/components/ui/calendar.tsx", "utf8");
 
 describe("dateRangePicker helpers", () => {
   it("parses and formats calendar dates at UTC noon", () => {
@@ -126,5 +130,23 @@ describe("dateRangePicker helpers", () => {
       complete: true,
       valid: true,
     });
+  });
+});
+
+describe("DateRangePicker adaptive layout contracts", () => {
+  it("sizes month count from shell width, not viewport-only matchMedia", () => {
+    expect(pickerSource).toContain("DUAL_MONTH_MIN_WIDTH");
+    expect(pickerSource).toContain("ResizeObserver");
+    expect(pickerSource).not.toContain('matchMedia("(min-width: 768px)")');
+    expect(pickerSource).toContain("overflow-hidden");
+    expect(pickerSource).not.toContain("overflow-x-auto");
+  });
+
+  it("keeps dual-month nav above captions and floors month width", () => {
+    expect(calendarSource).toContain("min-w-[16.5rem]");
+    expect(calendarSource).toContain("multiMonth");
+    expect(calendarSource).toContain("z-10");
+    expect(calendarSource).toContain("truncate");
+    expect(calendarSource).not.toContain("md:flex-row md:gap-6");
   });
 });

@@ -16,6 +16,7 @@ function Calendar({
   ...props
 }: CalendarProps) {
   const defaults = getDefaultClassNames();
+  const multiMonth = (props.numberOfMonths ?? 1) > 1;
 
   return (
     <DayPicker
@@ -23,25 +24,29 @@ function Calendar({
       className={cn("w-fit max-w-full p-2", className)}
       classNames={{
         root: cn("w-fit max-w-full", defaults.root),
-        months: cn("relative flex flex-col gap-4 md:flex-row md:gap-6", defaults.months),
-        month: cn("flex w-full flex-col gap-3", defaults.month),
+        months: cn(
+          "relative flex gap-4",
+          multiMonth ? "flex-row flex-wrap md:gap-6" : "flex-col",
+          defaults.months,
+        ),
+        month: cn("flex w-full min-w-[16.5rem] flex-col gap-3", defaults.month),
         month_caption: cn(
-          "flex h-9 w-full items-center justify-center px-9",
+          "relative z-0 flex h-9 w-full items-center justify-center px-10",
           defaults.month_caption,
         ),
-        caption_label: cn("text-sm font-medium", defaults.caption_label),
+        caption_label: cn("truncate text-sm font-medium", defaults.caption_label),
         nav: cn(
-          "pointer-events-none absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1 px-1",
+          "pointer-events-none absolute inset-x-0 top-0 z-10 flex w-full items-center justify-between gap-1 px-1",
           defaults.nav,
         ),
         button_previous: cn(
           buttonVariants({ variant: "outline", size: "icon-sm" }),
-          "pointer-events-auto size-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+          "pointer-events-auto relative z-10 size-7 shrink-0 bg-transparent p-0 opacity-70 hover:opacity-100",
           defaults.button_previous,
         ),
         button_next: cn(
           buttonVariants({ variant: "outline", size: "icon-sm" }),
-          "pointer-events-auto size-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+          "pointer-events-auto relative z-10 size-7 shrink-0 bg-transparent p-0 opacity-70 hover:opacity-100",
           defaults.button_next,
         ),
         month_grid: cn("w-full border-collapse", defaults.month_grid),

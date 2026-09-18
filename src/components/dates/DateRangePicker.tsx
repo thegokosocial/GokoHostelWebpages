@@ -15,6 +15,9 @@ import {
   parseCalendarDate,
 } from "@/lib/dateRangePicker";
 
+/** Min shell/budget width before showing two months side-by-side (~2 × 16.5rem + gap). */
+export const DUAL_MONTH_MIN_WIDTH = 560;
+
 export type DateRangePickerProps = {
   startDate: string;
   endDate: string;
@@ -32,15 +35,44 @@ export type DateRangePickerProps = {
   id?: string;
 };
 
-function useMonthCount(): number {
+/**
+ * Month count from the picker shell width so tablet/desktop viewports do not force
+ * two months into a narrow admin modal (mobile already shows one month and is fine).
+ * Popovers shrink-wrap to content, so they also use a viewport budget as a floor.
+ */
+function useAdaptiveMonthCount(
+  shell: HTMLDivElement | null,
+  active: boolean,
+  useViewportFallback: boolean,
+): number {
   const [months, setMonths] = useState(1);
+
   useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const update = () => setMonths(mq.matches ? 2 : 1);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
+    if (!active) return;
+
+    const measure = () => {
+      const shellWidth = shell?.clientWidth ?? 0;
+      let budget = shellWidth;
+      if (useViewportFallback) {
+        budget = Math.max(budget, Math.min(window.innerWidth - 32, 720));
+      }
+      setMonths(budget >= DUAL_MONTH_MIN_WIDTH ? 2 : 1);
+    };
+
+    measure();
+    if (!shell) {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(shell);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [active, shell, useViewportFallback]);
+
   return months;
 }
 
@@ -74,7 +106,12 @@ export function DateRangePicker({
   id,
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
-  const monthCount = useMonthCount();
+  const [shellEl, setShellEl] = useState<HTMLDivElement | null>(null);
+  const monthCount = useAdaptiveMonthCount(
+    shellEl,
+    presentation === "inline" || open,
+    presentation === "popover",
+  );
   const selected = useMemo(() => isoRangeToDateRange(startDate, endDate), [startDate, endDate]);
 
   const floorDate = minDate ?? (maxNights != null ? todayIST() : undefined);
@@ -125,7 +162,9 @@ export function DateRangePicker({
   );
 
   const calendarShell = (
-    <div className="max-w-full overflow-x-auto p-1">{calendar}</div>
+    <div ref={setShellEl} className="w-full max-w-full overflow-hidden p-1">
+      {calendar}
+    </div>
   );
 
   if (presentation === "inline") {

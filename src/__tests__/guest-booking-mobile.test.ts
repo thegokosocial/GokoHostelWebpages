@@ -23,6 +23,9 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain('col-span-2 lg:col-span-1');
     const picker = readFileSync("src/components/dates/DateRangePicker.tsx", "utf8");
     expect(picker).toContain("max-w-[calc(100vw-2rem)]");
+    expect(picker).toContain("DUAL_MONTH_MIN_WIDTH");
+    expect(picker).toContain("ResizeObserver");
+    expect(picker).not.toContain("overflow-x-auto");
     expect(readFileSync("src/components/ui/calendar.tsx", "utf8")).toContain("flex-1");
   });
   it("keeps the mobile summary safe-area-aware without a fixed overlay", () => {
