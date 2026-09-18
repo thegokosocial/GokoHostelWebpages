@@ -58,8 +58,9 @@ export function BookingSettings({ password, username }: { password: string; user
       setRevision(data.revision);
       setGateway(data.gateway);
       setReadiness(data.readiness || null);
+      const env = data.settings?.gatewayEnvironment === "live" ? "live" : "test";
       setMessage(data.readiness?.nativeCheckoutReady
-        ? "Settings saved. Native guest checkout is ready in test mode."
+        ? `Settings saved. Native guest checkout is ready (${env} Razorpay).`
         : "Settings saved. Checkout stays blocked until readiness blockers are cleared.");
     } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to save settings"); }
     finally { setBusy(false); }
@@ -82,10 +83,19 @@ export function BookingSettings({ password, username }: { password: string; user
     </label>
   );
 
+  const envLabel = settings.gatewayEnvironment === "live" ? "Live (real money)" : "Test";
+
   return <div className="space-y-5">
-    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-      <h3 className="font-semibold">Native booking setup — checkout not yet enabled</h3>
-      <p className="mt-1">The maximum bed selection applies to guest browsing. Payment and refund values remain drafts, not published promises. Saving a Goko link does not activate Razorpay. External links use the provider’s checkout.</p>
+    <div className={`rounded-xl border p-4 text-sm ${settings.gatewayEnvironment === "live" ? "border-brand-red bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
+      <h3 className="font-semibold">
+        {readiness?.nativeCheckoutReady
+          ? `Native checkout ready — ${envLabel}`
+          : "Native booking setup — clear readiness blockers before guests can pay"}
+      </h3>
+      <p className="mt-1">
+        Flip Test ↔ Live below, then Save. Live uses <code>RAZORPAY_LIVE_*</code> Worker secrets and charges real money.
+        Test and live webhook secrets must be different.
+      </p>
     </div>
     <nav aria-label="Booking settings sections" className="flex flex-wrap gap-2">
       {([["policies", "Booking & Policies"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"]] as const).map(([id, title]) =>
@@ -116,27 +126,27 @@ export function BookingSettings({ password, username }: { password: string; user
         <p className="mt-3"><a className="underline" href="/admin?section=inventory">Open Inventory</a> · <a className="underline" href="/admin?section=management&tab=website">Website content</a> · <a className="underline" href="/admin?section=management&tab=channelManager">Channel Manager</a></p>
       </div>}
       {section === "payments" && <>
-        <label className="grid max-w-sm gap-1 text-sm">Gateway configuration environment
-          <select className="rounded-lg border bg-background p-2" value={settings.gatewayEnvironment} onChange={(e) => setSettings({ ...settings, gatewayEnvironment: e.target.value as "test" | "live" })}>
-            <option value="test">Test (authenticated preview only)</option><option value="live">Live (production)</option>
+        <label className="grid max-w-sm gap-1 text-sm font-semibold">Gateway mode (flip here)
+          <select className="rounded-lg border bg-background p-2 font-normal" value={settings.gatewayEnvironment} onChange={(e) => setSettings({ ...settings, gatewayEnvironment: e.target.value as "test" | "live" })}>
+            <option value="test">Test — Razorpay test keys (no real money)</option>
+            <option value="live">Live — Razorpay live keys (real money)</option>
           </select>
         </label>
-        <p className="text-xs text-muted-foreground">Save the environment selection before checking its configuration. Public production checkout must never use test credentials.</p>
+        <p className="text-xs text-muted-foreground">Save after changing. Public checkout uses only the selected mode’s credentials. Do not share the same webhook secret between Test and Live.</p>
         <div className="rounded-lg border p-4 text-sm space-y-2">
-          <p>Store credentials as deployment secrets, not in a booking URL or database setting:</p>
+          <p>Store credentials as Worker secrets (not in D1):</p>
           <ul className="list-disc pl-5">
             <li><code>RAZORPAY_TEST_KEY_ID</code>, <code>RAZORPAY_TEST_KEY_SECRET</code>, <code>RAZORPAY_TEST_WEBHOOK_SECRET</code></li>
             <li><code>RAZORPAY_LIVE_KEY_ID</code>, <code>RAZORPAY_LIVE_KEY_SECRET</code>, <code>RAZORPAY_LIVE_WEBHOOK_SECRET</code></li>
           </ul>
           <p>Goko guest link: <code>{NATIVE_BOOKING_URL}</code></p>
-          <p>Implemented TEST webhook path: <code>/api/webhooks/razorpay</code>. Register in Test mode only after reviewed migration/deployment. Live guest checkout remains blocked.</p>
-          <p>Capture and bank settlement are separate: confirmed customer payment is not a bank credit. Real-bank net settlement configuration will be added with the payment ledger.</p>
+          <p>Webhook URL (register separately in Razorpay Test and Live dashboards): <code>/api/webhooks/razorpay</code></p>
           {gateway && <dl className="grid gap-1">
             <div><dt className="inline">Checked environment: </dt><dd className="inline">{gateway.environment}</dd></div>
             <div><dt className="inline">Public key ID: </dt><dd className="inline">{gateway.publicKeyId || "Not configured / wrong environment"}</dd></div>
             <div><dt className="inline">Server key secret: </dt><dd className="inline">{gateway.keySecretConfigured ? "Present" : "Missing"}</dd></div>
             <div><dt className="inline">Webhook secret: </dt><dd className="inline">{gateway.webhookSecretConfigured ? "Present" : "Missing"}</dd></div>
-            <div><dt className="inline">Checkout: </dt><dd className="inline">{readiness?.nativeCheckoutReady ? "Ready (test mode)" : "Blocked"}</dd></div>
+            <div><dt className="inline">Checkout: </dt><dd className="inline">{readiness?.nativeCheckoutReady ? `Ready (${gateway.environment})` : "Blocked"}</dd></div>
             {readiness?.blockers?.length ? <div className="mt-2"><dt className="font-semibold">Blockers</dt><ul className="mt-1 list-disc pl-5">{readiness.blockers.map((b) => <li key={b}>{b}</li>)}</ul></div> : null}
           </dl>}
         </div>
@@ -144,6 +154,8 @@ export function BookingSettings({ password, username }: { password: string; user
       </>}
       <Button type="button" onClick={save}>Save booking settings</Button>
     </fieldset>
-    {section === "payments" && <RazorpayTestPreview password={password} username={username} />}
+    {section === "payments" && settings.gatewayEnvironment === "test" && (
+      <RazorpayTestPreview password={password} username={username} />
+    )}
   </div>;
 }

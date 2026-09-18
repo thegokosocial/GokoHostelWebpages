@@ -28,10 +28,10 @@ import { otaFingerprint, pushIfOtaChanged } from "@/lib/aiosellSync";
 import { sendBookingConfirmationEmail } from "@/lib/email";
 import { isPiRuntime } from "@/lib/runtime";
 import {
-  RazorpayError, testRazorpayCredentials, createRazorpayBookingOrder, findRazorpayBookingOrders,
+  RazorpayError, razorpayCredentials, createRazorpayBookingOrder, findRazorpayBookingOrders,
   fetchRazorpayBookingPayment, fetchRazorpayBookingOrderPayments, createRazorpayBookingRefund,
   fetchRazorpayBookingRefunds, verifyCheckoutSignature, verifyRazorpaySignature, razorpayId,
-  type RazorpayPayment, type RazorpayRefund,
+  allRazorpayWebhookSecrets, type RazorpayEnvironment, type RazorpayPayment, type RazorpayRefund,
 } from "@/lib/razorpay";
 import {
   readWebsiteBookingSettings, websiteBookingSettingsRevision, WEBSITE_BOOKING_SETTINGS_KEY,
@@ -41,6 +41,8 @@ import { todayIST } from "@/lib/utils";
 type Checkout = typeof checkouts.$inferSelect;
 const timestamp = () => new Date().toISOString();
 const receiptFor = (id: string) => `gbk_${id.replace(/-/g, "").slice(0, 32)}`;
+const checkoutEnv = (row: Checkout): RazorpayEnvironment =>
+  row.environment === "live" ? "live" : "test";
 const date = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/);
 const token64 = z.string().regex(/^[a-f0-9]{64}$/);
 const selectionSchema = z.object({
@@ -259,12 +261,13 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   });
   const id = crypto.randomUUID();
   const now = timestamp();
-  const keyId = quote.dueNowPaise >= 100 ? testRazorpayCredentials().keyId : null;
+  const gatewayEnvironment = policy.gatewayEnvironment as RazorpayEnvironment;
+  const keyId = quote.dueNowPaise >= 100 ? razorpayCredentials(gatewayEnvironment).keyId : null;
   const inserted = await db.insert(checkouts).values({
     id, requestKey: input.requestKey, requestHash,
     ownerHash: await sha(ownerToken), guestAccessHash: await sha(guestAccessToken),
     bookingId, holdId: hold.id, acceptedQuoteId: accepted.id,
-    paymentChoice: input.paymentChoice, environment: "test",
+    paymentChoice: input.paymentChoice, environment: gatewayEnvironment,
     state: quote.dueNowPaise >= 100 ? "preparing" : "ready",
     razorpayKeyId: keyId, receipt: quote.dueNowPaise >= 100 ? receiptFor(id) : null,
     dueNowPaise: quote.dueNowPaise, guestName: input.guest.name, guestEmail: input.guest.email,
@@ -291,7 +294,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   if (quote.dueNowPaise >= 100) {
     try {
       row = await attachOrder(row, await createRazorpayBookingOrder({
-        amountPaise: quote.dueNowPaise, receipt: row.receipt!, checkoutId: id, environment: "test",
+        amountPaise: quote.dueNowPaise, receipt: row.receipt!, checkoutId: id, environment: gatewayEnvironment,
       }));
     } catch {
       await db.update(checkouts).set({ state: "order_unknown", updatedAt: timestamp() })
@@ -383,7 +386,8 @@ async function recordPayment(row: Checkout, evidence: RazorpayPayment) {
 async function recoverOrder(row: Checkout) {
   if (row.razorpayOrderId) return row;
   if (!row.receipt) throw new GuestCheckoutError("Order creation is still unresolved", 503);
-  const candidates = (await findRazorpayBookingOrders(row.receipt)).filter((o) => o.receipt === row.receipt);
+  const env = checkoutEnv(row);
+  const candidates = (await findRazorpayBookingOrders(row.receipt, env)).filter((o) => o.receipt === row.receipt);
   if (candidates.length !== 1) {
     throw new GuestCheckoutError("Order creation is still unresolved. Do not start another payment; reconcile this checkout.");
   }
@@ -393,8 +397,9 @@ async function recoverOrder(row: Checkout) {
 export async function reconcileGuestCheckout(checkoutId: string, ownerToken: string) {
   cloudOnly();
   let row = await recoverOrder(await requireOwner(checkoutId, ownerToken));
+  const env = checkoutEnv(row);
   if (row.dueNowPaise >= 100 && row.razorpayOrderId) {
-    const evidence = await fetchRazorpayBookingOrderPayments(row.razorpayOrderId);
+    const evidence = await fetchRazorpayBookingOrderPayments(row.razorpayOrderId, env);
     const seen = new Set<string>();
     for (const payment of evidence) {
       if (seen.has(payment.id)) throw new RazorpayError("INVALID_RESPONSE");
@@ -404,7 +409,7 @@ export async function reconcileGuestCheckout(checkoutId: string, ownerToken: str
     const known = await getDb().select().from(payments).where(eq(payments.checkoutId, checkoutId));
     for (const payment of known) {
       if (!seen.has(payment.id)) {
-        const fetched = await fetchRazorpayBookingPayment(payment.id);
+        const fetched = await fetchRazorpayBookingPayment(payment.id, env);
         if (fetched.id !== payment.id) throw new RazorpayError("MISMATCH");
         await recordPayment(row, fetched);
       }
@@ -425,9 +430,10 @@ export async function reconcileGuestCheckout(checkoutId: string, ownerToken: str
 export async function verifyGuestPayment(checkoutId: string, ownerToken: string, paymentId: string, orderId: string, signature: string) {
   cloudOnly();
   const row = await requireOwner(checkoutId, ownerToken);
+  const env = checkoutEnv(row);
   if (!row.razorpayOrderId || orderId !== row.razorpayOrderId) throw new RazorpayError("MISMATCH", 400);
-  if (!await verifyCheckoutSignature(row.razorpayOrderId, paymentId, signature)) throw new RazorpayError("SIGNATURE", 400);
-  const evidence = await fetchRazorpayBookingPayment(paymentId);
+  if (!await verifyCheckoutSignature(row.razorpayOrderId, paymentId, signature, env)) throw new RazorpayError("SIGNATURE", 400);
+  const evidence = await fetchRazorpayBookingPayment(paymentId, env);
   if (evidence.id !== paymentId) throw new RazorpayError("MISMATCH");
   await recordPayment(row, evidence);
   if (evidence.captured && ["captured", "refunded"].includes(evidence.status)) {
@@ -602,7 +608,9 @@ export async function cancelGuestBooking(reference: string, guestAccessToken: st
     }).onConflictDoNothing({ target: refunds.paymentId }).returning();
     if (inserted.length) {
       try {
-        const evidence = await createRazorpayBookingRefund(payment.id, calc.refundPaise, inserted[0].receipt, refundId);
+        const evidence = await createRazorpayBookingRefund(
+          payment.id, calc.refundPaise, inserted[0].receipt, refundId, checkoutEnv(checkout),
+        );
         await recordBookingRefund(inserted[0], evidence);
       } catch {
         await getDb().update(refunds).set({ state: "unknown", updatedAt: timestamp() })
@@ -635,14 +643,12 @@ const supportedEvents = new Set([
   "refund.created", "refund.processed", "refund.failed",
 ]);
 
-/** Route native booking webhooks (notes.goko_checkout_id). */
+/** Route native booking webhooks (notes.goko_checkout_id). Accepts test or live webhook HMAC. */
 export async function receiveNativeBookingWebhook(raw: Uint8Array, signature: string, eventId: string) {
   cloudOnly();
   z.string().regex(/^[A-Za-z0-9_-]{1,120}$/).parse(eventId);
-  const secrets = [process.env.RAZORPAY_TEST_WEBHOOK_SECRET, process.env.RAZORPAY_TEST_WEBHOOK_SECRET_PREVIOUS]
-    .filter((s): s is string => Boolean(s?.trim()));
-  const live = [process.env.RAZORPAY_LIVE_WEBHOOK_SECRET, process.env.RAZORPAY_LIVE_WEBHOOK_SECRET_PREVIOUS].filter(Boolean);
-  if (!secrets.length || secrets.some((s) => live.includes(s))) throw new RazorpayError("CONFIGURATION");
+  const secrets = allRazorpayWebhookSecrets();
+  if (!secrets.length) throw new RazorpayError("CONFIGURATION");
   let verified = false;
   for (const secret of secrets) if (await verifyRazorpaySignature(raw, signature, secret)) verified = true;
   if (!verified) throw new RazorpayError("SIGNATURE", 400);
@@ -660,7 +666,10 @@ export async function receiveNativeBookingWebhook(raw: Uint8Array, signature: st
       }).passthrough(),
     })),
   }).parse(value);
-  if (process.env.RAZORPAY_TEST_ACCOUNT_ID && parsed.account_id !== process.env.RAZORPAY_TEST_ACCOUNT_ID) {
+  const allowedAccounts = [
+    process.env.RAZORPAY_TEST_ACCOUNT_ID, process.env.RAZORPAY_LIVE_ACCOUNT_ID,
+  ].filter((s): s is string => Boolean(s?.trim()));
+  if (allowedAccounts.length && !allowedAccounts.includes(parsed.account_id)) {
     throw new RazorpayError("MISMATCH", 400);
   }
   const p = parsed.payload.payment?.entity, r = parsed.payload.refund?.entity, o = parsed.payload.order?.entity;
@@ -700,19 +709,26 @@ export async function processNativeBookingWebhook(eventId: string) {
   if (["processed", "ignored"].includes(hook.state)) return { state: hook.state };
   try {
     let orderId = hook.orderId;
+    let row: Checkout | undefined;
+    if (hook.checkoutId) {
+      try { row = await getCheckoutById(hook.checkoutId); } catch { /* unmatched until order recovery */ }
+    }
+    const env: RazorpayEnvironment = row ? checkoutEnv(row) : "test";
     if (!orderId && hook.paymentId) {
-      const p = await fetchRazorpayBookingPayment(hook.paymentId);
+      const p = await fetchRazorpayBookingPayment(hook.paymentId, env);
       if (p.id !== hook.paymentId) throw new RazorpayError("MISMATCH");
       orderId = p.order_id;
     }
-    let [row] = orderId
-      ? await getDb().select().from(checkouts).where(eq(checkouts.razorpayOrderId, orderId)).limit(1) : [];
+    if (!row && orderId) {
+      [row] = await getDb().select().from(checkouts).where(eq(checkouts.razorpayOrderId, orderId)).limit(1);
+    }
     if (!row && hook.checkoutId) row = await recoverOrder(await getCheckoutById(hook.checkoutId));
     if (!row || row.razorpayOrderId !== orderId) {
       throw new GuestCheckoutError("Unmatched booking webhook retained for reconciliation", 503);
     }
+    const rowEnv = checkoutEnv(row);
     if (hook.paymentId) {
-      const evidence = await fetchRazorpayBookingPayment(hook.paymentId);
+      const evidence = await fetchRazorpayBookingPayment(hook.paymentId, rowEnv);
       if (evidence.id !== hook.paymentId) throw new RazorpayError("MISMATCH");
       await recordPayment(row, evidence);
     }

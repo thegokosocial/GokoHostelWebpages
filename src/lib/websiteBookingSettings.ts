@@ -55,6 +55,6 @@ export function gatewayConfiguration(environment: "test" | "live", env: Record<s
     webhookSecretConfigured,
     credentialsConfigured: validId && keySecretConfigured && webhookSecretConfigured,
     nativeCheckoutReady: false as const,
-    status: "implementation_pending" as const,
+    status: "pending" as const,
   };
 }

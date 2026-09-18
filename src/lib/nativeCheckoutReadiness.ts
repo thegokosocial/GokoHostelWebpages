@@ -5,7 +5,9 @@ import {
 } from "@/db/schema";
 import { requireNativeHoldGuards } from "@/lib/nativeInventoryHold";
 import { isPiRuntime } from "@/lib/runtime";
-import { testRazorpayCredentials } from "@/lib/razorpay";
+import {
+  razorpayCredentials, razorpayWebhookSecrets, workerEnv, type RazorpayEnvironment,
+} from "@/lib/razorpay";
 import {
   gatewayConfiguration, readWebsiteBookingSettings, WEBSITE_BOOKING_SETTINGS_KEY,
 } from "@/lib/websiteBookingSettings";
@@ -19,9 +21,8 @@ export type CheckoutBlocker =
   | "hold_guards_missing"
   | "checkout_schema_missing"
   | "destination_not_native"
-  | "gateway_not_test"
-  | "test_credentials_incomplete"
-  | "webhook_secret_missing_or_shared_with_live"
+  | "gateway_credentials_incomplete"
+  | "webhook_secret_missing_or_shared"
   | "settings_invalid";
 
 const LABELS: Record<CheckoutBlocker, string> = {
@@ -31,20 +32,22 @@ const LABELS: Record<CheckoutBlocker, string> = {
   hold_guards_missing: "Apply migration 0059 (hold triggers) on D1",
   checkout_schema_missing: "Apply migrations 0060–0062 (quotes + guest checkout ledger) on D1",
   destination_not_native: "Channel Manager booking URL must be /book",
-  gateway_not_test: "Booking Settings gateway environment must be test until live cutover",
-  test_credentials_incomplete: "Configure Razorpay test key ID, key secret, and webhook secret",
-  webhook_secret_missing_or_shared_with_live: "RAZORPAY_TEST_WEBHOOK_SECRET must be set and distinct from live secrets",
+  gateway_credentials_incomplete: "Configure Razorpay key ID and key secret for the selected gateway environment",
+  webhook_secret_missing_or_shared: "Configure a webhook secret for the selected environment; test and live secrets must differ",
   settings_invalid: "Saved website booking settings are invalid",
 };
 
-function webhookSecretsOk(env: Record<string, string | undefined>) {
-  const current = env.RAZORPAY_TEST_WEBHOOK_SECRET || "";
-  const live = [env.RAZORPAY_LIVE_WEBHOOK_SECRET, env.RAZORPAY_LIVE_WEBHOOK_SECRET_PREVIOUS].filter(Boolean);
-  return Boolean(current.trim()) && !live.includes(current);
+function webhookOk(environment: RazorpayEnvironment, env: Record<string, string | undefined>) {
+  const current = razorpayWebhookSecrets(environment, env);
+  if (!current.length) return false;
+  const other = razorpayWebhookSecrets(environment === "live" ? "test" : "live", env);
+  const primary = env[environment === "live" ? "RAZORPAY_LIVE_WEBHOOK_SECRET" : "RAZORPAY_TEST_WEBHOOK_SECRET"] || "";
+  if (!primary.trim()) return false;
+  return !other.includes(primary);
 }
 
 /** Single source for public nativeCheckoutReady + admin blocker list. */
-export async function evaluateNativeCheckoutReadiness(env: Record<string, string | undefined> = process.env) {
+export async function evaluateNativeCheckoutReadiness(env: Record<string, string | undefined> = workerEnv()) {
   const blockers: CheckoutBlocker[] = [];
   if (isPiRuntime()) blockers.push("pi_runtime");
   if (env.GOKO_NATIVE_GUEST_CHECKOUT_ENABLED !== "true") blockers.push("guest_checkout_disabled");
@@ -57,7 +60,7 @@ export async function evaluateNativeCheckoutReadiness(env: Record<string, string
     blockers.push("settings_invalid");
     settings = null;
   }
-  if (settings && settings.gatewayEnvironment !== "test") blockers.push("gateway_not_test");
+  const environment: RazorpayEnvironment = settings?.gatewayEnvironment ?? "test";
 
   try {
     const config = await getGuestBookingConfig();
@@ -68,9 +71,9 @@ export async function evaluateNativeCheckoutReadiness(env: Record<string, string
     blockers.push("destination_not_native");
   }
 
-  try { testRazorpayCredentials(env); }
-  catch { blockers.push("test_credentials_incomplete"); }
-  if (!webhookSecretsOk(env)) blockers.push("webhook_secret_missing_or_shared_with_live");
+  try { razorpayCredentials(environment, env); }
+  catch { blockers.push("gateway_credentials_incomplete"); }
+  if (!webhookOk(environment, env)) blockers.push("webhook_secret_missing_or_shared");
 
   try { await requireNativeHoldGuards(); }
   catch { blockers.push("hold_guards_missing"); }
@@ -89,7 +92,7 @@ export async function evaluateNativeCheckoutReadiness(env: Record<string, string
     blockers.push("checkout_schema_missing");
   }
 
-  const gateway = gatewayConfiguration(settings?.gatewayEnvironment ?? "test", env);
+  const gateway = gatewayConfiguration(environment, env);
   const nativeCheckoutReady = blockers.length === 0;
   return {
     nativeCheckoutReady,
@@ -99,6 +102,7 @@ export async function evaluateNativeCheckoutReadiness(env: Record<string, string
       advancePercent: settings.advancePercent,
       allowFullPayment: settings.allowFullPayment,
       allowPayAtProperty: settings.allowPayAtProperty,
+      gatewayEnvironment: environment,
     } : null,
     gateway: { ...gateway, nativeCheckoutReady, status: nativeCheckoutReady ? "ready" as const : "blocked" as const },
   };

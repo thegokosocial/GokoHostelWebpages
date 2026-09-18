@@ -38,7 +38,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [challengeId, setChallengeId] = useState(""), [code, setCode] = useState("");
   const [booking, setBooking] = useState<BookingDetails | null>(null);
   const [nativeCheckoutReady, setNativeCheckoutReady] = useState(false);
-  const [paymentOptions, setPaymentOptions] = useState<{ advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean } | null>(null);
+  const [paymentOptions, setPaymentOptions] = useState<{
+    advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean; gatewayEnvironment?: "test" | "live";
+  } | null>(null);
   const [paymentChoice, setPaymentChoice] = useState<"advance" | "full" | "property">("advance");
   const [holdExpiresAt, setHoldExpiresAt] = useState<number | null>(null);
   const [checkoutRequestKey, setCheckoutRequestKey] = useState<string | null>(null);
@@ -330,7 +332,11 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                 </button>
                 {!preview && <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold" href={`${site.whatsAppUrl}?text=${encodeURIComponent(enquiry)}`} target="_blank" rel="noopener noreferrer">Ask Goko on WhatsApp</a>}
               </div>
-              <p className="mt-3 text-xs">Test-mode payments only. Card, UPI, netbanking and wallets are available in Razorpay Checkout.</p>
+              <p className="mt-3 text-xs">
+                {paymentOptions.gatewayEnvironment === "live"
+                  ? "Live payments — real money. Card, UPI, netbanking and wallets via Razorpay Checkout."
+                  : "Test-mode payments only. Card, UPI, netbanking and wallets are available in Razorpay Checkout."}
+              </p>
             </> : <>
               <p className="mt-3 text-xs">These details stay in this page only. They are not saved as a booking or included in the WhatsApp link.</p>
               <div className="mt-5 rounded-lg bg-brand-sand p-4 text-sm"><strong>Payment is currently disabled.</strong><p>No money will be collected and no reservation is created here. Our team can confirm your selection and final tax-inclusive price.</p></div>

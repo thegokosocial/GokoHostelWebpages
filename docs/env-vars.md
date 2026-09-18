@@ -77,7 +77,8 @@ Worker itself uses bindings `DB` and `EMAIL`, not these HTTP vars. Email flow: [
 | `RAZORPAY_TEST_WEBHOOK_SECRET` (+ optional `_PREVIOUS`) | Worker secrets | Test webhook HMAC; must be distinct from live |
 | `RAZORPAY_TEST_ACCOUNT_ID` | optional | Reject webhooks from other Razorpay accounts |
 | `RAZORPAY_TEST_PREVIEW_ENABLED` | Worker | Admin ₹1 preview panel new orders/claims |
-| `RAZORPAY_LIVE_*` | Worker secrets | Live key presence for readiness UI only; live webhook path not implemented |
+| `RAZORPAY_LIVE_KEY_ID` / `RAZORPAY_LIVE_KEY_SECRET` / `RAZORPAY_LIVE_WEBHOOK_SECRET` (+ optional `_PREVIOUS`) | Worker secrets | Live guest checkout when Booking Settings `gatewayEnvironment=live`. Test and live webhook secrets **must differ**. |
+| `RAZORPAY_LIVE_ACCOUNT_ID` | optional | Reject webhooks from other Razorpay accounts in live |
 | `GUEST_BOOKING_LOOKUP_SECRET` | Worker (≥32 chars) | OTP hashing for My booking lookup |
 | `GOKO_BOOKING_UI_PREVIEW` | local | Enables `/book/preview` (404 when unset) |
 

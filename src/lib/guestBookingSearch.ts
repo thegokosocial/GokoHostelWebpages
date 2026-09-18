@@ -100,6 +100,7 @@ export async function searchGuestRooms(input: unknown) {
     advancePercent: settings.advancePercent,
     allowFullPayment: settings.allowFullPayment,
     allowPayAtProperty: settings.allowPayAtProperty,
+    gatewayEnvironment: settings.gatewayEnvironment as "test" | "live",
   };
   try {
     const readiness = await evaluateNativeCheckoutReadiness();
