@@ -44,6 +44,7 @@ import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
 import { auditDateBounds } from "@/lib/auditRetention";
+import { dbRead } from "@/lib/dbRetry";
 
 export async function POST(req: NextRequest) {
   try {
@@ -95,21 +96,25 @@ export async function POST(req: NextRequest) {
 
     switch (action) {
       case "listOrders": {
-        const { status, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit } = rest;
+        const { status, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit, includeItems } = rest;
         const limitNum = Math.min(Number(rawLimit) || 50, 200);
+        const withItems = includeItems !== false;
 
         const db = getDb();
 
         if (status === "active" || (!auditHistory && !status && !dateFrom)) {
-          const orders = await getActiveFoodOrders();
+          const orders = await dbRead(() => getActiveFoodOrders());
           const orderIds = orders.map((o) => o.id);
-          const [itemsMap, modCountMap] = await Promise.all([getFoodOrderItemsBatch(orderIds), getModCountMap(orderIds)]);
-          const withItems = orders.map((o) => ({
+          const [itemsMap, modCountMap] = await Promise.all([
+            withItems ? getFoodOrderItemsBatch(orderIds) : Promise.resolve(new Map()),
+            getModCountMap(orderIds),
+          ]);
+          const withItemsRows = orders.map((o) => ({
             ...o,
             hasModifications: (modCountMap.get(o.id) || 0) > 0,
-            items: itemsMap.get(o.id) || [],
+            items: withItems ? (itemsMap.get(o.id) || []) : [],
           }));
-          return NextResponse.json({ role, orders: withItems });
+          return NextResponse.json({ role, orders: withItemsRows });
         }
 
         const conditions: any[] = [];
@@ -133,18 +138,23 @@ export async function POST(req: NextRequest) {
           if (bounds.end) conditions.push(lte(foodOrders.createdAt, bounds.end));
         }
 
-        const orders = conditions.length > 0
-          ? await db.select().from(foodOrders).where(and(...conditions)).orderBy(desc(foodOrders.createdAt)).limit(limitNum)
-          : await db.select().from(foodOrders).orderBy(desc(foodOrders.createdAt)).limit(limitNum);
+        const orders = await dbRead(() =>
+          conditions.length > 0
+            ? db.select().from(foodOrders).where(and(...conditions)).orderBy(desc(foodOrders.createdAt)).limit(limitNum)
+            : db.select().from(foodOrders).orderBy(desc(foodOrders.createdAt)).limit(limitNum),
+        );
 
         const orderIds = orders.map((o) => o.id);
-        const [itemsMap, modCountMap] = await Promise.all([getFoodOrderItemsBatch(orderIds), getModCountMap(orderIds)]);
-        const withItems = orders.map((o) => ({
+        const [itemsMap, modCountMap] = await Promise.all([
+          withItems ? getFoodOrderItemsBatch(orderIds) : Promise.resolve(new Map()),
+          getModCountMap(orderIds),
+        ]);
+        const withItemsRows = orders.map((o) => ({
           ...o,
           hasModifications: (modCountMap.get(o.id) || 0) > 0,
-          items: itemsMap.get(o.id) || [],
+          items: withItems ? (itemsMap.get(o.id) || []) : [],
         }));
-        return NextResponse.json({ role, orders: withItems });
+        return NextResponse.json({ role, orders: withItemsRows });
       }
 
       case "getOrderDetails": {

@@ -2075,9 +2075,10 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [hostelRes, ordersRes, menuRes, walkinRes] = await Promise.all([
+      // Avoid listOrders(all_history)+items — that path OOMs/D1-fails under load.
+      // Pending cards only need unpaid walk-ins + per-tab guest orders.
+      const [hostelRes, menuRes, walkinRes] = await Promise.all([
         apiCall({ action: "getGuestsWithTabs" }),
-        apiCall({ action: "listOrders", status: "all_history", limit: 200 }),
         apiCall({ action: "getMenu" }),
         apiCall({ action: "getWalkinOrders" }),
       ]);
@@ -2091,39 +2092,25 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         showError("Payment Summary", data.error || "Could not load guest tabs");
       }
 
-      let orders: Order[] = [];
-      if (ordersRes.ok) {
-        const data = await ordersRes.json();
-        orders = data.orders || [];
+      const orders: Order[] = [];
+      if (walkinRes.ok) {
+        const data = await walkinRes.json();
+        orders.push(...(data.orders || []));
       } else {
-        const data = await ordersRes.json().catch(() => ({}));
-        showError("Payment Summary", data.error || "Could not load order history");
+        const data = await walkinRes.json().catch(() => ({}));
+        showError("Payment Summary", data.error || "Could not load walk-in orders");
       }
 
-      // Belt-and-suspenders: if history empty/failed, seed unpaid from walk-ins + hostel tabs
-      if (orders.length === 0) {
-        const seeded: Order[] = [];
-        if (walkinRes.ok) {
-          const data = await walkinRes.json();
-          seeded.push(...(data.orders || []));
-        } else {
-          const data = await walkinRes.json().catch(() => ({}));
-          if (data.error) showError("Payment Summary", data.error);
-        }
-        if (map.size > 0) {
-          const tabBatches = await Promise.all(
-            [...map.keys()].map(async (checkinId) => {
-              const res = await apiCall({ action: "getGuestAllOrders", checkinId });
-              if (!res.ok) return [] as Order[];
-              const data = await res.json();
-              return ((data.orders || []) as Order[]).filter(
-                (o) => o.paymentStatus !== "paid" && o.status !== "cancelled",
-              );
-            }),
-          );
-          seeded.push(...tabBatches.flat());
-        }
-        orders = seeded;
+      if (map.size > 0) {
+        const tabBatches = await Promise.all(
+          [...map.keys()].map(async (checkinId) => {
+            const res = await apiCall({ action: "getGuestAllOrders", checkinId });
+            if (!res.ok) return [] as Order[];
+            const data = await res.json();
+            return ((data.orders || []) as Order[]).filter((o) => o.status !== "cancelled");
+          }),
+        );
+        orders.push(...tabBatches.flat());
       }
       setAllOrders(orders);
 
@@ -2257,13 +2244,23 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
       const res = await apiCall({ action: "getGuestAllOrders", checkinId });
       if (res.ok) {
         const data = await res.json();
-        setDetailOrders((prev) => ({ ...prev, [group.key]: data.orders || [] }));
+        const next = ((data.orders || []) as Order[]).filter((o) => o.status !== "cancelled");
+        setDetailOrders((prev) => ({ ...prev, [group.key]: next }));
+        setAllOrders((prev) => [
+          ...prev.filter((o) => !(o.guestType === "hostel" && o.checkinId === checkinId)),
+          ...next,
+        ]);
       }
+      return;
     }
-    const ordersRes = await apiCall({ action: "listOrders", status: "all_history", limit: 200 });
-    if (ordersRes.ok) {
-      const data = await ordersRes.json();
-      setAllOrders(data.orders || []);
+    const walkinRes = await apiCall({ action: "getWalkinOrders" });
+    if (walkinRes.ok) {
+      const data = await walkinRes.json();
+      const walkins = (data.orders || []) as Order[];
+      setAllOrders((prev) => [
+        ...prev.filter((o) => o.guestType === "hostel"),
+        ...walkins,
+      ]);
     }
   }, [apiCall]);
 
