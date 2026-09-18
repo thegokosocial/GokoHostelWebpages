@@ -15,6 +15,7 @@ const queryMocks = vi.hoisted(() => ({
   clearDirtyInventory: vi.fn(),
   getUnassignedOtaRoomCountForDorm: vi.fn(),
   getAvailabilitySnapshot: vi.fn(),
+  getActiveNativeHoldBedCountForDorm: vi.fn(),
 }));
 
 const pushInventory = vi.hoisted(() => vi.fn());
@@ -49,7 +50,7 @@ vi.mock("@/lib/utils", async (importOriginal) => {
   return { ...actual, todayIST: () => "2026-09-01" };
 });
 
-import { getDateAwareAvailability, getDateAwareAvailabilityRange, otaFingerprint, pushIfOtaChanged, retryDirtyInventory, triggerInventoryPush } from "@/lib/aiosellSync";
+import { getDateAwareAvailability, getDateAwareAvailabilityRange, heldBedsToUnits, countNativeHoldBedsForDormDate, otaFingerprint, pushIfOtaChanged, retryDirtyInventory, triggerInventoryPush } from "@/lib/aiosellSync";
 import { logPmsCall } from "@/lib/pmsLog";
 
 const CONFIG = {
@@ -76,6 +77,7 @@ describe("getDateAwareAvailability", () => {
     queryMocks.getOnlineAssignmentCountForDorm.mockResolvedValue(0);
     queryMocks.getInventoryOverrideForDormDate.mockResolvedValue(null);
     queryMocks.getUnassignedOtaRoomCountForDorm.mockResolvedValue(0);
+    queryMocks.getActiveNativeHoldBedCountForDorm.mockResolvedValue(0);
   });
 
   it("is physical minus blocks minus assignments, capped by online ceiling", async () => {
@@ -95,6 +97,13 @@ describe("getDateAwareAvailability", () => {
     queryMocks.getUnassignedOtaRoomCountForDorm.mockResolvedValue(2);
     // physical 7; ceiling 5 - 1 assigned - 2 unassigned OTA = 2
     expect(await getDateAwareAvailability(8, "2026-09-05")).toBe(2);
+  });
+
+  it("subtracts active native website holds like online assignments", async () => {
+    queryMocks.getActiveNativeHoldBedCountForDorm.mockResolvedValue(2);
+    queryMocks.getInventoryOverrideForDormDate.mockResolvedValue({ onlineAvailable: 5 });
+    // 12 free, ceiling 5 - 2 held = 3 OTA remaining
+    expect(await getDateAwareAvailability(8, "2026-09-05")).toBe(3);
   });
 
   it("no override: blocked beds come out of the OTA ceiling so unblock raises what we push", async () => {
@@ -134,7 +143,7 @@ describe("getDateAwareAvailability", () => {
         { bedId: 1, dormId: 8, checkinDate: "2026-09-05", checkoutDate: "2026-09-06", inventoryPool: "online" },
         { bedId: 2, dormId: 8, checkinDate: "2026-09-05", checkoutDate: "2026-09-06", inventoryPool: "online" },
       ],
-      [], [], [],
+      [], [], [], [],
     ]);
     const values = await getDateAwareAvailabilityRange(
       [{ dormId: 8, channelRoomCode: "double", totalInventory: 4 }],
@@ -143,6 +152,44 @@ describe("getDateAwareAvailability", () => {
     expect(queryMocks.getAvailabilitySnapshot).toHaveBeenCalledOnce();
     expect(values.get("8:2026-09-05")).toBe(3);
     expect(values.get("8:2026-09-06")).toBe(4);
+  });
+
+  it("reduces range availability by native holds from the snapshot", async () => {
+    queryMocks.getAvailabilitySnapshot.mockResolvedValue([
+      Array.from({ length: 8 }, (_, i) => ({ id: i + 1, dormId: 8, bedId: `DOR-${i + 1}`, type: "Double" })),
+      [], [], [], [],
+      [{ bedIds: "[1,2]", checkinDate: "2026-09-05", checkoutDate: "2026-09-07" }],
+    ]);
+    const values = await getDateAwareAvailabilityRange(
+      [{ dormId: 8, channelRoomCode: "double", totalInventory: 4 }],
+      ["2026-09-05", "2026-09-06", "2026-09-07"],
+    );
+    // bedsPerUnit=2 → two held beds = 1 unit on nights 5 and 6; night 7 is exclusive checkout
+    expect(values.get("8:2026-09-05")).toBe(3);
+    expect(values.get("8:2026-09-06")).toBe(3);
+    expect(values.get("8:2026-09-07")).toBe(4);
+  });
+});
+
+describe("native hold unit helpers", () => {
+  it("converts held beds with the same bedsPerUnit pattern as getDateAwareAvailability", () => {
+    expect(heldBedsToUnits(2, 8, 4)).toBe(1);
+    expect(heldBedsToUnits(3, 8, 4)).toBe(2);
+    expect(heldBedsToUnits(0, 12, 12)).toBe(0);
+  });
+
+  it("counts only beds for the dorm overlapping the night", () => {
+    const beds = [
+      { id: 1, dormId: 8 }, { id: 2, dormId: 8 }, { id: 10, dormId: 9 },
+    ];
+    const holds = [
+      { bedIds: "[1,10]", checkinDate: "2026-09-05", checkoutDate: "2026-09-07" },
+      { bedIds: "[2]", checkinDate: "2026-09-06", checkoutDate: "2026-09-08" },
+    ];
+    expect(countNativeHoldBedsForDormDate(8, "2026-09-05", beds, holds)).toBe(1);
+    expect(countNativeHoldBedsForDormDate(8, "2026-09-06", beds, holds)).toBe(2);
+    expect(countNativeHoldBedsForDormDate(8, "2026-09-07", beds, holds)).toBe(1);
+    expect(countNativeHoldBedsForDormDate(9, "2026-09-05", beds, holds)).toBe(1);
   });
 });
 
@@ -160,12 +207,14 @@ describe("triggerInventoryPush", () => {
     queryMocks.getOnlineAssignmentCountForDorm.mockResolvedValue(1);
     queryMocks.getInventoryOverrideForDormDate.mockResolvedValue(null);
     queryMocks.getUnassignedOtaRoomCountForDorm.mockResolvedValue(0);
+    queryMocks.getActiveNativeHoldBedCountForDorm.mockResolvedValue(0);
     queryMocks.getAvailabilitySnapshot.mockImplementation(async () => {
       const assigned = await queryMocks.getActiveAssignmentCountForDorm();
       const online = await queryMocks.getOnlineAssignmentCountForDorm();
       return [
         Array.from({ length: 12 }, (_, i) => ({ id: i + 1, dormId: 8, bedId: `BED-${i + 1}`, type: "Bunk" })),
         Array.from({ length: assigned }, (_, i) => ({ bedId: i + 1, dormId: 8, checkinDate: "2026-09-05", checkoutDate: "2026-09-06", inventoryPool: i < online ? "online" : "offline" })),
+        [],
         [],
         [],
         [],
@@ -282,12 +331,14 @@ describe("pushIfOtaChanged", () => {
     queryMocks.getOnlineAssignmentCountForDorm.mockResolvedValue(1);
     queryMocks.getInventoryOverrideForDormDate.mockResolvedValue(null);
     queryMocks.getUnassignedOtaRoomCountForDorm.mockResolvedValue(0);
+    queryMocks.getActiveNativeHoldBedCountForDorm.mockResolvedValue(0);
     queryMocks.getAvailabilitySnapshot.mockImplementation(async () => {
       const assigned = await queryMocks.getActiveAssignmentCountForDorm();
       const online = await queryMocks.getOnlineAssignmentCountForDorm();
       return [
         Array.from({ length: 12 }, (_, i) => ({ id: i + 1, dormId: 8, bedId: `BED-${i + 1}`, type: "Bunk" })),
         Array.from({ length: assigned }, (_, i) => ({ bedId: i + 1, dormId: 8, checkinDate: "2026-09-05", checkoutDate: "2026-09-06", inventoryPool: i < online ? "online" : "offline" })),
+        [],
         [],
         [],
         [],
@@ -360,6 +411,7 @@ describe("retryDirtyInventory", () => {
     ]);
     queryMocks.getAvailabilitySnapshot.mockResolvedValue([
       Array.from({ length: 12 }, (_, i) => ({ id: i + 1, dormId: 8, bedId: `BED-${i + 1}`, type: "Bunk" })),
+      [],
       [],
       [],
       [],

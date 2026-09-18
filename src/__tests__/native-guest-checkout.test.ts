@@ -37,6 +37,7 @@ vi.mock("@/db/queries", async (importOriginal) => {
   return {
     ...actual,
     getAllBeds: async () => fixtureBeds,
+    getAllDorms: async () => [{ id: 1, name: "Mixed", deletedAt: null }],
     getAvailableBedsForRange: async () => fixtureBeds.map((b) => ({
       ...b, pool: state.pool, guestName: "DUMMY_PRIVATE",
     })),
@@ -163,6 +164,7 @@ beforeEach(() => {
   sqlite.exec(readFileSync("migrations/0060_native_accepted_quotes.sql", "utf8"));
   sqlite.exec(readFileSync("migrations/0061_guest_booking_lookup.sql", "utf8"));
   sqlite.exec(readFileSync("migrations/0062_native_guest_checkout.sql", "utf8"));
+  sqlite.exec(readFileSync("migrations/0063_guest_booking_amend.sql", "utf8"));
 
   sqlite.prepare(`INSERT INTO channel_config
     (hotel_code, pms_id, api_base_url, api_username, api_password, booking_engine_url, is_active, created_at)
@@ -350,9 +352,11 @@ describe("claimGuestCheckout and holds", () => {
     const row = sqlite.prepare("SELECT * FROM native_inventory_holds WHERE id=?").get(hold.id) as any;
     const now = Math.floor(Date.now() / 1000);
     sqlite.prepare("DELETE FROM native_inventory_holds WHERE id=?").run(hold.id);
-    sqlite.prepare("INSERT INTO native_inventory_holds VALUES (?,?,?,?,?,?,?,?,?,?)").run(
+    sqlite.prepare(`INSERT INTO native_inventory_holds
+      (id, request_key, request_hash, owner_hash, bed_ids, checkin_date, checkout_date, expires_at, state, created_at, exclude_booking_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       row.id, row.request_key, row.request_hash, row.owner_hash, row.bed_ids,
-      row.checkin_date, row.checkout_date, now - 1, "held", now - 901,
+      row.checkin_date, row.checkout_date, now - 1, "held", now - 901, null,
     );
     const result = await prepareGuestCheckout(prepareInput());
     expect(result.state).toBe("fulfilled");

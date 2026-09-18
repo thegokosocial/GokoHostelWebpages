@@ -7,6 +7,8 @@ export const websiteBookingSettingsSchema = z.object({
   advancePercent: z.number().int().min(0).max(100).default(50),
   allowFullPayment: z.boolean().default(true),
   allowPayAtProperty: z.boolean().default(true),
+  /** When true (default), My booking requires email OTP. When false, reference+email alone returns the booking. */
+  requireLookupOtp: z.boolean().default(true),
   holdMinutes: z.number().int().min(5).max(15).default(15),
   unresolvedPaymentMaxMinutes: z.number().int().min(15).max(30).default(30),
   cancellationDeadlineHours: z.number().int().min(0).max(720).default(48),

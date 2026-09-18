@@ -40,7 +40,19 @@ The specification model now reserves each refund against a captured payment, all
 
 ## Native page today
 
-When readiness passes: Search → select → Review → payment choice → prepare checkout (hold + quote + provisional booking) → Razorpay or pay-at-property fulfil → `/booking/[reference]` + confirmation email (best-effort). When readiness fails: payment disabled, WhatsApp enquiry available. Preview still blocks checkout writes.
+When readiness passes: Search → select → Review → payment choice → prepare checkout (hold + quote + provisional booking) → Razorpay or pay-at-property fulfil → `/booking/[reference]` + confirmation email (best-effort). Fulfilment assigns held beds online first, then offline / same-dorm alternatives; only then `captured_unfulfilled` (history `website_unfulfilled`, Unassigned for staff). Active native holds lower Aiosell online availability for the hold window; `createNativeInventoryHold` (new insert), `releaseNativeInventoryHold`, and `cancelAbandonedWebsiteHolds` call `pushIfOtaChanged`. Hold lease uses Admin `holdMinutes` (5–15, capped at 900s). Unpaid expired website holds are cancelled opportunistically on search/prepare. Review UI: hold expired → **Recheck availability**; payment blocked → **Recheck payment readiness**. When readiness fails: payment disabled, WhatsApp enquiry available. Preview still blocks checkout writes.
+
+Confirmation / manage at `/booking/[reference]` uses `GuestBookingManage` with enriched `publicSnapshot` (rooms, nights, tax, paid, due, `canCancel` / `canModify`, deadline). **Edit stay** opens `GuestBookingAmendPanel` when `canModify` (received bookings only). Cancel remains a secondary underlined control. My booking OTP: Admin **Booking & Policies → Require email OTP for My booking lookup** (`requireLookupOtp`, default **on**). When on, OTP verify for a website booking mints a fresh `guestAccessToken`. When off, reference + email alone returns the booking (and mint token if a checkout row exists).
+
+### Guest self-serve amend (migration 0063)
+
+Within the same online cancel/modify window (`canModify`), website guests can change dates and/or room selection:
+
+1. `POST /api/guest-booking/amend` `availability` — search excluding this booking’s assigned beds from conflicts.
+2. `quote` — server re-quote; returns `deltaPaise = newTotalPaise − amountPaidPaise` (no hold).
+3. `prepare` — new checkout row with `amends_checkout_id`, hold with `exclude_booking_id`, accepted quote; `due_now_paise = max(0, delta)` (Razorpay order when ≥100 paise).
+4. Delta > 0: claim → pay → `/api/guest-booking/payment/verify` → `fulfilGuestAmend`. Delta ≤ 0: `confirm` (no payment); negative delta refunds via the cancel refund helpers.
+5. Fulfil: release hold → unassign old beds → assign new (online then offline fallback) → update booking dates/amounts/roomType → history `website_amend` → Aiosell push → `sendBookingAmendedEmail`.
 
 ## Remaining implementation gates
 
@@ -57,7 +69,7 @@ Native guest checkout (test + live cutover) is wired: migrations **0059–0062**
 - Dedicated hold-expiry cron (lazy expiry via read-time guards already works).
 - Durable confirmation-email outbox with retries (fulfil path is best-effort today).
 
-D1 **0059–0062** and `GOKO_NATIVE_*` env flags are already applied on production.
+D1 **0059–0063** and `GOKO_NATIVE_*` env flags — apply **0063** with the Worker for guest amend. **0059–0062** already on production.
 
 ## Foundation validation (historical first phase, 17 September 2026)
 

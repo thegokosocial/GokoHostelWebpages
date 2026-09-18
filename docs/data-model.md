@@ -96,12 +96,13 @@ Source SQL: `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_i
 
 | Table | Role |
 |-------|------|
-| `native_booking_checkouts` | Idempotent `request_key`, owner/guest access hashes, FKs to booking/hold/accepted quote, payment choice, test/live environment, state machine, Razorpay order/key/receipt, `due_now_paise` (0 or ≥100), one-use `checkout_started_at`, closure reason. |
+| `native_booking_checkouts` | Idempotent `request_key`, owner/guest access hashes, FKs to booking/hold/accepted quote, optional `amends_checkout_id` (0063), payment choice, test/live environment, state machine, Razorpay order/key/receipt, `due_now_paise` (0 or ≥100), one-use `checkout_started_at`, closure reason. |
+| `native_inventory_holds` | Physical bed-ID holds; optional `exclude_booking_id` (0063) so amend holds may overlap the booking being changed. |
 | `native_booking_payments` | Provider payment ID → checkout FK; variable amount (≥100 paise); monotonic capture/refund evidence. |
 | `native_booking_refunds` | One refund reservation per payment; variable amount; submitting/unknown/pending/processed/failed. |
 | `native_booking_webhooks` | Unique event ID + payload hash; routes via `notes.goko_checkout_id`. |
 
-Source: `0062_native_guest_checkout.sql`. Orchestration in `nativeGuestCheckout.ts`. Readiness in `nativeCheckoutReadiness.ts`. Fulfilment **releases** the hold then assigns beds (0059 forbids assign-while-held). Separate from `gateway_preview_*`.
+Source: `0062_native_guest_checkout.sql` + `0063_guest_booking_amend.sql`. Orchestration in `nativeGuestCheckout.ts` (`prepareGuestAmend` / `fulfilGuestAmend`). Readiness in `nativeCheckoutReadiness.ts`. Fulfilment **releases** the hold then assigns beds (0059 forbids assign-while-held). Separate from `gateway_preview_*`.
 
 ### Internal native physical holds (Cloudflare-owned, never synced)
 

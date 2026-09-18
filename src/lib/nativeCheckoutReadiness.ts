@@ -99,6 +99,7 @@ export async function evaluateNativeCheckoutReadiness(env: Record<string, string
       allowFullPayment: settings.allowFullPayment,
       allowPayAtProperty: settings.allowPayAtProperty,
       gatewayEnvironment: environment,
+      requireLookupOtp: settings.requireLookupOtp,
     } : null,
     gateway: { ...gateway, nativeCheckoutReady, status: nativeCheckoutReady ? "ready" as const : "blocked" as const },
   };

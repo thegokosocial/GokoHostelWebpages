@@ -23,6 +23,7 @@ vi.mock("@/db/queries", async (importOriginal) => {
   return {
     ...actual,
     getAllBeds: async () => fixtureBeds,
+    getAllDorms: async () => [{ id: 1, name: "Mixed", deletedAt: null }],
     getAvailableBedsForRange: async () => fixtureBeds.map((b) => ({ ...b, pool: "online" as const })),
     getSetting: async () => null,
     getGuestBookingConfig: async () => ({ bookingEngineUrl: "/book", apiBaseUrl: "" }),
@@ -31,7 +32,10 @@ vi.mock("@/db/queries", async (importOriginal) => {
     addBookingHistoryEntry: vi.fn(async () => undefined),
   };
 });
-vi.mock("@/lib/email", () => ({ sendBookingConfirmationEmail: vi.fn(async () => undefined) }));
+vi.mock("@/lib/email", () => ({
+  sendBookingConfirmationEmail: vi.fn(async () => undefined),
+  sendBookingAmendedEmail: vi.fn(async () => undefined),
+}));
 vi.mock("@/lib/aiosellSync", () => ({
   otaFingerprint: vi.fn(async () => "fp"),
   pushIfOtaChanged: vi.fn(async () => undefined),
@@ -142,6 +146,7 @@ beforeEach(() => {
     "0060_native_accepted_quotes.sql",
     "0061_guest_booking_lookup.sql",
     "0062_native_guest_checkout.sql",
+    "0063_guest_booking_amend.sql",
   ]) sqlite.exec(readFileSync(`migrations/${file}`, "utf8"));
   state.db = drizzle(sqlite, { schema });
   vi.stubEnv("GOKO_NATIVE_GUEST_CHECKOUT_ENABLED", "true");

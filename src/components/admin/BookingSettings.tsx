@@ -112,9 +112,10 @@ export function BookingSettings({ password, username }: { password: string; user
           {numberField("cancellationDeadlineHours", "Free cancellation deadline (hours before arrival)", 0, 720)}
           {numberField("cancellationRefundPercent", "Draft eligible cancellation refund (%)", 0, 100)}
         </div>
-        {([["allowFullPayment", "Offer full payment"], ["allowPayAtProperty", "Offer normal pay-at-property"]] as const).map(([key, label]) =>
+        {([["allowFullPayment", "Offer full payment"], ["allowPayAtProperty", "Offer normal pay-at-property"], ["requireLookupOtp", "Require email OTP for My booking lookup"]] as const).map(([key, label]) =>
           <label key={key} className="flex gap-2 text-sm"><input type="checkbox" checked={settings[key]} onChange={(e) => setSettings({ ...settings, [key]: e.target.checked })} />{label}</label>)}
         <p className="text-xs text-muted-foreground">Gateway-outage pay-at-property fallback will be mandatory regardless of the normal pay-at-property setting. Payment uncertainty must be reconciled before charging again.</p>
+        <p className="text-xs text-muted-foreground">OTP for My booking is on by default. Turning it off lets guests open a booking with confirmation number + email only (weaker proof — use carefully).</p>
         <label className="grid gap-1 text-sm">Draft guest-facing cancellation policy
           <textarea className="min-h-32 rounded-lg border bg-background p-3" maxLength={4000} value={settings.policyText} onChange={(e) => setSettings({ ...settings, policyText: e.target.value })} />
         </label>

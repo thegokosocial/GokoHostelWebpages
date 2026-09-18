@@ -4,9 +4,14 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { readFileSync } from "node:fs";
 import { guestBookingLookup, LookupCodeError, lookupSchema } from "@/lib/guestBookingLookup";
 import { getSyncableTableNames } from "@/lib/syncEngine";
-const mocks = vi.hoisted(() => ({ db: null as any, send: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  db: null as any,
+  send: vi.fn(),
+  getSetting: vi.fn(async (_key?: string): Promise<string | null> => null),
+}));
 vi.mock("@/db", () => ({ getDb: () => mocks.db }));
 vi.mock("@/lib/email", () => ({ sendBookingLookupCode: mocks.send }));
+vi.mock("@/db/queries", () => ({ getSetting: mocks.getSetting }));
 let sqlite: SQLite.Database;
 const request = { action: "request", reference: "GOKO-42", email: "ada@example.com" };
 beforeEach(() => {
@@ -17,6 +22,7 @@ beforeEach(() => {
     INSERT INTO bookings VALUES(1,'ada@example.com','GOKO-42','EXT-42',NULL,'Ada','2026-10-01','2026-10-03','Mixed',2,'received','paid',2000,2000,0);`);
   sqlite.exec(readFileSync("migrations/0061_guest_booking_lookup.sql", "utf8"));
   mocks.db = drizzle(sqlite); mocks.send.mockReset(); mocks.send.mockResolvedValue(undefined);
+  mocks.getSetting.mockReset(); mocks.getSetting.mockResolvedValue(null);
   vi.stubEnv("GUEST_BOOKING_LOOKUP_SECRET", "s".repeat(32));
 });
 afterEach(() => { sqlite.close(); vi.unstubAllEnvs(); });
@@ -30,9 +36,52 @@ describe("Private guest booking lookup", () => {
     expect(mocks.send).toHaveBeenCalledWith("ada@example.com", expect.stringMatching(/^\d{6}$/));
     const result = await guestBookingLookup({ action: "verify", ...issued });
     expect(result).toMatchObject({ booking: { guestName: "Ada", paid: 2000 }, currency: "INR" });
+    expect(result).not.toHaveProperty("guestAccessToken");
     expect(JSON.stringify(result)).not.toContain("ada@example.com");
     await expect(guestBookingLookup({ action: "verify", ...issued })).rejects.toBeInstanceOf(LookupCodeError);
     expect(getSyncableTableNames()).not.toContain("guest_booking_lookup_challenges");
+  });
+  it("mints a fresh guestAccessToken when a native checkout row exists", async () => {
+    sqlite.exec(`CREATE TABLE native_booking_checkouts (
+      id TEXT PRIMARY KEY, booking_id INTEGER, guest_access_hash TEXT NOT NULL, updated_at TEXT NOT NULL
+    ); INSERT INTO native_booking_checkouts VALUES('co-1',1,'${"a".repeat(64)}','2026-01-01T00:00:00.000Z');`);
+    const issued = await issue();
+    const result = await guestBookingLookup({ action: "verify", ...issued }) as {
+      guestAccessToken?: string; manageUrl?: string; booking: { reference: string | null };
+    };
+    expect(result.guestAccessToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.manageUrl).toBe("/booking/GOKO-42");
+    const row = sqlite.prepare("SELECT guest_access_hash FROM native_booking_checkouts WHERE id='co-1'").get() as { guest_access_hash: string };
+    expect(row.guest_access_hash).not.toBe("a".repeat(64));
+    expect(row.guest_access_hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+  it("returns booking directly when requireLookupOtp is false", async () => {
+    mocks.getSetting.mockResolvedValue(JSON.stringify({
+      maxSelectedBeds: 4, advancePercent: 50, allowFullPayment: true, allowPayAtProperty: true,
+      requireLookupOtp: false, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30,
+      cancellationDeadlineHours: 48, cancellationRefundPercent: 100, policyText: "", gatewayEnvironment: "test",
+    }));
+    sqlite.exec(`CREATE TABLE native_booking_checkouts (
+      id TEXT PRIMARY KEY, booking_id INTEGER, guest_access_hash TEXT NOT NULL, updated_at TEXT NOT NULL
+    ); INSERT INTO native_booking_checkouts VALUES('co-1',1,'${"a".repeat(64)}','2026-01-01T00:00:00.000Z');`);
+    const result = await guestBookingLookup(request) as {
+      booking?: { guestName: string }; guestAccessToken?: string; challengeId?: string;
+    };
+    expect(result.booking?.guestName).toBe("Ada");
+    expect(result.guestAccessToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.challengeId).toBeUndefined();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("does not leak bookings when requireLookupOtp is false and details are wrong", async () => {
+    mocks.getSetting.mockResolvedValue(JSON.stringify({
+      maxSelectedBeds: 4, advancePercent: 50, allowFullPayment: true, allowPayAtProperty: true,
+      requireLookupOtp: false, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30,
+      cancellationDeadlineHours: 48, cancellationRefundPercent: 100, policyText: "", gatewayEnvironment: "test",
+    }));
+    const miss = await guestBookingLookup({ ...request, email: "wrong@example.com" });
+    expect(miss).toMatchObject({ message: expect.any(String) });
+    expect(miss).not.toHaveProperty("booking");
+    expect(miss).not.toHaveProperty("challengeId");
   });
   it("does not enumerate missing, ambiguous, deleted or wrong-email bookings", async () => {
     for (const change of [{ email: "wrong@example.com" }, { reference: "MISSING" }]) {

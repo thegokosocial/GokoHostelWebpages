@@ -4,37 +4,17 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { site } from "@/lib/site";
-
-const money = (rupees: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(rupees);
-
-type Status = {
-  reference: string | null;
-  bookingStatus: string | null;
-  state: string;
-  checkinDate: string | null;
-  checkoutDate: string | null;
-  guestName: string;
-  amountTotal: number | null;
-  amountPaid: number | null;
-  canCancel?: boolean;
-  error?: string;
-};
-
-function statusLabel(bookingStatus: string | null, checkoutState: string) {
-  if (bookingStatus === "cancelled" || checkoutState === "cancelled") return "Cancelled";
-  if (checkoutState === "fulfilled" || bookingStatus === "received") return "Confirmed";
-  if (checkoutState === "expired") return "Expired";
-  if (checkoutState === "captured_unfulfilled") return "Payment received — assigning beds";
-  return checkoutState.replace(/_/g, " ");
-}
+import { GuestBookingManage, type GuestBookingStatus } from "@/components/booking/GuestBookingManage";
+import { GuestBookingAmendPanel } from "@/components/booking/GuestBookingAmendPanel";
 
 export default function BookingConfirmationPage() {
   const params = useParams<{ reference: string }>();
   const reference = decodeURIComponent(params.reference || "");
-  const [status, setStatus] = useState<Status | null>(null);
+  const [status, setStatus] = useState<GuestBookingStatus | null>(null);
+  const [guestAccessToken, setGuestAccessToken] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(true);
+  const [showAmend, setShowAmend] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -48,11 +28,12 @@ export default function BookingConfirmationPage() {
           }
           return;
         }
-        const { guestAccessToken } = JSON.parse(stored) as { guestAccessToken: string };
+        const { guestAccessToken: token } = JSON.parse(stored) as { guestAccessToken: string };
+        if (active) setGuestAccessToken(token);
         const res = await fetch("/api/guest-booking/status", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reference, guestAccessToken }),
+          body: JSON.stringify({ reference, guestAccessToken: token }),
           cache: "no-store",
         });
         const data = await res.json();
@@ -76,16 +57,17 @@ export default function BookingConfirmationPage() {
     try {
       const stored = sessionStorage.getItem(`goko_booking_${reference}`);
       if (!stored) throw new Error("Missing booking access on this device");
-      const { guestAccessToken } = JSON.parse(stored) as { guestAccessToken: string };
+      const { guestAccessToken: token } = JSON.parse(stored) as { guestAccessToken: string };
       const res = await fetch("/api/guest-booking/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reference, guestAccessToken }),
+        body: JSON.stringify({ reference, guestAccessToken: token }),
         cache: "no-store",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Unable to cancel");
       setStatus(data);
+      setShowAmend(false);
       setMessage("Booking cancelled.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to cancel");
@@ -93,9 +75,6 @@ export default function BookingConfirmationPage() {
       setBusy(false);
     }
   }
-
-  const label = status ? statusLabel(status.bookingStatus, status.state) : null;
-  const confirmed = label === "Confirmed";
 
   return (
     <main className="mx-auto max-w-xl px-4 py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-brand-green-dark sm:py-16">
@@ -106,47 +85,28 @@ export default function BookingConfirmationPage() {
       {busy && !status && <p className="mt-8 text-sm">Loading your confirmation…</p>}
 
       {status && (
-        <div className="mt-8 space-y-5 rounded-2xl border border-brand-mist bg-white p-5 shadow-sm sm:p-7">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                confirmed
-                  ? "bg-brand-green/15 text-brand-green-dark"
-                  : label === "Cancelled" || label === "Expired"
-                    ? "bg-brand-sand text-brand-green-dark"
-                    : "bg-amber-50 text-amber-950"
-              }`}
-            >
-              {label}
-            </span>
-          </div>
-          <div>
-            <p className="text-lg font-semibold sm:text-xl">{status.guestName}</p>
-            <p className="mt-1 text-sm sm:text-base">
-              {status.checkinDate} – {status.checkoutDate}
-            </p>
-          </div>
-          <dl className="grid gap-3 border-t border-brand-mist pt-4 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-brand-green">Total</dt>
-              <dd className="mt-0.5 font-semibold">{status.amountTotal == null ? "—" : money(status.amountTotal)}</dd>
-            </div>
-            <div>
-              <dt className="text-brand-green">Paid</dt>
-              <dd className="mt-0.5 font-semibold">{status.amountPaid == null ? "—" : money(status.amountPaid)}</dd>
-            </div>
-          </dl>
-          {status.canCancel && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={cancel}
-              className="min-h-12 w-full rounded-lg border border-brand-red px-4 py-3 font-semibold text-brand-red disabled:opacity-50 sm:w-auto"
-            >
-              Cancel booking
-            </button>
-          )}
-        </div>
+        <GuestBookingManage
+          status={status}
+          busy={busy}
+          editing={showAmend}
+          onCancel={status.canCancel ? cancel : undefined}
+          onEditStay={status.canModify && guestAccessToken ? () => setShowAmend((v) => !v) : undefined}
+        />
+      )}
+
+      {showAmend && status && guestAccessToken && status.checkinDate && status.checkoutDate && (
+        <GuestBookingAmendPanel
+          reference={reference}
+          guestAccessToken={guestAccessToken}
+          initialCheckin={status.checkinDate}
+          initialCheckout={status.checkoutDate}
+          onCancel={() => setShowAmend(false)}
+          onDone={(next) => {
+            setStatus(next as GuestBookingStatus);
+            setShowAmend(false);
+            setMessage("Booking updated.");
+          }}
+        />
       )}
 
       {message && (

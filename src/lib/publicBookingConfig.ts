@@ -4,20 +4,32 @@ import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
 
 export async function publicBookingConfig(): Promise<BookingDestination & {
   nativeCheckoutReady: boolean; configurationAvailable: boolean;
-  paymentOptions?: { advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean } | null;
+  requireLookupOtp?: boolean;
+  paymentOptions?: {
+    advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean;
+    requireLookupOtp?: boolean;
+  } | null;
 }> {
   try {
     const config = await getGuestBookingConfig();
     const destination = bookingDestination(config?.bookingEngineUrl, config?.apiBaseUrl);
     let nativeCheckoutReady = false;
-    let paymentOptions = null as { advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean } | null;
+    let requireLookupOtp = true;
+    let paymentOptions = null as {
+      advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean;
+      requireLookupOtp?: boolean;
+    } | null;
     try {
       const readiness = await evaluateNativeCheckoutReadiness();
       nativeCheckoutReady = readiness.nativeCheckoutReady && destination.mode === "native";
       paymentOptions = readiness.paymentOptions;
+      requireLookupOtp = readiness.paymentOptions?.requireLookupOtp ?? true;
     } catch { /* keep false */ }
-    return { ...destination, nativeCheckoutReady, configurationAvailable: true, paymentOptions };
+    return { ...destination, nativeCheckoutReady, configurationAvailable: true, requireLookupOtp, paymentOptions };
   } catch {
-    return { mode: "enquiry", url: BOOKING_ENQUIRY_PATH, nativeCheckoutReady: false, configurationAvailable: false, paymentOptions: null };
+    return {
+      mode: "enquiry", url: BOOKING_ENQUIRY_PATH, nativeCheckoutReady: false,
+      configurationAvailable: false, requireLookupOtp: true, paymentOptions: null,
+    };
   }
 }

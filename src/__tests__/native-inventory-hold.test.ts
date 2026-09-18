@@ -7,6 +7,7 @@ import { createNativeInventoryHold, releaseNativeInventoryHold, getNativeInvento
 import { todayIST } from "@/lib/utils";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { getSyncableTableNames } from "@/lib/syncEngine";
+import { otaFingerprint, pushIfOtaChanged } from "@/lib/aiosellSync";
 
 const state = vi.hoisted(() => ({ db: null as any, pi: false, pool: "online", missingDouble: false, pickerFailure: false }));
 const fixtureBeds = [{ id: 1, dormId: 1, bedId: "A1", type: "Bunk" }, { id: 2, dormId: 2, bedId: "D1", type: "Double" }, { id: 3, dormId: 2, bedId: "D2", type: "Double" }];
@@ -15,6 +16,10 @@ vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => state.pi }));
 vi.mock("@/db/queries", () => ({ getAllBeds: async () => fixtureBeds.filter((b) => !state.missingDouble || b.id !== 3),
   getAvailableBedsForRange: async () => { if (state.pickerFailure) throw new Error("DUMMY_PRIVATE_DB_ERROR"); return fixtureBeds.map((b) => ({ ...b, pool: state.pool, guestName: "DUMMY_PRIVATE" })); },
 }));
+vi.mock("@/lib/aiosellSync", () => ({
+  otaFingerprint: vi.fn(async () => "fp-before"),
+  pushIfOtaChanged: vi.fn(async () => ({ attempted: false, accepted: true })),
+}));
 let sqlite: SQLite.Database;
 const token = "a".repeat(64);
 const selection = (bedIds = [1]) => ({ requestKey: crypto.randomUUID(), ownerToken: token, bedIds,
@@ -22,8 +27,15 @@ const selection = (bedIds = [1]) => ({ requestKey: crypto.randomUUID(), ownerTok
 beforeEach(() => {
   state.pi = false; state.pool = "online"; state.missingDouble = false; state.pickerFailure = false;
   sqlite = new SQLite(":memory:");
-  sqlite.exec("CREATE TABLE beds (id INTEGER PRIMARY KEY); INSERT INTO beds VALUES (1),(2),(3); CREATE TABLE booking_bed_assignments (bed_id INTEGER,status TEXT,checkin_date TEXT,checkout_date TEXT); CREATE TABLE bed_blocks (bed_id INTEGER,is_active INTEGER,start_date TEXT,end_date TEXT)");
+  sqlite.exec("CREATE TABLE beds (id INTEGER PRIMARY KEY); INSERT INTO beds VALUES (1),(2),(3); CREATE TABLE booking_bed_assignments (bed_id INTEGER, booking_id INTEGER, status TEXT, checkin_date TEXT, checkout_date TEXT); CREATE TABLE bed_blocks (bed_id INTEGER,is_active INTEGER,start_date TEXT,end_date TEXT)");
   sqlite.exec(readFileSync("migrations/0059_native_inventory_hold_primitive.sql", "utf8"));
+  // 0063 hold column + trigger rewrite (checkout table absent in this suite).
+  sqlite.exec(`
+    ALTER TABLE native_inventory_holds ADD COLUMN exclude_booking_id INTEGER;
+  `);
+  const amendSql = readFileSync("migrations/0063_guest_booking_amend.sql", "utf8");
+  const triggerPart = amendSql.slice(amendSql.indexOf("DROP TRIGGER IF EXISTS native_hold_insert_guard"));
+  sqlite.exec(triggerPart);
   state.db = drizzle(sqlite, { schema }); vi.stubEnv("GOKO_NATIVE_HOLD_INTERNAL_ENABLED", "true");
 });
 afterEach(() => { sqlite.close(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
@@ -145,6 +157,22 @@ describe("Internal native inventory hold primitive — no public checkout", () =
     expect((await createNativeInventoryHold(request)).state).toBe("released");
     expect((await createNativeInventoryHold(selection())).state).toBe("held");
   });
+  it("pushes Aiosell on new insert and first release, not on recovery", async () => {
+    vi.mocked(pushIfOtaChanged).mockClear();
+    vi.mocked(otaFingerprint).mockClear();
+    const request = selection();
+    const hold = await createNativeInventoryHold(request);
+    expect(pushIfOtaChanged).toHaveBeenCalledTimes(1);
+    expect(pushIfOtaChanged).toHaveBeenCalledWith("fp-before", [1], [request.checkinDate, addCalendarDays(request.checkinDate, 1)]);
+    vi.mocked(pushIfOtaChanged).mockClear();
+    await createNativeInventoryHold(request); // recovery
+    expect(pushIfOtaChanged).not.toHaveBeenCalled();
+    await releaseNativeInventoryHold(hold.id, token);
+    expect(pushIfOtaChanged).toHaveBeenCalledTimes(1);
+    vi.mocked(pushIfOtaChanged).mockClear();
+    await releaseNativeInventoryHold(hold.id, token); // idempotent
+    expect(pushIfOtaChanged).not.toHaveBeenCalled();
+  });
   it.each(["offline", "block"])("rejects units in %s pool", async (pool) => {
     state.pool = pool; await expect(createNativeInventoryHold(selection())).rejects.toThrow("unavailable online");
   });
@@ -160,15 +188,15 @@ describe("Internal native inventory hold primitive — no public checkout", () =
   });
   it.each(["assignment", "block"])("atomically rejects conflicts with an existing %s", async (kind) => {
     const request = selection();
-    if (kind === "assignment") sqlite.prepare("INSERT INTO booking_bed_assignments VALUES (1,'assigned',?,?)").run(request.checkinDate, request.checkoutDate);
+    if (kind === "assignment") sqlite.prepare("INSERT INTO booking_bed_assignments VALUES (1,99,'assigned',?,?)").run(request.checkinDate, request.checkoutDate);
     else sqlite.prepare("INSERT INTO bed_blocks VALUES (1,1,?,?)").run(request.checkinDate, request.checkoutDate);
     await expect(createNativeInventoryHold(request)).rejects.toThrow("just reserved");
     expect(sqlite.prepare("SELECT count(*) n FROM native_inventory_holds").get()).toEqual({ n: 0 });
   });
   it("guards assignment insert and date/bed update by other SQL writers", async () => {
     const request = selection(); await createNativeInventoryHold(request);
-    expect(() => sqlite.prepare("INSERT INTO booking_bed_assignments VALUES (1,'assigned',?,?)").run(request.checkinDate, request.checkoutDate)).toThrow("NATIVE_HOLD_CONFLICT");
-    sqlite.prepare("INSERT INTO booking_bed_assignments VALUES (2,'assigned',?,?)").run(request.checkinDate, request.checkoutDate);
+    expect(() => sqlite.prepare("INSERT INTO booking_bed_assignments VALUES (1,99,'assigned',?,?)").run(request.checkinDate, request.checkoutDate)).toThrow("NATIVE_HOLD_CONFLICT");
+    sqlite.prepare("INSERT INTO booking_bed_assignments VALUES (2,99,'assigned',?,?)").run(request.checkinDate, request.checkoutDate);
     expect(() => sqlite.prepare("UPDATE booking_bed_assignments SET bed_id=1").run()).toThrow("NATIVE_HOLD_CONFLICT");
   });
   it("guards block insertion/reactivation by other SQL writers", async () => {
@@ -185,7 +213,7 @@ describe("Internal native inventory hold primitive — no public checkout", () =
     const request = selection(), result = await createNativeInventoryHold(request); await releaseNativeInventoryHold(result.id, token);
     const row = sqlite.prepare("SELECT * FROM native_inventory_holds").get() as any, now = Math.floor(Date.now() / 1000);
     const expiredKey = crypto.randomUUID();
-    sqlite.prepare("INSERT INTO native_inventory_holds VALUES (?,?,?,?,?,?,?,?,?,?)").run(crypto.randomUUID(), expiredKey, row.request_hash, row.owner_hash, row.bed_ids, row.checkin_date, row.checkout_date, now - 1, "held", now - 901);
+    sqlite.prepare("INSERT INTO native_inventory_holds (id,request_key,request_hash,owner_hash,bed_ids,checkin_date,checkout_date,expires_at,state,created_at,exclude_booking_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(crypto.randomUUID(), expiredKey, row.request_hash, row.owner_hash, row.bed_ids, row.checkin_date, row.checkout_date, now - 1, "held", now - 901, null);
     expect((await createNativeInventoryHold({ ...request, requestKey: expiredKey })).state).toBe("expired");
     expect((await getNativeInventoryHold({ requestKey: expiredKey, ownerToken: token })).state).toBe("expired");
     expect((await getNativeSelectionAvailability({ checkinDate: request.checkinDate, checkoutDate: request.checkoutDate })).units.some((u) => u.bedIds.includes(1))).toBe(true);

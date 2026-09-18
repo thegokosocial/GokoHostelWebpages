@@ -20,6 +20,10 @@ vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => false }));
 vi.mock("@/db/queries", () => ({ getAllBeds: async () => [{ id: 1, dormId: 1, bedId: "A1", type: "Bunk" }],
   getAvailableBedsForRange: async () => [{ id: 1, dormId: 1, bedId: "A1", type: "Bunk", pool: "online" }],
 }));
+vi.mock("@/lib/aiosellSync", () => ({
+  otaFingerprint: vi.fn(async () => "fp-before"),
+  pushIfOtaChanged: vi.fn(async () => ({ attempted: false, accepted: true })),
+}));
 let runtime: Miniflare;
 let binding: Awaited<ReturnType<Miniflare["getD1Database"]>>;
 let order: Record<string, unknown>, refund: Record<string, unknown> | null;

@@ -37,10 +37,13 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [reference, setReference] = useState(""), [email, setEmail] = useState("");
   const [challengeId, setChallengeId] = useState(""), [code, setCode] = useState("");
   const [booking, setBooking] = useState<BookingDetails | null>(null);
+  const [manageUrl, setManageUrl] = useState("");
   const [nativeCheckoutReady, setNativeCheckoutReady] = useState(false);
   const [paymentOptions, setPaymentOptions] = useState<{
     advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean; gatewayEnvironment?: "test" | "live";
+    requireLookupOtp?: boolean;
   } | null>(null);
+  const [requireLookupOtp, setRequireLookupOtp] = useState(true);
   const [paymentChoice, setPaymentChoice] = useState<"advance" | "full" | "property">("advance");
   const [holdExpiresAt, setHoldExpiresAt] = useState<number | null>(null);
   const [checkoutRequestKey, setCheckoutRequestKey] = useState<string | null>(null);
@@ -61,6 +64,20 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     reviewRef.current?.focus({ preventScroll: true });
     reviewRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
   }, [review]);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/booking/config", { cache: "no-store", signal: AbortSignal.timeout(15000) })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active) return;
+        if (typeof data.requireLookupOtp === "boolean") setRequireLookupOtp(data.requireLookupOtp);
+        else if (typeof data.paymentOptions?.requireLookupOtp === "boolean") {
+          setRequireLookupOtp(data.paymentOptions.requireLookupOtp);
+        }
+      })
+      .catch(() => { /* keep default OTP-on */ });
+    return () => { active = false; };
+  }, []);
   const stayReady = Boolean(stay.checkinDate && stay.checkoutDate && stay.checkoutDate > stay.checkinDate);
   async function search(event: FormEvent) {
     event.preventDefault();
@@ -71,6 +88,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...stay });
       setNativeCheckoutReady(Boolean(data.nativeCheckoutReady));
       setPaymentOptions(data.paymentOptions || null);
+      if (typeof data.paymentOptions?.requireLookupOtp === "boolean") setRequireLookupOtp(data.paymentOptions.requireLookupOtp);
       const choice = data.paymentOptions?.allowFullPayment ? "full"
         : data.paymentOptions?.advancePercent > 0 ? "advance"
         : data.paymentOptions?.allowPayAtProperty ? "property" : "advance";
@@ -79,13 +97,28 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     finally { setBusy(false); }
   }
   async function lookup(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setMessage(""); setBooking(null);
+    event.preventDefault(); setBusy(true); setMessage(""); setBooking(null); setManageUrl("");
     try {
       if (preview) { setMessage("Demo only. Booking lookup and email sending are disabled in this preview."); return; }
       const data = await readResponse(await fetch("/api/guest-booking/lookup", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(challengeId ? { action: "verify", challengeId, code } : { action: "request", reference, email }), cache: "no-store", signal: AbortSignal.timeout(15000) }));
-      if (data.booking) { setBooking(data.booking); setCode(""); setChallengeId(""); }
-      else { setChallengeId(data.challengeId); setMessage(data.message); }
+      if (data.booking) {
+        setBooking(data.booking); setCode(""); setChallengeId("");
+        if (data.guestAccessToken) {
+          const ref = data.booking.reference || data.booking.externalReference;
+          if (ref) {
+            sessionStorage.setItem(`goko_booking_${ref}`, JSON.stringify({ guestAccessToken: data.guestAccessToken }));
+            const href = typeof data.manageUrl === "string" && data.manageUrl.startsWith("/booking/")
+              ? data.manageUrl
+              : `/booking/${encodeURIComponent(ref)}`;
+            setManageUrl(href);
+            window.location.assign(href);
+            return;
+          }
+        }
+      }
+      else if (data.challengeId) { setChallengeId(data.challengeId); setMessage(data.message); }
+      else { setMessage(data.message || "Could not find that booking."); }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not retrieve your booking."); }
     finally { setBusy(false); }
   }
@@ -167,6 +200,10 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       setMessage("Enter guest name, email and phone to continue.");
       return;
     }
+    if (holdExpiresAt != null && holdExpiresAt <= Math.floor(Date.now() / 1000)) {
+      setMessage("Your temporary hold expired. Recheck availability to continue.");
+      return;
+    }
     if (!searchedStay || !rooms) return;
     setBusy(true); setMessage("");
     try {
@@ -197,11 +234,65 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       } else {
         setMessage("Booking prepared. Check My booking if confirmation did not open.");
       }
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not complete booking."); }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Could not complete booking.";
+      setMessage(text);
+      if (/hold|expired|reserved|unavailable|conflict/i.test(text)) {
+        setHoldExpiresAt((current) => current ?? Math.floor(Date.now() / 1000));
+      }
+    }
     finally { setBusy(false); }
+  }
+  async function recheckPaymentReadiness() {
+    if (preview) { setMessage("Demo only. Readiness checks are disabled in this preview."); return; }
+    setBusy(true); setMessage("");
+    try {
+      const data = await readResponse(await fetch("/api/booking/config", {
+        cache: "no-store", signal: AbortSignal.timeout(15000),
+      }));
+      setNativeCheckoutReady(Boolean(data.nativeCheckoutReady));
+      setPaymentOptions(data.paymentOptions || null);
+      if (data.nativeCheckoutReady) {
+        const choice = data.paymentOptions?.allowFullPayment ? "full"
+          : data.paymentOptions?.advancePercent > 0 ? "advance"
+          : data.paymentOptions?.allowPayAtProperty ? "property" : "advance";
+        setPaymentChoice(choice);
+        setMessage("Checkout is ready. Choose a payment option and continue.");
+      } else {
+        setMessage("Online payment is still unavailable. Try again shortly or contact Goko.");
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not recheck payment readiness.");
+    } finally { setBusy(false); }
+  }
+  async function recheckAvailability() {
+    if (!searchedStay) return;
+    setHoldExpiresAt(null);
+    setCheckoutRequestKey(null);
+    setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false);
+    try {
+      const data = await readResponse(await fetch(`/api/guest-booking/availability?${new URLSearchParams(searchedStay)}`, {
+        cache: "no-store", signal: AbortSignal.timeout(15000),
+      }));
+      setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds);
+      setSearchedStay({ ...searchedStay });
+      setNativeCheckoutReady(Boolean(data.nativeCheckoutReady));
+      setPaymentOptions(data.paymentOptions || null);
+      if (typeof data.paymentOptions?.requireLookupOtp === "boolean") setRequireLookupOtp(data.paymentOptions.requireLookupOtp);
+      const choice = data.paymentOptions?.allowFullPayment ? "full"
+        : data.paymentOptions?.advancePercent > 0 ? "advance"
+        : data.paymentOptions?.allowPayAtProperty ? "property" : "advance";
+      setPaymentChoice(choice);
+      setMessage(data.rooms?.length
+        ? "Availability refreshed. Select beds again to continue."
+        : "No online beds are available for these dates. Try different dates or contact us.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not recheck availability.");
+    } finally { setBusy(false); }
   }
   const enquiry = searchedStay ? `Hi Goko, please confirm availability and rates for ${searchedStay.checkinDate} to ${searchedStay.checkoutDate}. Selection: ${rooms?.filter(room => selection[room.id]).map(room => `${selection[room.id]} × ${room.name} (${room.type === "Double" ? "double bed" : "dorm bed"})`).join(", ")}. Capacity up to ${capacity} guests; please confirm actual guest count with me.` : "";
   const holdSecondsLeft = holdExpiresAt ? Math.max(0, holdExpiresAt - nowTick) : null;
+  const holdExpired = holdExpiresAt != null && holdSecondsLeft === 0;
   const guestDetailsComplete = Boolean(guest.name.trim() && guest.email.trim() && guest.phone.trim());
   return <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
     {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
@@ -308,6 +399,18 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
               <label className="text-sm">Phone <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required type="tel" autoComplete="tel" maxLength={30} value={guest.phone} onChange={e => setGuest(current => ({ ...current, phone: e.target.value }))} /></label>
             </div>
             {nativeCheckoutReady && paymentOptions ? <>
+              {holdExpired ? (
+                <div className="mt-5 space-y-3">
+                  <div className="rounded-lg bg-brand-sand p-4 text-sm" role="status">
+                    <strong>Your temporary hold expired.</strong>
+                    <p className="mt-1">Beds were released so others can book. Recheck availability for the same dates, then select beds again.</p>
+                  </div>
+                  <button type="button" className={action} disabled={busy} onClick={recheckAvailability}>
+                    {busy ? "Please wait…" : "Recheck availability"}
+                  </button>
+                </div>
+              ) : (
+                <>
               <fieldset className="mt-5 space-y-2 text-sm">
                 <legend className="font-semibold">Payment</legend>
                 {paymentOptions.advancePercent > 0 && (
@@ -345,20 +448,32 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                   ? "Live payments — real money. Card, UPI, netbanking and wallets via Razorpay Checkout."
                   : "Test-mode payments only. Card, UPI, netbanking and wallets are available in Razorpay Checkout."}
               </p>
+                </>
+              )}
             </> : <>
-              <p className="mt-3 text-xs">These details stay in this page only. They are not saved as a booking or included in the WhatsApp link.</p>
+              <p className="mt-3 text-xs">These details stay in this page only until online checkout is ready.</p>
               <div className="mt-5 rounded-lg bg-brand-sand p-4 text-sm"><strong>Payment is currently disabled.</strong><p>No money will be collected and no reservation is created here. Our team can confirm your selection and final tax-inclusive price.</p></div>
-              <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap"><button type="button" className={action} disabled>Payment unavailable</button>{!preview && <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold" href={`${site.whatsAppUrl}?text=${encodeURIComponent(enquiry)}`} target="_blank" rel="noopener noreferrer">Ask Goko to confirm this stay</a>}</div>
+              <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap">
+                <button type="button" className={action} disabled>Payment unavailable</button>
+                <button type="button" className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold disabled:opacity-50" disabled={busy || !!preview} onClick={recheckPaymentReadiness}>
+                  {busy ? "Please wait…" : "Recheck payment readiness"}
+                </button>
+                {!preview && <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-mist px-5 py-3 text-center font-semibold" href={`${site.whatsAppUrl}?text=${encodeURIComponent(enquiry)}`} target="_blank" rel="noopener noreferrer">Ask Goko to confirm this stay</a>}
+              </div>
             </>}
           </div>}
         </>}
       </div>}
     </div> : <div role="tabpanel" id="panel-booking" aria-labelledby="tab-booking">
       <h2 className="font-display text-2xl font-bold">Find your booking</h2>
-      <p className="mt-1 text-sm">Enter your confirmation number and the email used for your booking. We’ll email a verification code from booking@gokohostel.com.</p>
+      <p className="mt-1 text-sm">
+        {requireLookupOtp
+          ? "Enter your confirmation number and the email used for your booking. We’ll email a verification code from booking@gokohostel.com."
+          : "Enter your confirmation number and the email used for your booking to open it."}
+      </p>
       <form onSubmit={lookup} className="mt-5 grid items-end gap-3 md:grid-cols-3">
         {!challengeId ? <><label className="text-sm font-semibold">Confirmation number<input className={field} required maxLength={120} disabled={busy} autoComplete="off" value={reference} onChange={e => setReference(e.target.value)} /></label><label className="text-sm font-semibold">Booking email<input className={field} required type="email" maxLength={254} disabled={busy} autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} /></label></> : <label className="text-sm font-semibold md:col-span-2">Email verification code<input className={field} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} disabled={busy} value={code} onChange={e => setCode(e.target.value)} /></label>}
-        <button className={action} disabled={busy}>{busy ? "Please wait…" : challengeId ? "View booking" : "Send verification code"}</button>
+        <button className={action} disabled={busy}>{busy ? "Please wait…" : challengeId ? "View booking" : requireLookupOtp ? "Send verification code" : "Find booking"}</button>
       </form>
       {challengeId && <button type="button" disabled={busy} className="mt-3 min-h-12 text-left text-sm underline" onClick={() => { setChallengeId(""); setCode(""); setMessage(""); }}>Change details / request again after 10 minutes</button>}
       {booking && <div className="mt-5 rounded-xl bg-brand-sand p-5">
@@ -366,6 +481,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         <p>{booking.guestName} · {booking.guests} guests · {booking.roomType}</p>
         <p>{booking.checkinDate} – {booking.checkoutDate}</p><p>Status: {booking.status} · Payment: {booking.paymentStatus || "Awaiting update"}</p>
         <p>Total: {booking.total == null ? "Not recorded" : money(booking.total)} · Paid: {booking.paid == null ? "Not recorded" : money(booking.paid)} · Refunded: {booking.refunded == null ? "Not recorded" : money(booking.refunded)}</p>
+        {manageUrl && <a className={`${action} mt-4 inline-flex items-center justify-center`} href={manageUrl}>Manage booking</a>}
       </div>}
     </div>}
     <p role="status" aria-live="polite" className="mt-4 break-words text-sm">{message}</p>

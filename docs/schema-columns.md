@@ -1070,6 +1070,13 @@ Cloudflare-only; excluded from Pi sync allowlist by omission.
 | `checkout_started_at` | One-use Checkout claim |
 | `closure_reason` | `guest_cancelled` \| `hold_expired` \| `cannot_fulfil` |
 | `guest_name` / `guest_email` / `guest_phone` | Guest contact on the checkout row |
+| `amends_checkout_id` | Nullable FK to prior checkout (0063); set on guest self-serve amend checkouts |
+
+### `native_inventory_holds` (amend column, migration 0063)
+
+| Column | Notes |
+|--------|-------|
+| `exclude_booking_id` | Nullable; when set, hold insert may overlap that booking’s own `booking_bed_assignments` so amend can re-hold the guest’s current beds |
 
 ### `native_booking_payments` / `native_booking_refunds` / `native_booking_webhooks`
 

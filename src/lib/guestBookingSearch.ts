@@ -61,8 +61,12 @@ export function aggregateGuestRooms(beds: InventoryBedRef[], onlineIds: Set<numb
 }
 
 /** Advisory online inventory only. Never creates a hold, quote or reservation. */
-export async function searchGuestRooms(input: unknown) {
+export async function searchGuestRooms(input: unknown, opts?: { excludeBookingId?: number }) {
   const stay = guestSearchSchema.parse(input);
+  try {
+    const { cancelAbandonedWebsiteHolds } = await import("@/lib/websiteAbandonedHolds");
+    await cancelAbandonedWebsiteHolds();
+  } catch { /* best-effort; search must not fail closed on cleanup */ }
   const db = getDb();
   const tables = await db.select({ name: sql<string>`name` }).from(sql`sqlite_master`).where(sql`type = 'table' AND name = 'native_inventory_holds'`);
   const heldIds = new Set<number>();
@@ -77,7 +81,8 @@ export async function searchGuestRooms(input: unknown) {
   }
   const [beds, available, dorms, mappings, plans, daily] = await Promise.all([
     db.select({ id: bedsTable.id, dormId: bedsTable.dormId, bedId: bedsTable.bedId, type: bedsTable.type }).from(bedsTable).where(sql`${bedsTable.deletedAt} IS NULL`),
-    getAvailableBedsForRange(stay.checkinDate, stay.checkoutDate), getAllDorms(), getRoomTypeMappings(), getRatePlanMappings(), getAllDailyRates(stay.checkinDate, stay.checkoutDate),
+    getAvailableBedsForRange(stay.checkinDate, stay.checkoutDate, undefined, opts?.excludeBookingId),
+    getAllDorms(), getRoomTypeMappings(), getRatePlanMappings(), getAllDailyRates(stay.checkinDate, stay.checkoutDate),
   ]);
   const rooms = aggregateGuestRooms(beds, new Set(available.filter(b => b.pool === "online").map(b => b.id)), dorms.filter(d => !d.deletedAt), heldIds);
   for (const room of rooms) {
@@ -101,6 +106,7 @@ export async function searchGuestRooms(input: unknown) {
     allowFullPayment: settings.allowFullPayment,
     allowPayAtProperty: settings.allowPayAtProperty,
     gatewayEnvironment: settings.gatewayEnvironment as "test" | "live",
+    requireLookupOtp: settings.requireLookupOtp,
   };
   try {
     const readiness = await evaluateNativeCheckoutReadiness();

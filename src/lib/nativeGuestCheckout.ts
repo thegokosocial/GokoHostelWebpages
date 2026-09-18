@@ -4,28 +4,29 @@ import { getDb } from "@/db";
 import {
   nativeBookingCheckouts as checkouts, nativeBookingPayments as payments,
   nativeBookingRefunds as refunds, nativeBookingWebhooks as hooks, bookings,
-  nativeInventoryHolds as holds,
+  nativeInventoryHolds as holds, nativeAcceptedQuotes as quotes, bookingBedAssignments,
 } from "@/db/schema";
 import {
-  addBooking, assignBedToBooking, getAllBeds, getAllDailyRates, getRatePlanMappings,
-  getRoomTypeMappings, getSetting, transitionBookingStatus, unassignBookingBeds,
-  updateBookingFull, addBookingHistoryEntry,
+  addBooking, assignBedToBooking, getAllBeds, getAllDailyRates, getAllDorms, getAvailableBedsForRange,
+  getRatePlanMappings, getRoomTypeMappings, getSetting, transitionBookingStatus, unassignBookingBeds,
+  unassignBookingBedsByBedIds, updateBookingFull, addBookingHistoryEntry,
 } from "@/db/queries";
 import { BOOKING_TAX_SETTING } from "@/lib/bookingPricing";
 import { generateGokoBookingId, generateGuestAccessToken, hashToken } from "@/lib/bookingReference";
-import { guestRateForStay, guestTaxPercent } from "@/lib/guestBookingSearch";
-import { occupiedNights } from "@/lib/inventoryAvailability";
+import { guestRateForStay, guestTaxPercent, searchGuestRooms } from "@/lib/guestBookingSearch";
 import {
-  acceptNativeQuote,
-} from "@/lib/nativeAcceptedQuote";
-import { calculateNativeCancellationRefund } from "@/lib/nativeBookingQuote";
+  guestActionFlags, maskGuestEmail, maskGuestPhone, roomLinesFromQuote,
+} from "@/lib/guestBookingDetails";
+import { occupiedNights, sellableUnits, type InventoryPool } from "@/lib/inventoryAvailability";
+import { acceptNativeQuote } from "@/lib/nativeAcceptedQuote";
+import { calculateNativeCancellationRefund, buildNativeBookingQuote } from "@/lib/nativeBookingQuote";
 import {
   createNativeInventoryHold, getNativeSelectionAvailability,
   releaseNativeInventoryHold,
 } from "@/lib/nativeInventoryHold";
 import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
 import { otaFingerprint, pushIfOtaChanged } from "@/lib/aiosellSync";
-import { sendBookingConfirmationEmail } from "@/lib/email";
+import { sendBookingAmendedEmail, sendBookingConfirmationEmail } from "@/lib/email";
 import { isPiRuntime } from "@/lib/runtime";
 import {
   RazorpayError, razorpayCredentials, createRazorpayBookingOrder, findRazorpayBookingOrders,
@@ -45,6 +46,11 @@ const checkoutEnv = (row: Checkout): RazorpayEnvironment =>
   row.environment === "live" ? "live" : "test";
 const date = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/);
 const token64 = z.string().regex(/^[a-f0-9]{64}$/);
+const roomsSchema = z.array(z.object({
+  roomId: z.string().regex(/^\d+-(Double|Bed)$/),
+  quantity: z.number().int().min(1).max(4),
+  ratePlanId: z.number().int().positive(),
+}).strict()).min(1).max(4);
 const selectionSchema = z.object({
   requestKey: z.string().uuid(),
   checkinDate: date, checkoutDate: date,
@@ -54,11 +60,18 @@ const selectionSchema = z.object({
     email: z.string().trim().email().max(254),
     phone: z.string().trim().min(1).max(30),
   }).strict(),
-  rooms: z.array(z.object({
-    roomId: z.string().regex(/^\d+-(Double|Bed)$/),
-    quantity: z.number().int().min(1).max(4),
-    ratePlanId: z.number().int().positive(),
-  }).strict()).min(1).max(4),
+  rooms: roomsSchema,
+}).strict();
+const amendSelectionSchema = z.object({
+  requestKey: z.string().uuid(),
+  reference: z.string().trim().min(1).max(64),
+  guestAccessToken: token64,
+  checkinDate: date, checkoutDate: date,
+  rooms: roomsSchema,
+}).strict();
+const amendAuthSchema = z.object({
+  reference: z.string().trim().min(1).max(64),
+  guestAccessToken: token64,
 }).strict();
 
 export class GuestCheckoutError extends Error {
@@ -80,9 +93,11 @@ export type AllocatedUnit = {
 export async function allocateGuestSelection(input: {
   checkinDate: string; checkoutDate: string;
   rooms: { roomId: string; quantity: number; ratePlanId: number }[];
+  excludeBookingId?: number;
 }): Promise<{ bedIds: number[]; units: AllocatedUnit[] }> {
   const avail = await getNativeSelectionAvailability({
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    excludeBookingId: input.excludeBookingId,
   });
   const [mappings, plans, daily] = await Promise.all([
     getRoomTypeMappings(), getRatePlanMappings(), getAllDailyRates(input.checkinDate, input.checkoutDate),
@@ -159,21 +174,55 @@ async function requireOwner(checkoutId: string, ownerToken: string) {
   return row;
 }
 
+function pickCheckoutForSnapshot(rows: Checkout[]): Checkout {
+  const byNewest = (a: Checkout, b: Checkout) => b.createdAt.localeCompare(a.createdAt);
+  const fulfilled = rows.filter((r) => r.state === "fulfilled").sort(byNewest);
+  if (fulfilled[0]) return fulfilled[0];
+  const open = rows.filter((r) => ["ready", "claimed", "captured", "preparing", "order_unknown", "captured_unfulfilled"].includes(r.state))
+    .sort(byNewest);
+  if (open[0]) return open[0];
+  return [...rows].sort(byNewest)[0];
+}
+
 async function requireGuestAccess(reference: string, guestAccessToken: string) {
   token64.parse(guestAccessToken);
   const accessHash = await sha(guestAccessToken);
-  const [row] = await getDb().select().from(checkouts)
-    .where(and(eq(checkouts.guestAccessHash, accessHash))).limit(1);
-  if (!row) throw new GuestCheckoutError("Booking not found", 404);
-  const [booking] = row.bookingId
-    ? await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1) : [];
-  if (!booking || (booking.gokoBookingId !== reference && booking.bookingRef !== reference)) {
-    throw new GuestCheckoutError("Booking not found", 404);
-  }
-  return { checkout: row, booking };
+  const db = getDb();
+  const rows = await db.select().from(checkouts).where(eq(checkouts.guestAccessHash, accessHash));
+  if (!rows.length) throw new GuestCheckoutError("Booking not found", 404);
+  const bookingIds = [...new Set(rows.map((r) => r.bookingId).filter((id): id is number => id != null))];
+  if (!bookingIds.length) throw new GuestCheckoutError("Booking not found", 404);
+  const bookingRows = await db.select().from(bookings).where(inArray(bookings.id, bookingIds));
+  const booking = bookingRows.find((b) => b.gokoBookingId === reference || b.bookingRef === reference);
+  if (!booking) throw new GuestCheckoutError("Booking not found", 404);
+  const forBooking = rows.filter((r) => r.bookingId === booking.id);
+  if (!forBooking.length) throw new GuestCheckoutError("Booking not found", 404);
+  return { checkout: pickCheckoutForSnapshot(forBooking), booking, checkouts: forBooking };
 }
 
-function publicSnapshot(row: Checkout, booking: typeof bookings.$inferSelect | undefined, extras: Record<string, unknown> = {}) {
+/** newTotalPaise − alreadyPaidPaise (may be negative for refund). */
+export function computeAmendDeltaPaise(newTotalPaise: number, alreadyPaidPaise: number) {
+  return Math.trunc(newTotalPaise) - Math.trunc(alreadyPaidPaise);
+}
+
+async function publicSnapshot(row: Checkout, booking: typeof bookings.$inferSelect | undefined, extras: Record<string, unknown> = {}) {
+  const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
+  const flags = guestActionFlags({
+    checkoutState: row.state,
+    bookingStatus: booking?.status,
+    checkinDate: booking?.checkinDate,
+    policy: settings,
+  });
+  let quoteJson: string | null = null;
+  if (row.acceptedQuoteId) {
+    const [q] = await getDb().select().from(quotes).where(eq(quotes.id, row.acceptedQuoteId)).limit(1);
+    quoteJson = q?.quoteJson ?? null;
+  }
+  const dorms = await getAllDorms();
+  const dormNames = new Map(dorms.map((d) => [d.id, d.name]));
+  const lines = roomLinesFromQuote(quoteJson, dormNames);
+  const amountTotal = booking?.amountTotal ?? null;
+  const amountPaid = booking?.amountPaid ?? null;
   return {
     checkoutId: row.id,
     state: row.state,
@@ -184,10 +233,27 @@ function publicSnapshot(row: Checkout, booking: typeof bookings.$inferSelect | u
     checkinDate: booking?.checkinDate ?? null,
     checkoutDate: booking?.checkoutDate ?? null,
     guestName: row.guestName,
-    amountTotal: booking?.amountTotal ?? null,
-    amountPaid: booking?.amountPaid ?? null,
-    dueAtPropertyPaise: booking && row.dueNowPaise >= 0
-      ? Math.max(0, Math.round((booking.amountTotal || 0) * 100) - (booking.amountPaid || 0) * 100) : null,
+    email: maskGuestEmail(row.guestEmail),
+    phone: maskGuestPhone(row.guestPhone),
+    amountTotal,
+    amountPaid,
+    amountRefunded: booking?.amountRefunded ?? null,
+    dueAtPropertyPaise: amountTotal != null && amountPaid != null
+      ? Math.max(0, Math.round(amountTotal * 100) - Math.round(amountPaid * 100))
+      : null,
+    rooms: lines.rooms,
+    nights: lines.nights || (booking?.checkinDate && booking?.checkoutDate
+      ? occupiedNights(booking.checkinDate, booking.checkoutDate).length
+      : 0),
+    persons: booking?.persons ?? null,
+    roomType: booking?.roomType ?? null,
+    beforeTaxRupees: lines.beforeTaxRupees ?? booking?.amountBeforeTax ?? null,
+    taxRupees: lines.taxRupees ?? booking?.amountTax ?? null,
+    taxPercent: lines.taxPercent,
+    gatewayEnvironment: row.environment,
+    canCancel: flags.canCancel,
+    canModify: flags.canModify,
+    cancellationDeadlineAt: flags.cancellationDeadlineAt,
     ...extras,
   };
 }
@@ -195,6 +261,10 @@ function publicSnapshot(row: Checkout, booking: typeof bookings.$inferSelect | u
 /** Idempotent prepare: hold → quote → provisional booking → optional Razorpay order. */
 export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>) {
   await requireReady();
+  try {
+    const { cancelAbandonedWebsiteHolds } = await import("@/lib/websiteAbandonedHolds");
+    await cancelAbandonedWebsiteHolds();
+  } catch { /* best-effort */ }
   const input = selectionSchema.parse(raw);
   const requestHash = await sha(JSON.stringify({
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
@@ -207,7 +277,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
     const [booking] = existing.bookingId
       ? await db.select().from(bookings).where(eq(bookings.id, existing.bookingId)).limit(1) : [];
     return {
-      ...publicSnapshot(existing, booking),
+      ...(await publicSnapshot(existing, booking)),
       recovered: true,
       ownerToken: null as string | null,
       guestAccessToken: null as string | null,
@@ -231,6 +301,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   const hold = await createNativeInventoryHold({
     requestKey: input.requestKey, ownerToken, bedIds,
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    holdSeconds: policy.holdMinutes * 60,
   });
   const taxBasisPoints = Math.round(guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)) * 100);
   const accepted = await acceptNativeQuote({ requestKey: input.requestKey, ownerToken }, {
@@ -280,7 +351,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
     const [bookingRace] = race.bookingId
       ? await db.select().from(bookings).where(eq(bookings.id, race.bookingId)).limit(1) : [];
     return {
-      ...publicSnapshot(race, bookingRace),
+      ...(await publicSnapshot(race, bookingRace)),
       recovered: true,
       ownerToken: null as string | null,
       guestAccessToken: null as string | null,
@@ -307,7 +378,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   }
   const [booking] = await db.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
   return {
-    ...publicSnapshot(row, booking),
+    ...(await publicSnapshot(row, booking)),
     recovered: false,
     ownerToken,
     guestAccessToken,
@@ -424,7 +495,7 @@ export async function reconcileGuestCheckout(checkoutId: string, ownerToken: str
   }
   const [booking] = row.bookingId
     ? await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1) : [];
-  return publicSnapshot(row, booking);
+  return await publicSnapshot(row, booking);
 }
 
 export async function verifyGuestPayment(checkoutId: string, ownerToken: string, paymentId: string, orderId: string, signature: string) {
@@ -446,20 +517,24 @@ export async function verifyGuestPayment(checkoutId: string, ownerToken: string,
   const fresh = await getCheckoutById(checkoutId);
   const [booking] = fresh.bookingId
     ? await getDb().select().from(bookings).where(eq(bookings.id, fresh.bookingId)).limit(1) : [];
-  return publicSnapshot(fresh, booking);
+  return await publicSnapshot(fresh, booking);
 }
 
 /**
  * Release hold then assign beds. Assign-while-held is rejected by DB triggers (0059).
- * On assign failure after capture → captured_unfulfilled (no double-charge).
+ * Assign tries held beds as online, then offline, then same-dorm/type alternatives
+ * (online then offline). Only when all fail after capture → captured_unfulfilled.
  * `trustedServer` skips owner token (webhook / pay-at-property after verify).
  */
 export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: string, trustedServer = false) {
   cloudOnly();
   const row = trustedServer ? await getCheckoutById(checkoutId) : await requireOwner(checkoutId, ownerToken!);
+  if (row.amendsCheckoutId) {
+    return fulfilGuestAmend(checkoutId, ownerToken, trustedServer);
+  }
   if (row.state === "fulfilled") {
     const [b] = row.bookingId ? await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1) : [];
-    return publicSnapshot(row, b);
+    return await publicSnapshot(row, b);
   }
   if (["cancelled", "expired"].includes(row.state)) {
     throw new GuestCheckoutError("This checkout was cancelled or expired and cannot be fulfilled", 409);
@@ -491,17 +566,85 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
   }
 
   const assigned: number[] = [];
+  let usedOfflineFallback = false;
   try {
-    for (const bedId of bedIds) {
-      const bed = bedMeta.get(bedId);
+    const heldBeds = bedIds.map((id) => {
+      const bed = bedMeta.get(id);
       if (!bed) throw new GuestCheckoutError("Held bed is missing from inventory", 503);
-      const ok = await assignBedToBooking({
-        bookingId: row.bookingId, bedId, dormId: bed.dormId,
-        checkinDate: holdRow.checkinDate, checkoutDate: holdRow.checkoutDate,
-        assignedBy: "website", inventoryPool: "online",
-      });
-      if (!ok) throw new GuestCheckoutError("Could not assign a held bed", 503);
-      assigned.push(bedId);
+      return bed;
+    });
+    // Group held beds into sellable units (Double = complete pair).
+    const heldUnits = sellableUnits(heldBeds).filter((u) =>
+      u.beds.every((b) => b.id != null && bedIds.includes(b.id)),
+    );
+    if (heldUnits.length === 0 || heldUnits.reduce((n, u) => n + u.beds.length, 0) !== bedIds.length) {
+      throw new GuestCheckoutError("Held beds do not form complete sellable units", 503);
+    }
+
+    const tryAssignUnit = async (ids: number[], pool: InventoryPool): Promise<boolean> => {
+      const written: number[] = [];
+      for (const bedId of ids) {
+        const bed = bedMeta.get(bedId);
+        if (!bed) return false;
+        const ok = await assignBedToBooking({
+          bookingId: row.bookingId!, bedId, dormId: bed.dormId,
+          checkinDate: holdRow.checkinDate, checkoutDate: holdRow.checkoutDate,
+          assignedBy: "website", inventoryPool: pool,
+        });
+        if (!ok) {
+          if (written.length) await unassignBookingBedsByBedIds(row.bookingId!, written);
+          return false;
+        }
+        written.push(bedId);
+      }
+      return true;
+    };
+
+    const claimed = new Set<number>();
+    for (const unit of heldUnits) {
+      const unitIds = unit.beds.map((b) => b.id!).filter((id) => id != null);
+      // 1) Prefer held beds as online.
+      if (await tryAssignUnit(unitIds, "online")) {
+        unitIds.forEach((id) => { assigned.push(id); claimed.add(id); });
+        continue;
+      }
+      // 2) Same beds as offline (pool tag may already be offline after race).
+      if (await tryAssignUnit(unitIds, "offline")) {
+        usedOfflineFallback = true;
+        unitIds.forEach((id) => { assigned.push(id); claimed.add(id); });
+        continue;
+      }
+      // 3) Same dorm + type alternatives: online units first, then offline.
+      const tagged = await getAvailableBedsForRange(
+        holdRow.checkinDate, holdRow.checkoutDate, unit.dormId, row.bookingId,
+      );
+      const matchType = (t: string | null | undefined) =>
+        unit.type === "Double" ? t === "Double" : t !== "Double";
+      const candidates = (pool: "online" | "offline") =>
+        sellableUnits(
+          tagged.filter((b) =>
+            b.pool === pool && matchType(b.type) && !claimed.has(b.id) && !assigned.includes(b.id),
+          ),
+        ).filter((u) =>
+          u.type === unit.type
+          && (unit.type !== "Double" || u.beds.length === 2)
+          && u.beds.every((b) => b.id != null && !claimed.has(b.id)),
+        );
+
+      let placed = false;
+      for (const pool of ["online", "offline"] as const) {
+        for (const alt of candidates(pool)) {
+          const altIds = alt.beds.map((b) => b.id!);
+          if (await tryAssignUnit(altIds, pool)) {
+            if (pool === "offline") usedOfflineFallback = true;
+            altIds.forEach((id) => { assigned.push(id); claimed.add(id); });
+            placed = true;
+            break;
+          }
+        }
+        if (placed) break;
+      }
+      if (!placed) throw new GuestCheckoutError("Could not assign a held bed", 503);
     }
     const paidRupees = row.dueNowPaise / 100;
     const moved = await transitionBookingStatus(row.bookingId, ["hold"], {
@@ -518,16 +661,23 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
     await getDb().update(checkouts).set({ state: "fulfilled", updatedAt: timestamp() }).where(eq(checkouts.id, checkoutId));
     await addBookingHistoryEntry({
       bookingId: row.bookingId, action: "website_fulfil",
-      details: `Native guest checkout ${checkoutId}`, performedBy: "website",
+      details: usedOfflineFallback
+        ? `Native guest checkout ${checkoutId} (offline pool fallback)`
+        : `Native guest checkout ${checkoutId}`,
+      performedBy: "website",
     });
     try { await pushIfOtaChanged(before, dormIds, nights); } catch { /* best-effort */ }
     const [confirmed] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
     if (confirmed) {
+      const snap = await publicSnapshot(row, confirmed);
       await sendBookingConfirmationEmail({
         guestName: row.guestName, guestEmail: row.guestEmail,
         reference: confirmed.gokoBookingId || confirmed.bookingRef || String(confirmed.id),
         checkinDate: confirmed.checkinDate, checkoutDate: confirmed.checkoutDate || "",
         totalRupees: confirmed.amountTotal || 0, paidRupees: confirmed.amountPaid || 0,
+        nights: snap.nights, rooms: snap.rooms, persons: snap.persons,
+        beforeTaxRupees: snap.beforeTaxRupees, taxRupees: snap.taxRupees, taxPercent: snap.taxPercent,
+        paymentChoice: snap.paymentChoice, cancellationDeadlineAt: snap.cancellationDeadlineAt,
       });
     }
   } catch (error) {
@@ -538,6 +688,11 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
       await getDb().update(checkouts).set({
         state: "captured_unfulfilled", closureReason: "cannot_fulfil", updatedAt: timestamp(),
       }).where(eq(checkouts.id, checkoutId));
+      await addBookingHistoryEntry({
+        bookingId: row.bookingId, action: "website_unfulfilled",
+        details: "Payment captured; online and offline bed assign failed — assign manually from Unassigned",
+        performedBy: "website",
+      });
       throw new GuestCheckoutError(
         "Payment was captured but beds could not be assigned. Goko will complete this booking manually — do not pay again.",
         503,
@@ -547,28 +702,533 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
   }
   const fresh = await getCheckoutById(checkoutId);
   const [booking] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
-  return publicSnapshot(fresh, booking);
+  return await publicSnapshot(fresh, booking);
 }
 
 export async function getGuestBookingStatus(reference: string, guestAccessToken: string) {
   cloudOnly();
   const { checkout, booking } = await requireGuestAccess(reference, guestAccessToken);
-  return publicSnapshot(checkout, booking, {
-    email: checkout.guestEmail.replace(/(^.).*(@.*$)/, "$1***$2"),
-    canCancel: ["ready", "claimed", "fulfilled", "captured"].includes(checkout.state)
-      && ["hold", "received"].includes(booking.status),
+  return await publicSnapshot(checkout, booking);
+}
+
+async function requireAmendableBooking(reference: string, guestAccessToken: string) {
+  const { checkout, booking, checkouts: all } = await requireGuestAccess(reference, guestAccessToken);
+  if (booking.source !== "website") {
+    throw new GuestCheckoutError("Only website bookings can be changed online", 403);
+  }
+  if (!["received"].includes(booking.status)) {
+    throw new GuestCheckoutError("This booking can no longer be changed online");
+  }
+  const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
+  const flags = guestActionFlags({
+    checkoutState: checkout.state,
+    bookingStatus: booking.status,
+    checkinDate: booking.checkinDate,
+    policy: settings,
   });
+  if (!flags.canModify) {
+    throw new GuestCheckoutError("Modification deadline has passed for online self-service");
+  }
+  const original = all.find((c) => !c.amendsCheckoutId) || checkout;
+  if (!original.bookingId) throw new GuestCheckoutError("Booking not found", 404);
+  return { checkout, booking, original, all, settings, flags };
+}
+
+async function buildAmendQuoteTotals(input: {
+  checkinDate: string; checkoutDate: string;
+  rooms: { roomId: string; quantity: number; ratePlanId: number }[];
+  excludeBookingId: number;
+  policy: ReturnType<typeof readWebsiteBookingSettings>;
+  policyVersion: string;
+}) {
+  const selectedUnits = input.rooms.reduce((sum, room) => sum + room.quantity, 0);
+  if (selectedUnits > input.policy.maxSelectedBeds) {
+    throw new GuestCheckoutError(`You can select at most ${input.policy.maxSelectedBeds} beds for a website booking`, 400);
+  }
+  const { bedIds, units } = await allocateGuestSelection({
+    checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    rooms: input.rooms, excludeBookingId: input.excludeBookingId,
+  });
+  const taxBasisPoints = Math.round(guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)) * 100);
+  const quote = buildNativeBookingQuote({
+    checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    policyVersion: input.policyVersion, policy: input.policy, taxBasisPoints,
+    paymentChoice: "full",
+    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates })),
+  });
+  return { bedIds, units, quote, taxBasisPoints };
+}
+
+/** Auth + availability for amend UI (excludes this booking's assigned beds from conflicts). */
+export async function searchGuestAmendAvailability(reference: string, guestAccessToken: string, checkinDate: string, checkoutDate: string) {
+  cloudOnly();
+  const { booking } = await requireAmendableBooking(reference, guestAccessToken);
+  return searchGuestRooms({ checkinDate, checkoutDate }, { excludeBookingId: booking.id });
+}
+
+/** Quote amend totals + delta without holding inventory. */
+export async function quoteGuestAmend(raw: z.input<typeof amendSelectionSchema>) {
+  cloudOnly();
+  const input = amendSelectionSchema.parse(raw);
+  const { booking, settings } = await requireAmendableBooking(input.reference, input.guestAccessToken);
+  const settingsRaw = await getSetting(WEBSITE_BOOKING_SETTINGS_KEY);
+  const policyVersion = await websiteBookingSettingsRevision(settingsRaw);
+  const { quote, units } = await buildAmendQuoteTotals({
+    checkinDate: input.checkinDate, checkoutDate: input.checkoutDate, rooms: input.rooms,
+    excludeBookingId: booking.id, policy: settings, policyVersion,
+  });
+  const alreadyPaidPaise = Math.round((booking.amountPaid || 0) * 100);
+  const deltaPaise = computeAmendDeltaPaise(quote.totalPaise, alreadyPaidPaise);
+  return {
+    checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    beforeTaxRupees: quote.beforeTaxRupees, taxRupees: quote.taxRupees, totalRupees: quote.totalRupees,
+    totalPaise: quote.totalPaise, alreadyPaidPaise, deltaPaise,
+    dueNowPaise: Math.max(0, deltaPaise),
+    refundPaise: Math.max(0, -deltaPaise),
+    rooms: units.map((u) => ({ key: u.key, dormId: u.dormId, type: u.type })),
+    requiresPayment: deltaPaise >= 100,
+  };
+}
+
+/** Hold + accepted quote + amend checkout. Charges max(0, delta); refunds happen on confirm. */
+export async function prepareGuestAmend(raw: z.input<typeof amendSelectionSchema>) {
+  await requireReady();
+  try {
+    const { cancelAbandonedWebsiteHolds } = await import("@/lib/websiteAbandonedHolds");
+    await cancelAbandonedWebsiteHolds();
+  } catch { /* best-effort */ }
+  const input = amendSelectionSchema.parse(raw);
+  const { booking, original, all, settings } = await requireAmendableBooking(input.reference, input.guestAccessToken);
+  const requestHash = await sha(JSON.stringify({
+    amend: true, bookingId: booking.id, checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    rooms: input.rooms,
+  }));
+  const db = getDb();
+  const [existing] = await db.select().from(checkouts).where(eq(checkouts.requestKey, input.requestKey)).limit(1);
+  if (existing) {
+    if (existing.requestHash !== requestHash || existing.amendsCheckoutId !== original.id) {
+      throw new GuestCheckoutError("Request key already belongs to a different checkout");
+    }
+    const alreadyPaidPaise = Math.round((booking.amountPaid || 0) * 100);
+    return {
+      ...(await publicSnapshot(existing, booking)),
+      recovered: true,
+      ownerToken: null as string | null,
+      guestAccessToken: null as string | null,
+      deltaPaise: existing.dueNowPaise > 0
+        ? existing.dueNowPaise
+        : computeAmendDeltaPaise(Math.round((booking.amountTotal || 0) * 100), alreadyPaidPaise),
+      razorpay: existing.state === "ready" && existing.razorpayOrderId && !existing.checkoutStartedAt
+        ? { key: existing.razorpayKeyId, order_id: existing.razorpayOrderId, amount: existing.dueNowPaise, currency: "INR" as const }
+        : null,
+      requiresPayment: existing.dueNowPaise >= 100,
+    };
+  }
+
+  // Supersede incomplete prior amend checkouts for this booking.
+  for (const prior of all.filter((c) => c.amendsCheckoutId && !["fulfilled", "cancelled", "expired"].includes(c.state))) {
+    if (prior.holdId) {
+      await db.update(holds).set({ state: "released" })
+        .where(and(eq(holds.id, prior.holdId), eq(holds.state, "held")));
+    }
+    await db.update(checkouts).set({
+      state: "cancelled", closureReason: "guest_cancelled", updatedAt: timestamp(),
+    }).where(eq(checkouts.id, prior.id));
+  }
+
+  const settingsRaw = await getSetting(WEBSITE_BOOKING_SETTINGS_KEY);
+  const policyVersion = await websiteBookingSettingsRevision(settingsRaw);
+  const { bedIds, units, quote, taxBasisPoints } = await buildAmendQuoteTotals({
+    checkinDate: input.checkinDate, checkoutDate: input.checkoutDate, rooms: input.rooms,
+    excludeBookingId: booking.id, policy: settings, policyVersion,
+  });
+  const alreadyPaidPaise = Math.round((booking.amountPaid || 0) * 100);
+  const deltaPaise = computeAmendDeltaPaise(quote.totalPaise, alreadyPaidPaise);
+  const dueNowPaise = Math.max(0, deltaPaise);
+  if (dueNowPaise > 0 && dueNowPaise < 100) {
+    throw new GuestCheckoutError("Change amount is below Razorpay’s ₹1 minimum. Adjust dates or rooms, or contact Goko.", 400);
+  }
+
+  const ownerToken = generateGuestAccessToken();
+  const hold = await createNativeInventoryHold({
+    requestKey: input.requestKey, ownerToken, bedIds,
+    checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    holdSeconds: settings.holdMinutes * 60,
+    excludeBookingId: booking.id,
+  });
+  const accepted = await acceptNativeQuote({ requestKey: input.requestKey, ownerToken }, {
+    checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
+    policyVersion, policy: settings, taxBasisPoints, paymentChoice: "full",
+    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates })),
+  });
+  const id = crypto.randomUUID();
+  const now = timestamp();
+  const gatewayEnvironment = settings.gatewayEnvironment as RazorpayEnvironment;
+  const keyId = dueNowPaise >= 100 ? razorpayCredentials(gatewayEnvironment).keyId : null;
+  const paymentChoice = dueNowPaise >= 100 ? "full" : "property";
+  const inserted = await db.insert(checkouts).values({
+    id, requestKey: input.requestKey, requestHash,
+    ownerHash: await sha(ownerToken), guestAccessHash: original.guestAccessHash,
+    bookingId: booking.id, holdId: hold.id, acceptedQuoteId: accepted.id,
+    amendsCheckoutId: original.id,
+    paymentChoice, environment: gatewayEnvironment,
+    state: dueNowPaise >= 100 ? "preparing" : "ready",
+    razorpayKeyId: keyId, receipt: dueNowPaise >= 100 ? receiptFor(id) : null,
+    dueNowPaise, guestName: original.guestName, guestEmail: original.guestEmail,
+    guestPhone: original.guestPhone, createdAt: now, updatedAt: now,
+  }).onConflictDoNothing({ target: checkouts.requestKey }).returning();
+  if (!inserted.length) {
+    const [race] = await db.select().from(checkouts).where(eq(checkouts.requestKey, input.requestKey)).limit(1);
+    if (!race || race.requestHash !== requestHash) throw new GuestCheckoutError("Unable to recover amend request", 503);
+    return {
+      ...(await publicSnapshot(race, booking)),
+      recovered: true, ownerToken: null as string | null, guestAccessToken: null as string | null,
+      deltaPaise, razorpay: null, requiresPayment: race.dueNowPaise >= 100,
+    };
+  }
+  let row = inserted[0];
+  // Override quote dueNow — acceptNativeQuote stores full stay; ledger charges delta only.
+  if (dueNowPaise >= 100) {
+    try {
+      row = await attachOrder(row, await createRazorpayBookingOrder({
+        amountPaise: dueNowPaise, receipt: row.receipt!, checkoutId: id, environment: gatewayEnvironment,
+      }));
+    } catch {
+      await db.update(checkouts).set({ state: "order_unknown", updatedAt: timestamp() })
+        .where(and(eq(checkouts.id, id), ne(checkouts.state, "ready")));
+      row = await getCheckoutById(id);
+    }
+  }
+  return {
+    ...(await publicSnapshot(row, booking)),
+    recovered: false,
+    ownerToken,
+    guestAccessToken: null as string | null,
+    holdExpiresAt: hold.expiresAt,
+    deltaPaise,
+    quote: {
+      totalRupees: quote.totalRupees, taxRupees: quote.taxRupees, beforeTaxRupees: quote.beforeTaxRupees,
+      dueNowPaise, alreadyPaidPaise,
+    },
+    razorpay: row.state === "ready" && row.razorpayOrderId
+      ? { key: row.razorpayKeyId, order_id: row.razorpayOrderId, amount: row.dueNowPaise, currency: "INR" as const }
+      : null,
+    requiresPayment: dueNowPaise >= 100,
+  };
+}
+
+/** Confirm amend when no payment due (delta ≤ 0). Payment path uses verify → fulfilGuestAmend. */
+export async function confirmGuestAmend(raw: {
+  reference: string; guestAccessToken: string; checkoutId: string; ownerToken?: string;
+}) {
+  cloudOnly();
+  const auth = amendAuthSchema.parse({
+    reference: raw.reference,
+    guestAccessToken: raw.guestAccessToken,
+  });
+  await requireAmendableBooking(auth.reference, auth.guestAccessToken);
+  const checkoutId = z.string().uuid().parse(raw.checkoutId);
+  const row = await getCheckoutById(checkoutId);
+  if (!row.amendsCheckoutId) throw new GuestCheckoutError("Not an amend checkout", 400);
+  if (row.bookingId == null) throw new GuestCheckoutError("Booking not found", 404);
+  const { booking } = await requireGuestAccess(auth.reference, auth.guestAccessToken);
+  if (row.bookingId !== booking.id) throw new GuestCheckoutError("Checkout does not match this booking", 404);
+  if (row.dueNowPaise >= 100) {
+    throw new GuestCheckoutError("Payment is required for this change; complete checkout first");
+  }
+  if (raw.ownerToken) return fulfilGuestAmend(checkoutId, String(raw.ownerToken), false);
+  return fulfilGuestAmend(checkoutId, undefined, true);
+}
+
+async function refundAmendDelta(row: Checkout, bookingId: number, refundPaise: number) {
+  if (refundPaise < 100) return 0;
+  const db = getDb();
+  const cos = await db.select().from(checkouts).where(eq(checkouts.bookingId, bookingId));
+  const capturedRows = cos.length
+    ? await db.select().from(payments).where(and(
+      inArray(payments.checkoutId, cos.map((c) => c.id)),
+      eq(payments.captured, 1),
+    ))
+    : [];
+  if (!capturedRows.length) return 0;
+  const refundRows = await db.select().from(refunds).where(inArray(refunds.paymentId, capturedRows.map((p) => p.id)));
+  const processed = refundRows.filter((r) => r.state === "processed").reduce((s, r) => s + r.amountPaise, 0);
+  const reserved = refundRows.filter((r) => ["submitting", "unknown", "pending"].includes(r.state))
+    .reduce((s, r) => s + r.amountPaise, 0);
+  const capturedPaise = capturedRows.reduce((s, p) => s + p.amountPaise, 0);
+  const refundable = Math.max(0, capturedPaise - processed - reserved);
+  const target = Math.min(refundPaise, refundable);
+  if (target < 100) return 0;
+  const payment = capturedRows.find((p) => {
+    const claimed = refundRows.filter((r) => r.paymentId === p.id).reduce((s, r) => s + r.amountPaise, 0);
+    return p.amountPaise - claimed >= target;
+  }) || capturedRows[0];
+  const refundId = crypto.randomUUID();
+  const inserted = await db.insert(refunds).values({
+    id: refundId, paymentId: payment.id, receipt: receiptFor(refundId),
+    amountPaise: target, createdAt: timestamp(), updatedAt: timestamp(),
+  }).onConflictDoNothing({ target: refunds.paymentId }).returning();
+  if (!inserted.length) return 0;
+  try {
+    const evidence = await createRazorpayBookingRefund(
+      payment.id, target, inserted[0].receipt, refundId, checkoutEnv(row),
+    );
+    await recordBookingRefund(inserted[0], evidence);
+  } catch {
+    await db.update(refunds).set({ state: "unknown", updatedAt: timestamp() })
+      .where(and(eq(refunds.paymentId, payment.id), eq(refunds.state, "submitting")));
+  }
+  return target;
+}
+
+/**
+ * Amend fulfilment: release hold → unassign old beds → assign new → update booking → optional refund.
+ * Called from payment verify when amendsCheckoutId is set, or from confirm when dueNow=0.
+ */
+export async function fulfilGuestAmend(checkoutId: string, ownerToken?: string, trustedServer = false) {
+  cloudOnly();
+  const row = trustedServer ? await getCheckoutById(checkoutId) : await requireOwner(checkoutId, ownerToken!);
+  if (!row.amendsCheckoutId) throw new GuestCheckoutError("Not an amend checkout", 400);
+  if (row.state === "fulfilled") {
+    const [b] = row.bookingId ? await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1) : [];
+    return await publicSnapshot(row, b);
+  }
+  if (["cancelled", "expired"].includes(row.state)) {
+    throw new GuestCheckoutError("This change was cancelled or expired and cannot be completed", 409);
+  }
+  if (!row.bookingId || !row.holdId) throw new GuestCheckoutError("Amend checkout is missing booking or hold", 503);
+  if (row.dueNowPaise >= 100) {
+    const captured = await getDb().select().from(payments)
+      .where(and(eq(payments.checkoutId, checkoutId), eq(payments.captured, 1))).limit(1);
+    if (!captured.length) throw new GuestCheckoutError("Payment has not been captured yet");
+  }
+  const [holdRow] = await getDb().select().from(holds).where(eq(holds.id, row.holdId)).limit(1);
+  if (!holdRow) throw new GuestCheckoutError("Hold not found", 404);
+  const [quoteRow] = row.acceptedQuoteId
+    ? await getDb().select().from(quotes).where(eq(quotes.id, row.acceptedQuoteId)).limit(1) : [];
+  if (!quoteRow) throw new GuestCheckoutError("Accepted quote not found", 503);
+  const storedQuote = JSON.parse(quoteRow.quoteJson) as Record<string, unknown>;
+  const {
+    currency: _c, nativeCheckoutReady: _n, beforeTaxRupees: _b, taxRupees: _t,
+    totalRupees: _tr, dueNowPaise: _d, dueAtPropertyPaise: _dap, totalPaise: _tp, ...quoteInput
+  } = storedQuote;
+  const quote = buildNativeBookingQuote(quoteInput as Parameters<typeof buildNativeBookingQuote>[0]);
+  const bedIds = JSON.parse(holdRow.bedIds) as number[];
+  const allBeds = await getAllBeds();
+  const bedMeta = new Map(allBeds.map((b) => [b.id, b]));
+  const dormIds = [...new Set(bedIds.map((id) => bedMeta.get(id)?.dormId).filter(Boolean) as number[])];
+  const nights = occupiedNights(holdRow.checkinDate, holdRow.checkoutDate);
+  const [bookingBefore] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
+  if (!bookingBefore) throw new GuestCheckoutError("Booking not found", 404);
+  const oldNights = bookingBefore.checkoutDate
+    ? occupiedNights(bookingBefore.checkinDate, bookingBefore.checkoutDate)
+    : [];
+  const before = await otaFingerprint(dormIds, [...new Set([...nights, ...oldNights])]);
+
+  if (holdRow.state === "held") {
+    if (ownerToken && !trustedServer) {
+      await releaseNativeInventoryHold(row.holdId, ownerToken);
+    } else {
+      await getDb().update(holds).set({ state: "released" }).where(and(eq(holds.id, row.holdId), eq(holds.state, "held")));
+    }
+  }
+
+  const priorAssignments = await getDb().select({
+    bedId: bookingBedAssignments.bedId,
+    dormId: bookingBedAssignments.dormId,
+    checkinDate: bookingBedAssignments.checkinDate,
+    checkoutDate: bookingBedAssignments.checkoutDate,
+    inventoryPool: bookingBedAssignments.inventoryPool,
+  }).from(bookingBedAssignments).where(and(
+    eq(bookingBedAssignments.bookingId, row.bookingId),
+    eq(bookingBedAssignments.status, "assigned"),
+  ));
+
+  await unassignBookingBeds(row.bookingId);
+
+  const assigned: number[] = [];
+  let usedOfflineFallback = false;
+  try {
+    const heldBeds = bedIds.map((id) => {
+      const bed = bedMeta.get(id);
+      if (!bed) throw new GuestCheckoutError("Held bed is missing from inventory", 503);
+      return bed;
+    });
+    const heldUnits = sellableUnits(heldBeds).filter((u) =>
+      u.beds.every((b) => b.id != null && bedIds.includes(b.id)),
+    );
+    if (heldUnits.length === 0 || heldUnits.reduce((n, u) => n + u.beds.length, 0) !== bedIds.length) {
+      throw new GuestCheckoutError("Held beds do not form complete sellable units", 503);
+    }
+
+    const tryAssignUnit = async (ids: number[], pool: InventoryPool): Promise<boolean> => {
+      const written: number[] = [];
+      for (const bedId of ids) {
+        const bed = bedMeta.get(bedId);
+        if (!bed) return false;
+        const ok = await assignBedToBooking({
+          bookingId: row.bookingId!, bedId, dormId: bed.dormId,
+          checkinDate: holdRow.checkinDate, checkoutDate: holdRow.checkoutDate,
+          assignedBy: "website", inventoryPool: pool,
+        });
+        if (!ok) {
+          if (written.length) await unassignBookingBedsByBedIds(row.bookingId!, written);
+          return false;
+        }
+        written.push(bedId);
+      }
+      return true;
+    };
+
+    const claimed = new Set<number>();
+    for (const unit of heldUnits) {
+      const unitIds = unit.beds.map((b) => b.id!).filter((id) => id != null);
+      if (await tryAssignUnit(unitIds, "online")) {
+        unitIds.forEach((id) => { assigned.push(id); claimed.add(id); });
+        continue;
+      }
+      if (await tryAssignUnit(unitIds, "offline")) {
+        usedOfflineFallback = true;
+        unitIds.forEach((id) => { assigned.push(id); claimed.add(id); });
+        continue;
+      }
+      const tagged = await getAvailableBedsForRange(
+        holdRow.checkinDate, holdRow.checkoutDate, unit.dormId, row.bookingId,
+      );
+      const matchType = (t: string | null | undefined) =>
+        unit.type === "Double" ? t === "Double" : t !== "Double";
+      const candidates = (pool: "online" | "offline") =>
+        sellableUnits(
+          tagged.filter((b) =>
+            b.pool === pool && matchType(b.type) && !claimed.has(b.id) && !assigned.includes(b.id),
+          ),
+        ).filter((u) =>
+          u.type === unit.type
+          && (unit.type !== "Double" || u.beds.length === 2)
+          && u.beds.every((b) => b.id != null && !claimed.has(b.id)),
+        );
+
+      let placed = false;
+      for (const pool of ["online", "offline"] as const) {
+        for (const alt of candidates(pool)) {
+          const altIds = alt.beds.map((b) => b.id!);
+          if (await tryAssignUnit(altIds, pool)) {
+            if (pool === "offline") usedOfflineFallback = true;
+            altIds.forEach((id) => { assigned.push(id); claimed.add(id); });
+            placed = true;
+            break;
+          }
+        }
+        if (placed) break;
+      }
+      if (!placed) throw new GuestCheckoutError("Could not assign a held bed", 503);
+    }
+
+    const alreadyPaidPaise = Math.round((bookingBefore.amountPaid || 0) * 100);
+    const deltaPaise = computeAmendDeltaPaise(quote.totalPaise, alreadyPaidPaise);
+    let refundedPaise = 0;
+    if (deltaPaise < 0) {
+      refundedPaise = await refundAmendDelta(row, row.bookingId, -deltaPaise);
+    }
+    const roomLabel = heldUnits.map((u) => `${u.type}`).join(", ");
+    const paidBoost = row.dueNowPaise >= 100 ? row.dueNowPaise / 100 : 0;
+    await updateBookingFull(row.bookingId, {
+      checkinDate: holdRow.checkinDate,
+      checkoutDate: holdRow.checkoutDate,
+      roomType: roomLabel,
+      persons: heldUnits.reduce((n, u) => n + (u.type === "Double" ? 2 : 1), 0),
+      amountBeforeTax: quote.beforeTaxRupees,
+      amountTax: quote.taxRupees,
+      amountTotal: quote.totalRupees,
+      amountPaid: (bookingBefore.amountPaid || 0) + paidBoost,
+      amountRefunded: (bookingBefore.amountRefunded || 0) + refundedPaise / 100,
+      ratePlan: [...new Set(quote.units.map((u) => u.key.split(":")[0]))].join(",") || bookingBefore.ratePlan,
+      holdExpiresAt: "",
+      status: bookingBefore.status === "hold" ? "received" : bookingBefore.status,
+      paymentStatus: ((bookingBefore.amountPaid || 0) + paidBoost) > 0 ? "partial_or_paid" : bookingBefore.paymentStatus,
+      rawData: JSON.stringify({
+        ...((): Record<string, unknown> => {
+          try { return JSON.parse(bookingBefore.rawData || "{}") as Record<string, unknown>; }
+          catch { return {}; }
+        })(),
+        lastAmendCheckoutId: checkoutId,
+        amendsCheckoutId: row.amendsCheckoutId,
+      }),
+    });
+
+    await getDb().update(checkouts).set({ state: "fulfilled", updatedAt: timestamp() }).where(eq(checkouts.id, checkoutId));
+    await addBookingHistoryEntry({
+      bookingId: row.bookingId, action: "website_amend",
+      details: usedOfflineFallback
+        ? `Guest amend ${checkoutId} delta=${deltaPaise} (offline pool fallback)`
+        : `Guest amend ${checkoutId} delta=${deltaPaise}`,
+      performedBy: "website",
+    });
+    try { await pushIfOtaChanged(before, dormIds, [...new Set([...nights, ...oldNights])]); }
+    catch { /* best-effort */ }
+
+    const [confirmed] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
+    if (confirmed) {
+      const snap = await publicSnapshot(row, confirmed);
+      await sendBookingAmendedEmail({
+        guestName: row.guestName, guestEmail: row.guestEmail,
+        reference: confirmed.gokoBookingId || confirmed.bookingRef || String(confirmed.id),
+        checkinDate: confirmed.checkinDate, checkoutDate: confirmed.checkoutDate || "",
+        totalRupees: confirmed.amountTotal || 0, paidRupees: confirmed.amountPaid || 0,
+        nights: snap.nights, rooms: snap.rooms, persons: snap.persons,
+        beforeTaxRupees: snap.beforeTaxRupees, taxRupees: snap.taxRupees, taxPercent: snap.taxPercent,
+        paymentChoice: snap.paymentChoice, cancellationDeadlineAt: snap.cancellationDeadlineAt,
+      });
+    }
+  } catch (error) {
+    if (assigned.length) await unassignBookingBeds(row.bookingId);
+    const hasCapture = row.dueNowPaise >= 100 && (await getDb().select().from(payments)
+      .where(and(eq(payments.checkoutId, checkoutId), eq(payments.captured, 1))).limit(1)).length > 0;
+    if (hasCapture) {
+      await getDb().update(checkouts).set({
+        state: "captured_unfulfilled", closureReason: "cannot_fulfil", updatedAt: timestamp(),
+      }).where(eq(checkouts.id, checkoutId));
+      await addBookingHistoryEntry({
+        bookingId: row.bookingId, action: "website_unfulfilled",
+        details: "Amend payment captured; bed assign failed — assign manually from Unassigned",
+        performedBy: "website",
+      });
+      throw new GuestCheckoutError(
+        "Payment was captured but beds could not be reassigned. Goko will complete this change manually — do not pay again.",
+        503,
+      );
+    }
+    // Restore previous beds so an unpaid amend failure never leaves a confirmed booking bedless.
+    for (const prior of priorAssignments) {
+      await assignBedToBooking({
+        bookingId: row.bookingId!,
+        bedId: prior.bedId,
+        dormId: prior.dormId,
+        checkinDate: prior.checkinDate,
+        checkoutDate: prior.checkoutDate,
+        assignedBy: "website_amend_restore",
+        inventoryPool: prior.inventoryPool === "offline" ? "offline" : "online",
+      });
+    }
+    throw error;
+  }
+  const fresh = await getCheckoutById(checkoutId);
+  const [booking] = await getDb().select().from(bookings).where(eq(bookings.id, row.bookingId)).limit(1);
+  return await publicSnapshot(fresh, booking);
 }
 
 export async function cancelGuestBooking(reference: string, guestAccessToken: string) {
   cloudOnly();
-  const { checkout, booking } = await requireGuestAccess(reference, guestAccessToken);
+  const { checkout, booking, checkouts: all } = await requireGuestAccess(reference, guestAccessToken);
   if (!["hold", "received"].includes(booking.status)) {
     throw new GuestCheckoutError("This booking can no longer be cancelled online");
   }
   const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
-  const capturedRows = await getDb().select().from(payments)
-    .where(and(eq(payments.checkoutId, checkout.id), eq(payments.captured, 1)));
+  const checkoutIds = all.map((c) => c.id);
+  const capturedRows = checkoutIds.length
+    ? await getDb().select().from(payments)
+      .where(and(inArray(payments.checkoutId, checkoutIds), eq(payments.captured, 1)))
+    : [];
   const capturedPaise = capturedRows.reduce((s, p) => s + p.amountPaise, 0);
   const refundRows = capturedRows.length
     ? await getDb().select().from(refunds).where(inArray(refunds.paymentId, capturedRows.map((p) => p.id)))
@@ -583,15 +1243,22 @@ export async function cancelGuestBooking(reference: string, guestAccessToken: st
   });
   if (!calc.eligible) throw new GuestCheckoutError("Cancellation deadline has passed for online self-service");
 
-  if (checkout.holdId && booking.status === "hold") {
-    await getDb().update(holds).set({ state: "released" })
-      .where(and(eq(holds.id, checkout.holdId), eq(holds.state, "held")));
-  } else if (booking.status === "received") {
+  for (const c of all) {
+    if (c.holdId && booking.status === "hold") {
+      await getDb().update(holds).set({ state: "released" })
+        .where(and(eq(holds.id, c.holdId), eq(holds.state, "held")));
+    }
+  }
+  if (booking.status === "received") {
     await unassignBookingBeds(booking.id);
   }
-  await getDb().update(checkouts).set({
-    state: "cancelled", closureReason: "guest_cancelled", updatedAt: timestamp(),
-  }).where(eq(checkouts.id, checkout.id));
+  for (const c of all) {
+    if (!["cancelled", "expired"].includes(c.state)) {
+      await getDb().update(checkouts).set({
+        state: "cancelled", closureReason: "guest_cancelled", updatedAt: timestamp(),
+      }).where(eq(checkouts.id, c.id));
+    }
+  }
   await transitionBookingStatus(booking.id, ["hold", "received"], {
     status: "cancelled", cancelledAt: timestamp(), holdExpiresAt: "",
   });
@@ -620,7 +1287,7 @@ export async function cancelGuestBooking(reference: string, guestAccessToken: st
   }
   const fresh = await getCheckoutById(checkout.id);
   const [b] = await getDb().select().from(bookings).where(eq(bookings.id, booking.id)).limit(1);
-  return publicSnapshot(fresh, b, { refundPaise: calc.refundPaise });
+  return await publicSnapshot(fresh, b, { refundPaise: calc.refundPaise });
 }
 
 async function recordBookingRefund(claim: typeof refunds.$inferSelect, evidence: RazorpayRefund) {

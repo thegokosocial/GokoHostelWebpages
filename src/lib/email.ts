@@ -1,5 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { formatBookingEnquiryBody, type BookingEnquiryPayload } from "@/lib/bookingEnquiry";
+import { buildBookingEmailBody } from "@/lib/guestBookingDetails";
+import { stayNights } from "@/lib/inventoryAvailability";
 import { site } from "@/lib/site";
 
 export const INFO_EMAIL = "info@gokohostel.com";
@@ -67,30 +69,62 @@ export async function sendBookingEnquiryEmails(payload: BookingEnquiryPayload): 
 export async function sendBookingConfirmationEmail(input: {
   guestName: string; guestEmail: string; reference: string;
   checkinDate: string; checkoutDate: string; totalRupees: number; paidRupees: number;
+  nights?: number;
+  rooms?: { label: string; subtotalRupees?: number }[];
+  persons?: number | null;
+  beforeTaxRupees?: number | null;
+  taxRupees?: number | null;
+  taxPercent?: number | null;
+  paymentChoice?: string | null;
+  cancellationDeadlineAt?: string | null;
+  amended?: boolean;
 }): Promise<void> {
   try {
     const email = getEmailBinding();
     const from = bookingFrom();
-    const due = Math.max(0, input.totalRupees - input.paidRupees);
+    const nights = input.nights ?? (input.checkinDate && input.checkoutDate
+      ? stayNights(input.checkinDate, input.checkoutDate).length : 0);
+    const manageUrl = `${site.url}/booking/${encodeURIComponent(input.reference)}`;
     const body = [
-      `Hi ${input.guestName},`,
-      "",
-      `Your Goko booking ${input.reference} is confirmed.`,
-      `Stay: ${input.checkinDate} to ${input.checkoutDate}`,
-      `Total: ₹${input.totalRupees} · Paid online: ₹${input.paidRupees}${due ? ` · Due at property: ₹${due}` : ""}`,
-      "",
-      `View or manage: ${site.url}/booking/${encodeURIComponent(input.reference)}`,
-      "",
+      ...buildBookingEmailBody({
+        guestName: input.guestName,
+        reference: input.reference,
+        checkinDate: input.checkinDate,
+        checkoutDate: input.checkoutDate,
+        nights,
+        rooms: input.rooms || [],
+        persons: input.persons,
+        beforeTaxRupees: input.beforeTaxRupees,
+        taxRupees: input.taxRupees,
+        taxPercent: input.taxPercent,
+        totalRupees: input.totalRupees,
+        paidRupees: input.paidRupees,
+        paymentChoice: input.paymentChoice,
+        manageUrl,
+        cancellationDeadlineAt: input.cancellationDeadlineAt,
+        amended: input.amended,
+      }),
       site.shortName,
       site.url,
     ].join("\n");
-    await email.send({ from, to: input.guestEmail, subject: `Booking confirmed — ${input.reference}`, text: body });
+    const subject = input.amended
+      ? `Booking updated — ${input.reference}`
+      : `Booking confirmed — ${input.reference}`;
+    await email.send({ from, to: input.guestEmail, subject, text: body });
     await email.send({
       from, to: ADMIN_EMAIL, replyTo: input.guestEmail,
-      subject: `Website booking confirmed — ${input.reference}`,
+      subject: input.amended
+        ? `Website booking updated — ${input.reference}`
+        : `Website booking confirmed — ${input.reference}`,
       text: body,
     });
   } catch {
     // Non-fatal: confirmation email must not roll back fulfilment.
   }
+}
+
+export async function sendBookingAmendedEmail(
+  input: Parameters<typeof sendBookingConfirmationEmail>[0],
+): Promise<void> {
+  return sendBookingConfirmationEmail({ ...input, amended: true });
 }

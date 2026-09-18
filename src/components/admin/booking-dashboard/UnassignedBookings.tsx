@@ -271,6 +271,7 @@ export function UnassignedBookings({
           </div>
           <p className="mt-0.5 text-[11px] text-orange-800/80 dark:text-orange-300/80">
             Online units in the requested room type were full. Assign available offline units{canReject ? " or reject." : "."}
+            {" "}Website stays with captured payment also land here when auto-assign could not place beds.
           </p>
         </div>
         <Button variant="ghost" size="icon-sm" onClick={onClose}>

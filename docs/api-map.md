@@ -162,10 +162,11 @@ Both `/book` and gated `/book/preview` call the same availability endpoint for c
 - `GET /api/guest-booking/availability`: strict `checkinDate`, `checkoutDate` only; non-cacheable rooms/rates/tax/`maxSelectedBeds`, plus dynamic `nativeCheckoutReady` and `paymentOptions`. Cloud only.
 - `POST /api/guest-booking/checkout`: prepare (hold → quote → provisional booking → optional Razorpay order) or `action: "claim"` (one Checkout open). Returns owner/guest tokens once. Same-origin, 8 KiB, rate-limited. Requires readiness + `GOKO_NATIVE_GUEST_CHECKOUT_ENABLED`.
 - `POST /api/guest-booking/payment/verify` / `reconcile` / `status` / `cancel`: payment callback, recovery, token-gated status, guest cancel.
+- `POST /api/guest-booking/amend`: guest self-serve date/room change. Actions: `availability` (auth + exclude own beds), `quote` (totals + `deltaPaise`, no hold), `prepare` (hold + amend checkout; Razorpay when delta ≥ ₹1), `claim`, `confirm` (zero-due fulfil). Same guest token as status/cancel; website `source` only; modify window matches cancel (`canModify`). Migration **0063**. Payment verify reuses `/api/guest-booking/payment/verify` → `fulfilGuestAmend` when `amends_checkout_id` is set.
 - `POST /api/webhooks/razorpay`: test-mode; routes `notes.goko_checkout_id` → native ledger, else preview ledger.
 
 `POST /api/admin/booking-settings` returns readiness blockers from `evaluateNativeCheckoutReadiness`. `maxSelectedBeds` governs browsing; physical hold still caps at **4 bed IDs** (Doubles consume 2).
 
-- `POST /api/guest-booking/lookup`: OTP lookup unchanged (4 KiB, same-origin, cloud only).
+- `POST /api/guest-booking/lookup`: OTP request/verify. On successful verify for a booking with a `native_booking_checkouts` row, mints a new `guestAccessToken`, updates `guest_access_hash`, and returns `{ booking, guestAccessToken, currency, manageUrl }`. Without a checkout row, returns the minimized booking blob only (no token). Same-origin, 4 KiB, cloud only.
 
 Landmines: release hold before assign (0059); never trust client bed IDs or subtotals; store `guestAccessToken` in sessionStorage (confirmation URL is reference-only). See [guest-booking-ui.md](guest-booking-ui.md).

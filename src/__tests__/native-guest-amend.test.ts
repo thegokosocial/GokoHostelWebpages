@@ -5,9 +5,9 @@ import SQLite from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
 import {
-  prepareGuestCheckout, verifyGuestPayment, cancelGuestBooking, GuestCheckoutError,
+  prepareGuestCheckout, verifyGuestPayment, quoteGuestAmend, prepareGuestAmend,
+  confirmGuestAmend, computeAmendDeltaPaise, GuestCheckoutError,
 } from "@/lib/nativeGuestCheckout";
-import { getSyncableTableNames } from "@/lib/syncEngine";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
 import { WEBSITE_BOOKING_SETTINGS_KEY, DEFAULT_WEBSITE_BOOKING_SETTINGS } from "@/lib/websiteBookingSettings";
@@ -16,10 +16,7 @@ const state = vi.hoisted(() => ({
   db: null as any,
   pi: false,
   assignFail: false,
-  /** When set, online assign fails once then succeeds (offline / retry path). */
-  failOnlineOnly: false,
   assignCalls: [] as Array<{ bedId: number; inventoryPool?: string }>,
-  onAssign: null as null | (() => void),
 }));
 const fixtureBeds = [{ id: 1, dormId: 1, bedId: "A1", type: "Bunk" as const }];
 
@@ -32,13 +29,13 @@ vi.mock("@/db/queries", async (importOriginal) => {
     ...actual,
     getAllBeds: async () => fixtureBeds,
     getAllDorms: async () => [{ id: 1, name: "Mixed", deletedAt: null }],
-    getAvailableBedsForRange: async () => fixtureBeds.map((b) => ({ ...b, pool: "online" as const })),
+    getAvailableBedsForRange: async (
+      _ci: string, _co: string, _dorm?: number, excludeBookingId?: number,
+    ) => fixtureBeds.map((b) => ({ ...b, pool: "online" as const })),
     getGuestBookingConfig: async () => ({ bookingEngineUrl: "/book", apiBaseUrl: "" }),
     assignBedToBooking: async (data: Parameters<typeof actual.assignBedToBooking>[0]) => {
       state.assignCalls.push({ bedId: data.bedId, inventoryPool: data.inventoryPool });
-      state.onAssign?.();
       if (state.assignFail) return false;
-      if (state.failOnlineOnly && (data.inventoryPool || "online") === "online") return false;
       return actual.assignBedToBooking(data);
     },
   };
@@ -58,7 +55,6 @@ let sqlite: SQLite.Database;
 let providerOrders: Map<string, any>;
 let providerPayments: Map<string, any>;
 let providerRefunds: Map<string, any>;
-let calls: { path: string; method: string; body: any }[];
 
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
@@ -92,39 +88,33 @@ function seedRates(checkinDate: string, checkoutDate: string, rate = 1000) {
   }
 }
 
-function selection(
-  paymentChoice: "advance" | "full" | "property",
-  checkinOffsetDays = 10,
-) {
+function selection(paymentChoice: "advance" | "full" | "property" = "full", checkinOffsetDays = 10, nights = 1) {
   const checkinDate = addCalendarDays(todayIST(), checkinOffsetDays);
-  const checkoutDate = addCalendarDays(checkinDate, 1);
+  const checkoutDate = addCalendarDays(checkinDate, nights);
   seedRates(checkinDate, checkoutDate);
   return {
     requestKey: crypto.randomUUID(),
-    checkinDate,
-    checkoutDate,
-    paymentChoice,
-    guest: { name: "Workflow Guest", email: "workflow@example.test", phone: "+919876543210" },
+    checkinDate, checkoutDate, paymentChoice,
+    guest: { name: "Amend Guest", email: "amend@example.test", phone: "+919876543210" },
     rooms: [{ roomId: "1-Bed", quantity: 1, ratePlanId: 1 }],
   };
 }
 
-async function payAndVerify(prepared: Awaited<ReturnType<typeof prepareGuestCheckout>>) {
-  expect(prepared.ownerToken).toBeTruthy();
-  expect(prepared.razorpay?.order_id).toBeTruthy();
+async function bookAndPay(nights = 1) {
+  const input = selection("full", 10, nights);
+  const prepared = await prepareGuestCheckout(input);
   const orderId = prepared.razorpay!.order_id;
   const p = payment(orderId, prepared.dueNowPaise);
-  return verifyGuestPayment(
+  const verified = await verifyGuestPayment(
     prepared.checkoutId, prepared.ownerToken!, p.id, orderId, sign(`${orderId}|${p.id}`),
   );
+  return { input, prepared, verified };
 }
 
 beforeEach(() => {
   state.pi = false;
   state.assignFail = false;
-  state.failOnlineOnly = false;
   state.assignCalls = [];
-  state.onAssign = null;
   sqlite = new SQLite(":memory:");
   sqlite.pragma("foreign_keys = ON");
   sqlite.exec(`
@@ -192,6 +182,10 @@ beforeEach(() => {
   ]) sqlite.exec(readFileSync(`migrations/${file}`, "utf8"));
   state.db = drizzle(sqlite, { schema });
   sqlite.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("booking_tax_rate", "0");
+  sqlite.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run(
+    WEBSITE_BOOKING_SETTINGS_KEY,
+    JSON.stringify(DEFAULT_WEBSITE_BOOKING_SETTINGS),
+  );
   sqlite.prepare(`
     INSERT INTO channel_config (provider, hotel_code, pms_id, api_base_url, api_username, api_password, booking_engine_url, is_active, created_at)
     VALUES ('aiosell', 'H', 'P', 'https://api.example', 'u', 'p', '/book', 0, ?)
@@ -206,17 +200,14 @@ beforeEach(() => {
   vi.stubEnv("RAZORPAY_LIVE_WEBHOOK_SECRET", "DUMMY_DISTINCT_LIVE");
   vi.stubEnv("RAZORPAY_LIVE_WEBHOOK_SECRET_PREVIOUS", "");
 
-  calls = [];
   providerOrders = new Map();
   providerPayments = new Map();
   providerRefunds = new Map();
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
     const parsed = new URL(url);
-    expect(parsed.origin).toBe("https://api.razorpay.com");
     const path = parsed.pathname.replace("/v1/", "");
     const method = init.method || "GET";
     const body = init.body ? JSON.parse(String(init.body)) : null;
-    calls.push({ path, method, body });
     if (path === "orders" && method === "POST") {
       const id = `order_DUMMY${providerOrders.size + 1}`;
       const order = { entity: "order", id, ...body, status: "created" };
@@ -253,159 +244,82 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (sqlite.open) sqlite.close();
+  sqlite.close();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
-  vi.restoreAllMocks();
 });
 
-describe("Native guest checkout end-to-end workflows", () => {
-  it("advance 50% payment → captured → booking received → beds assigned", async () => {
-    const input = selection("advance");
-    const prepared = await prepareGuestCheckout(input);
-    expect(prepared.state).toBe("ready");
-    expect(prepared.dueNowPaise).toBe(50000); // 50% of ₹1000
-    expect(prepared.requiresPayment).toBe(true);
-    expect(calls.filter((c) => c.method === "POST" && c.path === "orders")).toHaveLength(1);
-
-    const result = await payAndVerify(prepared);
-    expect(result).toMatchObject({ state: "fulfilled", bookingStatus: "received", paymentChoice: "advance" });
-    expect(result.amountPaid).toBe(500);
-    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned' AND bed_id=1").get())
-      .toEqual({ n: 1 });
-    expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "released" });
-    expect(sqlite.prepare("SELECT count(*) n FROM native_booking_payments WHERE captured=1").get()).toEqual({ n: 1 });
+describe("computeAmendDeltaPaise", () => {
+  it("returns new total minus already paid", () => {
+    expect(computeAmendDeltaPaise(50000, 30000)).toBe(20000);
+    expect(computeAmendDeltaPaise(20000, 30000)).toBe(-10000);
+    expect(computeAmendDeltaPaise(10000, 10000)).toBe(0);
   });
+});
 
-  it("full payment → captured → booking received → beds assigned", async () => {
-    const prepared = await prepareGuestCheckout(selection("full"));
-    expect(prepared.dueNowPaise).toBe(100000);
-    const result = await payAndVerify(prepared);
-    expect(result).toMatchObject({ state: "fulfilled", bookingStatus: "received", paymentChoice: "full" });
-    expect(result.amountPaid).toBe(1000);
-    expect(result.dueAtPropertyPaise).toBe(0);
-    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
-      .toEqual({ n: 1 });
-  });
-
-  it("pay at property → no Razorpay order, booking received, balance due", async () => {
-    const beforeOrders = calls.filter((c) => c.method === "POST" && c.path === "orders").length;
-    const prepared = await prepareGuestCheckout(selection("property"));
-    expect(prepared).toMatchObject({
-      state: "fulfilled",
-      bookingStatus: "received",
-      paymentChoice: "property",
-      dueNowPaise: 0,
-      requiresPayment: false,
-      razorpay: null,
+describe("guest booking amend", () => {
+  it("quotes delta without creating a hold", async () => {
+    const { prepared, verified, input } = await bookAndPay(1);
+    const longerCheckout = addCalendarDays(input.checkinDate, 2);
+    // Reseed every night through departure so guestRateForStay can evaluate.
+    sqlite.prepare("DELETE FROM daily_rates").run();
+    seedRates(input.checkinDate, longerCheckout, 1000);
+    const quoted = await quoteGuestAmend({
+      requestKey: crypto.randomUUID(),
+      reference: prepared.reference!,
+      guestAccessToken: prepared.guestAccessToken!,
+      checkinDate: input.checkinDate,
+      checkoutDate: longerCheckout,
+      rooms: input.rooms,
     });
-    expect(prepared.amountTotal).toBe(1000);
-    expect(prepared.amountPaid).toBe(0);
-    expect(prepared.dueAtPropertyPaise).toBe(100000);
-    expect(calls.filter((c) => c.method === "POST" && c.path === "orders")).toHaveLength(beforeOrders);
-    expect(sqlite.prepare("SELECT payment_status FROM bookings").get()).toEqual({ payment_status: "pay_at_property" });
-    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
-      .toEqual({ n: 1 });
+    expect(quoted.deltaPaise).toBe(100000); // +1 night at ₹1000
+    expect(quoted.requiresPayment).toBe(true);
+    expect(sqlite.prepare("SELECT count(*) n FROM native_inventory_holds").get()).toEqual({ n: 1 }); // original only
+    expect(verified.state).toBe("fulfilled");
   });
 
-  it("guest cancel before deadline releases hold", async () => {
-    const input = selection("advance", 10);
-    const prepared = await prepareGuestCheckout(input);
-    expect(prepared.state).toBe("ready");
-    expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "held" });
-
-    const cancelled = await cancelGuestBooking(prepared.reference!, prepared.guestAccessToken!);
-    expect(cancelled).toMatchObject({ state: "cancelled", bookingStatus: "cancelled" });
-    expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "released" });
-    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
-      .toEqual({ n: 0 });
+  it("prepare with delta<=0 is ready without Razorpay and confirm fulfils", async () => {
+    const { prepared, input } = await bookAndPay(2);
+    const shorterCheckout = addCalendarDays(input.checkinDate, 1);
+    const amend = await prepareGuestAmend({
+      requestKey: crypto.randomUUID(),
+      reference: prepared.reference!,
+      guestAccessToken: prepared.guestAccessToken!,
+      checkinDate: input.checkinDate,
+      checkoutDate: shorterCheckout,
+      rooms: input.rooms,
+    });
+    expect(amend.requiresPayment).toBe(false);
+    expect(amend.razorpay).toBeNull();
+    expect(amend.dueNowPaise).toBe(0);
+    expect(amend.ownerToken).toBeTruthy();
+    const confirmed = await confirmGuestAmend({
+      reference: prepared.reference!,
+      guestAccessToken: prepared.guestAccessToken!,
+      checkoutId: amend.checkoutId,
+      ownerToken: amend.ownerToken!,
+    });
+    expect(confirmed.state).toBe("fulfilled");
+    expect(confirmed.checkinDate).toBe(input.checkinDate);
+    expect(confirmed.checkoutDate).toBe(shorterCheckout);
+    expect(sqlite.prepare("SELECT action FROM booking_history WHERE action='website_amend'").get()).toBeTruthy();
   });
 
-  it("guest cancel after deadline is rejected", async () => {
-    // Default 48h deadline with arrival tomorrow → already past self-service window.
-    const prepared = await prepareGuestCheckout(selection("advance", 1));
-    await expect(cancelGuestBooking(prepared.reference!, prepared.guestAccessToken!))
-      .rejects.toBeInstanceOf(GuestCheckoutError);
-    await expect(cancelGuestBooking(prepared.reference!, prepared.guestAccessToken!))
-      .rejects.toThrow(/deadline/i);
-    expect(sqlite.prepare("SELECT state FROM native_booking_checkouts").get()).toEqual({ state: "ready" });
-    expect(sqlite.prepare("SELECT status FROM bookings").get()).toEqual({ status: "hold" });
-    expect(sqlite.prepare("SELECT state FROM native_inventory_holds").get()).toEqual({ state: "held" });
-  });
-
-  it("assignBedToBooking failure after capture → captured_unfulfilled without double charge", async () => {
-    state.assignFail = true;
-    const prepared = await prepareGuestCheckout(selection("full"));
-    const orderPosts = calls.filter((c) => c.method === "POST" && c.path === "orders").length;
-    expect(orderPosts).toBe(1);
-
-    await expect(payAndVerify(prepared)).rejects.toThrow(/do not pay again/i);
-    // Both inventory pools must be attempted before giving up.
-    expect(state.assignCalls.some((c) => (c.inventoryPool || "online") === "online")).toBe(true);
-    expect(state.assignCalls.some((c) => c.inventoryPool === "offline")).toBe(true);
-    expect(sqlite.prepare("SELECT state, closure_reason FROM native_booking_checkouts").get())
-      .toEqual({ state: "captured_unfulfilled", closure_reason: "cannot_fulfil" });
-    expect(sqlite.prepare("SELECT count(*) n FROM native_booking_payments WHERE captured=1").get()).toEqual({ n: 1 });
-    expect(sqlite.prepare("SELECT status FROM bookings").get()).toEqual({ status: "hold" });
-    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
-      .toEqual({ n: 0 });
-    expect(sqlite.prepare("SELECT action, details FROM booking_history WHERE action='website_unfulfilled'").get())
-      .toMatchObject({ action: "website_unfulfilled" });
-    expect(calls.filter((c) => c.method === "POST" && c.path === "orders")).toHaveLength(1);
-
-    // Replay verify must not create another order or payment row.
-    const orderId = prepared.razorpay!.order_id;
-    await expect(verifyGuestPayment(
-      prepared.checkoutId, prepared.ownerToken!, "pay_DUMMY1", orderId, sign(`${orderId}|pay_DUMMY1`),
-    )).rejects.toThrow(/do not pay again/i);
-    expect(sqlite.prepare("SELECT count(*) n FROM native_booking_payments").get()).toEqual({ n: 1 });
-    expect(calls.filter((c) => c.method === "POST" && c.path === "orders")).toHaveLength(1);
-  });
-
-  it("online assign failure falls back to offline pool before unfulfilled", async () => {
-    state.failOnlineOnly = true;
-    const prepared = await prepareGuestCheckout(selection("full"));
-    const result = await payAndVerify(prepared);
-    expect(result.state).toBe("fulfilled");
-    expect(state.assignCalls.some((c) => (c.inventoryPool || "online") === "online")).toBe(true);
-    expect(state.assignCalls.some((c) => c.inventoryPool === "offline")).toBe(true);
-    expect(sqlite.prepare("SELECT inventory_pool FROM booking_bed_assignments WHERE status='assigned'").get())
-      .toEqual({ inventory_pool: "offline" });
-    expect(sqlite.prepare("SELECT details FROM booking_history WHERE action='website_fulfil'").get())
-      .toMatchObject({ details: expect.stringContaining("offline pool fallback") });
-  });
-
-  it("fulfilment releases hold BEFORE assign (no NATIVE_HOLD_CONFLICT)", async () => {
-    const prepared = await prepareGuestCheckout(selection("full"));
-    const events: string[] = [];
-    state.onAssign = () => {
-      const hold = sqlite.prepare("SELECT state FROM native_inventory_holds").get() as { state: string };
-      expect(hold.state).toBe("released");
-      events.push("assign-while-released");
-    };
-    const result = await payAndVerify(prepared);
-    expect(result.state).toBe("fulfilled");
-    expect(events).toEqual(["assign-while-released"]);
-    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
-      .toEqual({ n: 1 });
-  });
-
-  it("sync allowlist excludes native_booking_* tables", () => {
-    const names = getSyncableTableNames();
-    expect(names).not.toContain("native_booking_checkouts");
-    expect(names).not.toContain("native_booking_payments");
-    expect(names).not.toContain("native_booking_refunds");
-    expect(names).not.toContain("native_booking_webhooks");
-    expect(names).not.toContain("native_inventory_holds");
-    expect(names).not.toContain("native_accepted_quotes");
-  });
-
-  it("uses published advancePercent from saved website booking settings", async () => {
-    sqlite.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run(
-      WEBSITE_BOOKING_SETTINGS_KEY,
-      JSON.stringify({ ...DEFAULT_WEBSITE_BOOKING_SETTINGS, advancePercent: 25 }),
+  it("rejects amend outside the modify window", async () => {
+    const { prepared, input } = await bookAndPay(1);
+    const near = todayIST();
+    const nearOut = addCalendarDays(near, 1);
+    sqlite.prepare("UPDATE bookings SET checkin_date=?, checkout_date=? WHERE goko_booking_id=?").run(
+      near, nearOut, prepared.reference,
     );
-    const prepared = await prepareGuestCheckout(selection("advance"));
-    expect(prepared.dueNowPaise).toBe(25000);
+    seedRates(near, nearOut);
+    await expect(quoteGuestAmend({
+      requestKey: crypto.randomUUID(),
+      reference: prepared.reference!,
+      guestAccessToken: prepared.guestAccessToken!,
+      checkinDate: near,
+      checkoutDate: nearOut,
+      rooms: input.rooms,
+    })).rejects.toBeInstanceOf(GuestCheckoutError);
   });
 });

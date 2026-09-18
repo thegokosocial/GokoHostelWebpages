@@ -6,7 +6,7 @@
  * Aiosell-originated events (OTA/Website bookings via webhook) must NOT push back.
  */
 
-import { getChannelConfig, getRoomTypeMappings, getRatePlanMappings, getAllDailyRates, updateChannelSyncTime, getActiveAssignmentCountForDorm, getOnlineAssignmentCountForDorm, getBlockedBedIdsForDate, getInventoryOverrideForDormDate, markInventoryDirty, getDirtyInventory, clearDirtyInventory, getUnassignedOtaRoomCountForDorm, getAvailabilitySnapshot } from "@/db/queries";
+import { getChannelConfig, getRoomTypeMappings, getRatePlanMappings, getAllDailyRates, updateChannelSyncTime, getActiveAssignmentCountForDorm, getOnlineAssignmentCountForDorm, getBlockedBedIdsForDate, getInventoryOverrideForDormDate, markInventoryDirty, getDirtyInventory, clearDirtyInventory, getUnassignedOtaRoomCountForDorm, getAvailabilitySnapshot, getActiveNativeHoldBedCountForDorm } from "@/db/queries";
 import { logPmsCall } from "@/lib/pmsLog";
 import { todayIST } from "@/lib/utils";
 import { getDb } from "@/db";
@@ -22,6 +22,31 @@ export type InventorySyncResult = {
   message?: string;
 };
 
+/** Convert held bed positions to sellable units (same bedsPerUnit as getDateAwareAvailability). */
+export function heldBedsToUnits(heldBeds: number, totalBeds: number, totalUnits: number): number {
+  if (heldBeds <= 0) return 0;
+  const bedsPerUnit = totalUnits > 0 ? Math.max(1, Math.ceil(totalBeds / totalUnits)) : 1;
+  return Math.ceil(heldBeds / bedsPerUnit);
+}
+
+/** Count held bed positions for one dorm+night from a snapshot hold list. */
+export function countNativeHoldBedsForDormDate(
+  dormId: number,
+  date: string,
+  bedRows: Array<{ id: number; dormId: number }>,
+  holds: Array<{ bedIds: string; checkinDate: string; checkoutDate: string }>,
+): number {
+  const dormBedIds = new Set(bedRows.filter((b) => b.dormId === dormId).map((b) => b.id));
+  let count = 0;
+  for (const hold of holds) {
+    if (hold.checkinDate > date || hold.checkoutDate <= date) continue;
+    for (const id of JSON.parse(hold.bedIds) as number[]) {
+      if (dormBedIds.has(id)) count++;
+    }
+  }
+  return count;
+}
+
 export async function getDateAwareAvailability(dormId: number, date: string): Promise<number> {
   const db = getDb();
   const totalRows = await db.select({ count: sql<number>`COUNT(*)` }).from(beds).where(eq(beds.dormId, dormId));
@@ -32,14 +57,17 @@ export async function getDateAwareAvailability(dormId: number, date: string): Pr
   const blockedBedIds = await getBlockedBedIdsForDate(dormId, date);
   const assignedCount = await getActiveAssignmentCountForDorm(dormId, date);
   const onlineAssigned = await getOnlineAssignmentCountForDorm(dormId, date);
+  const heldBeds = await getActiveNativeHoldBedCountForDorm(dormId, date);
   const override = await getInventoryOverrideForDormDate(dormId, date);
   const blocked = Math.ceil(blockedBedIds.length / bedsPerUnit);
   const assigned = Math.ceil(assignedCount / bedsPerUnit);
   const assignedOnline = Math.ceil(onlineAssigned / bedsPerUnit);
+  const held = heldBedsToUnits(heldBeds, totalBeds, totalUnits);
   const ceiling = otaCeiling(totalUnits, blocked, override?.onlineAvailable);
   const unassignedOta = await getUnassignedOtaRoomCountForDorm(dormId, date);
-  const available = Math.max(0, totalUnits - blocked - assigned - unassignedOta);
-  return remainingSplit(available, ceiling, assignedOnline + unassignedOta).online;
+  // Native website holds consume physical leftover and online ceiling like online assignments.
+  const available = Math.max(0, totalUnits - blocked - assigned - held - unassignedOta);
+  return remainingSplit(available, ceiling, assignedOnline + held + unassignedOta).online;
 }
 
 export async function getDateAwareAvailabilityRange(
@@ -48,9 +76,11 @@ export async function getDateAwareAvailabilityRange(
 ): Promise<Map<string, number>> {
   const result = new Map<string, number>();
   if (dates.length === 0 || mappings.length === 0) return result;
-  const [bedRows, assignments, blocks, overrides, unassignedBookings] = await getAvailabilitySnapshot(dates[0], dates[dates.length - 1]);
+  const [bedRows, assignments, blocks, overrides, unassignedBookings, nativeHolds = []] = await getAvailabilitySnapshot(dates[0], dates[dates.length - 1]);
 
   for (const mapping of mappings) {
+    const dormBeds = bedRows.filter((b) => b.dormId === mapping.dormId).length;
+    const totalUnits = Number(mapping.totalInventory) > 0 ? Math.min(dormBeds, Number(mapping.totalInventory)) : dormBeds;
     for (const date of dates) {
       const unassignedOta = countUnassignedOtaRooms([mapping.channelRoomCode], unassignedBookings.filter((b) => {
         const checkout = !b.checkoutDate || b.checkoutDate <= b.checkinDate
@@ -59,7 +89,14 @@ export async function getDateAwareAvailabilityRange(
         return b.checkinDate <= date && checkout > date;
       }));
       const snapshot = computeNightAvailability(mapping.dormId, date, bedRows, blocks, assignments, overrides, unassignedOta);
-      result.set(`${mapping.dormId}:${date}`, Math.min(snapshot.online, Number(mapping.totalInventory) || snapshot.total));
+      const held = heldBedsToUnits(
+        countNativeHoldBedsForDormDate(mapping.dormId, date, bedRows, nativeHolds),
+        dormBeds,
+        totalUnits,
+      );
+      // Second pass: treat active native holds like online assignments for OTA remaining.
+      const online = Math.max(0, snapshot.online - held);
+      result.set(`${mapping.dormId}:${date}`, Math.min(online, Number(mapping.totalInventory) || snapshot.total));
     }
   }
   return result;

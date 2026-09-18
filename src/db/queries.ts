@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -800,6 +800,33 @@ export async function getOnlineAssignmentCountForDorm(dormId: number, date: stri
   return rows[0]?.count ?? 0;
 }
 
+/**
+ * Active native website holds for one dorm+night, as physical bed positions.
+ * Callers convert to units with the same bedsPerUnit pattern as getDateAwareAvailability.
+ */
+export async function getActiveNativeHoldBedCountForDorm(dormId: number, date: string): Promise<number> {
+  const db = getDb();
+  const active = await db.select({ bedIds: nativeInventoryHolds.bedIds })
+    .from(nativeInventoryHolds)
+    .where(and(
+      eq(nativeInventoryHolds.state, "held"),
+      sql`${nativeInventoryHolds.expiresAt} > CAST(strftime('%s','now') AS INTEGER)`,
+      lte(nativeInventoryHolds.checkinDate, date),
+      sql`${nativeInventoryHolds.checkoutDate} > ${date}`,
+    ));
+  if (active.length === 0) return 0;
+  const dormBedIds = new Set(
+    (await db.select({ id: beds.id }).from(beds).where(eq(beds.dormId, dormId))).map((b) => b.id),
+  );
+  let count = 0;
+  for (const row of active) {
+    for (const id of JSON.parse(row.bedIds) as number[]) {
+      if (dormBedIds.has(id)) count++;
+    }
+  }
+  return count;
+}
+
 /** One bounded read-set for multi-day channel inventory calculations. */
 export async function getAvailabilitySnapshot(startDate: string, endDate: string) {
   const db = getDb();
@@ -854,6 +881,16 @@ export async function getAvailabilitySnapshot(startDate: string, endDate: string
           AND ${bookingBedAssignments.status} = 'assigned'
           AND coalesce(${bookingBedAssignments.inventoryPool}, 'online') = 'online'
       )`,
+    )),
+    db.select({
+      bedIds: nativeInventoryHolds.bedIds,
+      checkinDate: nativeInventoryHolds.checkinDate,
+      checkoutDate: nativeInventoryHolds.checkoutDate,
+    }).from(nativeInventoryHolds).where(and(
+      eq(nativeInventoryHolds.state, "held"),
+      sql`${nativeInventoryHolds.expiresAt} > CAST(strftime('%s','now') AS INTEGER)`,
+      lte(nativeInventoryHolds.checkinDate, endDate),
+      sql`${nativeInventoryHolds.checkoutDate} > ${startDate}`,
     )),
   ]);
 }

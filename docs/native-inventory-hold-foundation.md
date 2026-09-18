@@ -24,7 +24,7 @@ Creation is Cloudflare-owned, rejects Pi, and requires `GOKO_NATIVE_HOLD_INTERNA
 
 Before new holds or advisory selection, query every hold column and check that all six required trigger names are installed on their expected tables. Missing schema/guards and picker failures fail closed with sanitized 503 responses. These checks detect incomplete setup, not arbitrary alteration of trigger bodies; reviewed migration integrity remains an operational prerequisite. Recovery/release do not require creation opt-in or new-operation preflight. No published quote or money operation is introduced.
 
-Selection is not a reservation promise: concurrent writes can change it, and existing atomic insert guards remain authoritative for physical overlaps. This does not make category/pool quotas atomic or update shared calendars, the admin picker or Aiosell inventory. Those release gates below remain outstanding.
+Selection is not a reservation promise: concurrent writes can change it, and existing atomic insert guards remain authoritative for physical overlaps. Active holds reduce Aiosell online availability (`getDateAwareAvailability` / bulk snapshot) and trigger `pushIfOtaChanged` on new insert, owner release, and abandoned-hold cancel. Category/pool quotas and admin-picker hold display remain separate gates.
 
 ## Shared writer guards
 

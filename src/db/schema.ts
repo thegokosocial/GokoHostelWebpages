@@ -114,6 +114,8 @@ export const nativeInventoryHolds = sqliteTable("native_inventory_holds", {
   requestHash: text("request_hash").notNull(), ownerHash: text("owner_hash").notNull(),
   bedIds: text("bed_ids").notNull(), checkinDate: text("checkin_date").notNull(), checkoutDate: text("checkout_date").notNull(),
   expiresAt: integer("expires_at").notNull(), state: text("state").notNull().default("held"), createdAt: integer("created_at").notNull(),
+  /** When set, hold insert may overlap this booking's own assignments (guest amend). */
+  excludeBookingId: integer("exclude_booking_id"),
 }, (t) => [index("idx_native_hold_dates").on(t.state, t.checkinDate, t.checkoutDate, t.expiresAt),
   check("native_hold_beds", sql`json_valid(${t.bedIds}) AND json_type(${t.bedIds}) = 'array' AND json_array_length(${t.bedIds}) BETWEEN 1 AND 4`),
   check("native_hold_dates", sql`${t.checkoutDate} > ${t.checkinDate}`),
@@ -175,6 +177,8 @@ export const nativeBookingCheckouts = sqliteTable("native_booking_checkouts", {
   bookingId: integer("booking_id"),
   holdId: text("hold_id"),
   acceptedQuoteId: text("accepted_quote_id"),
+  /** When set, this checkout amends an existing fulfilled website booking (same bookingId). */
+  amendsCheckoutId: text("amends_checkout_id"),
   paymentChoice: text("payment_choice").notNull(),
   environment: text("environment").notNull().default("test"),
   state: text("state").notNull().default("preparing"),
@@ -192,6 +196,7 @@ export const nativeBookingCheckouts = sqliteTable("native_booking_checkouts", {
 }, (t) => [
   index("idx_native_checkout_state").on(t.state, t.updatedAt),
   index("idx_native_checkout_booking").on(t.bookingId),
+  index("idx_native_checkout_amends").on(t.amendsCheckoutId),
   check("native_checkout_choice", sql`${t.paymentChoice} IN ('advance','full','property')`),
   check("native_checkout_env", sql`${t.environment} IN ('test','live')`),
   check("native_checkout_state", sql`${t.state} IN ('preparing','order_unknown','ready','claimed','captured','fulfilled','captured_unfulfilled','cancelled','expired')`),

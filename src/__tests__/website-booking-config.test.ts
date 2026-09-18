@@ -108,7 +108,7 @@ describe("Public configuration and redirect routes", () => {
     mocks.getChannelConfig.mockRejectedValue(new Error("database with credentials failed"));
     const response = await getConfig();
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ mode: "enquiry", url: "/booking-enquiry", nativeCheckoutReady: false, configurationAvailable: false, paymentOptions: null });
+    expect(await response.json()).toEqual({ mode: "enquiry", url: "/booking-enquiry", nativeCheckoutReady: false, configurationAvailable: false, requireLookupOtp: true, paymentOptions: null });
   });
 });
 
@@ -145,7 +145,7 @@ describe("Draft booking settings", () => {
     expect(mocks.compareAndSetWebsiteSettings).toHaveBeenCalledWith(null, expect.stringContaining('"maxSelectedBeds":12'));
   });
   it("has safe reviewed draft defaults", () => {
-    expect(websiteBookingSettingsSchema.parse({})).toMatchObject({ advancePercent: 50, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30, cancellationDeadlineHours: 48, cancellationRefundPercent: 100, gatewayEnvironment: "test" });
+    expect(websiteBookingSettingsSchema.parse({})).toMatchObject({ advancePercent: 50, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30, cancellationDeadlineHours: 48, cancellationRefundPercent: 100, gatewayEnvironment: "test", requireLookupOtp: true });
   });
   it.each([
     { advancePercent: -1 }, { advancePercent: 101 }, { advancePercent: 50.5 }, { holdMinutes: 20 },

@@ -75,6 +75,7 @@ beforeEach(() => {
     "0060_native_accepted_quotes.sql",
     "0061_guest_booking_lookup.sql",
     "0062_native_guest_checkout.sql",
+    "0063_guest_booking_amend.sql",
   ]) {
     sqlite.exec(readFileSync(`migrations/${file}`, "utf8"));
   }

@@ -130,7 +130,7 @@ erDiagram
 1. **Physical bed row** (`beds.status` = available | occupied | cleanup) — walk-in / same-day map in Beds + Timeline.
 2. **Date-range assignment** (`booking_bed_assignments`) — calendar PMS + OTA inventory.
 
-Aiosell availability prefers date-aware assignment + blocks + overrides (`getDateAwareAvailability`), not only “is this bed occupied right now.”
+Aiosell availability prefers date-aware assignment + blocks + overrides + active native website holds (`getDateAwareAvailability`), not only “is this bed occupied right now.”
 
 Hostel food tabs attach to **`checkins`**, not `bookings`. Checkout lookup is phone-normalized against active check-ins (`getPendingFoodTab`). Cafe walk-in orders with no `checkin_id` are not matched.
 
