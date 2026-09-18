@@ -45,7 +45,7 @@ describe("Round 2 Unassigned UI: reject copy, labels, assign leftover, calendar 
     expect(unassigned).toContain("A double unit can hold up to two guests");
     expect(unassigned).toContain("Select ${need} room/bed unit");
     expect(unassigned).toContain("for the whole stay");
-    expect(unassigned).toContain("Assign available offline units");
+    expect(unassigned).toContain("Assign available units");
     expect(unassigned).toContain('canReject ? " or reject." : "."');
     expect(unassigned).toContain("selectedBeds.length !== need");
     expect(unassigned).toContain("disabled={selectedBeds.length !== need || busy || loadingBeds}");
