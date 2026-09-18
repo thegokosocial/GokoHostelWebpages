@@ -671,7 +671,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
               <PlusIcon className="mr-1 h-4 w-4" /> Add
             </Button>
           )}
-          {hasPermission(role, permissions, "canAddCheckin") && (
+          {role === "admin" && (
             <Button type="button" variant="ctaOutline" onClick={() => { setShowPastForm(true); setShowAddForm(false); }} disabled={loading}>
               <PlusIcon className="mr-1 h-4 w-4" /> Past
             </Button>
@@ -889,7 +889,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.25, ease: [0.33, 1, 0.68, 1] }} className="overflow-hidden">
         <div className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/30 dark:bg-amber-950/30 p-4 sm:p-6 shadow-card dark:shadow-none">
           <h3 className="font-display text-lg font-bold text-amber-800 dark:text-amber-300">Add past check-in record</h3>
-          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">This record is for archival purposes only — no bed assignment needed.</p>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Archival guest register only — does not create a PMS booking or affect Room Revenue. For backdated revenue, use Bookings → New Booking (or Create booking from a walk-in/offline check-in).</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
             {TEXT_FIELDS.map((field) => (
               field.type === "name_split" ? (

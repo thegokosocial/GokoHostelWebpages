@@ -174,7 +174,7 @@ Dashboard checkout rows show room status from a matched booking and food status 
 
 Active `Walk-in` and `Offline booking` check-ins with no exact or unique identity/date booking match show a Records resolution prompt to users with `canAddBooking`. The prompt supports creating a booking from the check-in, linking a selected existing booking, or permanently marking no booking needed. Resolution state is stored on the check-in and is synced; creating a booking preserves the self-check-in reference as the manual booking reference and reuses the existing assignment path. Aiosell inventory is updated only when at least one selected bed is `online`; `offline` and `block` assignments remain internal.
 
-For `add`, `addPast`, and `update`, any non-Indian nationality must use `idType=passport` and include a stored visa document link. The Admin Records UI prompts for visa uploads; self-check-in enforces the same rule through its public validation flow. Indian guests may use Aadhaar, Driving Licence, or Passport.
+For `add`, `addPast`, and `update`, any non-Indian nationality must use `idType=passport` and include a stored visa document link. The Admin Records UI prompts for visa uploads; self-check-in enforces the same rule through its public validation flow. Indian guests may use Aadhaar, Driving Licence, or Passport. Records **Past** is admin-only in both UI and API (`addPast: admin_only`); it creates an archival check-in only, not a PMS booking.
 
 ### `/api/admin/bookings`
 

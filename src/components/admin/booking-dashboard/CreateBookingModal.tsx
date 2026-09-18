@@ -323,7 +323,6 @@ export function CreateBookingModal({
               <DateRangePicker
                 presentation="inline"
                 variant="admin"
-                minDate={todayIST()}
                 startDate={checkinDate}
                 endDate={checkoutDate}
                 onChange={({ startDate, endDate }) => {
@@ -334,6 +333,11 @@ export function CreateBookingModal({
             </div>
             <div className="text-xs text-muted-foreground">
               {nights} night{nights !== 1 ? "s" : ""}
+              {checkinDate < todayIST() && checkoutDate <= todayIST()
+                ? " · past stay saves as checked out"
+                : checkinDate < todayIST()
+                  ? " · past arrival saves as checked in"
+                  : ""}
             </div>
             <div>
               <Label className="text-xs">Guests</Label>

@@ -621,6 +621,8 @@ export async function addBooking(data: {
   paymentMethod?: string; cashReceived?: number; changeGiven?: number;
   email?: string; cmBookingId?: string; gokoBookingId?: string;
   ratePlan?: string;
+  checkedInAt?: string; checkedInBy?: string;
+  checkedOutAt?: string; checkedOutBy?: string;
 }) {
   const db = getDb();
   const rows = await db.insert(bookings).values(syncInsert({
@@ -653,6 +655,10 @@ export async function addBooking(data: {
     cmBookingId: data.cmBookingId || "",
     gokoBookingId: data.gokoBookingId || "",
     ratePlan: data.ratePlan || "",
+    checkedInAt: data.checkedInAt || "",
+    checkedInBy: data.checkedInBy || "",
+    checkedOutAt: data.checkedOutAt || "",
+    checkedOutBy: data.checkedOutBy || "",
   })).returning({ id: bookings.id });
   return rows[0]?.id ?? null;
 }

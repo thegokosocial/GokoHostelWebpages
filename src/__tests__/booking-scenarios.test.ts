@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { stayNightCount } from "@/lib/inventoryAvailability";
+import { addCalendarDays, stayNightCount } from "@/lib/inventoryAvailability";
 import { getNights, calculateTax } from "@/components/admin/booking-dashboard/utils";
 import { stringifyGokoWalkin } from "@/lib/bookingPricing";
+import { todayIST } from "@/lib/utils";
 
 const q = vi.hoisted(() => ({
   authenticateUser: vi.fn(),
@@ -187,6 +188,66 @@ describe("createBooking permutations", () => {
       }));
     }
     expect(pushIfOtaChanged).toHaveBeenCalled();
+  });
+
+  it("backdated fully past stay saves as checked_out with stamps", async () => {
+    const today = todayIST();
+    const ci = addCalendarDays(today, -4);
+    const co = addCalendarDays(today, -2);
+    const res = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Past Guest",
+      checkinDate: ci,
+      checkoutDate: co,
+      nightlyRate: 1000,
+    }));
+    expect(res.status).toBe(200);
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
+      status: "checked_out",
+      checkedInAt: expect.any(String),
+      checkedOutAt: expect.any(String),
+      checkedInBy: expect.any(String),
+      checkedOutBy: expect.any(String),
+    }));
+    expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.stringContaining("checked out"),
+    }));
+  });
+
+  it("backdated straddle stay saves as checked_in", async () => {
+    const today = todayIST();
+    const ci = addCalendarDays(today, -2);
+    const co = addCalendarDays(today, 2);
+    const res = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Straddle Guest",
+      checkinDate: ci,
+      checkoutDate: co,
+      nightlyRate: 1000,
+    }));
+    expect(res.status).toBe(200);
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
+      status: "checked_in",
+      checkedInAt: expect.any(String),
+      checkedInBy: expect.any(String),
+    }));
+    expect(q.addBooking.mock.calls.at(-1)?.[0].checkedOutAt).toBeUndefined();
+  });
+
+  it("same-day stay stays received for desk check-in", async () => {
+    const today = todayIST();
+    const res = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Today Guest",
+      checkinDate: today,
+      checkoutDate: addCalendarDays(today, 1),
+      nightlyRate: 1000,
+    }));
+    expect(res.status).toBe(200);
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({ status: "received" }));
   });
 
   it("a one-guest double-room booking reserves one slot at the room price", async () => {

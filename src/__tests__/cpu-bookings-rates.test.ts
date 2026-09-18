@@ -36,6 +36,14 @@ const q = vi.hoisted(() => ({
   createGuestReceipt: vi.fn(),
   resolveReceiptAccount: vi.fn(),
   latestReceiptAccount: vi.fn(),
+  reopenWalkinCheckinsForBooking: vi.fn(),
+  hardDeleteBookingCascade: vi.fn(),
+  bookingHasPlatformFinance: vi.fn(),
+  findWalkinCheckinsByBookingRefs: vi.fn(),
+  addAuditEntry: vi.fn(),
+  getCheckinById: vi.fn(),
+  updateCheckin: vi.fn(),
+  getBookingByRef: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: q.authenticateUser }));
@@ -80,6 +88,14 @@ vi.mock("@/db/queries", () => ({
   getAllDailyRates: q.getAllDailyRates,
   deactivateBedBlocksByBedIds: q.deactivateBedBlocksByBedIds,
   shortenAssignedCheckout: q.shortenAssignedCheckout,
+  reopenWalkinCheckinsForBooking: q.reopenWalkinCheckinsForBooking,
+  hardDeleteBookingCascade: q.hardDeleteBookingCascade,
+  bookingHasPlatformFinance: q.bookingHasPlatformFinance,
+  findWalkinCheckinsByBookingRefs: q.findWalkinCheckinsByBookingRefs,
+  addAuditEntry: q.addAuditEntry,
+  getCheckinById: q.getCheckinById,
+  updateCheckin: q.updateCheckin,
+  getBookingByRef: q.getBookingByRef,
 }));
 
 import { POST } from "@/app/api/admin/bookings/route";
@@ -108,6 +124,10 @@ describe("Bookings calendar and rates workflows", () => {
     q.resolveReceiptAccount.mockResolvedValue(1);
     q.createGuestReceipt.mockResolvedValue({ id: 1, duplicate: false });
     q.latestReceiptAccount.mockResolvedValue(1);
+    q.reopenWalkinCheckinsForBooking.mockResolvedValue([]);
+    q.hardDeleteBookingCascade.mockResolvedValue({ receiptIds: [] });
+    q.bookingHasPlatformFinance.mockResolvedValue(false);
+    q.findWalkinCheckinsByBookingRefs.mockResolvedValue([]);
     vi.mocked(pushIfOtaChanged).mockReset();
     vi.mocked(pushIfOtaChanged).mockResolvedValue(undefined);
   });

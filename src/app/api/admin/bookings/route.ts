@@ -30,6 +30,7 @@ import {
 import { isRecordsLinkedWalkinBooking, checkinLinksBooking } from "@/lib/bookingResolution";
 import { todayIST } from "@/lib/utils";
 import { generateGokoBookingId } from "@/lib/bookingReference";
+import { manualCreateStatus } from "@/lib/bookingStayStatus";
 import { isStayPayMethod, isPrepaidStatus, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { bookingAmountsFromRaw, recognizePlatformBooking, recordPlatformAdjustment } from "@/lib/platformReceivables";
@@ -670,6 +671,9 @@ export async function POST(req: NextRequest) {
         advanceAccountId = await resolveReceiptAccount("room", advanceOnlineAccountId);
       }
 
+      const now = new Date().toISOString();
+      const stayStatus = manualCreateStatus(checkinDate, checkoutDate, todayIST(), now);
+
       const newBookingId = await addBooking({
         guestName,
         contact: contact || "",
@@ -690,7 +694,11 @@ export async function POST(req: NextRequest) {
         changeGiven: 0,
         specialRequests: specialRequests || "",
         source: "manual",
-        status: "received",
+        status: stayStatus.status,
+        checkedInAt: stayStatus.checkedInAt,
+        checkedInBy: stayStatus.checkedInAt ? actingUser : undefined,
+        checkedOutAt: stayStatus.checkedOutAt,
+        checkedOutBy: stayStatus.checkedOutAt ? actingUser : undefined,
         gokoBookingId: generateGokoBookingId(),
         rawData: src === "walkin"
           ? stringifyGokoWalkin({
@@ -747,10 +755,15 @@ export async function POST(req: NextRequest) {
       }
 
       if (newBookingId) {
+        const backdateNote = stayStatus.status === "checked_out"
+          ? " Backdated stay saved as checked out."
+          : stayStatus.status === "checked_in"
+            ? " Backdated stay saved as checked in."
+            : "";
         await addBookingHistoryEntry({
           bookingId: newBookingId,
           action: "Created",
-          details: `Manual booking by ${actingUser}. ${unitsCount} unit(s), ${guestCount} guest(s), ${nights} night(s).${discount > 0 ? ` Discount ₹${discount}${reason ? ` (${reason})` : ""}.` : ""}${advance > 0 ? ` Advance ₹${advance} (${advancePaymentMethod}); balance ₹${Math.max(0, total - advance)}.` : ""}`,
+          details: `Manual booking by ${actingUser}. ${unitsCount} unit(s), ${guestCount} guest(s), ${nights} night(s).${discount > 0 ? ` Discount ₹${discount}${reason ? ` (${reason})` : ""}.` : ""}${advance > 0 ? ` Advance ₹${advance} (${advancePaymentMethod}); balance ₹${Math.max(0, total - advance)}.` : ""}${backdateNote}`,
           performedBy: actingUser,
         });
         await dispatchPush({
