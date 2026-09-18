@@ -45,6 +45,12 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain('focus({ preventScroll: true })'); expect(panel).toContain('scroll-mt-24');
     expect(panel).toMatch(/<button type="button" className=\{action\} disabled>Payment unavailable/);
     expect(panel).toContain('These details stay in this page only.');
+    expect(panel).toContain("Guest name <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
+    expect(panel).toContain("Email <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
+    expect(panel).toContain("Phone <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
+    expect(panel).toContain("guestDetailsComplete");
+    expect(panel).toContain("Fill in guest name, email and phone to enable Pay now");
+    expect(panel).not.toContain("Ask Goko on WhatsApp");
   });
   it("uses large payment radio targets and stores only guestAccessToken", () => {
     expect(panel).toContain('min-h-12 cursor-pointer items-center gap-3');

@@ -163,7 +163,10 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   }
   async function confirmStay() {
     if (preview) { setMessage("Demo only. Checkout is disabled in this preview."); return; }
-    if (!guest.name.trim() || !guest.email.trim()) { setMessage("Enter your name and email to continue."); return; }
+    if (!guest.name.trim() || !guest.email.trim() || !guest.phone.trim()) {
+      setMessage("Enter guest name, email and phone to continue.");
+      return;
+    }
     if (!searchedStay || !rooms) return;
     setBusy(true); setMessage("");
     try {
@@ -199,6 +202,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   }
   const enquiry = searchedStay ? `Hi Goko, please confirm availability and rates for ${searchedStay.checkinDate} to ${searchedStay.checkoutDate}. Selection: ${rooms?.filter(room => selection[room.id]).map(room => `${selection[room.id]} × ${room.name} (${room.type === "Double" ? "double bed" : "dorm bed"})`).join(", ")}. Capacity up to ${capacity} guests; please confirm actual guest count with me.` : "";
   const holdSecondsLeft = holdExpiresAt ? Math.max(0, holdExpiresAt - nowTick) : null;
+  const guestDetailsComplete = Boolean(guest.name.trim() && guest.email.trim() && guest.phone.trim());
   return <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
     {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
     <div className="mb-5 grid grid-cols-2 gap-2 sm:flex" role="tablist" aria-label="Booking options">
@@ -299,9 +303,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             <ul className="mt-3 space-y-2 text-sm">{rooms.filter(room => selection[room.id]).map(room => <li key={room.id}>{selection[room.id]} × {room.name} · {chosenRate(room)?.name} · {money(selection[room.id] * chosenRate(room)!.subtotalRupees)}</li>)}</ul>
             {totals && <dl className="mt-4 space-y-2 border-t border-brand-mist pt-3 text-sm"><div className="flex justify-between"><dt>Bed subtotal</dt><dd>{money(totals.beforeTax)}</dd></div><div className="flex justify-between"><dt>Estimated tax ({taxPercent}%)</dt><dd>{money(totals.tax)}</dd></div><div className="flex justify-between text-lg font-semibold"><dt>Estimated total</dt><dd>{money(totals.total)}</dd></div></dl>}
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <label className="text-sm">Guest name<input className={field} required autoComplete="name" maxLength={120} value={guest.name} onChange={e => setGuest(current => ({ ...current, name: e.target.value }))} /></label>
-              <label className="text-sm">Email<input className={field} required type="email" autoComplete="email" maxLength={254} value={guest.email} onChange={e => setGuest(current => ({ ...current, email: e.target.value }))} /></label>
-              <label className="text-sm">Phone<input className={field} type="tel" autoComplete="tel" maxLength={30} value={guest.phone} onChange={e => setGuest(current => ({ ...current, phone: e.target.value }))} /></label>
+              <label className="text-sm">Guest name <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required autoComplete="name" maxLength={120} value={guest.name} onChange={e => setGuest(current => ({ ...current, name: e.target.value }))} /></label>
+              <label className="text-sm">Email <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required type="email" autoComplete="email" maxLength={254} value={guest.email} onChange={e => setGuest(current => ({ ...current, email: e.target.value }))} /></label>
+              <label className="text-sm">Phone <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required type="tel" autoComplete="tel" maxLength={30} value={guest.phone} onChange={e => setGuest(current => ({ ...current, phone: e.target.value }))} /></label>
             </div>
             {nativeCheckoutReady && paymentOptions ? <>
               <fieldset className="mt-5 space-y-2 text-sm">
@@ -326,11 +330,15 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                 )}
               </fieldset>
               {holdSecondsLeft != null && <p className="mt-3 text-xs" role="status">Hold expires in {Math.floor(holdSecondsLeft / 60)}:{String(holdSecondsLeft % 60).padStart(2, "0")}</p>}
-              <div className="mt-4 grid gap-3 sm:flex sm:flex-wrap">
-                <button type="button" className={action} disabled={busy || !guest.name.trim() || !guest.email.trim()} onClick={confirmStay}>
+              {!guestDetailsComplete && (
+                <p role="status" className="mt-4 text-sm text-brand-red">
+                  Fill in guest name, email and phone to enable Pay now. Mandatory fields are marked with *.
+                </p>
+              )}
+              <div className="mt-4">
+                <button type="button" className={action} disabled={busy || !guestDetailsComplete} onClick={confirmStay}>
                   {busy ? "Please wait…" : paymentChoice === "property" ? "Confirm reservation" : "Pay now"}
                 </button>
-                {!preview && <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold" href={`${site.whatsAppUrl}?text=${encodeURIComponent(enquiry)}`} target="_blank" rel="noopener noreferrer">Ask Goko on WhatsApp</a>}
               </div>
               <p className="mt-3 text-xs">
                 {paymentOptions.gatewayEnvironment === "live"

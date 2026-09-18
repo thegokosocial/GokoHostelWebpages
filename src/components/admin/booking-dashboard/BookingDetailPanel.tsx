@@ -26,6 +26,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { STATUS_COLORS, platformLogo, STATUS_LABELS, formatCurrency, getHostelToday, getNights, collectionCopy, displayedStayPayment } from "./utils";
+import { PlatformBadge } from "./PlatformBadge";
 import { parseGokoWalkin, walkinDiscountOnGross } from "@/lib/bookingPricing";
 import { isManualWalkinBooking } from "@/lib/bookingResolution";
 import { stayDueAtHotel, stayRefundCap } from "@/lib/stayPayment";
@@ -252,9 +253,7 @@ export function BookingDetailPanel({
             </div>
             {platform && (
               <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className={cn("inline-flex size-4 items-center justify-center rounded-full text-[8px] font-bold text-white", platform.color)}>
-                  {platform.abbr}
-                </span>
+                <PlatformBadge platform={booking.platform} size={16} />
                 {platform.label}
               </div>
             )}

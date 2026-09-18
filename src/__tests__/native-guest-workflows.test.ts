@@ -95,7 +95,7 @@ function selection(
     checkinDate,
     checkoutDate,
     paymentChoice,
-    guest: { name: "Workflow Guest", email: "workflow@example.test", phone: "" },
+    guest: { name: "Workflow Guest", email: "workflow@example.test", phone: "+919876543210" },
     rooms: [{ roomId: "1-Bed", quantity: 1, ratePlanId: 1 }],
   };
 }

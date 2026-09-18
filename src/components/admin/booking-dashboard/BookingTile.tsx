@@ -2,7 +2,8 @@
 
 import { cn } from "@/lib/utils";
 import { UsersIcon } from "lucide-react";
-import { STATUS_COLORS, platformLogo } from "./utils";
+import { STATUS_COLORS } from "./utils";
+import { PlatformBadge } from "./PlatformBadge";
 import type { DashboardBooking } from "./types";
 
 export function BookingTile({
@@ -17,7 +18,6 @@ export function BookingTile({
   onClick: () => void;
 }) {
   const statusColor = STATUS_COLORS[booking.status] ?? STATUS_COLORS.received;
-  const platform = platformLogo(booking.platform);
 
   return (
     <button
@@ -34,16 +34,7 @@ export function BookingTile({
         "hover:brightness-95 dark:hover:brightness-110 cursor-pointer",
       )}
     >
-      {platform && (
-        <span
-          className={cn(
-            "inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white",
-            platform.color,
-          )}
-        >
-          {platform.abbr}
-        </span>
-      )}
+      <PlatformBadge platform={booking.platform} size={14} />
       <span className="min-w-0 flex-1 truncate font-medium">
         {booking.guestName}
       </span>

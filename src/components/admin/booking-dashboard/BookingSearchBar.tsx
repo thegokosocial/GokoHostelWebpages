@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { SearchIcon, XIcon } from "lucide-react";
-import { STATUS_COLORS, platformLogo, STATUS_LABELS } from "./utils";
+import { STATUS_COLORS, STATUS_LABELS } from "./utils";
+import { PlatformBadge } from "./PlatformBadge";
 import type { DashboardBooking } from "./types";
 
 export function BookingSearchBar({
@@ -103,7 +104,6 @@ export function BookingSearchBar({
           <div className="max-h-72 overflow-y-auto p-1">
             {results.map((booking) => {
               const statusColor = STATUS_COLORS[booking.status] ?? STATUS_COLORS.received;
-              const platform = platformLogo(booking.platform);
               return (
                 <button
                   key={booking.id}
@@ -111,16 +111,7 @@ export function BookingSearchBar({
                   onClick={() => handleSelect(booking.id)}
                   className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted"
                 >
-                  {platform && (
-                    <span
-                      className={cn(
-                        "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white",
-                        platform.color,
-                      )}
-                    >
-                      {platform.abbr}
-                    </span>
-                  )}
+                  <PlatformBadge platform={booking.platform} size={20} className="mt-0.5" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium text-foreground">

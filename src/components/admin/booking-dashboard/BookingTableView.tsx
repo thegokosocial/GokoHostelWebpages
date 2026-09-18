@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronUpIcon, ChevronDownIcon } from "lucide-react";
 import { STATUS_COLORS, platformLogo, STATUS_LABELS, formatCurrency } from "./utils";
+import { PlatformBadge } from "./PlatformBadge";
 import type { DashboardBooking, BedAssignment } from "./types";
 
 type SortKey = "guestName" | "platform" | "bookingRef" | "checkinDate" | "checkoutDate" | "status" | "amountTotal" | "createdAt";
@@ -113,9 +114,7 @@ export function BookingTableView({
                   <td className="hidden sm:table-cell px-3 py-2">
                     {platform ? (
                       <div className="flex items-center gap-1.5">
-                        <span className={cn("inline-flex size-4 items-center justify-center rounded-full text-[8px] font-bold text-white", platform.color)}>
-                          {platform.abbr}
-                        </span>
+                        <PlatformBadge platform={booking.platform} size={16} />
                         <span className="text-muted-foreground">{platform.label}</span>
                       </div>
                     ) : (

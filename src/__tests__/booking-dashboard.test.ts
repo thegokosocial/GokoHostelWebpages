@@ -752,6 +752,12 @@ describe("platformLogo", () => {
     expect(platformLogo("booking.com")?.label).toBe("Booking.com");
     expect(platformLogo("booking_com")?.abbr).toBe("B");
   });
+
+  it("maps website / booking_engine to the Goko Website logo", () => {
+    expect(platformLogo("Website")?.label).toBe("Goko Website");
+    expect(platformLogo("Website")?.logoSrc).toBe("/logo.png");
+    expect(platformLogo("booking_engine")?.logoSrc).toBe("/logo.png");
+  });
 });
 
 describe("Mock workflows: assign + admin retry", () => {

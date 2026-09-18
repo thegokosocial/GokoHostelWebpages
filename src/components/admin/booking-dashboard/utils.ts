@@ -13,12 +13,13 @@ export const STATUS_COLORS: Record<string, { bg: string; text: string; border: s
   modified: { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-300", border: "border-yellow-300 dark:border-yellow-700" },
 };
 
-export const PLATFORM_LOGOS: Record<string, { label: string; abbr: string; color: string }> = {
+export const PLATFORM_LOGOS: Record<string, { label: string; abbr: string; color: string; logoSrc?: string }> = {
   booking_com: { label: "Booking.com", abbr: "B", color: "bg-blue-600" },
   makemytrip: { label: "MakeMyTrip", abbr: "M", color: "bg-red-500" },
   goibibo: { label: "Goibibo", abbr: "G", color: "bg-orange-500" },
   hostelworld: { label: "Hostelworld", abbr: "H", color: "bg-orange-600" },
-  booking_engine: { label: "Website", abbr: "W", color: "bg-green-600" },
+  booking_engine: { label: "Goko Website", abbr: "Gk", color: "bg-brand-green", logoSrc: "/logo.png" },
+  website: { label: "Goko Website", abbr: "Gk", color: "bg-brand-green", logoSrc: "/logo.png" },
   walkin: { label: "Walk-in", abbr: "WI", color: "bg-gray-500" },
   direct: { label: "Direct", abbr: "D", color: "bg-teal-500" },
   channel_manager: { label: "Channel Manager", abbr: "CM", color: "bg-indigo-500" },

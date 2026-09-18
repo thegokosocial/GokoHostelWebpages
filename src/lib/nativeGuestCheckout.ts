@@ -52,7 +52,7 @@ const selectionSchema = z.object({
   guest: z.object({
     name: z.string().trim().min(1).max(120),
     email: z.string().trim().email().max(254),
-    phone: z.string().trim().max(30).default(""),
+    phone: z.string().trim().min(1).max(30),
   }).strict(),
   rooms: z.array(z.object({
     roomId: z.string().regex(/^\d+-(Double|Bed)$/),

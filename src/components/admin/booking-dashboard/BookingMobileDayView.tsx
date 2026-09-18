@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { STATUS_COLORS, platformLogo, STATUS_LABELS, formatDateShort, getHostelToday, isToday } from "./utils";
+import { STATUS_COLORS, STATUS_LABELS, formatDateShort, getHostelToday, isToday } from "./utils";
+import { PlatformBadge } from "./PlatformBadge";
 import type { DashboardBooking, BedAssignment, CalendarDorm, DateRange } from "./types";
 
 export function BookingMobileDayView({
@@ -134,7 +135,6 @@ export function BookingMobileDayView({
               <div className="divide-y divide-border">
                 {bs.map((booking) => {
                   const statusColor = STATUS_COLORS[booking.status] ?? STATUS_COLORS.received;
-                  const platform = platformLogo(booking.platform);
                   return (
                     <button
                       key={booking.id}
@@ -145,17 +145,8 @@ export function BookingMobileDayView({
                       <div className={cn("mt-0.5 h-8 w-1 shrink-0 rounded-full", statusColor.bg.split(" ")[0])} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
+                          <PlatformBadge platform={booking.platform} size={16} />
                           <span className="truncate text-sm font-medium text-foreground">{booking.guestName}</span>
-                          {platform && (
-                            <span
-                              className={cn(
-                                "inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[7px] font-bold text-white",
-                                platform.color,
-                              )}
-                            >
-                              {platform.abbr}
-                            </span>
-                          )}
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                           <span>{booking.checkinDate} - {booking.checkoutDate}</span>

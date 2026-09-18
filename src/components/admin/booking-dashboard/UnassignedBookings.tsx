@@ -8,7 +8,8 @@ import { XIcon, CheckIcon, Loader2Icon, AlertCircleIcon } from "lucide-react";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { fetchWithRetry } from "@/components/admin/useAdminApi";
 import { exclusiveEndDate } from "@/lib/inventoryAvailability";
-import { platformLogo, stayOverlapsVisible, formatDateCompact } from "./utils";
+import { stayOverlapsVisible, formatDateCompact } from "./utils";
+import { PlatformBadge } from "./PlatformBadge";
 import type { DashboardBooking, CalendarDorm, DateRange } from "./types";
 
 type AvailableBed = { key: string; label: string; dormId: number; dormName: string; capacity: number; bedIds: number[]; pool?: "online" | "offline" | "block" };
@@ -283,7 +284,6 @@ export function UnassignedBookings({
             No unassigned bookings. Assigned stays appear as bars on the calendar.
           </p>
         ) : ordered.map((booking) => {
-          const platform = platformLogo(booking.platform);
           const isAssigning = assigningId === booking.id;
           const onCalendar = stayOverlapsVisible(
             booking.checkinDate,
@@ -308,11 +308,7 @@ export function UnassignedBookings({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    {platform && (
-                      <span className={cn("inline-flex size-4 items-center justify-center rounded-full text-[8px] font-bold text-white", platform.color)}>
-                        {platform.abbr}
-                      </span>
-                    )}
+                    <PlatformBadge platform={booking.platform} size={16} />
                     <span className="truncate text-sm font-medium text-foreground">{booking.guestName}</span>
                     {!onCalendar && (
                       <span className="shrink-0 rounded bg-orange-200 px-1.5 py-0.5 text-[10px] font-medium text-orange-900 dark:bg-orange-800 dark:text-orange-100">
