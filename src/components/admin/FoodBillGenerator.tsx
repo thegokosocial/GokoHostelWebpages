@@ -5,6 +5,7 @@ import {
   accentRgb,
   billPaymentStatusLabel,
   formatGstRateLabel,
+  mergeBillLineItems,
   splitGstPaise,
   splitGstRate,
   type BillBranding,
@@ -83,10 +84,6 @@ export function formatPaise(paise: number): string {
   return `₹${withCommas}.${decimal}`;
 }
 
-function generateBillNumber(): string {
-  return `BILL-${Date.now()}`;
-}
-
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-");
 }
@@ -121,34 +118,36 @@ function resolveBranding(data: { branding?: BillBranding }): BillBranding {
 }
 
 function drawAccentHeader(doc: jsPDF, branding: BillBranding): number {
+  // Left accent rail + name block (not a full-bleed color band)
   const { r, g, b } = accentRgb(branding.accent);
   doc.setFillColor(r, g, b);
-  doc.rect(0, 0, PAGE_WIDTH, 28, "F");
-  doc.setTextColor(255, 255, 255);
+  doc.rect(0, 0, 4, 32, "F");
+  doc.setFillColor(248, 246, 242);
+  doc.rect(4, 0, PAGE_WIDTH - 4, 32, "F");
+  doc.setTextColor(30, 30, 30);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text(branding.hostelName, PAGE_WIDTH / 2, 12, { align: "center" });
+  doc.setFontSize(15);
+  doc.text(branding.hostelName, MARGIN_LEFT, 14);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(branding.location, PAGE_WIDTH / 2, 20, { align: "center" });
+  doc.setTextColor(100, 100, 100);
+  doc.text(branding.location, MARGIN_LEFT, 22);
   doc.setTextColor(0, 0, 0);
-  return 36;
+  return 40;
 }
 
 function drawStatusPill(doc: jsPDF, x: number, y: number, label: string, accent: string): void {
   const { r, g, b } = accentRgb(accent);
-  doc.setFont("helvetica", "normal");
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  const w = doc.getTextWidth(label) + 8;
-  doc.setFillColor(
-    Math.min(255, r + 80),
-    Math.min(255, g + 80),
-    Math.min(255, b + 80),
-  );
-  doc.roundedRect(x, y - 4, w, 6, 1.5, 1.5, "F");
+  const w = doc.getTextWidth(label) + 10;
+  doc.setDrawColor(r, g, b);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(x, y - 4, w, 6.5, 1, 1, "S");
   doc.setTextColor(r, g, b);
-  doc.text(label, x + 4, y);
+  doc.text(label, x + 5, y);
   doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "normal");
 }
 
 function drawTableHeader(doc: jsPDF, y: number): number {
@@ -374,16 +373,6 @@ function drawFooter(doc: jsPDF, branding: BillBranding): void {
   }
 }
 
-function formatOrderDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 // ─── Guest Bill ──────────────────────────────────────────────────────────────
 
 export async function generateGuestBill(data: GuestBillData): Promise<void> {
@@ -393,67 +382,58 @@ export async function generateGuestBill(data: GuestBillData): Promise<void> {
   let y = drawAccentHeader(doc, branding);
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("Goko order", MARGIN_LEFT, y);
+  doc.setFontSize(13);
+  doc.text("Food tab", MARGIN_LEFT, y);
   y += 6;
 
-  const primaryOrder = data.orders[0];
-  const orderLabel = data.orders.length === 1
-    ? `Order #${primaryOrder?.orderNumber || ""}`
-    : `${data.orders.length} orders · ${data.guestName}`;
+  const orderCount = data.orders.length;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.setTextColor(80, 80, 80);
-  doc.text(orderLabel, MARGIN_LEFT, y);
-  y += 4;
-  doc.text(`Date: ${data.billDate}${primaryOrder ? ` · ${formatOrderDate(primaryOrder.createdAt).split(",").pop()?.trim() || ""}` : ""}`, MARGIN_LEFT, y);
-  y += 5;
+  doc.setTextColor(90, 90, 90);
+  const metaBits = [
+    orderCount > 1 ? `${orderCount} orders` : null,
+    data.guestName || null,
+  ].filter(Boolean);
+  if (metaBits.length) {
+    doc.text(metaBits.join(" · "), MARGIN_LEFT, y);
+    y += 4;
+  }
+  doc.text(data.billDate, MARGIN_LEFT, y);
+  y += 6;
 
   const status = billPaymentStatusLabel(data.paymentStatus || (data.paymentMethod ? "paid" : "on_tab"));
   drawStatusPill(doc, MARGIN_LEFT, y, status, branding.accent);
-  y += 8;
+  y += 9;
 
-  if (data.guestName || data.roomInfo) {
-    doc.setFontSize(9);
-    doc.setTextColor(60, 60, 60);
-    doc.text(
-      [data.guestName, data.guestPhone, data.roomInfo, data.stayDates].filter(Boolean).join(" · "),
-      MARGIN_LEFT,
-      y,
-    );
+  const guestLine = [data.guestPhone, data.roomInfo, data.stayDates].filter(Boolean).join(" · ");
+  if (guestLine) {
+    doc.setFontSize(8);
+    doc.setTextColor(110, 110, 110);
+    doc.text(guestLine, MARGIN_LEFT, y);
     doc.setTextColor(0, 0, 0);
     y += 6;
   }
 
-  for (const order of data.orders) {
-    if (data.orders.length > 1) {
-      y = checkPageBreak(doc, y, 12);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.text(`Order #${order.orderNumber}`, MARGIN_LEFT, y);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(120, 120, 120);
-      doc.text(formatOrderDate(order.createdAt), COL_AMOUNT, y, { align: "right" });
-      doc.setTextColor(0, 0, 0);
-      y += 5;
-    }
+  const flatItems = mergeBillLineItems(
+    data.orders.flatMap((o) => o.items),
+  );
+  y = drawTableHeader(doc, y);
+  for (const item of flatItems) {
+    y = drawItemRow(doc, y, item);
+  }
 
-    y = drawTableHeader(doc, y);
-    for (const item of order.items) {
-      y = drawItemRow(doc, y, item);
-    }
-
-    if (order.specialInstructions) {
-      y = checkPageBreak(doc, y, 6);
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Note: ${order.specialInstructions}`, MARGIN_LEFT, y);
-      doc.setTextColor(0, 0, 0);
-      doc.setFont("helvetica", "normal");
-      y += 5;
-    }
+  const notes = data.orders
+    .map((o) => o.specialInstructions?.trim())
+    .filter(Boolean) as string[];
+  if (notes.length) {
+    y = checkPageBreak(doc, y, 8);
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Notes: ${notes.join(" · ")}`, MARGIN_LEFT, y);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "normal");
+    y += 5;
   }
 
   const grandDiscount = data.orders.reduce((sum, o) => sum + (o.discount || 0), 0);
@@ -485,86 +465,47 @@ export async function generateCombinedBill(data: CombinedBillData): Promise<void
   let y = drawAccentHeader(doc, branding);
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("Combined bill", MARGIN_LEFT, y);
+  doc.setFontSize(13);
+  doc.text("Shared food tab", MARGIN_LEFT, y);
   y += 6;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.setTextColor(80, 80, 80);
-  doc.text(`Bill #: ${generateBillNumber()}`, MARGIN_LEFT, y);
-  y += 4;
-  doc.text(`Date: ${data.billDate}`, MARGIN_LEFT, y);
-  y += 5;
+  doc.setTextColor(90, 90, 90);
+  doc.text(`${data.guests.length} guests · ${data.billDate}`, MARGIN_LEFT, y);
+  y += 6;
   drawStatusPill(doc, MARGIN_LEFT, y, "Open tab", branding.accent);
-  y += 8;
+  y += 9;
   doc.setTextColor(0, 0, 0);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text("Guests", MARGIN_LEFT, y);
-  y += 5;
-  doc.setFont("helvetica", "normal");
-  for (const guest of data.guests) {
-    y = checkPageBreak(doc, y, 5);
-    const info = guest.roomInfo ? ` (${guest.roomInfo})` : "";
-    doc.text(`• ${guest.guestName}${info}`, MARGIN_LEFT + 2, y);
-    y += 4;
-  }
-  y += 3;
 
   for (const guest of data.guests) {
     y = checkPageBreak(doc, y, 18);
-    const { r, g, b } = accentRgb(branding.accent);
-    doc.setFillColor(
-      Math.min(255, r + 100),
-      Math.min(255, g + 100),
-      Math.min(255, b + 100),
-    );
-    doc.rect(MARGIN_LEFT, y - 4, CONTENT_WIDTH, 8, "F");
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.3);
+    doc.line(MARGIN_LEFT, y - 2, PAGE_WIDTH - MARGIN_RIGHT, y - 2);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
-    doc.text(guest.guestName, MARGIN_LEFT + 2, y);
+    doc.text(guest.guestName, MARGIN_LEFT, y + 3);
     if (guest.roomInfo) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
-      doc.text(guest.roomInfo, COL_AMOUNT - 2, y, { align: "right" });
-    }
-    y += 7;
-
-    for (const order of guest.orders) {
-      y = checkPageBreak(doc, y, 12);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.text(`Order #${order.orderNumber}`, MARGIN_LEFT + 2, y);
-      doc.setFont("helvetica", "normal");
       doc.setTextColor(120, 120, 120);
-      doc.text(formatOrderDate(order.createdAt), COL_AMOUNT, y, { align: "right" });
+      doc.text(guest.roomInfo, COL_AMOUNT, y + 3, { align: "right" });
       doc.setTextColor(0, 0, 0);
-      y += 4;
+    }
+    y += 9;
 
-      y = drawTableHeader(doc, y);
-      for (const item of order.items) {
-        y = drawItemRow(doc, y, item);
-      }
-      if (order.specialInstructions) {
-        y = checkPageBreak(doc, y, 6);
-        doc.setFont("helvetica", "italic");
-        doc.setFontSize(8);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Note: ${order.specialInstructions}`, MARGIN_LEFT + 2, y);
-        doc.setTextColor(0, 0, 0);
-        y += 5;
-      }
+    const flatItems = mergeBillLineItems(guest.orders.flatMap((o) => o.items));
+    y = drawTableHeader(doc, y);
+    for (const item of flatItems) {
+      y = drawItemRow(doc, y, item);
     }
 
     y = checkPageBreak(doc, y, 8);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text(`${guest.guestName} Total`, COL_AMOUNT - 45, y, { align: "right" });
+    doc.text("Guest total", COL_AMOUNT - 40, y, { align: "right" });
     doc.text(formatPaise(guest.guestTotal), COL_AMOUNT, y, { align: "right" });
-    y += 4;
-    drawHorizontalLine(doc, y);
     y += 6;
   }
 
@@ -573,7 +514,7 @@ export async function generateCombinedBill(data: CombinedBillData): Promise<void
     0,
   );
   y = drawTotalsBlock(doc, y, {
-    subtotalLabel: "Combined Subtotal",
+    subtotalLabel: "Subtotal",
     subtotal: data.grandSubtotal,
     grandTax: data.grandTax,
     grandTotal: data.grandTotal,

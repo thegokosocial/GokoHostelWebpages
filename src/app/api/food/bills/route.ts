@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
         createdAt: o.createdAt,
         checkinId: o.checkinId,
         items: items
-          .filter((i) => i.quantity > 0)
+          .filter((i) => i.quantity > 0 && i.status !== "voided")
           .map((i) => ({
             menuItemId: i.menuItemId,
             name: i.itemName,

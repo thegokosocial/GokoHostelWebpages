@@ -8,6 +8,7 @@ import {
   DEFAULT_BILL_BRANDING,
   billPaymentStatusLabel,
   formatGstRateLabel,
+  mergeBillLineItems,
   splitGstPaise,
   splitGstRate,
 } from "@/lib/foodBillFormat";
@@ -78,14 +79,6 @@ function formatRupees(paise: number): string {
   return `₹${(paise / 100).toFixed(2)}`;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  placed: "Placed",
-  preparing: "Preparing",
-  ready: "Ready",
-  served: "Served",
-  cancelled: "Cancelled",
-};
-
 const DEFAULT_PUBLIC_BRANDING: BillBrandingPublic = {
   hostelName: DEFAULT_BILL_BRANDING.hostelName,
   location: DEFAULT_BILL_BRANDING.location,
@@ -128,6 +121,7 @@ function MyBillsContent() {
       if (data.billBranding) {
         setBillBranding({ ...DEFAULT_PUBLIC_BRANDING, ...data.billBranding });
       }
+      setExpandedOrders(new Set((data.unpaidOrders || []).length ? ["unpaid-tab"] : []));
       setSubmitted(true);
     } catch {
       setError("Unable to load bills. Please try again.");
@@ -335,48 +329,38 @@ function MyBillsContent() {
               </div>
             )}
 
-            {/* Unpaid Bills */}
+            {/* Unpaid — one combined tab bill */}
             {unpaidOrders.length > 0 && (
               <div className="mb-6">
                 <div className="mb-3 flex items-center justify-between px-1">
-                  <h2 className="text-lg font-bold text-brand-green">Unpaid Bills</h2>
+                  <h2 className="text-lg font-bold text-brand-green">Open tab</h2>
                   <span className="rounded-full bg-amber-400/90 px-3 py-1 text-sm font-bold text-amber-900">
-                    ₹{Math.round(totalSpent / 100) - Math.round(paidTotal / 100)}
+                    ₹{Math.round(unpaidTotal / 100)}
                   </span>
                 </div>
-                <div className="space-y-3">
-                  {unpaidOrders.map((order) => (
-                    <OrderCard
-                      key={order.orderNumber}
-                      order={order}
-                      variant="unpaid"
-                      expanded={expandedOrders.has(order.orderNumber)}
-                      onToggle={() => toggleOrder(order.orderNumber)}
-                      branding={billBranding}
-                    />
-                  ))}
-                </div>
+                <TabBillCard
+                  orders={unpaidOrders}
+                  variant="unpaid"
+                  expanded={expandedOrders.has("unpaid-tab")}
+                  onToggle={() => toggleOrder("unpaid-tab")}
+                  branding={billBranding}
+                />
               </div>
             )}
 
-            {/* Paid Bills */}
+            {/* Paid — one combined receipt */}
             {paidOrders.length > 0 && (
               <div className="mb-6">
                 <div className="mb-3 px-1">
-                  <h2 className="text-lg font-bold text-brand-green-dark/70">Paid Bills</h2>
+                  <h2 className="text-lg font-bold text-brand-green-dark/70">Paid</h2>
                 </div>
-                <div className="space-y-3">
-                  {paidOrders.map((order) => (
-                    <OrderCard
-                      key={order.orderNumber}
-                      order={order}
-                      variant="paid"
-                      expanded={expandedOrders.has(order.orderNumber)}
-                      onToggle={() => toggleOrder(order.orderNumber)}
-                      branding={billBranding}
-                    />
-                  ))}
-                </div>
+                <TabBillCard
+                  orders={paidOrders}
+                  variant="paid"
+                  expanded={expandedOrders.has("paid-tab")}
+                  onToggle={() => toggleOrder("paid-tab")}
+                  branding={billBranding}
+                />
               </div>
             )}
 
@@ -405,82 +389,95 @@ function MyBillsContent() {
   );
 }
 
-function OrderCard({
-  order,
+function TabBillCard({
+  orders,
   variant,
   expanded,
   onToggle,
   branding,
 }: {
-  order: BillOrder;
+  orders: BillOrder[];
   variant: "unpaid" | "paid";
   expanded: boolean;
   onToggle: () => void;
   branding: BillBrandingPublic;
 }) {
   const accent = branding.accent || DEFAULT_BILL_BRANDING.accent;
-  const badgeLabel = billPaymentStatusLabel(order.paymentStatus);
-  const { cgst, sgst } = splitGstPaise(order.tax);
-  const rateForLabels = order.tax > 0
-    ? foodTaxRateFromAmounts(order.subtotal, order.tax)
-    : (branding.taxRate || 0);
+  const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
+  const tax = orders.reduce((s, o) => s + o.tax, 0);
+  const total = orders.reduce((s, o) => s + o.total, 0);
+  const discount = orders.reduce((s, o) => s + (o.discount || 0), 0);
+  const items = mergeBillLineItems(
+    orders.flatMap((o) =>
+      o.items
+        .filter((i) => i.pricingStatus !== "pending")
+        .map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: i.price,
+          lineTotal: i.lineTotal,
+          status: "active",
+        })),
+    ),
+  );
+  const pendingItems = orders.flatMap((o) =>
+    o.items.filter((i) => i.pricingStatus === "pending"),
+  );
+  const pendingPrice = pendingItems.length > 0;
+  const { cgst, sgst } = splitGstPaise(tax);
+  const rateForLabels = tax > 0 ? foodTaxRateFromAmounts(subtotal, tax) : (branding.taxRate || 0);
   const { cgstRate, sgstRate } = splitGstRate(rateForLabels);
   const showPayment = variant === "unpaid" && (branding.qrUrl || branding.upiId);
-  const pendingPrice = order.items.some((item) => item.pricingStatus === "pending");
+  const guestName = orders[0]?.guestName;
+  const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
+  const latest = orders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b), orders[0]);
+  const badgeLabel = variant === "paid" ? "Paid" : billPaymentStatusLabel(orders[0]?.paymentStatus || "on_tab");
 
   return (
     <motion.div
       layout
-      className={`overflow-hidden rounded-2xl bg-white dark:bg-card shadow-sm dark:shadow-none ${variant === "paid" ? "opacity-90" : ""}`}
+      className={`overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm dark:border-white/10 dark:bg-card ${variant === "paid" ? "opacity-90" : ""}`}
     >
-      <div className="px-4 py-3 text-center text-white" style={{ backgroundColor: accent }}>
-        <p className="text-base font-bold">{branding.hostelName}</p>
-        <p className="text-xs opacity-90">{branding.location}</p>
+      {/* Unique header: left rail + sand strip (not full accent band) */}
+      <div className="flex overflow-hidden">
+        <div className="w-1.5 shrink-0" style={{ backgroundColor: accent }} />
+        <div className="flex-1 bg-[#F7F4EF] px-4 py-3 dark:bg-zinc-900/60">
+          <p className="text-base font-bold text-zinc-900 dark:text-zinc-100">{branding.hostelName}</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">{branding.location}</p>
+        </div>
       </div>
 
       <button
+        type="button"
         onClick={onToggle}
         className="flex w-full items-center justify-between px-4 py-3.5 text-left"
       >
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-sm font-bold text-gray-800 dark:text-gray-200">Goko order</span>
-            <span className="font-mono text-sm font-bold text-gray-600 dark:text-gray-300">
-              #{order.orderNumber}
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">Food tab</span>
             <span
-              className="rounded-full px-2 py-0.5 text-xs font-medium"
-              style={{ backgroundColor: `${accent}22`, color: accent }}
+              className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+              style={{ borderColor: accent, color: accent }}
             >
               {badgeLabel}
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              order.status === "served" ? "bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400" :
-              order.status === "ready" ? "bg-brand-green/10 dark:bg-brand-green/20 text-brand-green dark:text-brand-green-dark" :
-              order.status === "preparing" ? "bg-brand-green/10 dark:bg-brand-green/20 text-brand-green dark:text-brand-green-dark" :
-              order.status === "cancelled" ? "bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400" :
-              "bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400"
-            }`}>
-              {STATUS_LABELS[order.status] || order.status}
-            </span>
+            {orders.length > 1 && (
+              <span className="text-xs text-zinc-400">{orders.length} orders</span>
+            )}
           </div>
-          <p className="mt-0.5 text-xs text-gray-400">
-            {formatDate(order.createdAt)} · {formatTime(order.createdAt)}
+          <p className="mt-1 text-xs text-zinc-400">
+            {[guestName, roomInfo].filter(Boolean).join(" · ")}
+          </p>
+          <p className="text-xs text-zinc-400">
+            {formatDate(latest.createdAt)} · {formatTime(latest.createdAt)}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="text-right">
-            {order.discount > 0 && (
-              <span className="mr-1.5 text-xs text-gray-400 line-through">
-                ₹{Math.round((order.total + order.discount) / 100)}
-              </span>
-            )}
-            <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              {pendingPrice ? "Price pending" : `₹${Math.round(order.total / 100)}`}
-            </span>
-          </div>
+          <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+            {pendingPrice ? "Price pending" : `₹${Math.round(total / 100)}`}
+          </span>
           <svg
-            className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+            className={`h-4 w-4 text-zinc-400 transition-transform ${expanded ? "rotate-180" : ""}`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -499,86 +496,103 @@ function OrderCard({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="border-t border-gray-100 dark:border-white/10 px-4 pb-4 pt-3">
-              <div className="mb-2 grid grid-cols-[1fr_auto_auto] gap-x-3 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            <div className="border-t border-zinc-100 px-4 pb-4 pt-3 dark:border-white/10">
+              <div className="mb-2 grid grid-cols-[1fr_auto_auto] gap-x-3 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
                 <span>Item</span>
                 <span className="w-8 text-center">Qty</span>
                 <span className="w-16 text-right">Amount</span>
               </div>
               <div className="space-y-2">
-                {order.items.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-gray-50 dark:border-white/5 pb-2 text-sm last:border-0">
+                {items.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-zinc-50 pb-2 text-sm last:border-0 dark:border-white/5"
+                  >
                     <div className="min-w-0">
-                      <span className="text-gray-700 dark:text-gray-300">{item.name}</span>
+                      <span className="text-zinc-700 dark:text-zinc-300">{item.itemName}</span>
                       {item.quantity > 1 && (
-                        <p className="text-[11px] text-gray-400">{item.quantity} x {formatRupees(item.price)}</p>
+                        <p className="text-[11px] text-zinc-400">
+                          {item.quantity} × {formatRupees(item.itemPrice)}
+                        </p>
                       )}
                     </div>
-                    <span className="w-8 text-center text-gray-500">{item.quantity}</span>
-                    <span className="w-16 text-right text-gray-600 dark:text-gray-400">
-                      {item.pricingStatus === "pending" ? "—" : formatRupees(item.lineTotal)}
+                    <span className="w-8 text-center text-zinc-500">{item.quantity}</span>
+                    <span className="w-16 text-right text-zinc-600 dark:text-zinc-400">
+                      {formatRupees(item.lineTotal)}
                     </span>
                   </div>
                 ))}
+                {pendingItems.map((item, idx) => (
+                  <div
+                    key={`p-${idx}`}
+                    className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-zinc-50 pb-2 text-sm last:border-0 dark:border-white/5"
+                  >
+                    <span className="text-zinc-700 dark:text-zinc-300">{item.name}</span>
+                    <span className="w-8 text-center text-zinc-500">{item.quantity}</span>
+                    <span className="w-16 text-right text-amber-600">Pending</span>
+                  </div>
+                ))}
               </div>
-              <div className="mt-3 space-y-1 border-t border-gray-200 dark:border-white/10 pt-2">
-                <div className="flex justify-between text-xs text-gray-500">
+
+              <div className="mt-3 space-y-1 border-t border-zinc-200 pt-2 dark:border-white/10">
+                <div className="flex justify-between text-xs text-zinc-500">
                   <span>Subtotal</span>
-                  <span>{formatRupees(order.subtotal + (order.discount || 0))}</span>
+                  <span>{formatRupees(subtotal + discount)}</span>
                 </div>
-                {order.discount > 0 && (
+                {discount > 0 && (
                   <div className="flex justify-between text-xs text-green-600">
                     <span>Discount</span>
-                    <span>-{formatRupees(order.discount)}</span>
+                    <span>-{formatRupees(discount)}</span>
                   </div>
                 )}
-                {order.tax > 0 && (
+                {tax > 0 && (
                   <>
-                    <div className="flex justify-between text-xs text-gray-500">
+                    <div className="flex justify-between text-xs text-zinc-500">
                       <span>CGST ({formatGstRateLabel(cgstRate)}%)</span>
                       <span>{formatRupees(cgst)}</span>
                     </div>
-                    <div className="flex justify-between text-xs text-gray-500">
+                    <div className="flex justify-between text-xs text-zinc-500">
                       <span>SGST ({formatGstRateLabel(sgstRate)}%)</span>
                       <span>{formatRupees(sgst)}</span>
                     </div>
                   </>
                 )}
-                <div className="mt-1 flex justify-between text-sm font-semibold text-gray-800 dark:text-gray-200">
+                <div className="mt-1 flex justify-between text-sm font-semibold text-zinc-800 dark:text-zinc-100">
                   <span>Grand Total</span>
-                  <span>{pendingPrice ? "Price pending" : formatRupees(order.total)}</span>
+                  <span>{pendingPrice ? "Price pending" : formatRupees(total)}</span>
                 </div>
               </div>
 
               {showPayment && !pendingPrice && (
-                <div className="mt-4 text-center">
+                <div className="mt-4 border-t border-dashed border-zinc-200 pt-4 text-center dark:border-white/10">
                   {branding.qrUrl && (
                     <img
                       src={branding.qrUrl}
                       alt="Payment QR"
-                      className="mx-auto h-40 w-40 rounded-lg border border-gray-100 bg-white object-contain p-2"
+                      className="mx-auto h-36 w-36 bg-white object-contain p-1"
                     />
                   )}
-                  <p className="mt-2 text-sm text-gray-600">
-                    Scan to pay{" "}
+                  <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+                    Pay{" "}
                     <span className="font-semibold" style={{ color: accent }}>
-                      {formatRupees(order.total)}
+                      {formatRupees(total)}
                     </span>
+                    {" "}via UPI
                   </p>
                   {branding.upiId && (
-                    <p className="mt-0.5 text-xs text-gray-400">{branding.upiId}</p>
+                    <p className="mt-0.5 font-mono text-xs text-zinc-400">{branding.upiId}</p>
                   )}
                 </div>
               )}
 
-              {variant === "paid" && order.paymentMethod && (
-                <p className="mt-2 text-xs text-gray-400">
-                  Paid via {order.paymentMethod}
+              {variant === "paid" && (
+                <p className="mt-2 text-xs text-zinc-400">
+                  Settled{orders.some((o) => o.paymentMethod) ? ` · ${[...new Set(orders.map((o) => o.paymentMethod).filter(Boolean))].join(", ")}` : ""}
                 </p>
               )}
 
               {branding.footer && (
-                <p className="mt-3 text-center text-xs text-gray-400">{branding.footer}</p>
+                <p className="mt-3 text-center text-xs text-zinc-400">{branding.footer}</p>
               )}
             </div>
           </motion.div>

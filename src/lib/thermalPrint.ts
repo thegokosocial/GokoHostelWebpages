@@ -3,6 +3,7 @@
 import {
   DEFAULT_BILL_BRANDING,
   formatGstRateLabel,
+  mergeBillLineItems,
   splitGstPaise,
   splitGstRate,
   type BillBranding,
@@ -199,8 +200,8 @@ export async function printFoodBill(data: BillData): Promise<void> {
   await connectPrinter();
 
   const now = data.date || new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-  const billNo = data.billNumber || `BILL-${Date.now()}`;
   const branding = data.branding || DEFAULT_BILL_BRANDING;
+  const flatItems = mergeBillLineItems(data.items);
 
   const parts: Uint8Array[] = [
     INIT,
@@ -213,7 +214,9 @@ export async function printFoodBill(data: BillData): Promise<void> {
     BOLD_OFF,
     line(separator("=")),
     ALIGN_LEFT,
-    line(`Bill: ${billNo}`),
+    BOLD_ON,
+    line("Food tab"),
+    BOLD_OFF,
     line(`Date: ${now}`),
     line(`Guest: ${data.guestName}`),
   ];
@@ -226,9 +229,8 @@ export async function printFoodBill(data: BillData): Promise<void> {
   parts.push(BOLD_ON, line(twoColumn("Item       Qty", "Amount")), BOLD_OFF);
   parts.push(line(separator("-")));
 
-  for (const item of data.items) {
-    if (item.status === "voided") continue;
-    const itemName = item.name.length > 14 ? item.name.substring(0, 14) : item.name;
+  for (const item of flatItems) {
+    const itemName = item.itemName.length > 14 ? item.itemName.substring(0, 14) : item.itemName;
     const left = `${itemName} x${item.quantity}`;
     const right = formatPaise(item.lineTotal);
     parts.push(line(twoColumn(left, right)));
@@ -341,7 +343,7 @@ export async function printCombinedBill(
     DOUBLE_WIDTH_OFF,
     line(b.location.length > LINE_WIDTH ? b.location.substring(0, LINE_WIDTH) : b.location),
     BOLD_OFF,
-    line("Combined Bill"),
+    line("Shared food tab"),
     line(separator("=")),
     ALIGN_LEFT,
     line(`Date: ${now}`),
@@ -351,9 +353,8 @@ export async function printCombinedBill(
 
   for (const guest of guests) {
     parts.push(BOLD_ON, line(`>> ${guest.name}`), BOLD_OFF);
-    for (const item of guest.items) {
-      if (item.status === "voided") continue;
-      const itemName = item.name.length > 14 ? item.name.substring(0, 14) : item.name;
+    for (const item of mergeBillLineItems(guest.items)) {
+      const itemName = item.itemName.length > 14 ? item.itemName.substring(0, 14) : item.itemName;
       parts.push(line(twoColumn(`  ${itemName} x${item.quantity}`, formatPaise(item.lineTotal))));
     }
     parts.push(line(twoColumn(`  Guest total:`, formatPaise(guest.total))));

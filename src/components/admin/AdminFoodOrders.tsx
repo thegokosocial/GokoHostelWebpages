@@ -3036,7 +3036,6 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
                             const spGross = order.subtotal + (order.discount || 0);
                             const { branding } = await withBillBranding(password, username, showError);
                             await printFoodBill({
-                              billNumber: order.orderNumber,
                               guestName: order.guestName,
                               guestPhone: order.guestPhone || undefined,
                               roomInfo: order.roomInfo || undefined,

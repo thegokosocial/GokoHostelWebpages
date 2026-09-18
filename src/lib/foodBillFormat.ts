@@ -84,6 +84,33 @@ export function billPaymentStatusLabel(paymentStatus: string | null | undefined)
   return "Pending";
 }
 
+/** Flatten and coalesce line items by name + unit price (guest tab bill). */
+export function mergeBillLineItems<
+  T extends { itemName?: string; name?: string; quantity: number; itemPrice?: number; price?: number; lineTotal: number; status?: string },
+>(items: T[]): Array<{ itemName: string; quantity: number; itemPrice: number; lineTotal: number; status: string }> {
+  const map = new Map<string, { itemName: string; quantity: number; itemPrice: number; lineTotal: number; status: string }>();
+  for (const item of items) {
+    if (item.status === "voided") continue;
+    const itemName = String(item.itemName || item.name || "").trim() || "Item";
+    const itemPrice = item.itemPrice ?? item.price ?? 0;
+    const key = `${itemName.toLowerCase()}|${itemPrice}`;
+    const prev = map.get(key);
+    if (prev) {
+      prev.quantity += item.quantity;
+      prev.lineTotal += item.lineTotal;
+    } else {
+      map.set(key, {
+        itemName,
+        quantity: item.quantity,
+        itemPrice,
+        lineTotal: item.lineTotal,
+        status: item.status || "active",
+      });
+    }
+  }
+  return [...map.values()];
+}
+
 /** Public-safe branding payload for guest APIs. */
 export function publicBillBranding(branding: BillBranding) {
   return {

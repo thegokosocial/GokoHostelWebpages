@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   brandingFromSettings,
   formatGstRateLabel,
+  mergeBillLineItems,
   parseAccentHex,
   splitGstPaise,
   splitGstRate,
@@ -60,5 +61,29 @@ describe("sanitizeBillPaymentQrUrl", () => {
     expect(sanitizeBillPaymentQrUrl("/api/media/bills/2026-01-01-x.png")).toBe("/api/media/bills/2026-01-01-x.png");
     expect(sanitizeBillPaymentQrUrl("/api/media/menu/x.jpg")).toBe("");
     expect(sanitizeBillPaymentQrUrl("https://evil.com/x.png")).toBe("");
+  });
+});
+
+describe("mergeBillLineItems", () => {
+  it("coalesces same name and unit price and skips voided", () => {
+    const merged = mergeBillLineItems([
+      { itemName: "Chapati", quantity: 2, itemPrice: 1900, lineTotal: 3800 },
+      { name: "Chapati", quantity: 3, price: 1900, lineTotal: 5700 },
+      { itemName: "Bacardi", quantity: 1, itemPrice: 120000, lineTotal: 120000, status: "voided" },
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ itemName: "Chapati", quantity: 5, lineTotal: 9500 });
+  });
+
+  it("matches live jayabhargav open-tab coalesce (4 lines → 3)", () => {
+    const merged = mergeBillLineItems([
+      { name: "Bacard", quantity: 1, price: 20000, lineTotal: 20000 },
+      { name: "Bacard", quantity: 1, price: 20000, lineTotal: 20000 },
+      { name: "Food Order Outside Split", quantity: 1, price: 16700, lineTotal: 16700 },
+      { name: "Food Order Outside Split", quantity: 1, price: 16300, lineTotal: 16300 },
+    ]);
+    expect(merged).toHaveLength(3);
+    expect(merged.find((i) => i.itemName === "Bacard")).toMatchObject({ quantity: 2, lineTotal: 40000 });
+    expect(merged.reduce((s, i) => s + i.lineTotal, 0)).toBe(73000);
   });
 });
