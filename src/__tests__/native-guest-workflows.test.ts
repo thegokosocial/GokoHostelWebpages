@@ -19,10 +19,17 @@ const state = vi.hoisted(() => ({
   assignFail: false,
   /** When set, online assign fails once then succeeds (offline / retry path). */
   failOnlineOnly: false,
+  /** Bed IDs that throw NATIVE_HOLD_CONFLICT (simulates another active hold). */
+  assignConflictBedIds: new Set<number>(),
   assignCalls: [] as Array<{ bedId: number; inventoryPool?: string }>,
   onAssign: null as null | (() => void),
 }));
-const fixtureBeds = [{ id: 1, dormId: 1, bedId: "A1", type: "Bunk" as const }];
+const fixtureBeds = [
+  { id: 1, dormId: 1, bedId: "A1", type: "Bunk" as const },
+  { id: 2, dormId: 1, bedId: "A2", type: "Bunk" as const },
+  { id: 3, dormId: 1, bedId: "D1", type: "Double" as const },
+  { id: 4, dormId: 1, bedId: "D2", type: "Double" as const },
+];
 
 vi.mock("@/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => state.pi }));
@@ -38,6 +45,9 @@ vi.mock("@/db/queries", async (importOriginal) => {
     assignBedToBooking: async (data: Parameters<typeof actual.assignBedToBooking>[0]) => {
       state.assignCalls.push({ bedId: data.bedId, inventoryPool: data.inventoryPool });
       state.onAssign?.();
+      if (state.assignConflictBedIds.has(data.bedId)) {
+        throw new Error("NATIVE_HOLD_CONFLICT");
+      }
       if (state.assignFail) return false;
       if (state.failOnlineOnly && (data.inventoryPool || "online") === "online") return false;
       return actual.assignBedToBooking(data);
@@ -124,13 +134,14 @@ beforeEach(() => {
   state.pi = false;
   state.assignFail = false;
   state.failOnlineOnly = false;
+  state.assignConflictBedIds = new Set();
   state.assignCalls = [];
   state.onAssign = null;
   sqlite = new SQLite(":memory:");
   sqlite.pragma("foreign_keys = ON");
   sqlite.exec(`
     CREATE TABLE beds (id INTEGER PRIMARY KEY);
-    INSERT INTO beds VALUES (1);
+    INSERT INTO beds VALUES (1),(2),(3),(4);
     CREATE TABLE booking_bed_assignments (
       id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, bed_id INTEGER, dorm_id INTEGER,
       checkin_date TEXT, checkout_date TEXT, status TEXT, assigned_by TEXT, assigned_at TEXT, inventory_pool TEXT
@@ -190,6 +201,7 @@ beforeEach(() => {
     "0061_guest_booking_lookup.sql",
     "0062_native_guest_checkout.sql",
     "0063_guest_booking_amend.sql",
+    "0065_native_hold_lease_renew.sql",
   ]) sqlite.exec(readFileSync(`migrations/${file}`, "utf8"));
   state.db = drizzle(sqlite, { schema });
   sqlite.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("booking_tax_rate", "0");
@@ -429,6 +441,68 @@ describe("Native guest checkout end-to-end workflows", () => {
     expect(events).toEqual(["assign-while-released"]);
     expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
       .toEqual({ n: 1 });
+  });
+
+  it("NATIVE_HOLD_CONFLICT on held bed soft-fails and assigns an alternative bed", async () => {
+    const prepared = await prepareGuestCheckout(selection("full"));
+    const held = JSON.parse(
+      (sqlite.prepare("SELECT bed_ids FROM native_inventory_holds").get() as { bed_ids: string }).bed_ids,
+    ) as number[];
+    expect(held).toHaveLength(1);
+    state.assignConflictBedIds = new Set(held);
+    const result = await payAndVerify(prepared);
+    expect(result.state).toBe("fulfilled");
+    const assigned = sqlite.prepare(
+      "SELECT bed_id FROM booking_bed_assignments WHERE status='assigned'",
+    ).all() as { bed_id: number }[];
+    expect(assigned).toHaveLength(1);
+    expect(held).not.toContain(assigned[0].bed_id);
+    expect(state.assignCalls.some((c) => held.includes(c.bedId))).toBe(true);
+  });
+
+  it("NATIVE_HOLD_CONFLICT with no free alternative still yields captured_unfulfilled", async () => {
+    state.assignConflictBedIds = new Set(fixtureBeds.map((b) => b.id));
+    const prepared = await prepareGuestCheckout(selection("full"));
+    await expect(payAndVerify(prepared)).rejects.toThrow(/do not pay again/i);
+    expect(sqlite.prepare("SELECT state, closure_reason FROM native_booking_checkouts").get())
+      .toEqual({ state: "captured_unfulfilled", closure_reason: "cannot_fulfil" });
+    const hist = sqlite.prepare("SELECT details FROM booking_history WHERE action='website_unfulfilled'").get() as {
+      details: string;
+    };
+    expect(hist.details).toMatch(/NATIVE_HOLD_CONFLICT|Could not assign/);
+    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
+      .toEqual({ n: 0 });
+  });
+
+  it("expired own hold with free beds still fulfils after capture", async () => {
+    const prepared = await prepareGuestCheckout(selection("full"));
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.prepare("UPDATE native_inventory_holds SET created_at=?, expires_at=?").run(now - 901, now - 1);
+    const result = await payAndVerify(prepared);
+    expect(result.state).toBe("fulfilled");
+    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
+      .toEqual({ n: 1 });
+  });
+
+  it("mixed 2 Bed + 1 Double fulfils all four physical beds", async () => {
+    const checkinDate = addCalendarDays(todayIST(), 10);
+    const checkoutDate = addCalendarDays(checkinDate, 1);
+    seedRates(checkinDate, checkoutDate);
+    const prepared = await prepareGuestCheckout({
+      requestKey: crypto.randomUUID(),
+      checkinDate,
+      checkoutDate,
+      paymentChoice: "full",
+      guest: { name: "Mixed Guest", email: "mixed@example.test", phone: "+919876543210" },
+      rooms: [
+        { roomId: "1-Bed", quantity: 2, ratePlanId: 1 },
+        { roomId: "1-Double", quantity: 1, ratePlanId: 1 },
+      ],
+    });
+    const result = await payAndVerify(prepared);
+    expect(result.state).toBe("fulfilled");
+    expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
+      .toEqual({ n: 4 });
   });
 
   it("sync allowlist excludes native_booking_* tables", () => {

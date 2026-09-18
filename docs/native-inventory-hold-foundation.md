@@ -10,10 +10,10 @@ Creation is Cloudflare-owned, rejects Pi, and requires `GOKO_NATIVE_HOLD_INTERNA
 
 1. An internal caller provides a UUID request key, a cryptographically generated 256-bit owner token (64 lower-case hex characters), server-selected bed IDs and civil stay dates. Do not accept arbitrary guest-selected physical IDs in a future public API. No amount, gateway credential or booking confirmation is accepted.
 2. Validate real calendar dates, an arrival within the next 365 days, a 1–30-night stay, and 1–4 distinct positive physical IDs. Hash the owner token and canonical sorted allocation/dates; never store/return the raw token.
-3. Before new work, recover the existing request for the correct owner. Changed selections under that key are rejected; disabling creation, expiry or release cannot cause a new reservation or renew expiry. Wrong ownership yields no hold data.
+3. Before new work, recover the existing request for the correct owner. Changed selections under that key are rejected; disabling creation, expiry or release cannot cause a new reservation or renew expiry via recovery. Wrong ownership yields no hold data. Guest checkout `claimGuestCheckout` may renew an **unexpired** held lease by bumping `created_at`+`expires_at` together (migration **0065**, still ≤900s); expired/released holds are not extended.
 4. Reuse the existing server booking picker to reject unavailable, offline or blocked selections. Require complete Double units rather than partial occupancy slots.
 5. Insert the entire selected allocation in **one SQL statement**. Database triggers recheck conflicting assigned beds, active blocks and unexpired native holds. One conflicting bed aborts the complete insert; there is no partial reservation. Unique request keys deduplicate retries/concurrent owners.
-6. The hold is valid for at most 900 seconds from original creation. Database guards use the database clock; expiry stops consuming physical allocation without deleting recovery evidence. No cleanup job is required to free expired physical reservations. Released/expired requests cannot silently become fresh holds.
+6. The hold is valid for at most 900 seconds from its current `created_at` (original create or claim renew). Database guards use the database clock; expiry stops consuming physical allocation without deleting recovery evidence. No cleanup job is required to free expired physical reservations. Released/expired requests cannot silently become fresh holds.
 7. Owner-authenticated release is idempotent, including when new creation is disabled. It never deletes recovery evidence. No fulfilment operation exists yet; **do not release then assign as a payment fulfilment sequence**—the later implementation must transfer ownership atomically.
 
 ### Read-only recovery and hold-aware selection
@@ -28,7 +28,7 @@ Selection is not a reservation promise: concurrent writes can change it, and exi
 
 ## Shared writer guards
 
-Migration 0059 installs insert/update guards on `booking_bed_assignments` and `bed_blocks` in the same database. These reject overlap with active native holds regardless of which SQL caller writes the assignment/block. Hold allocation, identity, owner, dates and expiry are immutable; released holds cannot be resurrected.
+Migration 0059 installs insert/update guards on `booking_bed_assignments` and `bed_blocks` in the same database. These reject overlap with active native holds regardless of which SQL caller writes the assignment/block. Hold allocation, identity, owner and stay dates are immutable; released holds cannot be resurrected. Migration **0065** allows lease renewal (`created_at`/`expires_at` only) while `state` stays `held`.
 
 The table lacks sync columns and is absent from Cloudflare/Pi sync allowlists. The common Pi migrator may create an empty copy and its guards, but the hold service rejects Pi and native hold rows are not transferred. **Separate-database Pi writers are not coordinated by these triggers.** Offline/Pi policy remains a public-release gate.
 

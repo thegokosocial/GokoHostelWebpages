@@ -2315,7 +2315,27 @@ export async function getAvailableBedsForRange(
     );
     if (nights.length === 0) return [];
     const unassignedHolds = await getUnassignedOtaHoldsForRange(checkinDate, checkoutDate, excludeBookingId);
-    const tagged = tagBedsForPicker(physical, blockedOnly, allBeds, nights, blocks, assignments, overrides, unassignedHolds, todayIST());
+    let tagged = tagBedsForPicker(physical, blockedOnly, allBeds, nights, blocks, assignments, overrides, unassignedHolds, todayIST());
+    // Match guest search: beds under an active native website hold are not free to pick/assign.
+    // Filter bed IDs only — do not change Aiosell hold unit math (getActiveNativeHoldBedCountForDorm).
+    try {
+      const heldRows = await getDb().select({ bedIds: nativeInventoryHolds.bedIds }).from(nativeInventoryHolds).where(sql`
+        ${nativeInventoryHolds.state} = 'held'
+        AND ${nativeInventoryHolds.expiresAt} > CAST(strftime('%s','now') AS INTEGER)
+        AND ${nativeInventoryHolds.checkinDate} < ${checkoutDate}
+        AND ${nativeInventoryHolds.checkoutDate} > ${checkinDate}
+      `);
+      const heldIds = new Set<number>();
+      for (const row of heldRows) {
+        let ids: unknown;
+        try { ids = JSON.parse(row.bedIds); } catch { continue; }
+        if (!Array.isArray(ids)) continue;
+        for (const id of ids) {
+          if (Number.isInteger(id) && (id as number) > 0) heldIds.add(id as number);
+        }
+      }
+      if (heldIds.size) tagged = tagged.filter((bed) => !heldIds.has(bed.id));
+    } catch { /* holds table missing — picker still works */ }
     if (!omitOwnAssigned || ownAssignedBedIds.size === 0) return tagged;
     return tagged.filter((bed) => !ownAssignedBedIds.has(bed.id));
   });

@@ -165,6 +165,7 @@ beforeEach(() => {
   sqlite.exec(readFileSync("migrations/0061_guest_booking_lookup.sql", "utf8"));
   sqlite.exec(readFileSync("migrations/0062_native_guest_checkout.sql", "utf8"));
   sqlite.exec(readFileSync("migrations/0063_guest_booking_amend.sql", "utf8"));
+  sqlite.exec(readFileSync("migrations/0065_native_hold_lease_renew.sql", "utf8"));
 
   sqlite.prepare(`INSERT INTO channel_config
     (hotel_code, pms_id, api_base_url, api_username, api_password, booking_engine_url, is_active, created_at)
@@ -325,8 +326,16 @@ describe("claimGuestCheckout and holds", () => {
     expect(result.razorpay?.order_id).toMatch(/^order_DUMMY/);
     expect(calls.filter((c) => c.path === "orders" && c.method === "POST")).toHaveLength(1);
 
+    const before = sqlite.prepare("SELECT created_at, expires_at FROM native_inventory_holds").get() as {
+      created_at: number; expires_at: number;
+    };
     const claimed = await claimGuestCheckout(result.checkoutId, result.ownerToken!);
     expect(claimed.checkout.order_id).toBe(result.razorpay!.order_id);
+    const after = sqlite.prepare("SELECT created_at, expires_at FROM native_inventory_holds").get() as {
+      created_at: number; expires_at: number;
+    };
+    expect(after.expires_at).toBeGreaterThanOrEqual(before.expires_at);
+    expect(after.expires_at - after.created_at).toBeLessThanOrEqual(900);
 
     await expect(claimGuestCheckout(result.checkoutId, result.ownerToken!))
       .rejects.toThrow(/already started|Reconcile/);

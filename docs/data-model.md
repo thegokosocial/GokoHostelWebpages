@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts`. Repository SQL: `migrations/0001_initial.sql` … `0064_food_bill_share_tokens.sql`. Repository migrations are not proof of deployment; what production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the common migration set (it skips CMS/splits/bill-share migrations as configured); gateway/native tables remain unused/unsynced on Pi and their services reject Pi.
+**Git-safe.** Schema: `src/db/schema.ts`. Repository SQL: `migrations/0001_initial.sql` … `0065_native_hold_lease_renew.sql`. Repository migrations are not proof of deployment; what production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the common migration set (it skips CMS/splits/bill-share migrations as configured); gateway/native tables remain unused/unsynced on Pi and their services reject Pi.
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 
@@ -110,7 +110,7 @@ The [quote/refund calculators](native-booking-quotes-and-refunds.md) add no sche
 
 Read-only owner recovery retains original hold evidence after disable/release/expiry. An internal advisory selector excludes active overlapping leases using the database clock. New creation/selection preflights all hold columns and six expected-table trigger installations. No new migration, synchronization, shared-calendar/PMS calculation or quota guarantee is added by these services.
 
-Internal native milestone: `native_inventory_holds` (0059) stores immutable request/owner fingerprints, 1–4 physical IDs and a maximum 900-second lease. Same-database SQL triggers reject overlapping active assignments, blocks and holds, and guard subsequent assignment/block writes. It is not synchronized and does not yet enforce aggregate online quotas, fulfilment or cross-database Pi ownership. No public API uses it; default-disabled. See [scope](native-inventory-hold-foundation.md). Migration 0059 was exercised only in disposable local databases, not deployed.
+Internal native milestone: `native_inventory_holds` (0059) stores request/owner fingerprints, 1–4 physical IDs and a maximum 900-second lease. Same-database SQL triggers reject overlapping active assignments, blocks and holds, and guard subsequent assignment/block writes. Migration **0065** allows claim-time lease renew (`created_at`/`expires_at` while held). It is not synchronized and does not yet enforce aggregate online quotas or cross-database Pi ownership. See [scope](native-inventory-hold-foundation.md).
 
 ### CMS (Cloudflare D1 only — not on Pi)
 

@@ -163,6 +163,44 @@ export async function createNativeInventoryHold(input: z.input<typeof inputSchem
   if (owned.requestHash !== requestHash) throw new NativeHoldError("Request key already belongs to a different selection");
   return snapshot(owned); // Concurrent same-key owner; no repeat insert / no Aiosell push.
 }
+/**
+ * Extend an unexpired held lease for Razorpay claim. Does not renew recovery-by-key,
+ * expired holds, or released rows (avoids re-locking beds another guest already held).
+ */
+export async function renewNativeInventoryHoldLease(
+  id: string,
+  ownerToken: string,
+  holdSeconds?: number,
+) {
+  cloudOnly();
+  z.string().uuid().parse(id);
+  z.string().regex(/^[a-f0-9]{64}$/).parse(ownerToken);
+  const ownerHash = await hash(ownerToken);
+  const lease = clampHoldSeconds(holdSeconds);
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    const rows = await getDb().update(holds).set({
+      createdAt: now,
+      expiresAt: now + lease,
+    }).where(and(
+      eq(holds.id, id),
+      eq(holds.ownerHash, ownerHash),
+      eq(holds.state, "held"),
+      sql`${holds.expiresAt} > ${now}`,
+    )).returning();
+    if (!rows.length) {
+      const [owned] = await getDb().select().from(holds)
+        .where(and(eq(holds.id, id), eq(holds.ownerHash, ownerHash))).limit(1);
+      if (!owned) throw new NativeHoldError("Hold not found", 404);
+      return snapshot(owned); // expired/released — no extension
+    }
+    return snapshot(rows[0]);
+  } catch (error) {
+    if (error instanceof NativeHoldError) throw error;
+    throw new NativeHoldError("Hold lease renew unavailable; recover the original request", 503);
+  }
+}
+
 export async function releaseNativeInventoryHold(id: string, ownerToken: string) {
   cloudOnly(); z.string().uuid().parse(id); z.string().regex(/^[a-f0-9]{64}$/).parse(ownerToken);
   const ownerHash = await hash(ownerToken);

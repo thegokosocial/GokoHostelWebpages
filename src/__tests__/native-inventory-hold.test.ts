@@ -3,7 +3,7 @@ import SQLite from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
-import { createNativeInventoryHold, releaseNativeInventoryHold, getNativeInventoryHold, getNativeSelectionAvailability } from "@/lib/nativeInventoryHold";
+import { createNativeInventoryHold, releaseNativeInventoryHold, getNativeInventoryHold, getNativeSelectionAvailability, renewNativeInventoryHoldLease } from "@/lib/nativeInventoryHold";
 import { todayIST } from "@/lib/utils";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { getSyncableTableNames } from "@/lib/syncEngine";
@@ -36,6 +36,7 @@ beforeEach(() => {
   const amendSql = readFileSync("migrations/0063_guest_booking_amend.sql", "utf8");
   const triggerPart = amendSql.slice(amendSql.indexOf("DROP TRIGGER IF EXISTS native_hold_insert_guard"));
   sqlite.exec(triggerPart);
+  sqlite.exec(readFileSync("migrations/0065_native_hold_lease_renew.sql", "utf8"));
   state.db = drizzle(sqlite, { schema }); vi.stubEnv("GOKO_NATIVE_HOLD_INTERNAL_ENABLED", "true");
 });
 afterEach(() => { sqlite.close(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
@@ -219,11 +220,35 @@ describe("Internal native inventory hold primitive — no public checkout", () =
     expect((await getNativeSelectionAvailability({ checkinDate: request.checkinDate, checkoutDate: request.checkoutDate })).units.some((u) => u.bedIds.includes(1))).toBe(true);
     expect((await createNativeInventoryHold(selection())).state).toBe("held");
   });
-  it("prevents SQL allocation/expiry rewrite and resurrection", async () => {
+  it("prevents bed rewrite and resurrect; lease renew bumps created_at+expires_at", async () => {
     const result = await createNativeInventoryHold(selection());
-    expect(() => sqlite.prepare("UPDATE native_inventory_holds SET expires_at=expires_at+1").run()).toThrow("IMMUTABLE");
+    expect(() => sqlite.prepare("UPDATE native_inventory_holds SET bed_ids='[9]'").run()).toThrow("IMMUTABLE");
+    const before = sqlite.prepare("SELECT created_at, expires_at FROM native_inventory_holds WHERE id=?").get(result.id) as {
+      created_at: number; expires_at: number;
+    };
+    const renewed = await renewNativeInventoryHoldLease(result.id, token, 600);
+    expect(renewed.state).toBe("held");
+    const after = sqlite.prepare("SELECT created_at, expires_at FROM native_inventory_holds WHERE id=?").get(result.id) as {
+      created_at: number; expires_at: number;
+    };
+    expect(after.created_at).toBeGreaterThanOrEqual(before.created_at);
+    expect(after.expires_at - after.created_at).toBe(600);
+    expect(after.expires_at).toBe(after.created_at + 600);
     await releaseNativeInventoryHold(result.id, token);
     expect(() => sqlite.prepare("UPDATE native_inventory_holds SET state='held'").run()).toThrow("IMMUTABLE");
+    await expect(renewNativeInventoryHoldLease(result.id, token)).resolves.toMatchObject({ state: "released" });
+  });
+
+  it("does not renew an already-expired hold lease", async () => {
+    const request = selection();
+    const result = await createNativeInventoryHold(request);
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.prepare("UPDATE native_inventory_holds SET created_at=?, expires_at=? WHERE id=?")
+      .run(now - 901, now - 1, result.id);
+    const snap = await renewNativeInventoryHoldLease(result.id, token, 900);
+    expect(snap.state).toBe("expired");
+    const row = sqlite.prepare("SELECT expires_at FROM native_inventory_holds WHERE id=?").get(result.id) as { expires_at: number };
+    expect(row.expires_at).toBe(now - 1);
   });
   it.each([{ checkinDate: "2026-02-30" }, { checkoutDate: "garbage" }, { bedIds: [1, 1] }, { bedIds: [] }, { ownerToken: "guess" }])("rejects malformed request %j", async (override) => {
     await expect(createNativeInventoryHold({ ...selection(), ...override })).rejects.toThrow();

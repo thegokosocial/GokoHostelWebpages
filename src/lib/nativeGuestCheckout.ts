@@ -22,7 +22,7 @@ import { acceptNativeQuote } from "@/lib/nativeAcceptedQuote";
 import { calculateNativeCancellationRefund, buildNativeBookingQuote } from "@/lib/nativeBookingQuote";
 import {
   createNativeInventoryHold, getNativeSelectionAvailability,
-  releaseNativeInventoryHold,
+  releaseNativeInventoryHold, renewNativeInventoryHoldLease, clampHoldSeconds,
 } from "@/lib/nativeInventoryHold";
 import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
 import { afterResponse } from "@/lib/afterResponse";
@@ -46,6 +46,55 @@ const timestamp = () => new Date().toISOString();
 const receiptFor = (id: string) => `gbk_${id.replace(/-/g, "").slice(0, 32)}`;
 const checkoutEnv = (row: Checkout): RazorpayEnvironment =>
   row.environment === "live" ? "live" : "test";
+
+function isNativeHoldConflictError(error: unknown): boolean {
+  const parts = [
+    error instanceof Error ? error.message : String(error ?? ""),
+    error instanceof Error && error.cause instanceof Error ? error.cause.message : "",
+  ].join(" ");
+  return parts.includes("NATIVE_HOLD_CONFLICT");
+}
+
+function unfulfilledDetail(prefix: string, error: unknown): string {
+  const hint = error instanceof Error ? error.message.replace(/\s+/g, " ").slice(0, 180) : "unknown";
+  return `${prefix} (${hint})`;
+}
+
+/** Assign one sellable unit; soft-fail on occupancy miss or NATIVE_HOLD_CONFLICT so alts can run. */
+async function tryAssignUnitSoft(opts: {
+  bookingId: number;
+  ids: number[];
+  pool: InventoryPool;
+  checkinDate: string;
+  checkoutDate: string;
+  bedMeta: Map<number, { id: number; dormId: number }>;
+}): Promise<boolean> {
+  const written: number[] = [];
+  for (const bedId of opts.ids) {
+    const bed = opts.bedMeta.get(bedId);
+    if (!bed) {
+      if (written.length) await unassignBookingBedsByBedIds(opts.bookingId, written);
+      return false;
+    }
+    try {
+      const ok = await assignBedToBooking({
+        bookingId: opts.bookingId, bedId, dormId: bed.dormId,
+        checkinDate: opts.checkinDate, checkoutDate: opts.checkoutDate,
+        assignedBy: "website", inventoryPool: opts.pool,
+      });
+      if (!ok) {
+        if (written.length) await unassignBookingBedsByBedIds(opts.bookingId, written);
+        return false;
+      }
+      written.push(bedId);
+    } catch (error) {
+      if (written.length) await unassignBookingBedsByBedIds(opts.bookingId, written);
+      if (isNativeHoldConflictError(error)) return false;
+      throw error;
+    }
+  }
+  return true;
+}
 
 async function snapshotWebsiteOntoBooking(
   bookingId: number,
@@ -550,6 +599,14 @@ export async function claimGuestCheckout(checkoutId: string, ownerToken: string)
   if (!updated.length) {
     throw new GuestCheckoutError("Checkout was already started or payment evidence exists. Reconcile rather than opening it again.");
   }
+  // Renew inventory lease for the payment window (max 900s). No-op if already expired.
+  if (row.holdId) {
+    try {
+      const settingsRaw = await getSetting(WEBSITE_BOOKING_SETTINGS_KEY);
+      const policy = readWebsiteBookingSettings(settingsRaw);
+      await renewNativeInventoryHoldLease(row.holdId, ownerToken, clampHoldSeconds(policy.holdMinutes * 60));
+    } catch { /* best-effort; fulfil soft-fail + alts still apply */ }
+  }
   return {
     checkout: {
       key: row.razorpayKeyId!, order_id: row.razorpayOrderId, amount: row.dueNowPaise, currency: "INR" as const,
@@ -834,24 +891,11 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
       throw new GuestCheckoutError("Held beds do not form complete sellable units", 503);
     }
 
-    const tryAssignUnit = async (ids: number[], pool: InventoryPool): Promise<boolean> => {
-      const written: number[] = [];
-      for (const bedId of ids) {
-        const bed = bedMeta.get(bedId);
-        if (!bed) return false;
-        const ok = await assignBedToBooking({
-          bookingId: row.bookingId!, bedId, dormId: bed.dormId,
-          checkinDate: holdRow.checkinDate, checkoutDate: holdRow.checkoutDate,
-          assignedBy: "website", inventoryPool: pool,
-        });
-        if (!ok) {
-          if (written.length) await unassignBookingBedsByBedIds(row.bookingId!, written);
-          return false;
-        }
-        written.push(bedId);
-      }
-      return true;
-    };
+    const tryAssignUnit = async (ids: number[], pool: InventoryPool): Promise<boolean> =>
+      tryAssignUnitSoft({
+        bookingId: row.bookingId!, ids, pool,
+        checkinDate: holdRow.checkinDate, checkoutDate: holdRow.checkoutDate, bedMeta,
+      });
 
     const claimed = new Set<number>();
     for (const unit of heldUnits) {
@@ -953,7 +997,10 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
       }).where(eq(checkouts.id, checkoutId));
       await addBookingHistoryEntry({
         bookingId: row.bookingId, action: "website_unfulfilled",
-        details: "Payment captured; online and offline bed assign failed — assign manually from Unassigned",
+        details: unfulfilledDetail(
+          "Payment captured; online and offline bed assign failed — assign manually from Unassigned",
+          error,
+        ),
         performedBy: "website",
       });
       throw new GuestCheckoutError(
@@ -1324,24 +1371,11 @@ export async function fulfilGuestAmend(checkoutId: string, ownerToken?: string, 
       throw new GuestCheckoutError("Held beds do not form complete sellable units", 503);
     }
 
-    const tryAssignUnit = async (ids: number[], pool: InventoryPool): Promise<boolean> => {
-      const written: number[] = [];
-      for (const bedId of ids) {
-        const bed = bedMeta.get(bedId);
-        if (!bed) return false;
-        const ok = await assignBedToBooking({
-          bookingId: row.bookingId!, bedId, dormId: bed.dormId,
-          checkinDate: holdRow.checkinDate, checkoutDate: holdRow.checkoutDate,
-          assignedBy: "website", inventoryPool: pool,
-        });
-        if (!ok) {
-          if (written.length) await unassignBookingBedsByBedIds(row.bookingId!, written);
-          return false;
-        }
-        written.push(bedId);
-      }
-      return true;
-    };
+    const tryAssignUnit = async (ids: number[], pool: InventoryPool): Promise<boolean> =>
+      tryAssignUnitSoft({
+        bookingId: row.bookingId!, ids, pool,
+        checkinDate: holdRow.checkinDate, checkoutDate: holdRow.checkoutDate, bedMeta,
+      });
 
     const claimed = new Set<number>();
     for (const unit of heldUnits) {
@@ -1455,7 +1489,10 @@ export async function fulfilGuestAmend(checkoutId: string, ownerToken?: string, 
       }).where(eq(checkouts.id, checkoutId));
       await addBookingHistoryEntry({
         bookingId: row.bookingId, action: "website_unfulfilled",
-        details: "Amend payment captured; bed assign failed — assign manually from Unassigned",
+        details: unfulfilledDetail(
+          "Amend payment captured; bed assign failed — assign manually from Unassigned",
+          error,
+        ),
         performedBy: "website",
       });
       throw new GuestCheckoutError(
