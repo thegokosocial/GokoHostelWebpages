@@ -528,15 +528,32 @@ describe("Booking calendar UI permissions match the API keys", () => {
     const editor = readFile("src/components/admin/booking-dashboard/EditBookingModal.tsx");
     expect(editor).toContain('action: "getAvailableBeds"');
     expect(editor).toContain('onAction("editReservation"');
-    expect(editor).toContain("Dates and bed changes are checked against existing bookings");
+    expect(editor).toContain("Availability is checked against existing bookings");
     expect(editor).toContain("status stays");
     expect(editor).toContain("getNights(checkinDate, checkoutDate)");
     expect(editor).toContain('canEditPaid = booking.source === "manual"');
     expect(editor).toContain("Collect remaining");
     expect(editor).toContain('const nightlyRateChanged = Number(nightlyRate) !== Number(booking.nightlyRate ?? 0);');
     expect(editor).toContain('...(nightlyRateChanged ? { nightlyRate: Number(nightlyRate) } : {}),');
+    expect(editor).toContain("Dates and bed changes can be saved together");
+    expect(editor).toContain("bed(s) no longer available for these dates");
+    expect(editor).toContain("Selected rooms sleep");
+    expect(editor).toContain("After save: Total");
+    expect(editor).toContain("Use suggested");
+    expect(editor).not.toContain("Save the date change first");
+    expect(editor).not.toContain("Save date changes and bed changes separately");
     expect(editor).not.toContain("Current balance after this edit:");
     expect(editor).not.toContain('max={booking.amountTotal || 0}');
+  });
+
+  it("editReservation allows dates and beds in one payload and reprices when stay shape changes", () => {
+    const route = readFile("src/app/api/admin/bookings/route.ts");
+    const edit = route.match(/action === "editReservation"[\s\S]*?action === "moveRoom"/)?.[0] ?? "";
+    expect(edit).not.toContain("Save date changes and bed changes separately");
+    expect(edit).toContain("Booking needs ${Number(persons)} guest(s); selected rooms sleep ${capacity}.");
+    expect(edit).toContain("const stayShapeChanged = datesChanged || bedsChanged || nightlyRateChanged");
+    expect(edit).toContain("keptAssignments");
+    expect(edit).toContain("projectedBedIds");
   });
 
   it("walk-in New Booking has percent and amount discount tabs; tax is not hardcoded 12%", () => {

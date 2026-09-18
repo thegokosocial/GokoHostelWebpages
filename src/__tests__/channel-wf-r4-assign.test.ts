@@ -462,7 +462,7 @@ describe("Hunt: duplicate ids, string ids, overflow+cap, editReservation uncappe
     const bookingsRoute = readFileSync("src/app/api/admin/bookings/route.ts", "utf8");
     const edit = bookingsRoute.match(/action === "editReservation"[\s\S]*?action === "moveRoom"/)?.[0] ?? "";
     expect(edit).toContain("addBedIds");
-    expect(edit).toContain("assignTaggedBeds(bookingId, addBedIds");
+    expect(edit).toContain("assignTaggedBeds(bookingId, addRequested");
     expect(edit).not.toContain("requestedBedCount");
     expect(edit).not.toContain("currentAssigned");
     expect(edit).not.toContain("assignedBedsMatchNeeds");
