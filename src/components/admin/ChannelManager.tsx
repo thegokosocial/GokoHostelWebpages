@@ -251,7 +251,7 @@ function ConfigTab({ password, username }: { password: string; username?: string
           <details className="mt-2 rounded-lg border border-brand-mist p-3 text-xs text-muted-foreground" open>
             <summary className="cursor-pointer font-semibold text-foreground">Choose your booking link (Goko or another provider)</summary>
             <div className="mt-2 space-y-2">
-              <p><strong>Goko booking:</strong> use <code>/book</code> or <code>{NATIVE_BOOKING_URL}</code>. Native checkout is not enabled yet; the page currently offers an enquiry fallback.</p>
+              <p><strong>Goko booking:</strong> use <code>/book</code> or <code>{NATIVE_BOOKING_URL}</code>. When Booking Settings readiness passes, guests can reserve and pay in Razorpay test mode on that page.</p>
               <Button type="button" variant="outline" size="sm" onClick={() => setConfig({ ...config, bookingEngineUrl: "/book" })}>Use Goko booking</Button>
               <p><strong>Aiosell / StayFlexi / another engine:</strong> paste the complete HTTPS link guests use to select rooms and pay. Do not use the API Base URL or PMS integration address. Payment is handled by that provider.</p>
               <p><strong>Leave blank:</strong> Book Now opens Booking Enquiry, not an old provider. This setting is independent of Enable Channel Manager.</p>

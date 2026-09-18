@@ -48,7 +48,7 @@ export const bookingGateCopy = {
   agreeLabelBefore: "I agree to the ",
   termsInlineLabel: "terms and conditions",
   reserveCta: "Reserve My Spot",
-  redirectNoteLine1: "Continue to our booking page, or contact our team if online booking is unavailable.",
+  redirectNoteLine1: "Continue to our booking page to check dates and reserve. Contact us on WhatsApp if you need help.",
   redirectPartner: "",
   early: {
     title: "Coming in before check-in time?",

@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { BOOKING_ENQUIRY_PATH, type BookingDestination } from "@/lib/bookingDestination";
 
 type View = "idle" | "main" | "early" | "terms";
+type GateDestination = BookingDestination & { nativeCheckoutReady?: boolean };
 
 type BookingGateContextValue = {
   openBookingGate: () => void;
@@ -39,7 +40,7 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<View>("idle");
   const [mainAgreed, setMainAgreed] = useState(false);
   const [termsAgreed, setTermsAgreed] = useState(false);
-  const [destination, setDestination] = useState<BookingDestination | null>(null);
+  const [destination, setDestination] = useState<GateDestination | null>(null);
   const [destinationError, setDestinationError] = useState(false);
   const [configRefresh, setConfigRefresh] = useState(0);
 
@@ -55,7 +56,7 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
         if (!["native", "external", "enquiry"].includes(data.mode)) throw new Error("Invalid configuration");
         if (active) { setDestination(data); setDestinationError(false); }
       })
-      .catch(() => { if (active) { setDestination({ mode: "enquiry", url: BOOKING_ENQUIRY_PATH }); setDestinationError(true); } })
+      .catch(() => { if (active) { setDestination({ mode: "enquiry", url: BOOKING_ENQUIRY_PATH, nativeCheckoutReady: false }); setDestinationError(true); } })
       .finally(() => clearTimeout(timeout));
     return () => { active = false; clearTimeout(timeout); controller.abort(); };
     // Opening the gate refreshes configuration; switching gate panels does not.
@@ -63,7 +64,15 @@ export function BookingGateProvider({ children }: { children: ReactNode }) {
   }, [view === "idle", configRefresh]);
 
   const actionLabel = !destination ? "Checking booking options…" : destination.mode === "enquiry" ? "Booking enquiry" : destination.mode === "native" ? "Continue to Goko" : "Reserve My Spot";
-  const destinationNote = !destination ? "Checking the latest booking destination." : destination.mode === "enquiry" ? "Online booking is unavailable. Contact our team for dates and availability; an enquiry is not a confirmed reservation." : destination.mode === "native" ? "Continue to Goko. Native online checkout is not enabled yet; our team can help with your enquiry." : "Continue to the configured booking provider, which handles your reservation and payment.";
+  const destinationNote = !destination
+    ? "Checking the latest booking destination."
+    : destination.mode === "enquiry"
+      ? "Online booking is unavailable. Contact our team for dates and availability; an enquiry is not a confirmed reservation."
+      : destination.mode === "native"
+        ? destination.nativeCheckoutReady
+          ? "Continue to Goko to check availability, reserve beds, and pay securely online."
+          : "Continue to Goko to check availability and rates. Online payment may be temporarily unavailable — WhatsApp us if you need help."
+        : "Continue to the configured booking provider, which handles your reservation and payment.";
 
   const openBookingGate = useCallback(() => {
     setDestination(null);

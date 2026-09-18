@@ -286,7 +286,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                 Beds {money(subtotal)} + tax ({taxPercent}%) {money(totals.tax)}.
               </p>
             ) : null}
-            <p className="hidden text-xs text-white/80 xl:block">{nativeCheckoutReady ? "Secure checkout available." : "Payment remains disabled."}</p>
+            {nativeCheckoutReady ? (
+              <p className="hidden text-xs text-white/80 xl:block">Secure checkout ready — review your stay to book.</p>
+            ) : null}
           </aside>
           </div>
           {review && ready && <div ref={reviewRef} tabIndex={-1} className="mt-5 scroll-mt-24 rounded-xl border border-brand-mist p-4 focus:outline-none focus:ring-2 focus:ring-brand-green sm:p-5">
