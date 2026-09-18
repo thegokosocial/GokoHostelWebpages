@@ -548,6 +548,8 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(editor).toContain("Selected rooms sleep");
     expect(editor).toContain("After save: Total");
     expect(editor).toContain("AvailableBedsPicker");
+    expect(editor).toContain("a.capacity || a.physicalBedIds?.length || 1");
+    expect(editor).toContain("physicalBedIds");
     expect(editor).not.toContain("Save the date change first");
     expect(editor).not.toContain("Save date changes and bed changes separately");
     expect(editor).not.toContain("Current balance after this edit:");
@@ -558,11 +560,25 @@ describe("Booking calendar UI permissions match the API keys", () => {
     const route = readFile("src/app/api/admin/bookings/route.ts");
     const edit = route.match(/action === "editReservation"[\s\S]*?action === "moveRoom"/)?.[0] ?? "";
     expect(edit).not.toContain("Save date changes and bed changes separately");
-    expect(edit).toContain("Booking needs ${Number(persons)} guest(s); selected rooms sleep ${capacity}.");
+    expect(edit).toContain("selected rooms sleep ${capacity}");
+    expect(edit).toContain("expandRemovedBedIds");
+    expect(edit).toContain("const capacity = projectedBedIds.size");
+    expect(edit).toContain("personsForCapacity");
     expect(edit).toContain("const stayShapeChanged = datesChanged || bedsChanged || nightlyRateChanged");
     expect(edit).toContain("keptAssignments");
     expect(edit).toContain("projectedBedIds");
     expect(edit).toContain("oldBasis");
+  });
+
+  it("sums assigned-slot capacity so a full double plus single sleeps 3 guests", () => {
+    const editor = readFile("src/components/admin/booking-dashboard/EditBookingModal.tsx");
+    expect(editor).toContain("finalCapacity = keptAssignments.reduce");
+    expect(editor).toContain("finalBedCount = keptAssignments.reduce");
+    expect(editor).not.toContain("finalCapacity = keptAssignments.length +");
+    expect(editor).not.toContain("finalBedCount = keptAssignments.length +");
+    const types = readFile("src/components/admin/booking-dashboard/types.ts");
+    expect(types).toContain("physicalBedIds?: number[]");
+    expect(types).toContain("capacity?: number");
   });
 
   it("walk-in New Booking has percent and amount discount tabs; tax is not hardcoded 12%", () => {

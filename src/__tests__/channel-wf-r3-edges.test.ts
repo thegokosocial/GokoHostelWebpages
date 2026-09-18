@@ -220,6 +220,26 @@ describe("Booking detail sellable-unit parity", () => {
     const body = await res.json();
     expect(body.assignments).toHaveLength(2);
     expect(body.assignments.map((a: { bedLabel: string }) => a.bedLabel)).toEqual(["FEM-3", "DOUBLE 1"]);
+    expect(body.assignments[0]).toMatchObject({ bedLabel: "FEM-3", capacity: 1, physicalBedIds: [3] });
+    expect(body.assignments[1]).toMatchObject({ bedLabel: "DOUBLE 1", capacity: 2, physicalBedIds: [17, 18] });
+  });
+
+  it("getDetail marks a partial double as capacity 1", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 9, guestName: "Solo", checkinDate: "2026-09-18", checkoutDate: "2026-09-20",
+        amountTotal: 200, amountPaid: 0, persons: 1,
+      },
+      assignments: [
+        { id: 2, bookingId: 9, bedId: 17, dormId: 9, status: "assigned", checkinDate: "2026-09-18", checkoutDate: "2026-09-20" },
+      ],
+      history: [],
+      linkedBookings: [],
+    });
+    const res = await bookingsPOST(adminReq({ password: "x", action: "getDetail", bookingId: 9 }));
+    const body = await res.json();
+    expect(body.assignments).toHaveLength(1);
+    expect(body.assignments[0]).toMatchObject({ bedLabel: "DOUBLE 1", capacity: 1, physicalBedIds: [17] });
   });
 
   it("shows only the new active unit after dates and beds change", async () => {

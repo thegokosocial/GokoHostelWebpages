@@ -28,6 +28,8 @@ import {
   stayNightCount,
   tagBedsForPicker,
   sellableUnits,
+  assignedSlotsInUnit,
+  expandRemovedBedIds,
 } from "@/lib/inventoryAvailability";
 
 const queries = readFileSync("src/db/queries.ts", "utf8");
@@ -82,6 +84,18 @@ describe("double-bed sellable units", () => {
       [],
     );
     expect(tagged.filter((bed) => bed.id === 1 || bed.id === 2).map((bed) => bed.pool)).toEqual(["block", "block"]);
+  });
+
+  it("assignedSlotsInUnit counts partial vs full double pairs", () => {
+    const units = sellableUnits(doubleBeds);
+    expect(assignedSlotsInUnit(units[0], [1])).toEqual([1]);
+    expect(assignedSlotsInUnit(units[0], [1, 2, 3])).toEqual([1, 2]);
+  });
+
+  it("expandRemovedBedIds pulls in the other half of an assigned double", () => {
+    const units = sellableUnits(doubleBeds);
+    expect([...expandRemovedBedIds([1], [1, 2, 5], units)].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect([...expandRemovedBedIds([], [1, 2], units)]).toEqual([]);
   });
 });
 

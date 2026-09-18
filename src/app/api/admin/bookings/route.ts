@@ -5,7 +5,7 @@ import { accounts } from "@/db/schema";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { otaFingerprint, pushIfOtaChanged, type InventorySyncResult } from "@/lib/aiosellSync";
-import { occupiedNights, exclusiveEndDate, sellableUnits, type InventoryPool } from "@/lib/inventoryAvailability";
+import { occupiedNights, exclusiveEndDate, sellableUnits, assignedSlotsInUnit, expandRemovedBedIds, type InventoryPool } from "@/lib/inventoryAvailability";
 import {
   channelBedNeeds,
   channelNeedsAreMapped,
@@ -421,17 +421,28 @@ export async function POST(req: NextRequest) {
 
       const bedById = new Map(allBeds.map((b) => [b.id, b]));
       const seenCalendarUnits = new Set<string>();
+      const assignedByBooking = new Map<number, number[]>();
+      for (const a of calendarData.assignments) {
+        const list = assignedByBooking.get(a.bookingId) ?? [];
+        list.push(a.bedId);
+        assignedByBooking.set(a.bookingId, list);
+      }
       const enrichedAssignments = calendarData.assignments.flatMap((a) => {
         const bed = bedById.get(a.bedId);
         const unit = unitByBed.get(a.bedId);
         const key = `${a.bookingId}:${unit?.key || a.bedId}`;
         if (seenCalendarUnits.has(key)) return [];
         seenCalendarUnits.add(key);
+        const physicalBedIds = unit
+          ? assignedSlotsInUnit(unit, assignedByBooking.get(a.bookingId) || [])
+          : [a.bedId];
         return [{
           ...a,
-          bedId: unit?.beds[0].id || a.bedId,
+          bedId: physicalBedIds[0] || a.bedId,
           dormName: bed?.dormName || "",
           bedLabel: unit?.label || bed?.bedId || "",
+          capacity: physicalBedIds.length || 1,
+          physicalBedIds: physicalBedIds.length > 0 ? physicalBedIds : [a.bedId],
         }];
       });
 
@@ -451,8 +462,11 @@ export async function POST(req: NextRequest) {
       if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
       const allBeds = await getAllBeds();
       const bedById = new Map(allBeds.map((b) => [b.id, b]));
-      const unitByBed = new Map(sellableUnits(allBeds).flatMap((u) => u.beds.map((b) => [b.id, u] as const)));
+      const units = sellableUnits(allBeds);
+      const unitByBed = new Map(units.flatMap((u) => u.beds.map((b) => [b.id, u] as const)));
       const seenAssignmentUnits = new Set<string>();
+      const assignedOnly = detail.assignments.filter((assignment) => assignment.status === "assigned");
+      const assignedBedIds = assignedOnly.map((a) => a.bedId);
       const checkout = stayCheckout(detail.booking.checkinDate, detail.booking.checkoutDate);
       const nights = checkout ? diffDays(detail.booking.checkinDate, checkout) : 0;
       return NextResponse.json({
@@ -462,16 +476,22 @@ export async function POST(req: NextRequest) {
           nights,
           balance: (detail.booking.amountTotal ?? 0) - (detail.booking.amountPaid ?? 0),
         },
-        assignments: detail.assignments.filter((assignment) => assignment.status === "assigned").flatMap((assignment) => {
+        assignments: assignedOnly.flatMap((assignment) => {
           const bed = bedById.get(assignment.bedId);
           const unit = unitByBed.get(assignment.bedId);
           const key = `${assignment.status}:${assignment.checkinDate}:${assignment.checkoutDate}:${unit?.key || assignment.bedId}`;
           if (seenAssignmentUnits.has(key)) return [];
           seenAssignmentUnits.add(key);
+          const physicalBedIds = unit
+            ? assignedSlotsInUnit(unit, assignedBedIds)
+            : [assignment.bedId];
           return [{
             ...assignment,
+            bedId: physicalBedIds[0] || assignment.bedId,
             dormName: bed?.dormName || "",
             bedLabel: unit?.label || bed?.bedId || "",
+            capacity: physicalBedIds.length || 1,
+            physicalBedIds: physicalBedIds.length > 0 ? physicalBedIds : [assignment.bedId],
           }];
         }),
       });
@@ -1783,11 +1803,15 @@ export async function POST(req: NextRequest) {
       if (persons !== undefined && (!Number.isInteger(Number(persons)) || Number(persons) < 1)) return NextResponse.json({ error: "Persons must be at least 1" }, { status: 400 });
       if (nightlyRate !== undefined && (!Number.isInteger(Number(nightlyRate)) || Number(nightlyRate) < 0)) return NextResponse.json({ error: "Nightly rate must be a non-negative whole number" }, { status: 400 });
 
-      const removeRequested = new Set((Array.isArray(removeBedIds) ? removeBedIds : []).map(Number));
+      const removeRequestedRaw = new Set((Array.isArray(removeBedIds) ? removeBedIds : []).map(Number));
       const addRequested = (Array.isArray(addBedIds) ? addBedIds : []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+      const assignedNow = detail.assignments.filter((a) => a.status === "assigned");
+      const assignedBedIdList = assignedNow.map((a) => a.bedId);
+      const inventoryUnits = sellableUnits((await getAllBeds()) || []);
+      const removeRequested = expandRemovedBedIds(removeRequestedRaw, assignedBedIdList, inventoryUnits);
       const assignmentRemoved = (a: { id: number; bedId: number }) => removeRequested.has(a.bedId) || removeRequested.has(a.id);
       const projectedBedIds = new Set(
-        detail.assignments.filter((a) => a.status === "assigned" && !assignmentRemoved(a)).map((a) => a.bedId),
+        assignedNow.filter((a) => !assignmentRemoved(a)).map((a) => a.bedId),
       );
       for (const bedId of addRequested) projectedBedIds.add(bedId);
 
@@ -1795,13 +1819,13 @@ export async function POST(req: NextRequest) {
         const selectionError = await validateBedsForRange(addRequested, checkinDate, checkoutDate, bookingId);
         if (selectionError) return NextResponse.json({ error: selectionError }, { status: 400 });
       }
-      if (persons !== undefined) {
-        const units = sellableUnits((await getAllBeds()) || []);
-        const selectedUnits = units.filter((unit) => unit.beds.some((bed) => bed.id != null && projectedBedIds.has(bed.id)));
-        const capacity = selectedUnits.reduce((sum, unit) => sum + unit.capacity, 0);
-        if (capacity > 0 && Number(persons) > capacity) {
+      const personsForCapacity = persons !== undefined ? Number(persons) : Number(detail.booking.persons || 0);
+      const bedsOrDatesChange = datesChanged || addRequested.length > 0 || removeRequested.size > 0;
+      if (persons !== undefined || bedsOrDatesChange) {
+        const capacity = projectedBedIds.size;
+        if (capacity > 0 && personsForCapacity > capacity) {
           return NextResponse.json({
-            error: `Booking needs ${Number(persons)} guest(s); selected rooms sleep ${capacity}.`,
+            error: `Booking needs ${personsForCapacity} guest(s); selected rooms sleep ${capacity}.`,
           }, { status: 400 });
         }
       }
@@ -2017,12 +2041,6 @@ export async function POST(req: NextRequest) {
         const targetBedIds = new Set(assigned
           .filter((a) => assignmentRemoved(a))
           .map((a) => a.bedId));
-        // Date reassign already dropped removed beds; only cancel what is still assigned.
-        for (const unit of sellableUnits((await getAllBeds()) || [])) {
-          if (unit.beds.some((bed) => bed.id != null && targetBedIds.has(bed.id))) {
-            for (const bed of unit.beds) if (bed.id != null) targetBedIds.add(bed.id);
-          }
-        }
         const assignmentIds = assigned.filter((a) => targetBedIds.has(a.bedId)).map((a) => a.id);
         if (assignmentIds.length > 0) {
           await cancelBedAssignments(assignmentIds, bookingId);

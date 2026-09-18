@@ -2,7 +2,7 @@
 
 **Git-safe.** Admin: `/admin`. Aiosell sandbox defaults are in `src/lib/aiosell.ts`. **Live hotel credentials are in D1 `channel_config`** (values in secrets file / Channel Manager UI).
 
-Booking double-bed rule: one guest may reserve one internal slot; two guests must reserve both slots. The picker and create API use the same validation.
+Booking double-bed rule: one guest may reserve one internal slot; two guests must reserve both slots. The picker and create API use the same validation. Booking detail / calendar collapse a full double pair to one assignment row; that row carries `capacity` and `physicalBedIds` for the assigned slots so Edit Booking persons checks and money previews match Create Booking. `editReservation` expands a remove of either half to the whole unit before capacity and pricing projection.
 
 ---
 

@@ -1010,6 +1010,87 @@ describe("walk-in advance payment", () => {
     expect(q.assignBedToBooking).not.toHaveBeenCalled();
   });
 
+  it("allows date-only edit when a full double plus single sleep 3 guests", async () => {
+    q.getSetting.mockResolvedValue("0");
+    mockBeds([17, 18, 3]);
+    q.getAllBeds.mockResolvedValue([
+      { id: 3, bedId: "B-1", dormId: 1, dormName: "8 bed", type: "Bed" },
+      { id: 17, bedId: "DOR-7", dormId: 9, dormName: "Double", type: "Double" },
+      { id: 18, bedId: "DOR-8", dormId: 9, dormName: "Double", type: "Double" },
+    ]);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 10, guestName: "Guest", checkinDate: "2026-09-18", checkoutDate: "2026-09-20", status: "received",
+        source: "website", nightlyRate: 399, amountBeforeTax: 1197, amountTax: 0, amountTotal: 1197, amountPaid: 1197, persons: 3,
+      },
+      assignments: [
+        { id: 1, status: "assigned", bedId: 17, dormId: 9 },
+        { id: 2, status: "assigned", bedId: 18, dormId: 9 },
+        { id: 3, status: "assigned", bedId: 3, dormId: 1 },
+      ],
+    });
+    const res = await POST(req({
+      password: "x", action: "editReservation", bookingId: 10,
+      persons: 3, checkinDate: "2026-09-18", checkoutDate: "2026-09-21",
+    }));
+    expect(res.status).toBe(200);
+    // 399 × 3 nights × 3 physical beds
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({
+      checkoutDate: "2026-09-21",
+      amountTotal: 3591,
+    }));
+  });
+
+  it("rejects persons=2 when only one half of a double is assigned", async () => {
+    mockBeds([17]);
+    q.getAllBeds.mockResolvedValue([
+      { id: 17, bedId: "DOR-7", dormId: 9, dormName: "Double", type: "Double" },
+      { id: 18, bedId: "DOR-8", dormId: 9, dormName: "Double", type: "Double" },
+    ]);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 10, guestName: "Solo", checkinDate: "2026-09-18", checkoutDate: "2026-09-20", status: "received",
+        source: "manual", nightlyRate: 0, amountTotal: 0, amountPaid: 0, persons: 1,
+      },
+      assignments: [{ id: 1, status: "assigned", bedId: 17, dormId: 9 }],
+    });
+    const res = await POST(req({
+      password: "x", action: "editReservation", bookingId: 10,
+      persons: 2, checkinDate: "2026-09-18", checkoutDate: "2026-09-20",
+    }));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("sleep 1");
+  });
+
+  it("expands remove of one double half before capacity projection", async () => {
+    mockBeds([17, 18, 3]);
+    q.getAllBeds.mockResolvedValue([
+      { id: 3, bedId: "B-1", dormId: 1, type: "Bed" },
+      { id: 17, bedId: "DOR-7", dormId: 9, type: "Double" },
+      { id: 18, bedId: "DOR-8", dormId: 9, type: "Double" },
+    ]);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 10, guestName: "Guest", checkinDate: "2026-09-18", checkoutDate: "2026-09-20", status: "received",
+        source: "website", nightlyRate: 0, amountTotal: 0, amountPaid: 0, persons: 3,
+      },
+      assignments: [
+        { id: 1, status: "assigned", bedId: 17, dormId: 9 },
+        { id: 2, status: "assigned", bedId: 18, dormId: 9 },
+        { id: 3, status: "assigned", bedId: 3, dormId: 1 },
+      ],
+    });
+    const res = await POST(req({
+      password: "x", action: "editReservation", bookingId: 10,
+      persons: 3, checkinDate: "2026-09-18", checkoutDate: "2026-09-20", removeBedIds: [17],
+    }));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("sleep 1");
+    expect(q.cancelBedAssignments).not.toHaveBeenCalled();
+  });
+
   it("allows persons when addBeds raise capacity in the same payload", async () => {
     q.getSetting.mockResolvedValue("0");
     mockBeds([7, 8, 9]);

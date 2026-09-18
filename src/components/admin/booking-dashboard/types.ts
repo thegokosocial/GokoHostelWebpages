@@ -69,6 +69,9 @@ export type BedAssignment = {
   status: "assigned" | "unassigned" | "cancelled";
   assignedBy: string;
   assignedAt: string;
+  /** Assigned physical slots in this sellable unit (1 if partial double, 2 if full). */
+  capacity?: number;
+  physicalBedIds?: number[];
 };
 
 export type BookingHistoryEntry = {

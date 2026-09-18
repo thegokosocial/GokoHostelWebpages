@@ -116,6 +116,39 @@ export function sellableUnits<T extends InventoryBedRef>(beds: T[]): SellableUni
 export function unitForBed<T extends InventoryBedRef>(beds: T[], bedId: number): SellableUnit<T> | undefined {
   return sellableUnits(beds).find((u) => u.beds.some((b) => b.id === bedId));
 }
+
+/** Physical bed IDs from a sellable unit that are currently assigned. */
+export function assignedSlotsInUnit<T extends InventoryBedRef>(
+  unit: SellableUnit<T>,
+  assignedBedIds: Iterable<number>,
+): number[] {
+  const assigned = assignedBedIds instanceof Set ? assignedBedIds : new Set(assignedBedIds);
+  return unit.beds
+    .map((bed) => bed.id)
+    .filter((id): id is number => id != null && assigned.has(id));
+}
+
+/**
+ * Expand remove targets so one half of a double removes every assigned slot in that unit.
+ * Used before capacity / pricing projection (cancel path already expands later).
+ */
+export function expandRemovedBedIds<T extends InventoryBedRef>(
+  removeIds: Iterable<number>,
+  assignedBedIds: Iterable<number>,
+  units: SellableUnit<T>[],
+): Set<number> {
+  const remove = new Set([...removeIds].filter((id) => Number.isInteger(id) && id > 0));
+  const assigned = assignedBedIds instanceof Set ? assignedBedIds : new Set(assignedBedIds);
+  for (const unit of units) {
+    const unitIds = unit.beds.map((bed) => bed.id).filter((id): id is number => id != null);
+    if (!unitIds.some((id) => remove.has(id))) continue;
+    for (const id of unitIds) {
+      if (assigned.has(id)) remove.add(id);
+    }
+  }
+  return remove;
+}
+
 type OverrideRef = { dormId: number; date: string; onlineAvailable: number | null; channelId?: number | null };
 
 /** Occupied nights for a stay: [checkin, checkout). IST calendar dates. */

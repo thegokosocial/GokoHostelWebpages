@@ -26,7 +26,12 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   onClose: () => void;
 }) {
   const oldNights = getNights(booking.checkinDate, booking.checkoutDate);
-  const oldBeds = Math.max(1, assignments.filter((a) => a.status === "assigned").length || 1);
+  const oldBeds = Math.max(
+    1,
+    assignments
+      .filter((a) => a.status === "assigned")
+      .reduce((sum, a) => sum + (a.physicalBedIds?.length || a.capacity || 1), 0) || 1,
+  );
   const oldBasis = Number(booking.amountBeforeTax || 0) > 0
     ? Number(booking.amountBeforeTax)
     : Number(booking.amountTotal || 0);
@@ -65,11 +70,17 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const closed = ["checked_out", "cancelled", "no_show"].includes(booking.status);
 
   const keptAssignments = useMemo(
-    () => assignments.filter((a) => a.status === "assigned" && !removeBedIds.includes(a.bedId)),
+    () => assignments.filter((a) => {
+      if (a.status !== "assigned") return false;
+      const ids = a.physicalBedIds?.length ? a.physicalBedIds : [a.bedId];
+      return !ids.some((id) => removeBedIds.includes(id));
+    }),
     [assignments, removeBedIds],
   );
-  const finalCapacity = keptAssignments.length + selectedAddUnits.reduce((sum, unit) => sum + unit.capacity, 0);
-  const finalBedCount = keptAssignments.length + selectedAddUnits.reduce((sum, unit) => sum + unit.bedIds.length, 0);
+  const finalCapacity = keptAssignments.reduce((sum, a) => sum + (a.capacity || a.physicalBedIds?.length || 1), 0)
+    + selectedAddUnits.reduce((sum, unit) => sum + unit.capacity, 0);
+  const finalBedCount = keptAssignments.reduce((sum, a) => sum + (a.physicalBedIds?.length || a.capacity || 1), 0)
+    + selectedAddUnits.reduce((sum, unit) => sum + unit.bedIds.length, 0);
   const personCount = Number(persons);
   const overCapacity = finalCapacity > 0 && Number.isInteger(personCount) && personCount > finalCapacity;
   const nights = validDates ? getNights(checkinDate, checkoutDate) : 0;
@@ -100,14 +111,14 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const recalcNightlyFromSelection = useCallback((keys: string[], units: AvailableBedUnit[], rates: Record<number, number>, kept: BedAssignment[]) => {
     const addUnits = units.filter((u) => keys.includes(u.key));
     const addTotal = addUnits.reduce((sum, u) => sum + (rates[u.dormId] || 0), 0);
-    // Group kept beds so a double (2 assignments) contributes one unit rate.
+    // Group kept beds so a double (2 physical slots) contributes one unit rate.
     const keptUnitKeys = new Set<string>();
     let keptTotal = 0;
     let keptBedSlots = 0;
     for (const a of kept) {
       const isDouble = /double/i.test(a.bedLabel || "");
       const unitKey = isDouble ? `d:${a.dormId}:${a.bedLabel}` : `b:${a.bedId}`;
-      keptBedSlots += 1;
+      keptBedSlots += a.physicalBedIds?.length || a.capacity || 1;
       if (keptUnitKeys.has(unitKey)) continue;
       keptUnitKeys.add(unitKey);
       keptTotal += rates[a.dormId] || 0;
@@ -259,7 +270,33 @@ export function EditBookingModal({ booking, assignments, password, username, onA
 
           <div>
             <div className="text-xs font-semibold text-foreground">Assigned rooms / beds</div>
-            {assignments.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">No beds assigned.</p> : <div className="mt-1 space-y-1">{assignments.map((assignment) => <label key={assignment.id} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-xs"><input type="checkbox" disabled={closed} checked={!removeBedIds.includes(assignment.bedId)} onChange={() => setRemoveBedIds((current) => { const next = current.includes(assignment.bedId) ? current.filter((id) => id !== assignment.bedId) : [...current, assignment.bedId]; const kept = assignments.filter((a) => a.status === "assigned" && !next.includes(a.bedId)); recalcNightlyFromSelection(addUnitKeys, availableUnits, dormRates, kept); return next; })} /><span className="font-medium">{assignment.dormName} - {assignment.bedLabel}</span><span className="ml-auto text-muted-foreground">{removeBedIds.includes(assignment.bedId) ? "remove" : "keep"}</span></label>)}</div>}
+            {assignments.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">No beds assigned.</p> : <div className="mt-1 space-y-1">{assignments.map((assignment) => {
+              const slotIds = assignment.physicalBedIds?.length ? assignment.physicalBedIds : [assignment.bedId];
+              const markedRemove = slotIds.some((id) => removeBedIds.includes(id));
+              return (
+                <label key={assignment.id} className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-xs">
+                  <input
+                    type="checkbox"
+                    disabled={closed}
+                    checked={!markedRemove}
+                    onChange={() => setRemoveBedIds((current) => {
+                      const next = markedRemove
+                        ? current.filter((id) => !slotIds.includes(id))
+                        : [...new Set([...current, ...slotIds])];
+                      const kept = assignments.filter((a) => {
+                        if (a.status !== "assigned") return false;
+                        const ids = a.physicalBedIds?.length ? a.physicalBedIds : [a.bedId];
+                        return !ids.some((id) => next.includes(id));
+                      });
+                      recalcNightlyFromSelection(addUnitKeys, availableUnits, dormRates, kept);
+                      return next;
+                    })}
+                  />
+                  <span className="font-medium">{assignment.dormName} - {assignment.bedLabel}</span>
+                  <span className="ml-auto text-muted-foreground">{markedRemove ? "remove" : "keep"}</span>
+                </label>
+              );
+            })}</div>}
           </div>
 
           <div>
