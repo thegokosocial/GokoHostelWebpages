@@ -91,6 +91,15 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     reviewRef.current?.focus({ preventScroll: true });
     reviewRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
   }, [review]);
+  function openReview() {
+    // setReview(true) is a no-op when already open — re-scroll so a second click still works.
+    if (review) {
+      reviewRef.current?.focus({ preventScroll: true });
+      reviewRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+      return;
+    }
+    setReview(true);
+  }
   useEffect(() => {
     let active = true;
     fetch("/api/booking/config", { cache: "no-store", signal: AbortSignal.timeout(15000) })
@@ -459,7 +468,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
           <aside data-booking-summary className="sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-brand-green-dark p-3 text-white shadow-lg xl:top-24 xl:bottom-auto xl:grid-cols-1 xl:p-5">
             <p className="hidden border-b border-white/20 pb-3 text-xs xl:block">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate}</p>
             <div className="min-w-0"><p className="text-xs sm:text-sm">Your stay estimate</p><p className="mt-1 break-words text-2xl font-semibold sm:text-3xl">{selectedCount ? money(totals?.total ?? subtotal) : "Choose beds"}</p></div>
-            <button type="button" className={`${action} max-w-36 text-sm sm:max-w-none sm:text-base`} disabled={!ready} onClick={() => setReview(true)}>Review your stay</button>
+            <button type="button" className={`${action} max-w-36 text-sm sm:max-w-none sm:text-base`} disabled={!ready} onClick={openReview}>Review your stay</button>
             <p className="col-span-2 text-xs xl:col-span-1">{selectedCount} {selectedCount === 1 ? "bed" : "beds"} selected · Sleeps up to {capacity}.</p>
             {selectedCount === maxSelectedBeds && maxSelectedBeds != null ? (
               <p role="status" className="col-span-2 text-xs xl:col-span-1">

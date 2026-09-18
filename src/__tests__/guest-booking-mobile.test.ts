@@ -43,6 +43,9 @@ describe("Mobile-first booking layout contracts", () => {
   });
   it("moves focus to review without enabling payment or changing privacy", () => {
     expect(panel).toContain('focus({ preventScroll: true })'); expect(panel).toContain('scroll-mt-24');
+    expect(panel).toContain("function openReview()");
+    expect(panel).toContain("onClick={openReview}");
+    expect(panel).toContain("setReview(true) is a no-op when already open");
     expect(panel).toMatch(/<button type="button" className=\{action\} disabled>Payment unavailable/);
     expect(panel).toContain('These details stay in this page only until online checkout is ready.');
     expect(panel).toContain("Guest name <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
