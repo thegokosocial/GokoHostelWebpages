@@ -27,8 +27,12 @@ async function hold(identity: ReturnType<typeof owner>) { const input = quote();
   checkinDate: input.checkinDate, checkoutDate: input.checkoutDate, bedIds: [1] }); }
 beforeEach(() => {
   state.pi = false; sqlite = new SQLite(":memory:"); sqlite.pragma("foreign_keys = ON");
-  sqlite.exec("CREATE TABLE beds (id INTEGER PRIMARY KEY); INSERT INTO beds VALUES (1); CREATE TABLE booking_bed_assignments (bed_id INTEGER,status TEXT,checkin_date TEXT,checkout_date TEXT); CREATE TABLE bed_blocks (bed_id INTEGER,is_active INTEGER,start_date TEXT,end_date TEXT)");
+  sqlite.exec("CREATE TABLE beds (id INTEGER PRIMARY KEY); INSERT INTO beds VALUES (1); CREATE TABLE booking_bed_assignments (bed_id INTEGER, booking_id INTEGER, status TEXT, checkin_date TEXT, checkout_date TEXT); CREATE TABLE bed_blocks (bed_id INTEGER,is_active INTEGER,start_date TEXT,end_date TEXT)");
   for (const file of ["0059_native_inventory_hold_primitive.sql", "0060_native_accepted_quotes.sql"]) sqlite.exec(readFileSync(`migrations/${file}`, "utf8"));
+  // 0063 hold column + trigger rewrite (checkout table absent in this suite).
+  sqlite.exec("ALTER TABLE native_inventory_holds ADD COLUMN exclude_booking_id INTEGER;");
+  const amendSql = readFileSync("migrations/0063_guest_booking_amend.sql", "utf8");
+  sqlite.exec(amendSql.slice(amendSql.indexOf("DROP TRIGGER IF EXISTS native_hold_insert_guard")));
   state.db = drizzle(sqlite, { schema }) as unknown as Database; vi.stubEnv("GOKO_NATIVE_HOLD_INTERNAL_ENABLED", "true");
 });
 afterEach(() => { sqlite.close(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });

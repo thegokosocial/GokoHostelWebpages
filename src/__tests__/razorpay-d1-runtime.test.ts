@@ -47,7 +47,7 @@ beforeAll(async () => {
   await binding.prepare("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, sync_updated_at TEXT, sync_source TEXT)").run();
   await binding.batch([
     binding.prepare("CREATE TABLE beds (id INTEGER PRIMARY KEY)"), binding.prepare("INSERT INTO beds VALUES (1)"),
-    binding.prepare("CREATE TABLE booking_bed_assignments (bed_id INTEGER,status TEXT,checkin_date TEXT,checkout_date TEXT)"),
+    binding.prepare("CREATE TABLE booking_bed_assignments (bed_id INTEGER, booking_id INTEGER, status TEXT, checkin_date TEXT, checkout_date TEXT)"),
     binding.prepare("CREATE TABLE bed_blocks (bed_id INTEGER,is_active INTEGER,start_date TEXT,end_date TEXT)"),
   ]);
   // Preserve each compound trigger as one statement (do not split at BEGIN's SELECT).
@@ -55,6 +55,11 @@ beforeAll(async () => {
   await binding.batch(nativeSql.split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/).map((s) => binding.prepare(s.trim())));
   const quoteSql = readFileSync("migrations/0060_native_accepted_quotes.sql", "utf8").replace(/^--.*$/gm, "");
   await binding.batch(quoteSql.split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/).map((s) => binding.prepare(s.trim())));
+  // 0063 hold column + trigger rewrite (native_booking_checkouts absent in this suite).
+  await binding.prepare("ALTER TABLE native_inventory_holds ADD COLUMN exclude_booking_id INTEGER").run();
+  const amendSql = readFileSync("migrations/0063_guest_booking_amend.sql", "utf8").replace(/^--.*$/gm, "");
+  const triggerPart = amendSql.slice(amendSql.indexOf("DROP TRIGGER IF EXISTS native_hold_insert_guard"));
+  await binding.batch(triggerPart.split(/;\s*(?=DROP TRIGGER|CREATE TRIGGER)/).map((s) => s.trim()).filter(Boolean).map((s) => binding.prepare(s)));
 }, 30000);
 afterAll(async () => { if (runtime) await runtime.dispose(); }, 30000);
 beforeEach(async () => {
@@ -104,10 +109,10 @@ describe("Payment persistence using actual local D1/workerd binding", () => {
     const ownerToken = "a".repeat(64), checkinDate = addCalendarDays(todayIST(), 1), checkoutDate = addCalendarDays(todayIST(), 3);
     const outcomes = await Promise.allSettled(Array.from({ length: 20 }, () => createNativeInventoryHold({ requestKey: crypto.randomUUID(), ownerToken, bedIds: [1], checkinDate, checkoutDate })));
     const winners = outcomes.filter((r) => r.status === "fulfilled"); expect(winners).toHaveLength(1);
-    await expect(binding.prepare("INSERT INTO booking_bed_assignments VALUES (1,'assigned',?,?)").bind(checkinDate, checkoutDate).run()).rejects.toThrow("NATIVE_HOLD_CONFLICT");
+    await expect(binding.prepare("INSERT INTO booking_bed_assignments VALUES (1,NULL,'assigned',?,?)").bind(checkinDate, checkoutDate).run()).rejects.toThrow("NATIVE_HOLD_CONFLICT");
     await expect(binding.prepare("INSERT INTO bed_blocks VALUES (1,1,?,?)").bind(checkinDate, checkoutDate).run()).rejects.toThrow("NATIVE_HOLD_CONFLICT");
     await releaseNativeInventoryHold(winners[0].value.id, ownerToken);
-    await binding.prepare("INSERT INTO booking_bed_assignments VALUES (1,'assigned',?,?)").bind(checkinDate, checkoutDate).run();
+    await binding.prepare("INSERT INTO booking_bed_assignments VALUES (1,NULL,'assigned',?,?)").bind(checkinDate, checkoutDate).run();
     expect(orderPosts).toBe(0); expect(refundPosts).toBe(0);
   });
   it("performs one order POST for 20 concurrent identical request keys", async () => {
