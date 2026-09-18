@@ -9,6 +9,7 @@ import { resolveRoomGallery } from "@/content/rooms";
 import { ImageCarousel } from "@/components/media/ImageCarousel";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { todayIST } from "@/lib/utils";
+import { CheckoutWaitOverlay, type CheckoutWaitPhase } from "@/components/booking/CheckoutWaitOverlay";
 
 type BookingDetails = { reference: string | null; externalReference: string | null; guestName: string; checkinDate: string; checkoutDate: string; roomType: string; guests: number; status: string; paymentStatus: string | null; total: number | null; paid: number | null; refunded: number | null };
 const field = "mt-1 min-h-12 w-full min-w-0 max-w-full rounded-lg border border-brand-green/25 bg-white px-3 py-3 text-base text-brand-green-dark focus:outline-none focus:ring-2 focus:ring-brand-green";
@@ -25,6 +26,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [inView, setInView] = useState(false);
   const [tab, setTab] = useState<"search" | "booking">("search");
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  const [checkoutWait, setCheckoutWait] = useState<CheckoutWaitPhase | null>(null);
   const [rooms, setRooms] = useState<GuestRoom[] | null>(null);
   const [selection, setSelection] = useState<Record<string, number>>({});
   const [plans, setPlans] = useState<Record<string, number>>({});
@@ -143,6 +145,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     });
   }
   async function openRazorpay(checkoutId: string, ownerToken: string, options: { key: string; order_id: string; amount: number; currency: string }, guestAccessToken: string, ref: string) {
+    setCheckoutWait("awaiting_payment");
     await loadRazorpay();
     const claimed = await readResponse(await fetch("/api/guest-booking/checkout", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -157,6 +160,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         prefill: { name: guest.name, email: guest.email, contact: guest.phone },
         handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
           try {
+            setCheckoutWait("confirming");
             const verified = await readResponse(await fetch("/api/guest-booking/payment/verify", {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -165,6 +169,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
               }),
               cache: "no-store", signal: AbortSignal.timeout(20000),
             }));
+            setCheckoutWait("finishing");
             sessionStorage.setItem(`goko_booking_${ref}`, JSON.stringify({ guestAccessToken }));
             window.location.href = `/booking/${encodeURIComponent(verified.reference || ref)}`;
             resolve();
@@ -205,7 +210,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       return;
     }
     if (!searchedStay || !rooms) return;
-    setBusy(true); setMessage("");
+    setBusy(true); setMessage(""); setCheckoutWait("preparing");
     try {
       const requestKey = checkoutRequestKey || crypto.randomUUID();
       if (!checkoutRequestKey) setCheckoutRequestKey(requestKey);
@@ -230,18 +235,24 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       if (data.requiresPayment && data.razorpay && data.ownerToken && data.checkoutId) {
         await openRazorpay(data.checkoutId, data.ownerToken, data.razorpay, data.guestAccessToken, data.reference);
       } else if (data.reference) {
+        setCheckoutWait("finishing");
         window.location.href = `/booking/${encodeURIComponent(data.reference)}`;
       } else {
+        setCheckoutWait(null);
         setMessage("Booking prepared. Check My booking if confirmation did not open.");
       }
     } catch (error) {
+      setCheckoutWait(null);
       const text = error instanceof Error ? error.message : "Could not complete booking.";
       setMessage(text);
       if (/hold|expired|reserved|unavailable|conflict/i.test(text)) {
         setHoldExpiresAt((current) => current ?? Math.floor(Date.now() / 1000));
       }
     }
-    finally { setBusy(false); }
+    finally {
+      setBusy(false);
+      setCheckoutWait((current) => (current === "finishing" ? current : null));
+    }
   }
   async function recheckPaymentReadiness() {
     if (preview) { setMessage("Demo only. Readiness checks are disabled in this preview."); return; }
@@ -294,7 +305,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const holdSecondsLeft = holdExpiresAt ? Math.max(0, holdExpiresAt - nowTick) : null;
   const holdExpired = holdExpiresAt != null && holdSecondsLeft === 0;
   const guestDetailsComplete = Boolean(guest.name.trim() && guest.email.trim() && guest.phone.trim());
-  return <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
+  return <>
+  <CheckoutWaitOverlay phase={checkoutWait} />
+  <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
     {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
     <div className="mb-5 grid grid-cols-2 gap-2 sm:flex" role="tablist" aria-label="Booking options">
       {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "My booking"}</button>)}
@@ -439,8 +452,12 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                 </p>
               )}
               <div className="mt-4">
-                <button type="button" className={action} disabled={busy || !guestDetailsComplete} onClick={confirmStay}>
-                  {busy ? "Please wait…" : paymentChoice === "property" ? "Confirm reservation" : "Pay now"}
+                <button type="button" className={action} disabled={busy || !guestDetailsComplete || !!checkoutWait} onClick={confirmStay}>
+                  {checkoutWait === "preparing" || checkoutWait === "confirming" || checkoutWait === "finishing"
+                    ? "Please wait…"
+                    : checkoutWait === "awaiting_payment"
+                      ? "Payment in progress…"
+                      : paymentChoice === "property" ? "Confirm reservation" : "Pay now"}
                 </button>
               </div>
               <p className="mt-3 text-xs">
@@ -486,5 +503,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     </div>}
     <p role="status" aria-live="polite" className="mt-4 break-words text-sm">{message}</p>
     <div className="mt-3 grid gap-2 border-t border-brand-mist pt-3 text-sm sm:flex sm:flex-wrap sm:gap-4"><a className="inline-flex min-h-12 items-center font-semibold underline" href="/booking-enquiry">Need help? Send an enquiry</a><a className="inline-flex min-h-12 items-center font-semibold underline" href={site.whatsAppUrl} target="_blank" rel="noopener noreferrer">Contact Goko</a></div>
-  </div>;
+  </div>
+  </>;
 }

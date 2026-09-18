@@ -5,6 +5,7 @@ import type { GuestRoom } from "@/lib/guestBookingSearch";
 import { bookingTotals } from "@/lib/bookingPricing";
 import { canAddGuestRoom } from "@/lib/guestBookingSelection";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
+import { CheckoutWaitOverlay, type CheckoutWaitPhase } from "@/components/booking/CheckoutWaitOverlay";
 import { site } from "@/lib/site";
 import { todayIST } from "@/lib/utils";
 
@@ -42,6 +43,7 @@ export function GuestBookingAmendPanel({
     totalRupees: number; deltaPaise: number; dueNowPaise: number; refundPaise: number; requiresPayment: boolean;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checkoutWait, setCheckoutWait] = useState<CheckoutWaitPhase | null>(null);
   const [message, setMessage] = useState("");
   const [requestKey, setRequestKey] = useState<string | null>(null);
 
@@ -125,7 +127,7 @@ export function GuestBookingAmendPanel({
 
   async function applyChange() {
     if (!ready || !quote) return;
-    setBusy(true); setMessage("");
+    setBusy(true); setMessage(""); setCheckoutWait("preparing");
     try {
       const key = requestKey || crypto.randomUUID();
       if (!requestKey) setRequestKey(key);
@@ -139,6 +141,7 @@ export function GuestBookingAmendPanel({
       }));
 
       if (prepared.requiresPayment && prepared.razorpay && prepared.ownerToken && prepared.checkoutId) {
+        setCheckoutWait("awaiting_payment");
         await loadRazorpay();
         const claimed = await readResponse(await fetch("/api/guest-booking/amend", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -161,6 +164,7 @@ export function GuestBookingAmendPanel({
               razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string;
             }) => {
               try {
+                setCheckoutWait("confirming");
                 const verified = await readResponse(await fetch("/api/guest-booking/payment/verify", {
                   method: "POST", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -192,11 +196,17 @@ export function GuestBookingAmendPanel({
         onDone(confirmed);
       }
     } catch (error) {
+      setCheckoutWait(null);
       setMessage(error instanceof Error ? error.message : "Could not apply change.");
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+      setCheckoutWait(null);
+    }
   }
 
   return (
+    <>
+    <CheckoutWaitOverlay phase={checkoutWait} />
     <div className="mt-6 space-y-4 rounded-2xl border border-brand-mist bg-brand-sand/40 p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -205,7 +215,7 @@ export function GuestBookingAmendPanel({
             New dates and rooms. You pay only the difference, or get a refund if the total drops.
           </p>
         </div>
-        <button type="button" onClick={onCancel} className="min-h-10 shrink-0 text-sm font-semibold text-brand-green-dark underline">
+        <button type="button" onClick={onCancel} disabled={!!checkoutWait} className="min-h-10 shrink-0 text-sm font-semibold text-brand-green-dark underline disabled:opacity-40">
           Close
         </button>
       </div>
@@ -278,13 +288,16 @@ export function GuestBookingAmendPanel({
           {quote.deltaPaise > 0 && <p className="text-sm">Pay now: {money(quote.dueNowPaise / 100)}</p>}
           {quote.deltaPaise < 0 && <p className="text-sm">Refund: {money(quote.refundPaise / 100)}</p>}
           {quote.deltaPaise === 0 && <p className="text-sm">No payment change.</p>}
-          <button type="button" disabled={busy} onClick={applyChange} className={actionBtn}>
-            {quote.requiresPayment ? "Pay difference" : "Confirm change"}
+          <button type="button" disabled={busy || !!checkoutWait} onClick={applyChange} className={actionBtn}>
+            {checkoutWait
+              ? "Please wait…"
+              : quote.requiresPayment ? "Pay difference" : "Confirm change"}
           </button>
         </div>
       )}
 
       {message && <p role="status" className="text-sm text-brand-red">{message}</p>}
     </div>
+    </>
   );
 }
