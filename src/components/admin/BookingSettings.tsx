@@ -6,17 +6,39 @@ import { Input } from "@/components/ui/input";
 import { NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
 import { RazorpayTestPreview } from "@/components/admin/RazorpayTestPreview";
+import {
+  BOOKING_EMAIL_KINDS,
+  BOOKING_EMAIL_KIND_LABELS,
+  BOOKING_EMAIL_PLACEHOLDERS,
+  DEFAULT_BOOKING_EMAIL_TEMPLATES,
+  type BookingEmailKind,
+  type BookingEmailTemplates,
+} from "@/lib/bookingEmailTemplates";
+import {
+  BOOKING_SMS_KINDS,
+  BOOKING_SMS_KIND_LABELS,
+  BOOKING_SMS_PLACEHOLDERS,
+  BOOKING_SMS_SOFT_LIMIT,
+  DEFAULT_BOOKING_SMS_TEMPLATES,
+  type BookingSmsKind,
+  type BookingSmsTemplates,
+} from "@/lib/bookingSmsTemplates";
 
 type Gateway = ReturnType<typeof gatewayConfiguration>;
-type Section = "policies" | "rooms" | "payments";
+type Section = "policies" | "rooms" | "payments" | "emails" | "sms";
 
 export function BookingSettings({ password, username }: { password: string; username?: string }) {
   const [section, setSection] = useState<Section>("policies");
   const [settings, setSettings] = useState<WebsiteBookingSettings>({ ...DEFAULT_WEBSITE_BOOKING_SETTINGS });
+  const [emailTemplates, setEmailTemplates] = useState<BookingEmailTemplates>({ ...DEFAULT_BOOKING_EMAIL_TEMPLATES });
+  const [smsTemplates, setSmsTemplates] = useState<BookingSmsTemplates>({ ...DEFAULT_BOOKING_SMS_TEMPLATES });
+  const [emailKind, setEmailKind] = useState<BookingEmailKind>("confirmation");
+  const [smsKind, setSmsKind] = useState<BookingSmsKind>("confirmation");
   const [gateway, setGateway] = useState<Gateway | null>(null);
   const [readiness, setReadiness] = useState<{ nativeCheckoutReady: boolean; blockers: string[] } | null>(null);
   const [busy, setBusy] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [revision, setRevision] = useState("");
   const [message, setMessage] = useState("");
   const [reload, setReload] = useState(0);
@@ -37,11 +59,14 @@ export function BookingSettings({ password, username }: { password: string; user
 
   useEffect(() => {
     let active = true;
-    setBusy(true); setLoaded(false); setRevision(""); setMessage(""); setGateway(null);
-    call("getSettings").then((data) => {
+    setBusy(true); setLoaded(false); setMessagesLoaded(false); setRevision(""); setMessage(""); setGateway(null);
+    Promise.all([call("getSettings"), call("getEmailTemplates"), call("getSmsTemplates")]).then(([data, emails, sms]) => {
       if (active) {
         setSettings(data.settings); setRevision(data.revision); setGateway(data.gateway);
         setReadiness(data.readiness || null); setLoaded(true);
+        if (emails.templates) setEmailTemplates(emails.templates);
+        if (sms.templates) setSmsTemplates(sms.templates);
+        setMessagesLoaded(true);
       }
     }).catch((error) => { if (active) setMessage(error instanceof Error ? error.message : "Unable to load settings. Refresh this tab to retry; unsaved defaults are not active."); })
       .finally(() => { if (active) setBusy(false); });
@@ -66,6 +91,26 @@ export function BookingSettings({ password, username }: { password: string; user
     finally { setBusy(false); }
   }
 
+  async function saveEmails() {
+    setBusy(true); setMessage("");
+    try {
+      const data = await call("saveEmailTemplates", { templates: emailTemplates });
+      setEmailTemplates(data.templates);
+      setMessage("Email templates saved. Confirmation is used for new website bookings; Updated and Cancelled are reserved until wired.");
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to save email templates"); }
+    finally { setBusy(false); }
+  }
+
+  async function saveSms() {
+    setBusy(true); setMessage("");
+    try {
+      const data = await call("saveSmsTemplates", { templates: smsTemplates });
+      setSmsTemplates(data.templates);
+      setMessage("Text message templates saved. Sending is not enabled yet — drafts are ready for when SMS is turned on.");
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Unable to save text templates"); }
+    finally { setBusy(false); }
+  }
+
   async function check() {
     setBusy(true); setMessage("");
     try {
@@ -84,6 +129,10 @@ export function BookingSettings({ password, username }: { password: string; user
   );
 
   const envLabel = settings.gatewayEnvironment === "live" ? "Live (real money)" : "Test";
+  const activeEmail = emailTemplates[emailKind];
+  const activeSms = smsTemplates[smsKind];
+  const smsLen = activeSms.body.length;
+  const messageSection = section === "emails" || section === "sms";
 
   return <div className="space-y-5">
     <div className={`rounded-xl border p-4 text-sm ${settings.gatewayEnvironment === "live" ? "border-brand-red bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
@@ -97,12 +146,12 @@ export function BookingSettings({ password, username }: { password: string; user
       </p>
     </div>
     <nav aria-label="Booking settings sections" className="flex flex-wrap gap-2">
-      {([["policies", "Booking & Policies"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"]] as const).map(([id, title]) =>
+      {([["policies", "Booking & Policies"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"], ["emails", "Email Templates"], ["sms", "Text Templates"]] as const).map(([id, title]) =>
         <Button type="button" key={id} variant={section === id ? "default" : "outline"} onClick={() => setSection(id)} aria-pressed={section === id}>{title}</Button>)}
     </nav>
     {message && <p role="status" className="rounded-lg border p-3 text-sm">{message}</p>}
     {!loaded && !busy && <Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>Retry loading saved settings</Button>}
-    <fieldset disabled={busy || !loaded} className="space-y-4 disabled:opacity-60">
+    <fieldset disabled={busy || (!loaded && !messageSection) || (messageSection && !messagesLoaded)} className="space-y-4 disabled:opacity-60">
       {section === "policies" && <>
         <div className="grid gap-4 sm:grid-cols-2">
           {numberField("maxSelectedBeds", "Maximum beds per website selection (whole doubles count as one bed)", 1, 100)}
@@ -152,7 +201,81 @@ export function BookingSettings({ password, username }: { password: string; user
         </div>
         <Button type="button" variant="outline" onClick={check}>Check native checkout readiness</Button>
       </>}
-      <Button type="button" onClick={save}>Save booking settings</Button>
+      {section === "emails" && <>
+        <p className="text-sm text-muted-foreground">
+          Guest email for website bookings. <strong>Confirmation</strong> is sent when a booking is created.
+          Updated and Cancelled are saved for later — not sent yet.
+        </p>
+        <nav aria-label="Email template kind" className="flex flex-wrap gap-2">
+          {BOOKING_EMAIL_KINDS.map((kind) => (
+            <Button type="button" key={kind} size="sm" variant={emailKind === kind ? "default" : "outline"} onClick={() => setEmailKind(kind)} aria-pressed={emailKind === kind}>
+              {BOOKING_EMAIL_KIND_LABELS[kind]}
+            </Button>
+          ))}
+        </nav>
+        {emailKind !== "confirmation" && (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            Reserved — not used in the guest workflow yet. Draft copy now; we will wire send later.
+          </p>
+        )}
+        <label className="grid gap-1 text-sm font-semibold">Subject
+          <Input maxLength={200} value={activeEmail.subject} onChange={(e) => setEmailTemplates({ ...emailTemplates, [emailKind]: { ...activeEmail, subject: e.target.value } })} />
+        </label>
+        <label className="grid gap-1 text-sm font-semibold">Body
+          <textarea className="min-h-56 rounded-lg border bg-background p-3 font-mono text-xs leading-relaxed" maxLength={8000} value={activeEmail.body} onChange={(e) => setEmailTemplates({ ...emailTemplates, [emailKind]: { ...activeEmail, body: e.target.value } })} />
+        </label>
+        <div className="rounded-lg border p-3 text-xs">
+          <p className="font-semibold text-foreground">Placeholders</p>
+          <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+            {BOOKING_EMAIL_PLACEHOLDERS.map((p) => (
+              <li key={p.token}><code className="text-[11px]">{p.token}</code> — {p.label}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={saveEmails}>Save email templates</Button>
+          <Button type="button" variant="outline" onClick={() => setEmailTemplates({ ...emailTemplates, [emailKind]: { ...DEFAULT_BOOKING_EMAIL_TEMPLATES[emailKind] } })}>
+            Reset this template to default
+          </Button>
+        </div>
+      </>}
+      {section === "sms" && <>
+        <p className="text-sm text-muted-foreground">
+          Draft SMS / text messages for website bookings. <strong>No provider is connected yet</strong> — nothing is sent.
+          Save drafts now so we can enable sending later without rewriting copy.
+        </p>
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          All text templates are reserved. Aim for about {BOOKING_SMS_SOFT_LIMIT} characters per segment when you can; longer drafts are allowed (max 500).
+        </p>
+        <nav aria-label="Text template kind" className="flex flex-wrap gap-2">
+          {BOOKING_SMS_KINDS.map((kind) => (
+            <Button type="button" key={kind} size="sm" variant={smsKind === kind ? "default" : "outline"} onClick={() => setSmsKind(kind)} aria-pressed={smsKind === kind}>
+              {BOOKING_SMS_KIND_LABELS[kind]}
+            </Button>
+          ))}
+        </nav>
+        <label className="grid gap-1 text-sm font-semibold">Message
+          <textarea className="min-h-28 rounded-lg border bg-background p-3 font-mono text-xs leading-relaxed" maxLength={500} value={activeSms.body} onChange={(e) => setSmsTemplates({ ...smsTemplates, [smsKind]: { body: e.target.value } })} />
+          <span className={`text-xs font-normal ${smsLen > BOOKING_SMS_SOFT_LIMIT ? "text-amber-800" : "text-muted-foreground"}`}>
+            {smsLen} / 500 characters{smsLen > BOOKING_SMS_SOFT_LIMIT ? ` (over ~${BOOKING_SMS_SOFT_LIMIT} single-segment guide)` : ""}
+          </span>
+        </label>
+        <div className="rounded-lg border p-3 text-xs">
+          <p className="font-semibold text-foreground">Placeholders</p>
+          <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+            {BOOKING_SMS_PLACEHOLDERS.map((p) => (
+              <li key={p.token}><code className="text-[11px]">{p.token}</code> — {p.label}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={saveSms}>Save text templates</Button>
+          <Button type="button" variant="outline" onClick={() => setSmsTemplates({ ...smsTemplates, [smsKind]: { ...DEFAULT_BOOKING_SMS_TEMPLATES[smsKind] } })}>
+            Reset this template to default
+          </Button>
+        </div>
+      </>}
+      {!messageSection && <Button type="button" onClick={save}>Save booking settings</Button>}
     </fieldset>
     {section === "payments" && settings.gatewayEnvironment === "test" && (
       <RazorpayTestPreview password={password} username={username} />

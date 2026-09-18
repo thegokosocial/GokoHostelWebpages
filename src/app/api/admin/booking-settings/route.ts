@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { isPiRuntime } from "@/lib/runtime";
-import { getSetting } from "@/db/queries";
+import { getSetting, setSetting } from "@/db/queries";
 import { compareAndSetWebsiteSettings } from "@/lib/websiteBookingSettingsStore";
 import { site } from "@/lib/site";
 import {
@@ -11,6 +11,16 @@ import {
   websiteBookingSettingsRevision,
 } from "@/lib/websiteBookingSettings";
 import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
+import {
+  BOOKING_EMAIL_TEMPLATES_KEY,
+  parseBookingEmailTemplates,
+  validateBookingEmailTemplates,
+} from "@/lib/bookingEmailTemplates";
+import {
+  BOOKING_SMS_TEMPLATES_KEY,
+  parseBookingSmsTemplates,
+  validateBookingSmsTemplates,
+} from "@/lib/bookingSmsTemplates";
 
 export async function POST(req: NextRequest) {
   let body;
@@ -73,6 +83,34 @@ export async function POST(req: NextRequest) {
             ? "Native guest checkout is ready in test mode. Live payments remain blocked until a separate cutover. No live charge was made."
             : `Checkout blocked: ${readiness.blockerMessages.join("; ") || "incomplete configuration"}. No payment or provider request was made.`,
         }, { headers: { "Cache-Control": "no-store" } });
+      }
+      case "getEmailTemplates": {
+        const templates = parseBookingEmailTemplates(await getSetting(BOOKING_EMAIL_TEMPLATES_KEY));
+        return NextResponse.json({ templates }, { headers: { "Cache-Control": "no-store" } });
+      }
+      case "saveEmailTemplates": {
+        const templates = validateBookingEmailTemplates(body.templates);
+        if (!templates) {
+          return NextResponse.json({
+            error: "Email templates need subject and body for confirmation, updated, and cancelled (subject ≤200, body ≤8000).",
+          }, { status: 400 });
+        }
+        await setSetting(BOOKING_EMAIL_TEMPLATES_KEY, JSON.stringify(templates));
+        return NextResponse.json({ success: true, templates }, { headers: { "Cache-Control": "no-store" } });
+      }
+      case "getSmsTemplates": {
+        const templates = parseBookingSmsTemplates(await getSetting(BOOKING_SMS_TEMPLATES_KEY));
+        return NextResponse.json({ templates }, { headers: { "Cache-Control": "no-store" } });
+      }
+      case "saveSmsTemplates": {
+        const templates = validateBookingSmsTemplates(body.templates);
+        if (!templates) {
+          return NextResponse.json({
+            error: "Text templates need a body for confirmation, updated, and cancelled (≤500 characters each).",
+          }, { status: 400 });
+        }
+        await setSetting(BOOKING_SMS_TEMPLATES_KEY, JSON.stringify(templates));
+        return NextResponse.json({ success: true, templates }, { headers: { "Cache-Control": "no-store" } });
       }
       default: return NextResponse.json({ error: "Unknown booking settings action" }, { status: 400 });
     }
