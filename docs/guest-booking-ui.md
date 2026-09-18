@@ -2,7 +2,7 @@
 
 ## Scope and rollout
 
-The homepage hero and `/book` share the **Find a stay / My booking** panel. When `nativeCheckoutReady` is true (migrations **0059–0062**, hold/guest env flags, destination `/book`, Razorpay credentials for the selected `gatewayEnvironment`), Review offers advance/full/pay-at-property and creates a provisional PMS booking via `POST /api/guest-booking/checkout`. Confirmation lives at `/booking/[reference]` with `guestAccessToken` in **sessionStorage** only. Flip Test ↔ Live in Booking Settings; live requires distinct `RAZORPAY_LIVE_WEBHOOK_SECRET`. Preview (`/book/preview`) still blocks payment writes.
+The homepage hero and `/book` share the **Find a stay / My booking** panel. When `nativeCheckoutReady` is true (migrations **0059–0062**, hold/guest env flags, destination `/book`, Razorpay credentials for the selected `gatewayEnvironment`), Review offers advance/full/pay-at-property and creates a provisional PMS booking via `POST /api/guest-booking/checkout`. Confirmation lives at `/booking/[reference]` with `guestAccessToken` in **sessionStorage** only. Flip Test ↔ Live in Booking Settings. Preview (`/book/preview`) still blocks payment writes.
 
 ## Search and selection workflow
 

@@ -110,7 +110,7 @@ The public guest page is `/quick-links`. It displays active sections and cards f
 
 ## Booking dashboard files
 
-Management → Booking Settings → Payments & Readiness shows dynamic readiness blockers from `evaluateNativeCheckoutReadiness` (migrations 0059–0062, env flags, `/book` destination, test Razorpay + distinct webhook secret). When ready, public `/book` checkout is enabled in **test mode** only. The admin Razorpay ₹1 preview block (0057/0058, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains separate — all-methods runbook, failure hints, webhook inbox. Live guest checkout stays blocked until a separate cutover. See [Razorpay integration](integrations-razorpay.md) and [guest booking UI](guest-booking-ui.md).
+Management → Booking Settings → Payments & Readiness shows dynamic readiness blockers from `evaluateNativeCheckoutReadiness` (migrations 0059–0062, env flags, `/book` destination, Razorpay credentials + webhook secret for the selected Test/Live mode). Flip `gatewayEnvironment` and Save to switch public checkout. The admin Razorpay ₹1 preview block (0057/0058, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains separate — all-methods runbook, failure hints, webhook inbox. See [Razorpay integration](integrations-razorpay.md) and [guest booking UI](guest-booking-ui.md).
 
 `src/components/admin/booking-dashboard/`
 

@@ -22,9 +22,8 @@ function cloudOnly() {
 function webhookSecrets(requireCurrent = false) {
   const current = process.env.RAZORPAY_TEST_WEBHOOK_SECRET || "";
   const previous = process.env.RAZORPAY_TEST_WEBHOOK_SECRET_PREVIOUS || "";
-  const liveSecrets = [process.env.RAZORPAY_LIVE_WEBHOOK_SECRET, process.env.RAZORPAY_LIVE_WEBHOOK_SECRET_PREVIOUS].filter(Boolean);
   const secrets = [current, previous].filter((s) => s.trim());
-  if (requireCurrent && !current.trim() || !secrets.length || secrets.some((s) => liveSecrets.includes(s))) throw new RazorpayError("CONFIGURATION");
+  if ((requireCurrent && !current.trim()) || !secrets.length) throw new RazorpayError("CONFIGURATION");
   return secrets;
 }
 async function allowNewOperation() {

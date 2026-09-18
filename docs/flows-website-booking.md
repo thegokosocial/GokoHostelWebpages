@@ -1,6 +1,6 @@
 # Website booking: implemented foundation
 
-Implementation status: **native guest checkout supports Razorpay test and live** behind `GOKO_NATIVE_GUEST_CHECKOUT_ENABLED` + readiness (`nativeCheckoutReadiness.ts`, migrations **0059–0062**). Flip Test ↔ Live in Management → Booking Settings → Payments & Readiness (`gatewayEnvironment`). Live requires distinct `RAZORPAY_LIVE_*` secrets including webhook. Admin ₹1 preview ledger stays separate (`gateway_preview_*`, test-only).
+Implementation status: **native guest checkout supports Razorpay test and live** behind `GOKO_NATIVE_GUEST_CHECKOUT_ENABLED` + readiness (`nativeCheckoutReadiness.ts`, migrations **0059–0062**). Flip Test ↔ Live in Management → Booking Settings → Payments & Readiness (`gatewayEnvironment`). Live needs `RAZORPAY_LIVE_*` Worker secrets including webhook. Admin ₹1 preview ledger stays separate (`gateway_preview_*`, test-only).
 
 The [deep review](review-website-booking-2026-09-17.md) records the initial six findings and their subsequent fixes. The expanded adversarial regression script exercises 19 model groups. Native guest checkout (test mode) is now implemented in code; production D1/env deploy and browser matrix remain release steps.
 

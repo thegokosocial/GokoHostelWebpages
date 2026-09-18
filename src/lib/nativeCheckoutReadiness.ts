@@ -6,7 +6,7 @@ import {
 import { requireNativeHoldGuards } from "@/lib/nativeInventoryHold";
 import { isPiRuntime } from "@/lib/runtime";
 import {
-  razorpayCredentials, razorpayWebhookSecrets, workerEnv, type RazorpayEnvironment,
+  razorpayCredentials, workerEnv, type RazorpayEnvironment,
 } from "@/lib/razorpay";
 import {
   gatewayConfiguration, readWebsiteBookingSettings, WEBSITE_BOOKING_SETTINGS_KEY,
@@ -22,7 +22,7 @@ export type CheckoutBlocker =
   | "checkout_schema_missing"
   | "destination_not_native"
   | "gateway_credentials_incomplete"
-  | "webhook_secret_missing_or_shared"
+  | "webhook_secret_missing"
   | "settings_invalid";
 
 const LABELS: Record<CheckoutBlocker, string> = {
@@ -33,17 +33,13 @@ const LABELS: Record<CheckoutBlocker, string> = {
   checkout_schema_missing: "Apply migrations 0060–0062 (quotes + guest checkout ledger) on D1",
   destination_not_native: "Channel Manager booking URL must be /book",
   gateway_credentials_incomplete: "Configure Razorpay key ID and key secret for the selected gateway environment",
-  webhook_secret_missing_or_shared: "Configure a webhook secret for the selected environment; test and live secrets must differ",
+  webhook_secret_missing: "Configure the webhook secret for the selected gateway environment (RAZORPAY_TEST_WEBHOOK_SECRET or RAZORPAY_LIVE_WEBHOOK_SECRET)",
   settings_invalid: "Saved website booking settings are invalid",
 };
 
 function webhookOk(environment: RazorpayEnvironment, env: Record<string, string | undefined>) {
-  const current = razorpayWebhookSecrets(environment, env);
-  if (!current.length) return false;
-  const other = razorpayWebhookSecrets(environment === "live" ? "test" : "live", env);
   const primary = env[environment === "live" ? "RAZORPAY_LIVE_WEBHOOK_SECRET" : "RAZORPAY_TEST_WEBHOOK_SECRET"] || "";
-  if (!primary.trim()) return false;
-  return !other.includes(primary);
+  return Boolean(primary.trim());
 }
 
 /** Single source for public nativeCheckoutReady + admin blocker list. */
@@ -73,7 +69,7 @@ export async function evaluateNativeCheckoutReadiness(env: Record<string, string
 
   try { razorpayCredentials(environment, env); }
   catch { blockers.push("gateway_credentials_incomplete"); }
-  if (!webhookOk(environment, env)) blockers.push("webhook_secret_missing_or_shared");
+  if (!webhookOk(environment, env)) blockers.push("webhook_secret_missing");
 
   try { await requireNativeHoldGuards(); }
   catch { blockers.push("hold_guards_missing"); }

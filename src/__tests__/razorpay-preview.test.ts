@@ -112,10 +112,11 @@ describe("Razorpay adapter and security boundaries", () => {
     expect((await adminApi(adminRequest("createTestAttempt", { requestKey: crypto.randomUUID() }))).status).toBe(503);
     expect(calls).toHaveLength(0);
   });
-  it("blocks new operations when test and live webhook secrets are shared", async () => {
+  it("allows new operations when test and live webhook secrets match", async () => {
+    vi.stubEnv("RAZORPAY_LIVE_WEBHOOK_SECRET", HOOK);
     vi.stubEnv("RAZORPAY_LIVE_WEBHOOK_SECRET_PREVIOUS", HOOK);
-    expect((await adminApi(adminRequest("createTestAttempt", { requestKey: crypto.randomUUID() }))).status).toBe(503);
-    expect(calls).toHaveLength(0);
+    expect((await adminApi(adminRequest("createTestAttempt", { requestKey: crypto.randomUUID() }))).status).toBe(200);
+    expect(calls).toHaveLength(1);
   });
   it("authenticates test connectivity without creating an order/payment", async () => {
     expect(await checkRazorpayTestConnectivity()).toEqual({ authenticated: true, environment: "test", nativeCheckoutReady: false });
@@ -586,13 +587,14 @@ describe("Signed durable webhook and recovery workflows", () => {
     const raw = JSON.stringify({ event: "settlement.processed", account_id: "acc_DUMMY", payload: {} });
     expect((await webhookApi(hookRequest(raw, "evt_OLD", sign(raw, "DUMMY_OLD_HOOK")))).status).toBe(200);
   });
-  it("rejects wrong account, live signature and shared test/live webhook secrets", async () => {
+  it("rejects wrong account and unknown live-only signature; allows shared test/live webhook secret", async () => {
     const raw = JSON.stringify({ event: "settlement.processed", account_id: "acc_EVIL", payload: {} });
     expect((await webhookApi(hookRequest(raw))).status).toBe(400);
     expect((await webhookApi(hookRequest(raw, "evt_LIVE", sign(raw, "DUMMY_DISTINCT_LIVE")))).status).toBe(400);
     vi.stubEnv("RAZORPAY_LIVE_WEBHOOK_SECRET", HOOK);
-    expect((await webhookApi(hookRequest(raw))).status).toBe(503);
-    expect(sqlite.prepare("SELECT count(*) n FROM gateway_preview_webhooks").get()).toEqual({ n: 0 });
+    const shared = JSON.stringify({ event: "settlement.processed", account_id: "acc_DUMMY", payload: {} });
+    expect((await webhookApi(hookRequest(shared, "evt_SHARED", sign(shared)))).status).toBe(200);
+    expect(sqlite.prepare("SELECT count(*) n FROM gateway_preview_webhooks").get()).toEqual({ n: 1 });
   });
   it("marks unsupported signed test event ignored without inventing bank receipts", async () => {
     const raw = JSON.stringify({ event: "settlement.processed", account_id: "acc_DUMMY", payload: {} });

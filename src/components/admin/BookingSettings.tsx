@@ -94,7 +94,6 @@ export function BookingSettings({ password, username }: { password: string; user
       </h3>
       <p className="mt-1">
         Flip Test ↔ Live below, then Save. Live uses <code>RAZORPAY_LIVE_*</code> Worker secrets and charges real money.
-        Test and live webhook secrets must be different.
       </p>
     </div>
     <nav aria-label="Booking settings sections" className="flex flex-wrap gap-2">
@@ -132,7 +131,7 @@ export function BookingSettings({ password, username }: { password: string; user
             <option value="live">Live — Razorpay live keys (real money)</option>
           </select>
         </label>
-        <p className="text-xs text-muted-foreground">Save after changing. Public checkout uses only the selected mode’s credentials. Do not share the same webhook secret between Test and Live.</p>
+        <p className="text-xs text-muted-foreground">Save after changing. Public checkout uses only the selected mode’s credentials.</p>
         <div className="rounded-lg border p-4 text-sm space-y-2">
           <p>Store credentials as Worker secrets (not in D1):</p>
           <ul className="list-disc pl-5">
