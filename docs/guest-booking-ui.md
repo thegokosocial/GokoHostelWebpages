@@ -53,7 +53,7 @@ For local review, use `GOKO_BOOKING_UI_PREVIEW=true` and `/book/preview`; otherw
 
 ## Confirmation email requirement (next booking-creation phase)
 
-The existing enquiry acknowledgement and lookup code are **not booking confirmations**. After actual native fulfilment is implemented, a durable notification outbox must be inserted with the PMS booking commit, with one unique confirmation event per booking. Send from `booking@gokohostel.com` only after server-authoritative payment verification and successful fulfilment (or an explicitly accepted pay-at-property booking). Include reference, guest, dates, units, tax-inclusive price, verified paid/balance amounts, policies and the private My booking instructions. Retry delivery independently of booking creation; never create a duplicate booking or charge due to a mail failure. Provider capture/browser success alone cannot trigger confirmation. That outbox/fulfilment trigger remains blocked together with public checkout in this phase.
+Confirmation email is sent best-effort after server-authoritative fulfilment (or accepted pay-at-property). A durable outbox with independent retries is still a follow-up; mail failure must never create a duplicate booking or charge.
 
 ## Verification boundaries
 

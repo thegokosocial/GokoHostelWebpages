@@ -134,7 +134,7 @@ Header/footer/mobile Book now → `BookingGateProvider` → `/api/booking/config
 
 **Landmines for native checkout:** (1) Fulfilment must **release** the native hold before `assignBedToBooking` — 0059 aborts assign-while-held. (2) Hold allows **≤4 physical bed IDs**; UI `maxSelectedBeds` counts units (a Double is one unit / two beds). (3) Guest room id is `` `${dormId}-${type}` ``; sellable unit keys are `` `${dormId}:double:N` `` / `` `${dormId}:bed:id` `` — allocator bridges them server-side. (4) Never trust client subtotals; re-quote from daily rates. (5) Webhook routes by `notes.goko_checkout_id` vs `goko_preview_attempt` — separate ledgers. (6) `guestAccessToken` in sessionStorage; confirmation URL is reference-only. (7) One Razorpay open via `claimGuestCheckout` / `checkout_started_at`.
 
-Admin Booking Settings shows readiness blockers. Isolated ₹1 Razorpay preview (`0057`/`0058`, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains separate from guest bookings. Live Razorpay cutover is deferred. See [guest-booking-ui.md](guest-booking-ui.md) and [flows-website-booking.md](flows-website-booking.md).
+Admin Booking Settings shows readiness blockers. Isolated ₹1 Razorpay preview (`0057`/`0058`, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains separate from guest bookings. Flip Test ↔ Live in Booking Settings when live webhook + secrets are ready. See [guest-booking-ui.md](guest-booking-ui.md) and [flows-website-booking.md](flows-website-booking.md).
 
 ### 8b. Bulk restriction auto-push is a patch
 

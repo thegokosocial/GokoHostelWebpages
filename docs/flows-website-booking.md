@@ -26,7 +26,7 @@ Sections:
 
 - **Booking & Policies:** draft advance/full-payment/pay-at-property preferences, bounded hold/review windows, cancellation deadline/refund percentage and policy text. Values are validated by a shared strict Zod schema. Defaults are 50% advance, 15-minute hold, 30-minute maximum review window, 48-hour deadline, and 100% eligible refund. These values are drafts only and do not create guest-facing refund promises.
 - **Rooms & Rates:** links to existing Inventory, Website CMS and Channel Manager; no second rate catalogue. Native guest-category publishing/mapping remains pending.
-- **Payments & Readiness:** test/live draft selection, deployment-secret guidance, and dynamic readiness blockers from `evaluateNativeCheckoutReadiness`. When ready, public `/book` checkout uses test Razorpay. Admin ₹1 preview panel remains available after `RAZORPAY_TEST_PREVIEW_ENABLED`. Live guest checkout stays blocked until a separate cutover.
+- **Payments & Readiness:** Test/Live selection (`gatewayEnvironment`), deployment-secret guidance, and dynamic readiness blockers from `evaluateNativeCheckoutReadiness`. Public `/book` checkout uses the selected mode’s Razorpay credentials when ready. Admin ₹1 preview panel remains available after `RAZORPAY_TEST_PREVIEW_ENABLED`.
 
 Drafts live in the existing `settings` row `website_booking_settings_v1`. No schema migration is needed for draft settings; the test payment ledger separately requires repository migrations `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_id.sql` (not applied live here). Settings and test evidence are excluded from sync. Secrets are not accepted/stored in D1. Secret names are `RAZORPAY_TEST_KEY_ID`, `RAZORPAY_TEST_KEY_SECRET`, `RAZORPAY_TEST_WEBHOOK_SECRET` and corresponding `RAZORPAY_LIVE_*` names; metadata shows only public key/presence. The implemented `/api/webhooks/razorpay` path is **Test-mode-only** and must not be registered as a live processor. Exact capture/refund evidence must be visible before capture/processed-event acknowledgement; retained events are recoverable after new tests are disabled. See test setup/recovery guidance before any deployment.
 
@@ -44,15 +44,20 @@ When readiness passes: Search → select → Review → payment choice → prepa
 
 ## Remaining implementation gates
 
-Native test-mode guest checkout is wired (0062 ledger, public APIs, `/book` UI, webhook branch, confirmation email). Still open:
+Native guest checkout (test + live cutover) is wired: migrations **0059–0062**, public APIs, `/book` UI, webhook branch, confirmation email, Booking Settings Test↔Live flip. Production Worker secrets include Razorpay test/live credentials, `RAZORPAY_LIVE_WEBHOOK_SECRET`, and `GUEST_BOOKING_LOOKUP_SECRET`.
 
-- Live Razorpay + `RAZORPAY_LIVE_WEBHOOK_SECRET` cutover (separate from test readiness).
+**Ops still required for live money (human):**
+1. Register the Live webhook URL in the Razorpay **Live** dashboard (`/api/webhooks/razorpay`) with the live webhook secret and payment/refund events.
+2. After a successful **Test** browser matrix, flip Booking Settings → Live → Save.
+3. One small real live charge + cancel/refund check.
+
+**Product gaps (not blocking test-mode launch):**
 - Category/pool quotas beyond physical holds; Pi writer coordination.
 - Staff payment RBAC UI (`canViewBookingPayments`) and bank settlement accounting.
-- Hold expiry cron (currently lazy via read-time guards).
-- Apply production D1 **0059–0062** and set Worker env flags (see plan pre-flight).
+- Dedicated hold-expiry cron (lazy expiry via read-time guards already works).
+- Durable confirmation-email outbox with retries (fulfil path is best-effort today).
 
-Historical foundations (holds 0059, quotes 0060, lookup 0061, admin ₹1 preview 0057/0058) remain documented in their dedicated pages.
+D1 **0059–0062** and `GOKO_NATIVE_*` env flags are already applied on production.
 
 ## Foundation validation (historical first phase, 17 September 2026)
 
