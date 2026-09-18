@@ -2069,13 +2069,19 @@ export async function checkBedAvailability(bedId: number, checkinDate: string, c
   return (blocked[0]?.count ?? 0) === 0;
 }
 
-async function loadBedsAvailabilityForRange(checkinDate: string, checkoutDate: string, dormId?: number, excludePhysicalOccupancy = false) {
+async function loadBedsAvailabilityForRange(
+  checkinDate: string,
+  checkoutDate: string,
+  dormId?: number,
+  excludePhysicalOccupancy = false,
+  excludeBookingId?: number,
+) {
   const db = getDb();
   const allBeds = dormId
     ? await db.select().from(beds).where(eq(beds.dormId, dormId))
     : await db.select().from(beds);
 
-  const assignments = await db.select().from(bookingBedAssignments).where(
+  const assignmentRows = await db.select().from(bookingBedAssignments).where(
     and(
       eq(bookingBedAssignments.status, "assigned"),
       sql`${bookingBedAssignments.checkoutDate} > ${bookingBedAssignments.checkinDate}`,
@@ -2083,6 +2089,18 @@ async function loadBedsAvailabilityForRange(checkinDate: string, checkoutDate: s
       sql`${bookingBedAssignments.checkoutDate} > ${checkinDate}`
     )
   );
+  // Date edits / revalidation pass excludeBookingId so this stay's own beds are not
+  // treated as conflicting with themselves (same rule as checkBedAvailability).
+  const ownAssignedBedIds = new Set<number>();
+  const assignments = excludeBookingId != null
+    ? assignmentRows.filter((row) => {
+        if (row.bookingId === excludeBookingId) {
+          ownAssignedBedIds.add(row.bedId);
+          return false;
+        }
+        return true;
+      })
+    : assignmentRows;
 
   const blocks = await db.select().from(bedBlocks).where(
     and(
@@ -2115,7 +2133,7 @@ async function loadBedsAvailabilityForRange(checkinDate: string, checkoutDate: s
   }
   const physical = allBeds.filter((b) => !occupiedBedIds.has(b.id) && !physicalOccupiedBedIds.has(b.id) && !blockedBedIds.has(b.id));
   const blockedOnly = allBeds.filter((b) => !occupiedBedIds.has(b.id) && blockedBedIds.has(b.id));
-  return { allBeds, assignments, blocks, overrides, nights, physical, blockedOnly };
+  return { allBeds, assignments, blocks, overrides, nights, physical, blockedOnly, ownAssignedBedIds };
 }
 
 export async function getCalendarAvailability(startDate: string, endDate: string) {
@@ -2132,12 +2150,22 @@ export async function getAvailableBedsForRange(
   checkoutDate: string,
   dormId?: number,
   excludeBookingId?: number,
+  /** Hide beds already assigned to excludeBookingId (add-bed picker). Date revalidation leaves them visible. */
+  omitOwnAssigned = false,
 ) {
   return dbRead(async () => {
-    const { allBeds, assignments, blocks, overrides, nights, physical, blockedOnly } = await loadBedsAvailabilityForRange(checkinDate, checkoutDate, dormId);
+    const { allBeds, assignments, blocks, overrides, nights, physical, blockedOnly, ownAssignedBedIds } = await loadBedsAvailabilityForRange(
+      checkinDate,
+      checkoutDate,
+      dormId,
+      false,
+      excludeBookingId,
+    );
     if (nights.length === 0) return [];
     const unassignedHolds = await getUnassignedOtaHoldsForRange(checkinDate, checkoutDate, excludeBookingId);
-    return tagBedsForPicker(physical, blockedOnly, allBeds, nights, blocks, assignments, overrides, unassignedHolds);
+    const tagged = tagBedsForPicker(physical, blockedOnly, allBeds, nights, blocks, assignments, overrides, unassignedHolds);
+    if (!omitOwnAssigned || ownAssignedBedIds.size === 0) return tagged;
+    return tagged.filter((bed) => !ownAssignedBedIds.has(bed.id));
   });
 }
 

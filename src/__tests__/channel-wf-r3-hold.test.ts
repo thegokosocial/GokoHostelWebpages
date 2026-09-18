@@ -282,7 +282,7 @@ describe("Source-read: online-only release, cancelled filter, webhook vs Unassig
 
   it("admin getAvailableBeds forwards body.bookingId for the Unassigned picker", () => {
     expect(getAvailableBedsAction).toContain("const { checkinDate, checkoutDate, bookingId } = body");
-    expect(getAvailableBedsAction).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
+    expect(getAvailableBedsAction).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId, Boolean(bookingId))");
   });
 
   it("assignTaggedBeds excludes the current booking so its own hold can be completed", () => {

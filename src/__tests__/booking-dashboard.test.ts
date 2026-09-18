@@ -474,11 +474,27 @@ describe("Booking API: calendar enrich and rates batch", () => {
   it("loads check-in-day rates once via getAllDailyRates", () => {
     const section = route.match(/action === "getAvailableBeds"[\s\S]*?action === "getBookingHistory"/)![0];
     expect(section).toContain("getAllDailyRates(checkinDate, checkinDate)");
-    expect(section).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId)");
+    expect(section).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId, Boolean(bookingId))");
     expect(section).not.toMatch(/await getDailyRates\(/);
     expect(section).toContain("adult1Rate ?? rate.rate");
     expect(section).toContain("pool: b.pool");
     expect(section).toMatch(/if \(rate\) \{\s*dormRates\[mapping\.dormId\] = rate\.adult1Rate \?\? rate\.rate;/);
+  });
+
+  it("excludes this stay's own beds from add-picker chips but still frees them for date revalidation", () => {
+    const section = route.match(/action === "getAvailableBeds"[\s\S]*?action === "getBookingHistory"/)![0];
+    expect(section).toContain("omitOwnAssigned");
+    expect(section).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId, Boolean(bookingId))");
+    expect(section).not.toContain("getBookingDetail(bookingId)");
+    const queries = readFile("src/db/queries.ts");
+    const loader = queries.match(/async function loadBedsAvailabilityForRange[\s\S]*?return \{ allBeds, assignments/)![0];
+    expect(loader).toContain("excludeBookingId?: number");
+    expect(loader).toContain("ownAssignedBedIds");
+    expect(loader).toContain("row.bookingId === excludeBookingId");
+    const available = queries.match(/export async function getAvailableBedsForRange[\s\S]*?\nexport async function getBedsFreeToBlock/)![0];
+    expect(available).toContain("omitOwnAssigned = false");
+    expect(available).toContain("!ownAssignedBedIds.has(bed.id)");
+    expect(available).toContain("excludeBookingId");
   });
 });
 

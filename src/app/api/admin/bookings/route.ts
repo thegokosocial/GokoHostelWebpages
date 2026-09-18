@@ -528,13 +528,18 @@ export async function POST(req: NextRequest) {
     if (action === "getAvailableBeds") {
       const { checkinDate, checkoutDate, bookingId } = body;
       if (!checkinDate || !checkoutDate) return NextResponse.json({ error: "checkinDate and checkoutDate required" }, { status: 400 });
-      const available = await getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId);
+      // omitOwnAssigned: free this stay's beds for date math, but don't offer them as "add" chips.
+      const available = await getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId, Boolean(bookingId));
       const beds = available.map((b) => ({ id: b.id, bedId: b.bedId, dormId: b.dormId, dormName: b.dormName, type: b.type, pool: b.pool }));
       const availableIds = new Set(available.map((b) => b.id));
+      const poolById = new Map(available.map((b) => [b.id, b.pool]));
       const allInventoryBeds = (await getAllBeds()) || [];
       const units = sellableUnits(allInventoryBeds.length > 0 ? allInventoryBeds : available)
         .filter((u) => u.beds.every((b) => availableIds.has(b.id)))
-        .map((u) => ({ key: u.key, label: u.label, dormId: u.dormId, dormName: u.beds[0]?.dormName || "", type: u.type, capacity: u.capacity, bedIds: u.beds.map((b) => b.id), pool: available.find((b) => b.id === u.beds[0]?.id)?.pool || "online" }));
+        .map((u) => {
+          const firstId = u.beds[0]?.id;
+          return { key: u.key, label: u.label, dormId: u.dormId, dormName: u.beds[0]?.dormName || "", type: u.type, capacity: u.capacity, bedIds: u.beds.map((b) => b.id), pool: (firstId != null ? poolById.get(firstId) : undefined) || "online" };
+        });
       const slots = available.map((b) => ({ key: `slot:${b.id}`, label: b.bedId, dormId: b.dormId, dormName: b.dormName, type: "Bed" as const, capacity: 1, bedIds: [b.id], pool: b.pool || "online" }));
       const dormRates: Record<number, number> = {};
       const mappings = await getRoomTypeMappings();
