@@ -70,6 +70,8 @@ Accounts reconciliation is additionally action-scoped: `canReconcileCash` contro
 
 Accounts also has an OTA Receivables tab under `canViewAccounts`. It displays recognized platform receivables and payout allocations. Recording/allocating a payout requires `canSettlePlatformPayments`; manual adjustments require `canAdjustPlatformReceivables`.
 
+Accounts expense records, Food Revenue guest breakdowns, and Room Revenue stay breakdowns scroll horizontally within their tables on narrow screens. Their column headers stay with the table instead of covering rows during vertical page scrolling.
+
 Menu deletion removes items/categories from active admin and guest-menu lists using existing soft-deletion fields. Category deletion archives its children too. Historical food-order references and menu photos are retained; no order history is deleted.
 
 ---

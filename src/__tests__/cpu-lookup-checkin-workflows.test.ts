@@ -388,7 +388,7 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(records).toContain("Delete record");
   });
 
-  it("keeps sticky admin table headers attached to the main scroll container", () => {
+  it("keeps admin tables inside their intended scroll containers", () => {
     const adminPage = fs.readFileSync(path.join(ROOT, "src/app/admin/page.tsx"), "utf-8");
     expect(adminPage).toContain('section === "records"');
     const files = [
@@ -422,12 +422,17 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
         expect(source).toContain("max-w-full min-w-0");
         expect(source).toContain("sticky top-0");
         expect(source).toContain("formatAuditDetails");
+      } else if (["AdminBillRecords.tsx", "AdminFoodBill.tsx", "AdminRoomRevenue.tsx"].includes(file)) {
+        expect(source).toContain("overflow-x-auto overflow-y-visible overscroll-x-contain");
+        expect(source).toContain("touch-action:pan-x_pan-y");
+        expect(source).not.toContain("sticky top-[4.5rem]");
+        expect(source).not.toContain("overflow-x-clip");
       } else {
         expect(source).toContain("sticky top-[4.5rem]");
         expect(source).toContain("overflow-x-clip");
       }
       expect(source).not.toContain("overflow-visible");
-      if (file !== "AdminRecords.tsx" && file !== "booking-dashboard/BookingTableView.tsx" && file !== "ManagementAudit.tsx") {
+      if (file !== "AdminRecords.tsx" && file !== "booking-dashboard/BookingTableView.tsx" && file !== "ManagementAudit.tsx" && !["AdminBillRecords.tsx", "AdminFoodBill.tsx", "AdminRoomRevenue.tsx"].includes(file)) {
         expect(source).not.toMatch(/overflow-x-auto[\s\S]{0,300}<table/);
       }
     }
