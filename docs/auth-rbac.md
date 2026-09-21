@@ -206,7 +206,7 @@ Every action requires `canViewSplits`. Then: list* → view; people/groups → `
 
 ### `/api/admin/account-settings`
 
-Entire route: `canManageAccountSettings` (or legacy `canManageAccounts`) or admin.
+Accounts/vendors/categories actions use `canManageAccountSettings` (or legacy `canManageAccounts`) or admin; employee actions also accept `canManageEmployees`, and payroll actions use `canManagePayroll`. `removeEmployee` requires `canManageEmployees` (or the account-settings fallback) and only removes an inactive employee from the roster; linked history is retained.
 
 ### `/api/admin/platform-settlements`
 

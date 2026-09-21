@@ -62,7 +62,7 @@ Native physical hold creation/release, read-only owner recovery (`getNativeInven
 | `/api/admin/tasks/upload` | `authenticateUser` + task ownership/task-management check | JPEG/PNG/WebP/PDF task attachments stored in Google Drive |
 | `/api/admin/platform-settlements` | `canViewAccounts` for list; `canSettlePlatformPayments` for createSettlement/allocate/allocateBatch; `canAdjustPlatformReceivables` for adjust | OTA and website payment receivables, payout records and batch allocations, booking details and deductions |
 | `/api/admin/splits` | per-action map, 403 on Pi | Staff/volunteer IOUs + Goko Accounts bridge |
-| `/api/admin/account-settings` | `canManageAccountSettings` or legacy `canManageAccounts` or admin | Accounts, vendors, employees, salary |
+| `/api/admin/account-settings` | Per action: `canManageAccountSettings` or legacy `canManageAccounts` or admin; employee actions also accept `canManageEmployees` | Accounts, vendors, employees, salary; inactive employee removal tombstones the roster row and retains compensation/payroll/attendance history |
 | `/api/admin/website` | **admin role**, 403 on Pi | CMS JSON |
 | `/api/admin/website/upload` | `menu` → `canManageMenuItems`; `bills` → `canManageFoodSettings`; other folders admin-only; 403 on Pi, 503 if no R2 | CMS / quick-links / bill QR images |
 | `/api/admin/channel-manager` | admin role; `getSyncLogs` uses `canViewLogs` | Aiosell config, room/rate maps, daily rates, sync logs |
@@ -125,7 +125,7 @@ Manual/offline/walk-in and website bookings can use `editReservation` to update 
 
 **Splits (403 on Pi, 503 if tables missing):** `listMembers`, `addMember`, `updateMember`, `deactivateMember`, `listGroups`, `addGroup`, `updateGroup`, `setGroupMembers`, `deleteGroup`, `listLoginUsers`, `listActivity`, `addExpense`, `updateExpense`, `deleteExpense`, `getBalances`, `addSettlement`, `deleteSettlement`, `payGokoReimbursement`, `listAccounts`. UI `fetch("/api/admin/splits")` only. Goko-as-payer add/update, `payGokoReimbursement`, and `listAccounts` also require `canAddExpense` (inline AND). `deleteSettlement` refuses `hostelExpenseId`. Never `paySalary`.
 
-**Account settings:** `list/add/update/delete` × Accounts, Vendors, Employees; `paySalary`.
+**Account settings:** `list/add/update/delete` × Accounts, Vendors, Employees; `paySalary`. `deleteEmployee` deactivates an employee; `removeEmployee` is inactive-only and hides them from the roster with a sync tombstone while retaining linked financial and attendance history.
 
 **OTA finance:** Prepaid channel check-in keeps the legacy booking `amountPaid` compatibility write but recognizes an immutable platform receivable instead of a real-bank receipt. `/api/admin/platform-settlements` records actual payout dates in real accounts, supports one-to-many allocations only after receivable recognition, caps ordinary allocations at the booking-cycle expected net, and requires an explicit variance for mismatches. It appends manual adjustments/reversals, validates integer paise inputs, and repairs a missing real-bank receipt if a settlement request is retried after a partial write. OTA-prepaid desk refunds are deferred to this adjustment flow.
 

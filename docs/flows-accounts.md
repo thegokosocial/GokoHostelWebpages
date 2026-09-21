@@ -18,7 +18,7 @@
 | Reconcile | `canReconcileCash` or `canReconcileOnline` | `getReconciliation`, `saveReconciliation`; Admin-only `undoReconciliation` |
 | OTA Receivables | `canViewAccounts`; mutations additionally require `canSettlePlatformPayments` / `canAdjustPlatformReceivables` | `/api/admin/platform-settlements`: list, createSettlement, allocate, adjust |
 
-Account Settings (Management): accounts/vendors/employees/salary — `canManageAccountSettings`. Bulk XLSX: `/api/admin/bulk-import-accounts`.
+Account Settings (Management): accounts/vendors/employees/salary. Employee deactivation uses `canManageEmployees`; an inactive employee can be removed from the roster with a sync tombstone, retaining compensation, payroll, and attendance history. Bulk XLSX: `/api/admin/bulk-import-accounts`.
 
 ---
 

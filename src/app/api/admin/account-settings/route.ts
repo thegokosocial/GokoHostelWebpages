@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { accounts, vendors, employees, salaryPayments, expenses, guestReceipts, employeeCompensationHistory, platformPaymentProfiles, platformSettlements } from "@/db/schema";
 import { getSetting, setSetting } from "@/db/queries";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, isNull } from "drizzle-orm";
 import { authenticateUser } from "@/lib/auth";
 import { syncInsert, syncUpdate } from "@/db/syncMeta";
 import { calculateEmployeePayroll } from "@/lib/employeeAttendance";
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       listAccounts: "canManageAccountSettings", saveReceiptDefaults: "canManageAccountSettings",
       addAccount: "canManageAccountSettings", updateAccount: "canManageAccountSettings", deleteAccount: "canManageAccountSettings",
       listVendors: "canManageVendors", addVendor: "canManageVendors", updateVendor: "canManageVendors", deleteVendor: "canManageVendors",
-      listEmployees: "canManageEmployees", addEmployee: "canManageEmployees", updateEmployee: "canManageEmployees", deleteEmployee: "canManageEmployees",
+      listEmployees: "canManageEmployees", addEmployee: "canManageEmployees", updateEmployee: "canManageEmployees", deleteEmployee: "canManageEmployees", removeEmployee: "canManageEmployees",
       paySalary: "canManagePayroll",
     };
     const requiredPermission = actionPermissions[String(action)] || "canManageAccountSettings";
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
 
       // --- Employees ---
       case "listEmployees": {
-        const items = await db.select().from(employees).orderBy(employees.name);
+        const items = await db.select().from(employees).where(isNull(employees.deletedAt)).orderBy(employees.name);
         return NextResponse.json({ employees: items });
       }
       case "addEmployee": {
@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
           bankAccount: bankAccount ?? undefined,
           attendanceStartDate: attendanceStartDate ?? undefined,
           employmentEndDate: employmentEndDate ?? undefined,
-        })).where(eq(employees.id, id));
+        })).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
         if (salary != null || salaryFrequency != null) {
           const month = compensationEffectiveMonth || todayIST().slice(0, 7);
           const [existing] = await db.select().from(employeeCompensationHistory).where(and(eq(employeeCompensationHistory.employeeId, id), eq(employeeCompensationHistory.effectiveMonth, month))).limit(1);
@@ -228,6 +228,15 @@ export async function POST(req: NextRequest) {
         await db.update(employees).set(syncUpdate({ isActive: 0, employmentEndDate: todayIST() })).where(eq(employees.id, id));
         return NextResponse.json({ success: true });
       }
+      case "removeEmployee": {
+        const id = Number(rest.id);
+        if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Valid employee ID required" }, { status: 400 });
+        const [employee] = await db.select().from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).limit(1);
+        if (!employee) return NextResponse.json({ error: "Employee not found" }, { status: 404 });
+        if (employee.isActive) return NextResponse.json({ error: "Deactivate the employee before removing them" }, { status: 409 });
+        await db.update(employees).set(syncUpdate({ deletedAt: new Date().toISOString() })).where(eq(employees.id, id));
+        return NextResponse.json({ success: true, historyRetained: true });
+      }
 
       // --- Salary Payments ---
       case "paySalary": {
@@ -236,7 +245,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "employeeId, amount, and month required" }, { status: 400 });
         }
 
-        const [emp] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+        const [emp] = await db.select().from(employees).where(and(eq(employees.id, employeeId), isNull(employees.deletedAt))).limit(1);
         if (!emp) return NextResponse.json({ error: "Employee not found" }, { status: 404 });
 
         const now = new Date().toISOString();

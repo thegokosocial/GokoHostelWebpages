@@ -194,6 +194,21 @@ export function AccountSettings({ password, username, role }: { password: string
     loadData();
   };
 
+  const removeEmployee = async (employee: Employee) => {
+    if (!confirm(`Remove ${employee.name} from the employee list? Compensation, payroll, and attendance history will be retained.`)) return;
+    try {
+      const res = await apiCall({ action: "removeEmployee", id: employee.id });
+      if (!res.ok) {
+        showError((await res.json().catch(() => ({}))).error || "Could not remove employee");
+        return;
+      }
+      showSuccess(`${employee.name} removed from the employee list; history retained`);
+      await loadData();
+    } catch {
+      showError("Could not remove employee. Check your connection and try again.");
+    }
+  };
+
   const saveReceiptDefaults = async () => {
     setSavingReceiptDefaults(true);
     try {
@@ -533,7 +548,9 @@ export function AccountSettings({ password, username, role }: { password: string
                 <IndianRupeeIcon className="inline h-3 w-3" /> Pay
               </button>
               <button type="button" onClick={() => startEdit(e)} className="rounded-md p-1.5 text-brand-green-dark/40 hover:bg-brand-sand hover:text-brand-green"><PencilIcon className="h-3.5 w-3.5" /></button>
-              {e.isActive ? <button type="button" title="Deactivate employee" onClick={() => deleteItem(e.id)} className="rounded-md p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600"><Trash2Icon className="h-3.5 w-3.5" /></button> : null}
+              {e.isActive
+                ? <button type="button" title="Deactivate employee" onClick={() => deleteItem(e.id)} className="rounded-md p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600"><Trash2Icon className="h-3.5 w-3.5" /></button>
+                : <button type="button" title="Remove employee from list (history retained)" aria-label={`Remove ${e.name} from employee list`} onClick={() => removeEmployee(e)} className="rounded-md p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-600"><Trash2Icon className="h-3.5 w-3.5" /></button>}
             </div>
           </div>
         ))}
