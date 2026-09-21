@@ -346,7 +346,7 @@ export async function POST(req: NextRequest) {
       }
 
       case "markOrderPaid": {
-        const { orderIds, paymentMethod, paidBy, cashReceived, changeGiven, onlineAccountId, receiptId } = rest;
+        const { orderIds, paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId } = rest;
         if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
           return NextResponse.json({ error: "orderIds required" }, { status: 400 });
         }
@@ -362,14 +362,14 @@ export async function POST(req: NextRequest) {
           await updateFoodOrderPayment(oid, {
             paymentStatus: "paid",
             paymentMethod,
-            paidBy: paidBy || actorName,
+            paidBy: actorName,
             cashReceived: cashReceived ?? 0,
             changeGiven: changeGiven ?? 0,
           });
           const onlineAmount = paymentMethod === "online" ? order.total : paymentMethod === "split" ? Math.max(0, order.total - (Number(cashReceived) || 0)) : 0;
           if (onlineAmount > 0) {
             const accountId = await resolveReceiptAccount("food", onlineAccountId);
-            await createGuestReceipt({ receiptId: `${receiptId || crypto.randomUUID()}:food:${oid}`, sourceType: "food_order", sourceId: oid, kind: "food", accountId, amount: onlineAmount, createdBy: paidBy || actorName, notes: `Food order ${order.orderNumber}` });
+            await createGuestReceipt({ receiptId: `${receiptId || crypto.randomUUID()}:food:${oid}`, sourceType: "food_order", sourceId: oid, kind: "food", accountId, amount: onlineAmount, createdBy: actorName, notes: `Food order ${order.orderNumber}` });
           }
         }
         await addAuditEntry({

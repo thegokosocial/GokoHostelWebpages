@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
         const accountId = accountKey === "cash" ? null : accountKey;
         const db = getDb();
         const accountCondition = accountId === null ? sql`account_id IS NULL` : sql`account_id = ${accountId}`;
-        const receiptCondition = accountId === null ? sql`0 = 1` : sql`account_id = ${accountId}`;
+        const receiptCondition = accountId === null ? sql`0 = 1` : sql`gr.account_id = ${accountId}`;
         const [allAccounts, accountRows, reconciliations, openingAdjustments] = await Promise.all([
           db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, bankName: accounts.bankName, accountType: accounts.accountType, accountNumber: accounts.accountNumber, openingBalance: accounts.openingBalance, isVirtual: accounts.isVirtual, isActive: accounts.isActive }).from(accounts).orderBy(accounts.name),
           accountId === null ? Promise.resolve([]) : db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1),
@@ -115,16 +115,31 @@ export async function POST(req: NextRequest) {
         if (accountId !== null && !accountRows[0]) return NextResponse.json({ error: "Account not found" }, { status: 404 });
         const activity = await db.all(sql`
           SELECT * FROM (
-            SELECT 'income-' || id AS id, date, 'income' AS kind, COALESCE(description, source, '') AS description, amount, COALESCE(source_detail, '') AS reference
+            SELECT 'income-' || id AS id, date, 'income' AS kind, COALESCE(description, source, '') AS description, amount, COALESCE(source_detail, '') AS reference, COALESCE(created_by, '') AS addedBy
             FROM daily_income WHERE ${accountCondition} AND date >= ${fromDate} AND date <= ${toDate}
             UNION ALL
-            SELECT 'receipt-' || id AS id, business_date AS date, kind, notes AS description, amount, receipt_id AS reference
-            FROM guest_receipts WHERE ${receiptCondition} AND business_date >= ${fromDate} AND business_date <= ${toDate}
+            SELECT 'receipt-' || gr.id AS id, gr.business_date AS date, gr.kind,
+              CASE
+                WHEN gr.source_type = 'food_order' THEN 'Food payment · ' || COALESCE(NULLIF(fo.guest_name, ''), 'guest')
+                WHEN gr.source_type = 'booking' AND gr.kind = 'stay' THEN 'Stay payment · ' || COALESCE(NULLIF(b.guest_name, ''), gr.notes)
+                ELSE gr.notes
+              END AS description,
+              gr.amount,
+              CASE
+                WHEN gr.source_type = 'food_order' THEN COALESCE(NULLIF(fo.order_number, ''), CAST(gr.source_id AS TEXT))
+                WHEN gr.source_type = 'booking' THEN COALESCE(NULLIF(b.goko_booking_id, ''), NULLIF(b.booking_ref, ''), gr.receipt_id)
+                ELSE gr.receipt_id
+              END AS reference,
+              COALESCE(gr.created_by, '') AS addedBy
+            FROM guest_receipts gr
+            LEFT JOIN food_orders fo ON gr.source_type = 'food_order' AND gr.source_id = fo.id
+            LEFT JOIN bookings b ON gr.source_type = 'booking' AND gr.source_id = b.id
+            WHERE ${receiptCondition} AND gr.business_date >= ${fromDate} AND gr.business_date <= ${toDate}
             UNION ALL
-            SELECT 'expense-' || id AS id, expense_date AS date, 'expense' AS kind, COALESCE(purpose, category, '') AS description, -amount AS amount, category AS reference
+            SELECT 'expense-' || id AS id, expense_date AS date, 'expense' AS kind, COALESCE(purpose, category, '') AS description, -amount AS amount, category AS reference, COALESCE(created_by, '') AS addedBy
             FROM expenses WHERE ${accountCondition} AND expense_date >= ${fromDate} AND expense_date <= ${toDate} AND deleted_at IS NULL
           ) ORDER BY date DESC, id DESC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
-        `) as Array<{ id: string; date: string; kind: string; description: string; amount: number; reference: string }>;
+        `) as Array<{ id: string; date: string; kind: string; description: string; amount: number; reference: string; addedBy: string }>;
         const [incomeCount, receiptCount, expenseCount] = await Promise.all([
           db.select({ count: sql<number>`COUNT(*)` }).from(dailyIncome).where(and(accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), sql`${dailyIncome.date} >= ${fromDate} AND ${dailyIncome.date} <= ${toDate}`)),
           accountId === null ? Promise.resolve([{ count: 0 }]) : db.select({ count: sql<number>`COUNT(*)` }).from(guestReceipts).where(and(eq(guestReceipts.accountId, accountId), sql`${guestReceipts.businessDate} >= ${fromDate} AND ${guestReceipts.businessDate} <= ${toDate}`)),
@@ -155,8 +170,8 @@ export async function POST(req: NextRequest) {
           const settlementIds = matchingSettlements.map((row) => row.id);
           const allocations = settlementIds.length ? await db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.settlementId, settlementIds)) : [];
           const settlementDates = new Map(matchingSettlements.map((row) => [row.id, row.payoutDate]));
-          const events = platformRows.filter((row) => row.recognitionDate >= fromDate).map((row) => ({ id: `receivable-${row.id}`, date: row.recognitionDate, kind: "receivable", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: row.expectedNetPaise, reference: row.eventKey }))
-            .concat(allocations.map((row) => ({ id: `allocation-${row.id}`, date: settlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "payout allocation", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: -row.allocatedPaise, reference: String(row.settlementId) })));
+          const events = platformRows.filter((row) => row.recognitionDate >= fromDate).map((row) => ({ id: `receivable-${row.id}`, date: row.recognitionDate, kind: "receivable", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: row.expectedNetPaise, reference: row.eventKey, addedBy: row.createdBy || "System" }))
+            .concat(allocations.map((row) => ({ id: `allocation-${row.id}`, date: settlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "payout allocation", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: -row.allocatedPaise, reference: String(row.settlementId), addedBy: row.createdBy || "System" })));
           let websiteBalance = 0;
           if (!isPiRuntime() && keys.has("razorpay-website")) {
             const paymentRows = await db.select({
@@ -179,7 +194,7 @@ export async function POST(req: NextRequest) {
                 if (payment.verifiedAt.slice(0, 10) >= fromDate) events.push({
                   id: `website-payment-${payment.id}`, date: payment.verifiedAt.slice(0, 10), kind: "website payment · fee pending",
                   description: `${payment.guestName} · ${payment.gokoBookingId || payment.bookingRef || `Booking #${payment.bookingId || "pending"}`}`,
-                  amount: 0, reference: payment.id,
+                  amount: 0, reference: payment.id, addedBy: "Razorpay webhook",
                 });
                 continue;
               }
@@ -188,10 +203,10 @@ export async function POST(req: NextRequest) {
               if (payment.verifiedAt.slice(0, 10) >= fromDate) events.push({
                 id: `website-payment-${payment.id}`, date: payment.verifiedAt.slice(0, 10), kind: "website payment receivable",
                 description: `${payment.guestName} · ${payment.gokoBookingId || payment.bookingRef || `Booking #${payment.bookingId || "pending"}`}`,
-                amount: net, reference: payment.id,
+                amount: net, reference: payment.id, addedBy: "Razorpay webhook",
               });
             }
-            events.push(...effectiveWebAllocations.filter((row) => (webSettlementDates.get(row.settlementId) || "") >= fromDate).map((row) => ({ id: `gateway-payout-${row.id}`, date: webSettlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "website payout allocation", description: `Razorpay settlement #${row.settlementId}`, amount: -row.allocatedPaise, reference: row.paymentId })));
+            events.push(...effectiveWebAllocations.filter((row) => (webSettlementDates.get(row.settlementId) || "") >= fromDate).map((row) => ({ id: `gateway-payout-${row.id}`, date: webSettlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "website payout allocation", description: `Razorpay settlement #${row.settlementId}`, amount: -row.allocatedPaise, reference: row.paymentId, addedBy: row.createdBy || "System" })));
           }
           balanceAsOf = platformRows.reduce((sum, row) => sum + row.expectedNetPaise, 0) - allocations.reduce((sum, row) => sum + row.allocatedPaise, 0) + websiteBalance;
           return events;
