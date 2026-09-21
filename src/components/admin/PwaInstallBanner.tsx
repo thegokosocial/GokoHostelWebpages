@@ -415,7 +415,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
               <ol className="space-y-2 text-xs leading-relaxed text-brand-green-dark/70">
                 <li><strong>1.</strong> Tap Enable notifications and choose Allow when Chrome asks.</li>
                 <li><strong>2.</strong> If blocked, open Chrome → Settings → Site settings → Notifications → gokohostel.com and choose Allow.</li>
-                <li className="flex gap-2"><Volume2Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>For sound, open Android Settings → Apps → Chrome → Notifications → Goko/site notifications, then enable Sound and vibration.</span></li>
+                <li className="flex gap-2"><Volume2Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>If an alert appears silently, check Android Settings → Apps → Chrome → Notifications → Site notifications → gokohostel.com and enable sound (or Settings → Apps → Goko if installed). Also check notification volume and Do Not Disturb. Android controls notification sound; Goko can request vibration but cannot force sound.</span></li>
               </ol>
             )}
           </div>

@@ -41,6 +41,10 @@ export function notificationStayDates(checkin?: string | null, checkout?: string
   return `${notificationDate(checkin)} → ${notificationDate(checkout)}`;
 }
 
+export function notificationReconciliationBody(date: string, pendingAccountCount: number) {
+  return `${notificationDate(date)} has not been reconciled. ${pendingAccountCount} account${pendingAccountCount === 1 ? " is" : "s are"} still pending.`;
+}
+
 export function notificationFoodItems(items: Array<{ itemName: string; quantity: number }>) {
   return items.map((item) => `${item.quantity}× ${clean(item.itemName, 60)}`).join(", ");
 }

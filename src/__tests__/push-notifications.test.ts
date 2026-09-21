@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runInNewContext } from "node:vm";
 import * as fs from "fs";
 import * as path from "path";
-import { buildPushPayload, notificationDate, notificationFirstName, notificationFoodBody, notificationFoodItems, notificationStayDates } from "@/lib/pushNotify";
+import { buildPushPayload, notificationDate, notificationFirstName, notificationFoodBody, notificationFoodItems, notificationReconciliationBody, notificationStayDates } from "@/lib/pushNotify";
 
 const ROOT = path.resolve(__dirname, "../..");
 
@@ -25,6 +25,15 @@ function worker() {
 }
 
 describe("push notification payloads", () => {
+  it("matches PWA manifest icon sizes to the PNG assets", () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "public/manifest.webmanifest"), "utf8"));
+    for (const icon of manifest.icons) {
+      const image = fs.readFileSync(path.join(ROOT, "public", icon.src));
+      expect(image.subarray(1, 4).toString(), icon.src).toBe("PNG");
+      expect(`${image.readUInt32BE(16)}x${image.readUInt32BE(20)}`, icon.src).toBe(icon.sizes);
+    }
+  });
+
   it("keeps useful content, safe admin links, and unique event identity", () => {
     const payload = buildPushPayload({
       title: "  New   Booking ",
@@ -81,7 +90,13 @@ describe("push notification payloads", () => {
     await sw.emit("push", { data });
     const [title, options] = sw.showNotification.mock.calls[0];
     expect(title).toBe("Goko");
-    expect(options).toMatchObject({ body: "You have a new update", data: { url: "/admin" }, icon: "/icons/icon-192.png" });
+    expect(options).toMatchObject({
+      body: "You have a new update",
+      data: { url: "/admin" },
+      icon: "/icons/icon-192.png",
+      badge: "/icons/notification-badge.png",
+      vibrate: [200, 100, 200],
+    });
     expect(options.timestamp).toBeGreaterThan(0);
     expect(options.tag).not.toBe(sw.showNotification.mock.calls[1][1].tag);
   });
@@ -94,14 +109,57 @@ describe("push notification payloads", () => {
     expect(sw.showNotification.mock.calls[1][1].body).toBe("You have a new update");
   });
 
-  it("keeps branding before minimal fallback and catches terminal display failure", async () => {
+  it("retains branded icon, badge, and vibration when only optional fields fail", async () => {
+    const sw = worker();
+    sw.showNotification.mockRejectedValueOnce(new Error("unsupported optional fields"));
+    await sw.emit("push", { data: { json: () => ({ title: "Order", body: "Ada", tag: "food-42" }) } });
+    expect(sw.showNotification).toHaveBeenCalledTimes(2);
+    expect(sw.showNotification.mock.calls[1][1]).toMatchObject({
+      icon: "/icons/icon-192.png",
+      badge: "/icons/notification-badge.png",
+      vibrate: [200, 100, 200],
+      tag: "food-42",
+    });
+  });
+
+  it("drops unsupported vibration before falling back to a branded notification", async () => {
+    const sw = worker();
+    sw.showNotification
+      .mockRejectedValueOnce(new Error("unsupported vibration"))
+      .mockRejectedValueOnce(new Error("unsupported vibration"));
+    await sw.emit("push", { data: { json: () => ({ title: "Order", body: "Ada", tag: "food-42" }) } });
+    expect(sw.showNotification).toHaveBeenCalledTimes(3);
+    expect(sw.showNotification.mock.calls[2][1]).toMatchObject({
+      icon: "/icons/icon-192.png",
+      badge: "/icons/notification-badge.png",
+      tag: "food-42",
+    });
+    expect(sw.showNotification.mock.calls[2][1]).not.toHaveProperty("vibrate");
+  });
+
+  it("keeps the main icon if a platform rejects the notification badge", async () => {
+    const sw = worker();
+    sw.showNotification
+      .mockRejectedValueOnce(new Error("unsupported options"))
+      .mockRejectedValueOnce(new Error("unsupported options"))
+      .mockRejectedValueOnce(new Error("unsupported options"));
+    await sw.emit("push", { data: { json: () => ({ title: "Order", body: "Ada", tag: "food-42" }) } });
+    expect(sw.showNotification).toHaveBeenCalledTimes(4);
+    expect(sw.showNotification.mock.calls[3][1]).toMatchObject({
+      icon: "/icons/icon-192.png",
+      tag: "food-42",
+      data: { url: "/admin" },
+    });
+    expect(sw.showNotification.mock.calls[3][1]).not.toHaveProperty("badge");
+  });
+
+  it("keeps minimal fallback and catches terminal display failure", async () => {
     const sw = worker();
     sw.showNotification.mockRejectedValue(new Error("unsupported"));
     await sw.emit("push", { data: { json: () => ({ title: "Order", body: "Ada", tag: "food-42" }) } });
-    expect(sw.showNotification).toHaveBeenCalledTimes(3);
-    expect(sw.showNotification.mock.calls[1][1]).toMatchObject({ icon: "/icons/icon-192.png", tag: "food-42" });
-    expect(sw.showNotification.mock.calls[1][1]).not.toHaveProperty("vibrate");
-    expect(sw.showNotification.mock.calls[2][1]).toEqual({ body: "Ada", data: { url: "/admin" } });
+    expect(sw.showNotification).toHaveBeenCalledTimes(5);
+    expect(sw.showNotification.mock.calls[2][1]).toMatchObject({ icon: "/icons/icon-192.png", badge: "/icons/notification-badge.png" });
+    expect(sw.showNotification.mock.calls[4][1]).toEqual({ body: "Ada", data: { url: "/admin" } });
     expect(sw.error).toHaveBeenCalledWith("Goko notification display failed");
   });
 
@@ -125,6 +183,8 @@ describe("push notification payloads", () => {
     ])).toBe("2× Masala Dosa, 1× Chai");
     expect(notificationDate("2026-09-03")).toBe("3 Sept");
     expect(notificationStayDates("2026-09-03", "2026-09-04")).toBe("3 Sept → 4 Sept");
+    expect(notificationReconciliationBody("2026-09-20", 2)).toBe("20 Sept has not been reconciled. 2 accounts are still pending.");
+    expect(notificationReconciliationBody("2026-09-20", 1)).toBe("20 Sept has not been reconciled. 1 account is still pending.");
     expect(buildPushPayload({ title: "Order", body: "x".repeat(500) }).body).toHaveLength(500);
   });
 
@@ -133,6 +193,6 @@ describe("push notification payloads", () => {
     const worker = fs.readFileSync(path.join(ROOT, "public/sw.js"), "utf8");
     expect(adminOrders).toContain('eventId: `admin-food-order-${order.id}`');
     expect(adminOrders).toContain('title: "New Food Order"');
-    expect(worker).toContain("await self.registration.showNotification(title, { body, data: { url } })");
+    expect(worker).toContain("{ body, data: { url } }");
   });
 });

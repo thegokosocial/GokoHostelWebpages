@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { getReconciliationStatus } from "@/lib/reconciliation";
-import { sendPushToRoles } from "@/lib/pushNotify";
+import { notificationReconciliationBody, sendPushToRoles } from "@/lib/pushNotify";
 import { todayIST } from "@/lib/utils";
 
 export async function POST(req: NextRequest) {
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
   const delivery = await sendPushToRoles({
     title: "Reconciliation pending",
-    body: `${date} has not been reconciled. ${status.missingAccountNames.length} account${status.missingAccountNames.length === 1 ? " is" : "s are"} still pending.`,
+    body: notificationReconciliationBody(date, status.missingAccountNames.length),
     category: "operations",
     eventId: `reconciliation-${date}`,
     tag: `reconciliation-${date}`,

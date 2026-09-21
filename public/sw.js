@@ -203,29 +203,26 @@ self.addEventListener("push", (event) => {
       // Parsing failed entirely — fall through with defaults
     }
 
-    try {
-      await self.registration.showNotification(title, {
-        body,
-        icon,
-        badge,
-        data: { url },
-        vibrate: [200, 100, 200],
-        tag,
-        renotify,
-        timestamp,
-      });
-    } catch {
-      // Keep branding when only optional platform features are rejected.
+    const notificationOptions = [
+      { body, icon, badge, data: { url }, vibrate: [200, 100, 200], tag, renotify, timestamp },
+      // Retain branding and vibration if only renotify/timestamp are unsupported.
+      { body, icon, badge, data: { url }, vibrate: [200, 100, 200], tag },
+      // Vibration is best-effort; keep the branded notification if it is unsupported.
+      { body, icon, badge, tag, data: { url } },
+      // Keep the main Goko icon if a platform rejects the monochrome badge.
+      { body, icon, tag, data: { url } },
+      { body, data: { url } },
+    ];
+
+    for (const options of notificationOptions) {
       try {
-        await self.registration.showNotification(title, { body, icon, badge, tag, data: { url } });
+        await self.registration.showNotification(title, options);
+        return;
       } catch {
-        try {
-          await self.registration.showNotification(title, { body, data: { url } });
-        } catch {
-          console.error("Goko notification display failed");
-        }
+        // Retry with fewer optional features while preserving content and branding.
       }
     }
+    console.error("Goko notification display failed");
   };
 
   event.waitUntil(showNotif());

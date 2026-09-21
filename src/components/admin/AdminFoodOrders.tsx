@@ -428,18 +428,18 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
         </div>
       ) : <>
       {/* Guest Type Toggle */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-1.5 sm:gap-2">
         <button
           type="button"
           onClick={() => { setGuestType("hostel"); setSelectedGuest(null); setSelectedTable(null); }}
-          className={cn("rounded-lg px-4 py-2 text-sm font-medium transition-colors", guestType === "hostel" ? "bg-brand-green text-white" : "border border-brand-mist text-brand-green-dark/70")}
+          className={cn("whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:px-4 sm:text-sm", guestType === "hostel" ? "bg-brand-green text-white" : "border border-brand-mist text-brand-green-dark/70")}
         >
           🏨 Hostel Guest
         </button>
         <button
           type="button"
           onClick={() => { setGuestType("walkin"); setSelectedGuest(null); setSelectedTable(null); }}
-          className={cn("rounded-lg px-4 py-2 text-sm font-medium transition-colors", guestType === "walkin" ? "bg-brand-green text-white" : "border border-brand-mist text-brand-green-dark/70")}
+          className={cn("whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:px-4 sm:text-sm", guestType === "walkin" ? "bg-brand-green text-white" : "border border-brand-mist text-brand-green-dark/70")}
         >
           🚶 Walk-in
         </button>
@@ -447,7 +447,7 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
           <button
             type="button"
             onClick={() => { setGuestType("table"); setSelectedGuest(null); }}
-            className={cn("rounded-lg px-4 py-2 text-sm font-medium transition-colors", guestType === "table" ? "bg-brand-green text-white" : "border border-brand-mist text-brand-green-dark/70")}
+            className={cn("whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:px-4 sm:text-sm", guestType === "table" ? "bg-brand-green text-white" : "border border-brand-mist text-brand-green-dark/70")}
           >
             🪑 Cafe Table
           </button>
