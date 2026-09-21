@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const { captured, queryMocks } = vi.hoisted(() => {
@@ -1841,6 +1841,8 @@ describe("Restriction and rate adjustment workflows", () => {
 
 describe("Bulk availability workflows", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-19T06:00:00+05:30"));
     vi.mocked(authenticateUser).mockReset();
     vi.mocked(authenticateUser).mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} } as never);
     queryMocks.getAllDorms.mockReset();
@@ -1869,6 +1871,10 @@ describe("Bulk availability workflows", () => {
     queryMocks.addAuditEntry.mockResolvedValue(undefined);
     vi.mocked(triggerInventoryPush).mockReset();
     vi.mocked(triggerInventoryPush).mockResolvedValue({ attempted: true, accepted: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   function post(body: unknown) {
