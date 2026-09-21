@@ -6,6 +6,12 @@ const management = readFileSync("src/components/admin/AdminManagement.tsx", "utf
 const tasks = readFileSync("src/components/admin/ManagementTasks.tsx", "utf8");
 const attendance = readFileSync("src/components/admin/ManagementAttendance.tsx", "utf8");
 const accounts = readFileSync("src/components/admin/AccountSettings.tsx", "utf8");
+const bookingSettings = readFileSync("src/components/admin/BookingSettings.tsx", "utf8");
+const channelManager = readFileSync("src/components/admin/ChannelManager.tsx", "utf8");
+const audit = readFileSync("src/components/admin/ManagementAudit.tsx", "utf8");
+const logs = readFileSync("src/components/admin/ManagementLogs.tsx", "utf8");
+const website = readFileSync("src/components/admin/AdminWebsite.tsx", "utf8");
+const managementTabStyles = readFileSync("src/components/admin/managementSectionTabs.ts", "utf8");
 const foodOrder = readFileSync("src/app/food-order/page.tsx", "utf8");
 
 describe("admin mobile navigation", () => {
@@ -14,6 +20,7 @@ describe("admin mobile navigation", () => {
     expect(adminPage).toContain('aria-expanded={mobileMenuOpen}');
     expect(adminPage).toContain('aria-controls="admin-mobile-navigation"');
     expect(adminPage).toContain('className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"');
+    expect(adminPage).toContain("bg-white/95 p-0 backdrop-blur-md dark:bg-zinc-900/95");
     expect(adminPage).toContain('setSection(item.id); setMobileMenuOpen(false);');
   });
 
@@ -30,6 +37,17 @@ describe("admin mobile navigation", () => {
     expect(management).toContain('label: "Food Settings"');
     expect(management).toContain('aria-label="Food settings tabs"');
     expect(management).toContain('validValues: visibleTabs.map((t) => t.id)');
+  });
+  it("shares the Account Settings selector styling across existing Management section selectors", () => {
+    const consumers = [management, accounts, bookingSettings, channelManager, audit, logs, website];
+    for (const source of consumers) {
+      expect(source).toContain("managementSectionTabsClass");
+      expect(source).toContain("managementSectionTabClass");
+      expect(source).toContain("managementSectionTabActiveClass");
+      expect(source).toContain("managementSectionTabInactiveClass");
+    }
+    expect(managementTabStyles).toContain("flex flex-wrap gap-1 rounded-lg border border-brand-mist bg-white p-1 dark:bg-card");
+    expect(managementTabStyles).toContain('"bg-brand-green text-white"');
   });
   it("bounds long Management dialogs and public order history to the dynamic viewport", () => {
     const boundedScroller = "max-h-[min(90dvh,100%)]";

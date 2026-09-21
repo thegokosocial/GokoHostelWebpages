@@ -11,6 +11,12 @@ import { auditActionLabel, formatAuditDetails, presentAuditEntry } from "@/lib/a
 import { OrderHistory } from "./AdminFoodOrders";
 import type { Role } from "./types";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
+import {
+  managementSectionTabActiveClass,
+  managementSectionTabClass,
+  managementSectionTabsClass,
+  managementSectionTabInactiveClass,
+} from "./managementSectionTabs";
 
 type AuditSubTab = "room" | "inventory" | "bookings" | "food" | "attendance";
 
@@ -69,15 +75,15 @@ export function ManagementAudit({ password, username, role }: { password: string
   return (
     <div className="min-w-0 space-y-4">
       {role === "admin" && <AuditRetentionControls apiCall={apiCall} />}
-      <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-brand-mist bg-white p-1 dark:bg-card">
+      <div className={cn(managementSectionTabsClass, "max-w-full")}>
         {auditTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setSubTab(tab.id)}
             className={cn(
-              "shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-colors lg:py-1.5",
-              subTab === tab.id ? "bg-brand-green text-white" : "text-brand-green-dark/70 hover:bg-brand-green/[0.06]",
+              managementSectionTabClass,
+              subTab === tab.id ? managementSectionTabActiveClass : managementSectionTabInactiveClass,
             )}
           >
             {tab.label}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
 import { RazorpayTestPreview } from "@/components/admin/RazorpayTestPreview";
@@ -24,6 +25,12 @@ import {
   type BookingSmsKind,
   type BookingSmsTemplates,
 } from "@/lib/bookingSmsTemplates";
+import {
+  managementSectionTabActiveClass,
+  managementSectionTabClass,
+  managementSectionTabsClass,
+  managementSectionTabInactiveClass,
+} from "./managementSectionTabs";
 
 type Gateway = ReturnType<typeof gatewayConfiguration>;
 type Section = "policies" | "rooms" | "payments" | "emails" | "sms";
@@ -146,9 +153,20 @@ export function BookingSettings({ password, username }: { password: string; user
         Flip Test ↔ Live below, then Save. Live uses <code>RAZORPAY_LIVE_*</code> Worker secrets and charges real money.
       </p>
     </div>
-    <nav aria-label="Booking settings sections" className="flex flex-wrap gap-2">
+    <nav aria-label="Booking settings sections" className={managementSectionTabsClass}>
       {([["policies", "Booking & Policies"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"], ["emails", "Email Templates"], ["sms", "Text Templates"]] as const).map(([id, title]) =>
-        <Button type="button" key={id} variant={section === id ? "default" : "outline"} onClick={() => setSection(id)} aria-pressed={section === id}>{title}</Button>)}
+        <button
+          type="button"
+          key={id}
+          onClick={() => setSection(id)}
+          aria-pressed={section === id}
+          className={cn(
+            managementSectionTabClass,
+            section === id ? managementSectionTabActiveClass : managementSectionTabInactiveClass
+          )}
+        >
+          {title}
+        </button>)}
     </nav>
     {message && <p role="status" className="rounded-lg border p-3 text-sm">{message}</p>}
     {!loaded && !busy && <Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>Retry loading saved settings</Button>}

@@ -21,6 +21,12 @@ import { BulkIncomeImport } from "./BulkIncomeImport";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { cn } from "@/lib/utils";
 import { AdminLoading } from "./AdminLoading";
+import {
+  managementSectionTabActiveClass,
+  managementSectionTabClass,
+  managementSectionTabsClass,
+  managementSectionTabInactiveClass,
+} from "./managementSectionTabs";
 import type { Role } from "./types";
 import type { IncomeCategory } from "@/lib/accountCategories";
 
@@ -307,7 +313,7 @@ export function AccountSettings({ password, username, role }: { password: string
   return (
     <div className="space-y-6">
       {/* Section Tabs */}
-      <div className="flex flex-wrap gap-1 rounded-lg border border-brand-mist bg-white dark:bg-card p-1">
+      <div className={managementSectionTabsClass}>
         {([
           { id: "accounts" as SettingsSection, label: "Accounts", icon: <BanknoteIcon className="h-3.5 w-3.5" /> },
           { id: "employees" as SettingsSection, label: "Employees", icon: <UsersIcon className="h-3.5 w-3.5" /> },
@@ -321,8 +327,8 @@ export function AccountSettings({ password, username, role }: { password: string
             type="button"
             onClick={() => { setSection(s.id); resetForm(); }}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors",
-              section === s.id ? "bg-brand-green text-white" : "text-brand-green-dark/70 hover:bg-brand-green/[0.06]"
+              managementSectionTabClass,
+              section === s.id ? managementSectionTabActiveClass : managementSectionTabInactiveClass
             )}
           >
             {s.icon} {s.label}

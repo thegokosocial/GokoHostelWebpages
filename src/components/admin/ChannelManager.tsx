@@ -20,6 +20,12 @@ import type { Role } from "./types";
 import { ManagementSalesChannels } from "./ManagementSalesChannels";
 import { ManagementBedConfig } from "./ManagementBedConfig";
 import { bookingDestination, NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
+import {
+  managementSectionTabActiveClass,
+  managementSectionTabClass,
+  managementSectionTabsClass,
+  managementSectionTabInactiveClass,
+} from "./managementSectionTabs";
 
 function BookingEngineLinkPreview({ value, apiBaseUrl }: { value: string; apiBaseUrl: string }) {
   try {
@@ -137,14 +143,15 @@ export function ChannelManager({ password, username, role, initialTab }: { passw
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 overflow-x-auto pb-1">
+      <div className={managementSectionTabsClass}>
         {TABS.map((t) => (
           <button
             key={t}
+            type="button"
             onClick={() => setTab(t)}
             className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors",
-              tab === t ? "bg-brand-green text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"
+              managementSectionTabClass,
+              tab === t ? managementSectionTabActiveClass : managementSectionTabInactiveClass
             )}
           >
             {TAB_LABELS[t]}

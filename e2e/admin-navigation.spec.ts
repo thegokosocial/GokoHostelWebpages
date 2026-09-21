@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { DEFAULT_WEBSITE_BOOKING_SETTINGS } from "../src/lib/websiteBookingSettings";
 
 async function mockAdminApi(page: Page) {
   await page.route("**/api/**", async (route) => {
-    if (!new URL(route.request().url()).pathname.startsWith("/api/admin/")) {
+    const url = new URL(route.request().url());
+    if (!url.pathname.startsWith("/api/admin/")) {
       await route.fulfill({ json: {} });
       return;
     }
@@ -11,6 +13,12 @@ async function mockAdminApi(page: Page) {
     const body = rawBody ? JSON.parse(rawBody) as { action?: string } : {};
     const response = body.action === "auth"
       ? { role: "admin", permissions: {} }
+      : url.pathname === "/api/admin/booking-settings" && body.action === "getSettings"
+        ? { settings: DEFAULT_WEBSITE_BOOKING_SETTINGS, revision: "e2e" }
+      : url.pathname === "/api/admin/booking-payments" && body.action === "listTestAttempts"
+        ? { attempts: [], webhooks: [], previewEnabled: false, nativeCheckoutReady: false }
+      : body.action === "getAuditRetention"
+        ? { years: 3, months: 0, totalMonths: 36, cutoff: "2023-01-01", eligible: { auditLog: 0, bookingHistory: 0, attendanceHistory: 0, total: 0 } }
       : body.action === "getBedHistory"
         ? { rows: [] }
         : body.action === "getUsers"
@@ -76,6 +84,13 @@ test("mobile Management options select their tab, including Food Settings childr
   await page.getByRole("tab", { name: "Bill Settings" }).click();
   await expect(page).toHaveURL(/tab=billSettings/);
   await expect(page.getByRole("tab", { name: "Bill Settings" })).toHaveAttribute("aria-selected", "true");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const drawer = page.locator("#admin-mobile-navigation");
+  await expect(drawer).toBeVisible();
+  const drawerBackdropFilter = await drawer.evaluate((element) => getComputedStyle(element).backdropFilter);
+  expect(drawerBackdropFilter).toContain("blur");
+  await drawer.getByRole("button", { name: "Close", exact: true }).click();
 });
 
 test("desktop Management tabs still switch directly", async ({ page }) => {
@@ -84,4 +99,42 @@ test("desktop Management tabs still switch directly", async ({ page }) => {
 
   await page.getByRole("button", { name: "Rates", exact: true }).click();
   await expect(page).toHaveURL(/tab=rates/);
+});
+
+test("in-page Management selectors keep their own selected state", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToManagement(page);
+
+  await page.getByRole("button", { name: "Account Settings", exact: true }).click();
+  const employees = page.getByRole("button", { name: "Employees", exact: true });
+  await expect(page.getByRole("button", { name: "Accounts", exact: true })).toBeVisible();
+  await employees.click();
+  await expect(employees).toHaveClass(/bg-brand-green text-white/);
+
+  await page.getByRole("button", { name: "Booking Settings", exact: true }).click();
+  const bookingSection = page.getByRole("navigation", { name: "Booking settings sections" }).getByRole("button", { name: "Payments & Readiness" });
+  await bookingSection.click();
+  await expect(bookingSection).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Channel Manager", exact: true }).click();
+  const salesChannels = page.getByRole("button", { name: "Sales Channels", exact: true });
+  await salesChannels.click();
+  await expect(salesChannels).toHaveClass(/bg-brand-green text-white/);
+
+  await page.getByRole("button", { name: "Audit", exact: true }).click();
+  const auditSections = page.getByRole("button", { name: "Room & General", exact: true }).locator("..");
+  const inventoryAudit = auditSections.getByRole("button", { name: "Inventory", exact: true });
+  await inventoryAudit.click();
+  await expect(inventoryAudit).toHaveClass(/bg-brand-green text-white/);
+
+  await page.getByRole("button", { name: "Logs", exact: true }).click();
+  const pmsLogs = page.getByRole("button", { name: "PMS", exact: true });
+  await pmsLogs.click();
+  await expect(pmsLogs).toHaveClass(/bg-brand-green text-white/);
+
+  await page.getByRole("button", { name: "Website", exact: true }).click();
+  const community = page.getByRole("tab", { name: "Community Area" });
+  await expect(community).toBeEnabled();
+  await community.click();
+  await expect(community).toHaveAttribute("aria-selected", "true");
 });

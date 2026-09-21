@@ -22,6 +22,12 @@ import {
 import { ExternalLinkIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import type { Role } from "./types";
 import { isMediaUrl } from "@/lib/mediaKeys";
+import {
+  managementSectionTabActiveClass,
+  managementSectionTabClass,
+  managementSectionTabsClass,
+  managementSectionTabInactiveClass,
+} from "./managementSectionTabs";
 
 type EventRow = {
   id: number;
@@ -346,7 +352,7 @@ export function AdminWebsite({ password, username, role }: { password: string; u
         </a>
       </div>
 
-      <div className="flex gap-1 rounded-2xl border border-brand-mist bg-brand-sand/40 p-1" role="tablist" aria-label="Website pages">
+      <div className={managementSectionTabsClass} role="tablist" aria-label="Website pages">
         {(["events", "community"] as const).map((id) => (
           <button
             key={id}
@@ -356,10 +362,8 @@ export function AdminWebsite({ password, username, role }: { password: string; u
             disabled={locked}
             onClick={() => setTab(id)}
             className={cn(
-              "flex-1 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors",
-              tab === id
-                ? "bg-white text-brand-green shadow-sm"
-                : "text-brand-green-dark/60 hover:text-brand-green-dark",
+              managementSectionTabClass,
+              tab === id ? managementSectionTabActiveClass : managementSectionTabInactiveClass
             )}
           >
             {id === "events" ? "Events" : "Community Area"}

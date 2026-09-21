@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
 import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon, ReceiptIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role, type ManagementTab } from "./types";
+import {
+  managementSectionTabActiveClass,
+  managementSectionTabClass,
+  managementSectionTabsClass,
+  managementSectionTabInactiveClass,
+} from "./managementSectionTabs";
 
 const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 
@@ -179,7 +185,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
 
       {/* Tab content */}
       {isFoodSettingsTab && (
-        <div className="mt-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Food settings tabs">
+        <div className={cn(managementSectionTabsClass, "mt-4")} role="tablist" aria-label="Food settings tabs">
           {visibleFoodTabs.map((t) => {
             const label = t.id === "foodSettings" ? "General" : t.label;
             return (
@@ -190,18 +196,11 @@ export function AdminManagement({ password, username, role, permissions = {}, in
                 aria-selected={tab === t.id}
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-                  tab === t.id ? "text-brand-green" : "text-brand-green-dark/60 hover:bg-brand-sand/50"
+                  managementSectionTabClass,
+                  tab === t.id ? managementSectionTabActiveClass : managementSectionTabInactiveClass
                 )}
               >
-                {tab === t.id && (
-                  <motion.span
-                    layoutId="food-settings-tab-pill"
-                    className="absolute inset-0 rounded-lg bg-brand-green/10"
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-1.5">{t.icon}{label}</span>
+                <span className="flex items-center gap-1.5">{t.icon}{label}</span>
               </button>
             );
           })}

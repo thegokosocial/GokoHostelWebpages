@@ -23,6 +23,12 @@ import {
   logPagerItems,
 } from "@/lib/logRetention";
 import type { Role } from "./types";
+import {
+  managementSectionTabActiveClass,
+  managementSectionTabClass,
+  managementSectionTabsClass,
+  managementSectionTabInactiveClass,
+} from "./managementSectionTabs";
 
 type LogSubTab = "system" | "pms";
 
@@ -56,7 +62,7 @@ export function ManagementLogs({ password, username, role }: { password: string;
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-lg border border-brand-mist bg-white dark:bg-card p-1">
+      <div className={managementSectionTabsClass}>
         {([
           { id: "system" as const, label: "System" },
           { id: "pms" as const, label: "PMS" },
@@ -66,10 +72,8 @@ export function ManagementLogs({ password, username, role }: { password: string;
             type="button"
             onClick={() => setSubTab(t.id)}
             className={cn(
-              "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              subTab === t.id
-                ? "bg-brand-green/10 text-brand-green"
-                : "text-brand-green-dark/60 hover:bg-brand-sand/50"
+              managementSectionTabClass,
+              subTab === t.id ? managementSectionTabActiveClass : managementSectionTabInactiveClass
             )}
           >
             {t.label}
