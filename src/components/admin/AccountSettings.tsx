@@ -563,8 +563,8 @@ export function AccountSettings({ password, username, role }: { password: string
 
       {/* Salary/Bonus/Advance/Loan Payment Modal */}
       {payingEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-brand-mist bg-white dark:bg-card p-5 shadow-xl dark:shadow-none sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain p-4 bg-black/40 backdrop-blur-sm sm:items-center">
+          <div className="max-h-[min(90dvh,100%)] w-full max-w-sm overflow-y-auto overscroll-contain rounded-2xl border border-brand-mist bg-white dark:bg-card p-5 shadow-xl dark:shadow-none sm:p-6">
             <h4 className="font-display text-base font-bold text-brand-green-dark">Pay Employee</h4>
             <p className="mt-1 text-xs text-brand-green-dark/60">
               {payingEmployee.name} · {payingEmployee.role || "Staff"}

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LockIcon, LogOutIcon, LayoutDashboardIcon, BedDoubleIcon, TableIcon, CalendarDaysIcon, WrenchIcon, BookOpenIcon, KeyIcon, XIcon, WalletIcon, MenuIcon, StarIcon, WarehouseIcon, UtensilsIcon, SplitIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 // import { DarkModeToggle } from "@/components/DarkModeToggle";
 import { AdminToastProvider } from "@/components/admin/AdminToast";
@@ -297,6 +298,9 @@ function AdminPageInner() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="admin-mobile-navigation"
             className="rounded-lg p-2 text-brand-green-dark/70 dark:text-zinc-400 transition-colors hover:bg-brand-green/[0.06] dark:hover:bg-zinc-800 lg:hidden"
           >
             {mobileMenuOpen ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
@@ -356,29 +360,33 @@ function AdminPageInner() {
           </div>
         </div>
 
-        {/* Mobile/Tablet menu dropdown — animated */}
-        {mobileMenuOpen && (
-          <div className="overflow-hidden border-t border-brand-mist dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm lg:hidden">
-            <div className="grid grid-cols-2 gap-1.5 px-4 py-3 sm:grid-cols-4">
-              {visibleNavItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => { setSection(item.id); setMobileMenuOpen(false); }}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                    section === item.id
-                      ? "bg-brand-green text-white dark:text-zinc-900 shadow-sm"
-                      : "text-brand-green-dark/70 dark:text-zinc-400 hover:bg-brand-green/[0.06] dark:hover:bg-zinc-800"
-                  )}
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent id="admin-mobile-navigation" side="right" className="h-dvh w-screen max-w-none data-[side=right]:w-screen gap-0 overflow-hidden border-brand-mist bg-white/95 p-0 dark:bg-zinc-900/95 lg:hidden sm:max-w-none">
+            <SheetHeader className="shrink-0 border-b border-brand-mist px-4 py-3 text-left dark:border-zinc-800">
+              <SheetTitle className="font-display text-lg font-bold text-brand-green dark:text-zinc-100">Admin navigation</SheetTitle>
+            </SheetHeader>
+            <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3" aria-label="Admin sections">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                {visibleNavItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => { setSection(item.id); setMobileMenuOpen(false); }}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      section === item.id
+                        ? "bg-brand-green text-white dark:text-zinc-900 shadow-sm"
+                        : "text-brand-green-dark/70 dark:text-zinc-400 hover:bg-brand-green/[0.06] dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </nav>
+          </SheetContent>
+        </Sheet>
       </nav>
 
       {/* Sync status bar */}

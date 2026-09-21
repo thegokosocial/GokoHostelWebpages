@@ -42,7 +42,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); shared `GuestFoodBillCard`; back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
 | `/review/[token]` | Rating funnel | token |
-| `/admin` | PMS SPA | direct username/password form; password every API call |
+| `/admin` | PMS SPA | direct username/password form; password every API call; phone/tablet section navigation is a scroll-contained modal drawer; Management tab dropdowns stay below it in the stacking order; long task, attendance, and payroll dialogs scroll within the viewport; public order-history sheets use dynamic viewport sizing |
 
 ---
 
@@ -82,7 +82,9 @@ Menu deletion removes items/categories from active admin and guest-menu lists us
 
 Bulk availability saves its local override and mapped dirty retry rows before calling PMS. The modal stays in progress until Aiosell accepts the push, then shows the successful PMS confirmation; a failed or timed-out push leaves the local change saved and exposes a Retry PMS sync action. The Worker’s protected five-minute retry remains a server-side safety net for dirty inventory rows.
 
-Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do is visible with `canViewTasks` or `canManageTasks`; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Most `adminOnly: true`. On phone view, the section selector is bounded and scrollable beneath the global navigation drawer; long To Do task forms/details and attendance date-range dialogs are bounded to the dynamic viewport and scroll internally. Audit and Logs are separately grantable view tabs; To Do is visible with `canViewTasks` or `canManageTasks`; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+
+Food Settings groups the existing Menu, general food settings, and Bill Settings tabs. Each child retains its existing permission gate and `tab` ID; only the Management navigation is grouped.
 
 | `tab` | UI | Permissions | Notes |
 |-------|-----|-------------|-------|
@@ -94,10 +96,10 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do
 | `health` | `ManagementHealth` | admin only | |
 | `history` | `AdminBedHistory` | management access | visible to non-admin |
 | `rates` | `AdminCheckRates` | management access | competitor scrape; visible |
-| `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | `/api/admin/food` per-action map; Menu Items can be searched live by English/Kannada item or category name; selected items may use price-on-request with an indicative range |
+| `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | Management → Food Settings → Menu; `/api/admin/food` per-action map; Menu Items can be searched live by English/Kannada item or category name; selected items may use price-on-request with an indicative range |
 | `website` | `AdminWebsite` | admin only | CMS; Cloudflare only |
-| `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | `/api/admin/food` kitchen/tax/hours |
-| `billSettings` | `AdminBillSettings` | `canManageFoodSettings` | Bill branding, UPI, payment QR (`food_bill_*` keys); R2 folder `bills` |
+| `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | Management → Food Settings → General; `/api/admin/food` kitchen/tax/hours |
+| `billSettings` | `AdminBillSettings` | `canManageFoodSettings` | Management → Food Settings → Bill Settings; bill branding, UPI, payment QR (`food_bill_*` keys); R2 folder `bills` |
 | `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | Employees can be deactivated; inactive employees can be removed from the roster while compensation, payroll, and attendance history is retained. |

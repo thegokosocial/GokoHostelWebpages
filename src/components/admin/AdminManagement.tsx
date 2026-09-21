@@ -58,6 +58,9 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "quickLinks", label: "Links & QRs", icon: <LinkIcon className="h-3.5 w-3.5" />, permission: "canViewQuickLinks" },
 ];
 
+const FOOD_SETTINGS_TAB_IDS = new Set<ManagementTab>(["menu", "foodSettings", "billSettings"]);
+type ManagementNavTab = { id: string; label: string; icon: React.ReactNode; tab: ManagementTab; active: boolean };
+
 export function AdminManagement({ password, username, role, permissions = {}, initialTab, initialChannelTab, onTabUsed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; initialTab?: ManagementTab; initialChannelTab?: "sync"; onTabUsed?: () => void }) {
   const visibleTabs = useMemo(() => TABS.filter((t) => {
     if ((t.id === "website" || t.id === "bookingSettings") && process.env.NEXT_PUBLIC_GOKO_RUNTIME === "pi") return false;
@@ -70,6 +73,26 @@ export function AdminManagement({ password, username, role, permissions = {}, in
   const [tab, setTab] = useTabWithHistory<ManagementTab>("tab", defaultTab, {
     validValues: visibleTabs.map((t) => t.id),
   });
+  const visibleFoodTabs = visibleTabs.filter((t) => FOOD_SETTINGS_TAB_IDS.has(t.id));
+  const foodSettingsAnchor = visibleFoodTabs.find((t) => t.id === "foodSettings") ?? visibleFoodTabs[0];
+  const isFoodSettingsTab = FOOD_SETTINGS_TAB_IDS.has(tab);
+  const navTabs = visibleTabs.reduce<ManagementNavTab[]>((items, t) => {
+    if (FOOD_SETTINGS_TAB_IDS.has(t.id)) {
+      if (foodSettingsAnchor?.id === t.id) {
+        items.push({
+          id: "foodSettingsGroup",
+          label: "Food Settings",
+          icon: <SettingsIcon className="h-3.5 w-3.5" />,
+          tab: isFoodSettingsTab ? tab : t.id,
+          active: isFoodSettingsTab,
+        });
+      }
+      return items;
+    }
+    items.push({ id: t.id, label: t.label, icon: t.icon, tab: t.id, active: tab === t.id });
+    return items;
+  }, []);
+  const activeNavTab = navTabs.find((t) => t.active);
 
   useEffect(() => {
     if (initialTab && visibleTabs.some((t) => t.id === initialTab)) {
@@ -79,8 +102,6 @@ export function AdminManagement({ password, username, role, permissions = {}, in
   }, [initialTab, onTabUsed, setTab, visibleTabs]);
   const [subMenuOpen, setSubMenuOpen] = useState(false);
 
-  const activeTab = visibleTabs.find((t) => t.id === tab);
-
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -89,19 +110,19 @@ export function AdminManagement({ password, username, role, permissions = {}, in
 
       {/* Desktop tabs */}
       <div className="mt-4 hidden flex-wrap gap-1.5 rounded-xl border border-brand-mist bg-white dark:bg-card p-1.5 lg:flex">
-        {visibleTabs.map((t) => (
+        {navTabs.map((t) => (
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => setTab(t.tab)}
             className={cn(
               "relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-              tab === t.id
+              t.active
                 ? "text-brand-green"
                 : "text-brand-green-dark/60 hover:bg-brand-sand/50"
             )}
           >
-            {tab === t.id && (
+            {t.active && (
               <motion.span
                 layoutId="management-tab-pill"
                 className="absolute inset-0 rounded-lg bg-brand-green/10"
@@ -117,31 +138,31 @@ export function AdminManagement({ password, username, role, permissions = {}, in
       </div>
 
       {/* Mobile/Tablet dropdown */}
-      <div className="relative z-30 mt-4 lg:hidden">
+      <div className="relative z-10 mt-4 lg:hidden">
         <button
           type="button"
           onClick={() => setSubMenuOpen(!subMenuOpen)}
           className="flex w-full items-center justify-between rounded-xl border border-brand-mist bg-white dark:bg-card px-4 py-3"
         >
           <span className="flex items-center gap-2 text-sm font-medium text-brand-green">
-            {activeTab?.icon}
-            {activeTab?.label}
+            {activeNavTab?.icon}
+            {activeNavTab?.label}
           </span>
           <ChevronDownIcon className={cn("h-4 w-4 text-brand-green-dark/40 transition-transform", subMenuOpen && "rotate-180")} />
         </button>
         {subMenuOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setSubMenuOpen(false)} />
-            <div className="absolute left-0 right-0 top-full z-40 mt-1 rounded-xl border border-brand-mist bg-white dark:bg-card p-2 shadow-lg dark:shadow-none">
+            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[min(70dvh,32rem)] overflow-y-auto overscroll-contain rounded-xl border border-brand-mist bg-white dark:bg-card p-2 shadow-lg dark:shadow-none">
               <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
-                {visibleTabs.map((t) => (
+                {navTabs.map((t) => (
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => { setTab(t.id); setSubMenuOpen(false); }}
+                    onClick={() => { setTab(t.tab); setSubMenuOpen(false); }}
                     className={cn(
                       "flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium transition-colors",
-                      tab === t.id
+                      t.active
                         ? "bg-brand-green/10 text-brand-green"
                         : "text-brand-green-dark/60 hover:bg-brand-sand/50"
                     )}
@@ -157,6 +178,35 @@ export function AdminManagement({ password, username, role, permissions = {}, in
       </div>
 
       {/* Tab content */}
+      {isFoodSettingsTab && (
+        <div className="mt-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Food settings tabs">
+          {visibleFoodTabs.map((t) => {
+            const label = t.id === "foodSettings" ? "General" : t.label;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+                  tab === t.id ? "text-brand-green" : "text-brand-green-dark/60 hover:bg-brand-sand/50"
+                )}
+              >
+                {tab === t.id && (
+                  <motion.span
+                    layoutId="food-settings-tab-pill"
+                    className="absolute inset-0 rounded-lg bg-brand-green/10"
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10 flex items-center gap-1.5">{t.icon}{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="mt-6">
         {tab === "dorms" && <AdminSetup password={password} />}
         {tab === "users" && <ManagementUsers password={password} role={role} />}

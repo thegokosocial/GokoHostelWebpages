@@ -638,7 +638,7 @@ export default function FoodOrderPage() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="fixed inset-x-0 bottom-0 z-[80] max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-card pb-8 shadow-2xl dark:shadow-none"
+              className="fixed inset-x-0 bottom-0 z-[80] max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-3xl bg-white dark:bg-card pb-8 shadow-2xl dark:shadow-none"
             >
                 <div className="sticky top-0 z-10 bg-white dark:bg-card px-5 pb-3 pt-4 border-b border-transparent dark:border-white/5">
                 <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-600" />
