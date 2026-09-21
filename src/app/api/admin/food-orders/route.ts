@@ -99,8 +99,10 @@ export async function POST(req: NextRequest) {
 
     switch (action) {
       case "listOrders": {
-        const { status, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit, includeItems, includeModifications } = rest;
+        const { status, paymentStatus, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit, offset: rawOffset, includeItems, includeModifications } = rest;
         const limitNum = Math.min(Number(rawLimit) || 50, 200);
+        const requestedOffset = Number(rawOffset);
+        const offsetNum = Number.isFinite(requestedOffset) ? Math.max(0, Math.floor(requestedOffset)) : 0;
         const withItems = includeItems !== false;
         const withModifications = includeModifications !== false;
 
@@ -123,6 +125,7 @@ export async function POST(req: NextRequest) {
 
         const conditions: any[] = [];
         if (status && status !== "all_history") conditions.push(eq(foodOrders.status, status));
+        if (paymentStatus) conditions.push(eq(foodOrders.paymentStatus, paymentStatus));
         if (guestType) conditions.push(eq(foodOrders.guestType, guestType));
         if (dateFrom) conditions.push(sql`${foodOrders.createdAt} >= ${dateFrom}`);
         if (dateTo) conditions.push(sql`${foodOrders.createdAt} <= ${dateTo + "T23:59:59"}`);
@@ -142,11 +145,13 @@ export async function POST(req: NextRequest) {
           if (bounds.end) conditions.push(lte(foodOrders.createdAt, bounds.end));
         }
 
-        const orders = await dbRead(() =>
-          conditions.length > 0
-            ? db.select().from(foodOrders).where(and(...conditions)).orderBy(desc(foodOrders.createdAt)).limit(limitNum)
-            : db.select().from(foodOrders).orderBy(desc(foodOrders.createdAt)).limit(limitNum),
-        );
+        const orders = await dbRead(() => {
+          const query = conditions.length > 0
+            ? db.select().from(foodOrders).where(and(...conditions))
+            : db.select().from(foodOrders);
+          const ordered = query.orderBy(desc(foodOrders.createdAt), desc(foodOrders.id)).limit(limitNum);
+          return offsetNum > 0 ? ordered.offset(offsetNum) : ordered;
+        });
 
         const orderIds = orders.map((o) => o.id);
         const [itemsMap, modCountMap] = await Promise.all([

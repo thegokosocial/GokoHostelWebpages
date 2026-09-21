@@ -2238,8 +2238,7 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Avoid listOrders(all_history)+items — that path OOMs/D1-fails under load.
-      // Pending cards only need unpaid walk-ins + per-tab guest orders.
+      // Keep broad unpaid reads on their focused paths; fetch only recent paid orders below.
       const [hostelRes, menuRes, walkinRes] = await Promise.all([
         apiCall({ action: "getGuestsWithTabs" }),
         apiCall({ action: "getMenu" }),
@@ -2275,17 +2274,46 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         );
         orders.push(...tabBatches.flat());
       }
-      setAllOrders(orders);
-
+      let historyDays = 7;
       if (menuRes.ok) {
         const data = await menuRes.json();
-        setPaidVisibilityDays(parseInt(data.paymentHistoryDays) || 7);
+        historyDays = Math.min(90, Math.max(1, parseInt(data.paymentHistoryDays) || 7));
+        setPaidVisibilityDays(historyDays);
         setCategories(data.categories || []);
         setMenuItems((data.items || []).map((i: any) => ({ id: i.id, categoryId: i.categoryId, name: i.name, nameKannada: i.nameKannada || "", description: i.description || "", price: i.price, priceText: i.priceText || "", tags: i.tags || "[]", isAvailable: i.isAvailable })));
       } else {
         const data = await menuRes.json().catch(() => ({}));
         showError("Payment Summary", data.error || "Could not load menu settings");
       }
+
+      const paidFrom = new Date();
+      paidFrom.setDate(paidFrom.getDate() - historyDays);
+      const paidQuery = {
+        action: "listOrders",
+        status: "all_history",
+        paymentStatus: "paid",
+        dateFrom: localDateStr(paidFrom),
+        dateTo: localDateStr(new Date()),
+        limit: 200,
+        includeItems: true,
+        includeModifications: true,
+      };
+      let paidOffset = 0;
+      while (true) {
+        const paidRes = await apiCall({ ...paidQuery, offset: paidOffset });
+        if (!paidRes.ok) {
+          const data = await paidRes.json().catch(() => ({}));
+          showError("Payment Summary", data.error || "Could not load recent paid orders");
+          break;
+        }
+        const data = await paidRes.json();
+        const page = (data.orders || []) as Order[];
+        orders.push(...page.filter((order) => order.paymentStatus === "paid" && order.status !== "cancelled"));
+        if (page.length < paidQuery.limit) break;
+        paidOffset += page.length;
+      }
+
+      setAllOrders([...new Map(orders.map((order) => [order.id, order])).values()]);
     } finally {
       setLoading(false);
     }

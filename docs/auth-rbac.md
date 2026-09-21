@@ -190,7 +190,7 @@ All actions: `canManageInventory`. Bulk actions write the local mutation, then w
 
 ### `/api/admin/food-orders`
 
-View list/tabs: `canViewFoodOrders` / `canViewFoodTabs`. Place/void/qty/market-price finalization: `canPlaceOrders` or view. Pay/discount: `canMarkPaid`; payment is rejected while an active line remains price-pending. **Payment Summary reads** (`listOrders`, `getMenu`, `getWalkinOrders`, `getGuestsWithTabs`, `getGuestTab`, `getGuestAllOrders`) also allow `canMarkPaid` so the payment tab is not empty for pay-only staff. The former destructive `cleanupOldOrders` action is retired; the Audit tab applies global retention as a read boundary while preserving food-order records.
+View list/tabs: `canViewFoodOrders` / `canViewFoodTabs`. Place/void/qty/market-price finalization: `canPlaceOrders` or view. Pay/discount: `canMarkPaid`; payment is rejected while an active line remains price-pending. **Payment Summary reads** (`listOrders`, `getMenu`, `getWalkinOrders`, `getGuestsWithTabs`, `getGuestTab`, `getGuestAllOrders`) also allow `canMarkPaid` so the payment tab is not empty for pay-only staff; its bounded recent-paid `listOrders` query uses the same permission. The former destructive `cleanupOldOrders` action is retired; the Audit tab applies global retention as a read boundary while preserving food-order records.
 
 ### `/api/admin/expenses`
 
