@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "fs";
+import { actionAllowed } from "@/lib/actionPermissions";
 import { attendanceUnits, daysInMonth, monthEnd, addMonth, calendarMonthDates, grossForEmploymentPeriod } from "@/lib/employeeAttendanceUtils";
 
 describe("employee attendance calendar rules", () => {
@@ -56,7 +57,8 @@ describe("employee attendance calendar rules", () => {
     expect(ui).toContain("calendarEmployee.attendanceStartDate");
     expect(ui).toContain("calendarEmployee.employmentEndDate");
     expect(ui).toContain('row ? statusLabel(row.status) : upcoming ? "Upcoming" : "Present"');
-    expect(ui).toContain('role === "admin" && !outsideEmployment');
+    expect(ui).toContain("canManageAttendance && !outsideEmployment");
+    expect(ui).toContain("Calendar editing requires the Manage staff attendance permission.");
     expect(ui).toContain('!employee.isActive ? " (Inactive)"');
     expect(ui).toContain('setMonth(`${calendarYear}-${e.target.value}`)');
     expect(ui).toContain('setMonth(`${e.target.value}-${calendarMonth}`)');
@@ -65,7 +67,7 @@ describe("employee attendance calendar rules", () => {
     expect(ui).toContain('role !== "admin"');
     expect(ui).toContain("Attendance audit");
     const management = readFileSync("src/components/admin/AdminManagement.tsx", "utf8");
-    expect(management).toContain("<ManagementAttendance password={password} username={username} role={role} />");
+    expect(management).toContain('<ManagementAttendance password={password} username={username} role={role} canManageAttendance={hasPermission(role, permissions, "canManageAttendance")} />');
     const audit = readFileSync("src/components/admin/ManagementAudit.tsx", "utf8");
     expect(audit).toContain('{ id: "attendance" as AuditSubTab, label: "Attendance" }');
     expect(audit).toContain('action: "getAuditHistory"');
@@ -73,12 +75,15 @@ describe("employee attendance calendar rules", () => {
     expect(audit).toContain('filePrefix="attendance-audit-log"');
   });
 
-  it("keeps attendance management restricted while allowing audit history separately", () => {
+  it("allows any role with canManageAttendance to edit attendance and keeps audit access separate", () => {
     const route = readFileSync("src/app/api/admin/attendance/route.ts", "utf8");
-    const dashboard = readFileSync("src/components/admin/AdminDashboard.tsx", "utf8");
-    expect(route).toContain('auth.role === "manager" && auth.permissions.canManageAttendance');
-    expect(dashboard).toContain('role === "manager" && !!permissions?.canManageAttendance');
-    expect(dashboard).toContain('managementTab: "attendance"');
+    expect(route).toContain('actionAllowed(auth.role, auth.permissions, "canManageAttendance") === "allowed"');
+    expect(actionAllowed("admin", {}, "canManageAttendance")).toBe("allowed");
+    expect(actionAllowed("manager", { canManageAttendance: true }, "canManageAttendance")).toBe("allowed");
+    expect(actionAllowed("staff", { canManageAttendance: true }, "canManageAttendance")).toBe("allowed");
+    expect(actionAllowed("staff", {}, "canManageAttendance")).toBe("forbidden");
     expect(route).toContain('permissionEnabled(auth.permissions, "canViewAudit")');
+    const management = readFileSync("src/components/admin/AdminManagement.tsx", "utf8");
+    expect(management).toContain('canManageAttendance={hasPermission(role, permissions, "canManageAttendance")}');
   });
 });

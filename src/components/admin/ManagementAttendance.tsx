@@ -26,7 +26,7 @@ const days = (units: number) => (units / 2).toFixed(units % 2 ? 1 : 0);
 const money = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-export function ManagementAttendance({ password, username, role }: { password: string; username?: string; role: Role }) {
+export function ManagementAttendance({ password, username, role, canManageAttendance }: { password: string; username?: string; role: Role; canManageAttendance: boolean }) {
   const { showError, showSuccess } = useAdminToast();
   const [month, setMonth] = useState(todayIST().slice(0, 7));
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -155,7 +155,7 @@ export function ManagementAttendance({ password, username, role }: { password: s
         <div>
           <div className="flex items-center gap-2"><CalendarDaysIcon className="h-4 w-4 text-brand-green" /><h4 className="text-sm font-semibold">Monthly attendance · {calendarMonthLabel}</h4></div>
           {calendarEmployee && <p className="mt-1 text-xs text-muted-foreground">{calendarEmployee.name} · {calendarEmployee.role || "Staff"}</p>}
-          {role !== "admin" && <p className="mt-1 text-[11px] text-muted-foreground">Calendar editing is available to admins only.</p>}
+          {!canManageAttendance && <p className="mt-1 text-[11px] text-muted-foreground">Calendar editing requires the Manage staff attendance permission.</p>}
         </div>
         <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-[9rem_7rem_16rem]">
           <label className="text-xs">Month
@@ -198,7 +198,7 @@ export function ManagementAttendance({ password, username, role }: { password: s
                     : upcoming
                       ? "border-brand-mist bg-brand-sand/30 text-muted-foreground"
                       : "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300";
-              const editable = role === "admin" && !outsideEmployment;
+              const editable = canManageAttendance && !outsideEmployment;
               return <button key={date} type="button" disabled={!editable} onClick={() => openForm(calendarEmployee.id, date)} className={`min-h-16 min-w-0 rounded-md border p-1 text-left sm:min-h-24 sm:rounded-lg sm:p-2 ${color} ${editable ? "transition-colors hover:ring-2 hover:ring-brand-green/30" : "cursor-default"}`}>
                 <span className="block text-[10px] font-semibold sm:text-xs">{Number(date.slice(-2))}</span>
                 <span className="mt-1 block truncate text-[8px] font-medium sm:hidden">{mobileLabel}</span>

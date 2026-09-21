@@ -164,7 +164,7 @@ Audit presentation fields are read-only enrichments; they do not change the `can
 
 ### `/api/admin/attendance`
 
-`getAuditHistory` is a history-only read for the Management → Audit → Attendance tab and uses `canViewAudit`; it does not return payroll or attendance-calendar data. `getMonth`, `getPayroll`, and attendance/policy mutations remain restricted to admin or the existing manager `canManageAttendance` flow.
+`getAuditHistory` is a history-only read for the Management → Audit → Attendance tab and uses `canViewAudit`; it does not return payroll or attendance-calendar data. `getMonth`, `getPayroll`, and attendance/policy mutations require `canManageAttendance` for manager and staff accounts; admin bypasses the permission map. The Management → Attendance calendar uses the same permission for editing.
 
 ### `/api/admin/tasks`
 

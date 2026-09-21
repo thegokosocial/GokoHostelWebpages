@@ -4,7 +4,7 @@ import { getDb } from "@/db";
 import { employeeAttendance, employeeAttendanceHistory, employeeLeavePolicy, employees } from "@/db/schema";
 import { syncInsert, syncUpdate } from "@/db/syncMeta";
 import { authenticateUser } from "@/lib/auth";
-import { permissionEnabled } from "@/lib/actionPermissions";
+import { actionAllowed, permissionEnabled } from "@/lib/actionPermissions";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { calculateEmployeePayroll } from "@/lib/employeeAttendance";
 import { monthEnd, type AttendanceStatus } from "@/lib/employeeAttendanceUtils";
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const { password, username, action } = body;
     const auth = await authenticateUser(password, username);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const canManageAttendance = auth.role === "admin" || (auth.role === "manager" && auth.permissions.canManageAttendance);
+    const canManageAttendance = actionAllowed(auth.role, auth.permissions, "canManageAttendance") === "allowed";
     const canViewAudit = auth.role === "admin" || permissionEnabled(auth.permissions, "canViewAudit");
     if (action === "getAuditHistory" && !canViewAudit) {
       return NextResponse.json({ error: "Audit access required" }, { status: 403 });

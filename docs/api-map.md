@@ -52,7 +52,7 @@ Native physical hold creation/release, read-only owner recovery (`getNativeInven
 |-------|------|---------|
 | `/api/food/kitchen` | `authenticateKitchen` | Queue, status, mods, busy, menu |
 | `/api/admin/checkins` | `authenticateUser` + per-action map | God route (records, beds, dashboard, users, audit, backup, settings, legacy bookings, rates scrape); records list supports month or inclusive arrival-date range; foreign record add/update requires passport and visa; booking-resolution actions support active unmatched walk-in/offline check-ins |
-| `/api/admin/attendance` | `canManageAttendance` or `canViewAudit` for `getAuditHistory` | Staff attendance management and history-only attendance audit reads |
+| `/api/admin/attendance` | `canManageAttendance` or `canViewAudit` for `getAuditHistory` | Staff attendance management and history-only attendance audit reads; manager and staff roles with `canManageAttendance` may read calendar/payroll data and update attendance or leave policy |
 | `/api/admin/bookings` | per-action map | Calendar PMS |
 | `/api/admin/inventory` | `canManageInventory` | Grid, blocks, rates, channels; the Inventory UI may request a custom inclusive visible range and sends the inclusive `startDate`/`endDate` shown in the grid; bulk mutations persist locally, await the bounded Aiosell push, return `sync.accepted`, and expose `retryPmsSync` for PMS-only retry without duplicating the local mutation |
 | `/api/admin/food` | per-action map | Menu viewing, category/item CRUD, availability, stock, and food settings |

@@ -101,7 +101,7 @@ Most `adminOnly: true`. Audit and Logs are separately grantable view tabs; To Do
 | `bulkUpload` | `AdminBulkImport` | admin only | check-in XLSX |
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | |
-| `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar, and payroll summaries; attendance history is also available in Management → Audit → Attendance to users with `canViewAudit` |
+| `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar editing, and payroll summaries for roles granted the permission; attendance history is also available in Management → Audit → Attendance to users with `canViewAudit` |
 | `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; title-only tasks may remain unassigned until later; assigned users update their own tasks; task managers create, assign/reassign/unassign, archive, reopen, and record linked purchase expenses |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
