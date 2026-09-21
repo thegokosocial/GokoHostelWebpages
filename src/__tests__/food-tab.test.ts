@@ -48,6 +48,18 @@ describe("pending food tab matching", () => {
 });
 
 describe("checkout UIs look up the self-checkin food tab", () => {
+  it("keeps an Order More guest compact while preserving the existing order payload", () => {
+    const orders = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
+    expect(orders).toContain("const [initialPrefillGuest] = useState(prefillGuest)");
+    expect(orders).toContain("Ordering for");
+    expect(orders).toContain("Change guest");
+    expect(orders).toContain("setGuestSelectionExpanded(true)");
+    expect(orders).toContain('action: "placeOrderForGuest"');
+    expect(orders).toContain('guestType: guestType === "table" ? "walkin" : guestType');
+    expect(orders).toContain('checkinId: guestType === "hostel" ? selectedGuest?.id : undefined');
+    expect(orders).toContain('guestPhone: guestType === "walkin" ? walkinPhone.trim() : guestType === "table" ? tablePhone : undefined');
+  });
+
   it("booking Check Out Guest fetches getPendingFoodTab before confirm", () => {
     const panel = readFileSync("src/components/admin/booking-dashboard/BookingDetailPanel.tsx", "utf8");
     expect(panel).toContain("promptCheckOut");

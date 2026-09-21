@@ -152,6 +152,7 @@ interface PrefillGuest {
 export function AdminFoodOrders({ password, username, role, permissions = {} }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
   const [prefillGuest, setPrefillGuest] = useState<PrefillGuest | null>(null);
+  const clearPrefillGuest = useCallback(() => setPrefillGuest(null), []);
 
   const apiCall = useCallback(async (body: Record<string, any>) => {
     const payload: Record<string, any> = { password, ...body };
@@ -209,7 +210,7 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
           <KitchenDashboard password={password} onLogout={() => {}} />
         </div>
       )}
-      {tab === "place" && <PlaceOrder apiCall={apiCall} prefillGuest={prefillGuest} onPrefillConsumed={() => setPrefillGuest(null)} onOrderPlaced={() => setTab("summary")} />}
+      {tab === "place" && <PlaceOrder apiCall={apiCall} prefillGuest={prefillGuest} onPrefillConsumed={clearPrefillGuest} onOrderPlaced={() => setTab("summary")} />}
       {tab === "summary" && <OrderSummary apiCall={apiCall} password={password} username={username} onOrderMore={(guest) => { setPrefillGuest(guest); setTab("place"); }} onAddNewOrder={() => setTab("place")} role={role} permissions={permissions} />}
       {tab === "combined" && <CombinedBill apiCall={apiCall} password={password} username={username} />}
       {tab === "payment" && <PaymentSummary apiCall={apiCall} password={password} username={username} />}
@@ -220,16 +221,29 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
 // ─── Place Order ─────────────────────────────────────────────────────────────
 
 function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }: { apiCall: (body: any) => Promise<Response>; prefillGuest: PrefillGuest | null; onPrefillConsumed: () => void; onOrderPlaced?: () => void }) {
-  const [guestType, setGuestType] = useState<"hostel" | "walkin" | "table">(prefillGuest?.guestType || "hostel");
+  // Keep the navigation prefill after the parent clears it, so Order More can use a compact guest row.
+  const [initialPrefillGuest] = useState(prefillGuest);
+  const prefilledTable = initialPrefillGuest?.guestType === "table"
+    ? Number(initialPrefillGuest.roomInfo?.match(/Table (\d+)/i)?.[1]) || null
+    : null;
+  const [guestSelectionExpanded, setGuestSelectionExpanded] = useState(!initialPrefillGuest);
+  const [guestType, setGuestType] = useState<"hostel" | "walkin" | "table">(initialPrefillGuest?.guestType || "hostel");
   const [cafeTableCount, setCafeTableCount] = useState(0);
-  const [selectedTable, setSelectedTable] = useState<number | null>(null);
-  const [tableGuestName, setTableGuestName] = useState("");
-  const [tableSessionId, setTableSessionId] = useState("");
+  const [selectedTable, setSelectedTable] = useState<number | null>(prefilledTable);
+  const [tableGuestName, setTableGuestName] = useState(initialPrefillGuest?.guestType === "table" ? initialPrefillGuest.guestName : "");
+  const [tableSessionId, setTableSessionId] = useState(initialPrefillGuest?.guestType === "table" ? (initialPrefillGuest.guestPhone || "") : "");
   const [guests, setGuests] = useState<Guest[]>([]);
-  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);
+  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(() => initialPrefillGuest?.guestType === "hostel" && initialPrefillGuest.checkinId ? {
+    id: initialPrefillGuest.checkinId,
+    name: initialPrefillGuest.guestName,
+    contact: initialPrefillGuest.guestPhone || "",
+    arrivalDate: "",
+    stayingDays: "",
+    bedInfo: initialPrefillGuest.roomInfo || "",
+  } : null);
   const [guestSearch, setGuestSearch] = useState("");
-  const [walkinName, setWalkinName] = useState(prefillGuest?.guestType === "walkin" ? prefillGuest.guestName : "");
-  const [walkinPhone, setWalkinPhone] = useState(prefillGuest?.guestType === "walkin" ? (prefillGuest.guestPhone || "") : "");
+  const [walkinName, setWalkinName] = useState(initialPrefillGuest?.guestType === "walkin" ? initialPrefillGuest.guestName : "");
+  const [walkinPhone, setWalkinPhone] = useState(initialPrefillGuest?.guestType === "walkin" ? (initialPrefillGuest.guestPhone || "") : "");
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -245,6 +259,10 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
   const [occupiedTables, setOccupiedTables] = useState<Map<number, string>>(new Map());
   const [taxRate, setTaxRate] = useState(5);
   const cartRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialPrefillGuest) onPrefillConsumed();
+  }, [initialPrefillGuest, onPrefillConsumed]);
 
   useEffect(() => {
     (async () => {
@@ -286,47 +304,16 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
         if (res.ok) {
           const data = await res.json();
           setGuests(data.guests || []);
-          if (prefillGuest?.guestType === "hostel" && prefillGuest.checkinId) {
-            const match = (data.guests as Guest[]).find((g) => g.id === prefillGuest.checkinId);
+          if (initialPrefillGuest?.guestType === "hostel" && initialPrefillGuest.checkinId) {
+            const match = (data.guests as Guest[]).find((g) => g.id === initialPrefillGuest.checkinId);
             if (match) {
               setSelectedGuest(match);
-            } else {
-              // Checked-out guest: create a synthetic guest entry from prefill data
-              setSelectedGuest({
-                id: prefillGuest.checkinId,
-                name: prefillGuest.guestName,
-                contact: prefillGuest.guestPhone || "",
-                arrivalDate: "",
-                stayingDays: "",
-                bedInfo: prefillGuest.roomInfo || "",
-              });
             }
-            onPrefillConsumed();
           }
         }
       })();
     }
-  }, [guestType, apiCall]);
-
-  useEffect(() => {
-    if (prefillGuest?.guestType === "table") {
-      setGuestType("table");
-      const tableNum = prefillGuest.roomInfo?.match(/Table (\d+)/i)?.[1];
-      if (tableNum) {
-        setSelectedTable(parseInt(tableNum, 10));
-        setTableGuestName(prefillGuest.guestName || `Table ${tableNum}`);
-      }
-      if (prefillGuest.guestPhone) setTableSessionId(prefillGuest.guestPhone);
-      onPrefillConsumed();
-    }
-  }, [prefillGuest]);
-
-  useEffect(() => {
-    if (prefillGuest?.guestType === "walkin") {
-      if (prefillGuest.guestPhone) setWalkinPhone(prefillGuest.guestPhone);
-      onPrefillConsumed();
-    }
-  }, []);
+  }, [guestType, apiCall, initialPrefillGuest]);
 
   const filteredGuests = guests.filter(
     (g) => g.name.toLowerCase().includes(guestSearch.toLowerCase()) || g.contact.includes(guestSearch)
@@ -343,6 +330,12 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
 
   const categoryItems = menuItems.filter((i) => i.categoryId === selectedCategory);
   const displayItems = isSearching ? searchResults : categoryItems;
+  const prefilledGuestType = initialPrefillGuest?.guestType === "hostel" ? "Hostel guest" : initialPrefillGuest?.guestType === "table" ? "Cafe table" : "Walk-in";
+  const prefilledGuestDetail = initialPrefillGuest?.guestType === "hostel"
+    ? initialPrefillGuest.roomInfo || initialPrefillGuest.guestPhone
+    : initialPrefillGuest?.guestType === "table"
+      ? initialPrefillGuest.roomInfo || initialPrefillGuest.guestName
+      : initialPrefillGuest?.guestPhone;
 
   const addToCart = (item: MenuItem) => {
     setCart((prev) => {
@@ -422,6 +415,18 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
     <div className={cn("space-y-4", cart.length > 0 && "pb-20")}>
       <h3 className="font-display text-lg font-bold text-brand-green-dark">Place Order</h3>
 
+      {initialPrefillGuest && !guestSelectionExpanded ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-green/20 bg-brand-green/[0.05] px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-brand-green-dark/60">Ordering for</p>
+            <p className="truncate text-sm font-semibold text-brand-green-dark">{initialPrefillGuest.guestName}</p>
+            <p className="truncate text-xs text-brand-green-dark/60">{prefilledGuestType}{prefilledGuestDetail ? ` · ${prefilledGuestDetail}` : ""}</p>
+          </div>
+          <button type="button" onClick={() => setGuestSelectionExpanded(true)} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-brand-green hover:bg-brand-green/10">
+            Change guest
+          </button>
+        </div>
+      ) : <>
       {/* Guest Type Toggle */}
       <div className="flex flex-wrap gap-2">
         <button
@@ -559,6 +564,7 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
           </div>
         )}
       </div>
+      </>}
 
       {/* Menu Browser */}
       <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-4">
