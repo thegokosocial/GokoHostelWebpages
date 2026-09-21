@@ -42,7 +42,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); shared `GuestFoodBillCard`; back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
 | `/review/[token]` | Rating funnel | token |
-| `/admin` | PMS SPA | direct username/password form; password every API call; phone/tablet section navigation is a scroll-contained modal drawer; Management tab dropdowns stay below it in the stacking order; long task, attendance, and payroll dialogs scroll within the viewport; public order-history sheets use dynamic viewport sizing |
+| `/admin` | PMS SPA | direct username/password form; password every API call; phone/tablet section navigation is a scroll-contained modal drawer (X, section choice, or blank drawer area closes it); Management tab dropdown options layer above their dismiss surface but remain below global navigation; long task, attendance, and payroll dialogs scroll within the viewport; public order-history sheets use dynamic viewport sizing |
 
 ---
 
@@ -82,7 +82,7 @@ Menu deletion removes items/categories from active admin and guest-menu lists us
 
 Bulk availability saves its local override and mapped dirty retry rows before calling PMS. The modal stays in progress until Aiosell accepts the push, then shows the successful PMS confirmation; a failed or timed-out push leaves the local change saved and exposes a Retry PMS sync action. The Worker’s protected five-minute retry remains a server-side safety net for dirty inventory rows.
 
-Most `adminOnly: true`. On phone view, the section selector is bounded and scrollable beneath the global navigation drawer; long To Do task forms/details and attendance date-range dialogs are bounded to the dynamic viewport and scroll internally. Audit and Logs are separately grantable view tabs; To Do is visible with `canViewTasks` or `canManageTasks`; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Most `adminOnly: true`. On phone view, the section selector is bounded and scrollable beneath the global navigation drawer; long To Do task forms/details and attendance date-range dialogs are bounded to the dynamic viewport and scroll internally. Management dropdown options remain clickable above their local dismiss layer. Audit and Logs are separately grantable view tabs; To Do is visible with `canViewTasks` or `canManageTasks`; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 Food Settings groups the existing Menu, general food settings, and Bill Settings tabs. Each child retains its existing permission gate and `tab` ID; only the Management navigation is grouped.
 

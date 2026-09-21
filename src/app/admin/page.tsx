@@ -361,7 +361,16 @@ function AdminPageInner() {
         </div>
 
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-          <SheetContent id="admin-mobile-navigation" side="right" className="h-dvh w-screen max-w-none data-[side=right]:w-screen gap-0 overflow-hidden border-brand-mist bg-white/95 p-0 dark:bg-zinc-900/95 lg:hidden sm:max-w-none">
+          <SheetContent
+            id="admin-mobile-navigation"
+            side="right"
+            onClick={(event) => {
+              if (!(event.target instanceof Element) || !event.target.closest("button")) {
+                setMobileMenuOpen(false);
+              }
+            }}
+            className="h-dvh w-screen max-w-none data-[side=right]:w-screen gap-0 overflow-hidden border-brand-mist bg-white/95 p-0 dark:bg-zinc-900/95 lg:hidden sm:max-w-none"
+          >
             <SheetHeader className="shrink-0 border-b border-brand-mist px-4 py-3 text-left dark:border-zinc-800">
               <SheetTitle className="font-display text-lg font-bold text-brand-green dark:text-zinc-100">Admin navigation</SheetTitle>
             </SheetHeader>

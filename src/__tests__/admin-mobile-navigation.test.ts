@@ -17,8 +17,10 @@ describe("admin mobile navigation", () => {
     expect(adminPage).toContain('setSection(item.id); setMobileMenuOpen(false);');
   });
 
-  it("keeps the Management tab selector below global navigation and scrollable on short phones", () => {
+  it("keeps the Management selector below global navigation and its menu above the dismiss layer", () => {
     expect(management).toContain('className="relative z-10 mt-4 lg:hidden"');
+    expect(management).toContain('className="fixed inset-0 z-30"');
+    expect(management).toContain('className="absolute left-0 right-0 top-full z-40');
     expect(management).toContain("max-h-[min(70dvh,32rem)] overflow-y-auto overscroll-contain");
   });
   it("groups the existing food tabs without changing their route IDs or permissions", () => {

@@ -153,7 +153,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         {subMenuOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setSubMenuOpen(false)} />
-            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[min(70dvh,32rem)] overflow-y-auto overscroll-contain rounded-xl border border-brand-mist bg-white dark:bg-card p-2 shadow-lg dark:shadow-none">
+            <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-[min(70dvh,32rem)] overflow-y-auto overscroll-contain rounded-xl border border-brand-mist bg-white dark:bg-card p-2 shadow-lg dark:shadow-none">
               <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
                 {navTabs.map((t) => (
                   <button
