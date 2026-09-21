@@ -1506,7 +1506,11 @@ export async function getExpensesByUser(username: string, days: number) {
     .orderBy(desc(expenses.id));
 }
 
-export async function updateExpense(id: number, data: { amount?: number; category?: string; customCategory?: string; purpose?: string; billImageLink?: string; updatedBy: string }) {
+export async function updateExpense(id: number, data: {
+  amount?: number; category?: string; customCategory?: string; purpose?: string; billImageLink?: string;
+  expenseDate?: string; createdMonth?: string; vendorId?: number | null; accountId?: number | null;
+  paymentMethod?: string; mainCategory?: string; subCategory?: string; updatedBy: string;
+}) {
   const db = getDb();
   return db.update(expenses).set(syncUpdate({ ...data, updatedAt: new Date().toISOString() })).where(eq(expenses.id, id));
 }

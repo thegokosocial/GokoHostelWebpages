@@ -55,6 +55,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `platform_receivable_entries` | Immutable gross/tax/commission/TDS/TCS/expected-net recognition and reversal journal in paise, keyed by booking cycle/event. |
 | `platform_settlements` | Real bank payout header with actual credit date and bank account. |
 | `platform_settlement_allocations` | One-to-many payout-to-booking-cycle allocation journal in paise. |
+| `gateway_settlement_allocations` | Cloudflare-only payout-to-website-payment allocation journal in paise. |
 | `vendors` | Directory. |
 | `employees` | Salary paise + frequency. |
 | `employee_attendance` | Current per-day attendance state. |
@@ -98,7 +99,7 @@ Source SQL: `0057_razorpay_test_preview.sql` and `0058_razorpay_webhook_refund_i
 |-------|------|
 | `native_booking_checkouts` | Idempotent `request_key`, owner/guest access hashes, FKs to booking/hold/accepted quote, optional `amends_checkout_id` (0063), payment choice, test/live environment, state machine, Razorpay order/key/receipt, `due_now_paise` (0 or ≥100), one-use `checkout_started_at`, closure reason. |
 | `native_inventory_holds` | Physical bed-ID holds; optional `exclude_booking_id` (0063) so amend holds may overlap the booking being changed. |
-| `native_booking_payments` | Provider payment ID → checkout FK; variable amount (≥100 paise); monotonic capture/refund evidence. |
+| `native_booking_payments` | Provider payment ID → checkout FK; variable amount (≥100 paise); monotonic capture/refund plus optional provider fee/tax evidence. |
 | `native_booking_refunds` | One refund reservation per payment; variable amount; submitting/unknown/pending/processed/failed. |
 | `native_booking_webhooks` | Unique event ID + payload hash; routes via `notes.goko_checkout_id`. |
 

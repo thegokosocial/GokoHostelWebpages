@@ -1,29 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   addExpense,
-  getExpensesByMonth,
   getExpensesByUser,
+  getExpenseById,
   updateExpense,
   deleteExpense,
-  getExpenseMonths,
-  getMonthKey,
   addAuditEntry,
   addSystemLog,
   getSetting,
+  getMonthKey,
 } from "@/db/queries";
 import { getDb } from "@/db";
-import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts } from "@/db/schema";
+import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations } from "@/db/schema";
 import { eq, and, sql, desc, inArray, isNull, lt } from "drizzle-orm";
 import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
-import { isOfflineMode } from "@/lib/runtime";
+import { isOfflineMode, isPiRuntime } from "@/lib/runtime";
 import { authenticateUser } from "@/lib/auth";
-import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { actionAllowed, actionAllowedAll, type ActionPerm } from "@/lib/actionPermissions";
 import { hostelExpenseIsLinked } from "@/db/splitQueries";
 import { stayDueAtHotel, cashCollected, onlineCollected, cashRefunded, onlineRefunded, occupiedForRoomRevenue, isPrepaidStatus } from "@/lib/stayPayment";
 import { validateManualIncome } from "@/lib/income";
-import { getReconciliationStatus, isValidReconciliationDate, parseReconciliationTarget, reconciliationPermission, resolveOpeningBalance } from "@/lib/reconciliation";
+import { getReconciliationStatus, isValidReconciliationDate, parseReconciliationTarget, reconciliationPermission } from "@/lib/reconciliation";
 import { parseExpenseCategories, parseIncomeCategories } from "@/lib/accountCategories";
 import { todayIST } from "@/lib/utils";
+import { defaultAccountingDateRange, isValidAccountingDateRange, resolveActivityAnchor } from "@/lib/accountingDates";
+import { gatewayExpectedNetPaise } from "@/lib/platformReceivables";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 
 function extractDriveFileId(link: string): string | null {
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
     const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
       listExpenses: "canViewExpenses", getMyExpenses: "canViewExpenses",
       addExpense: "canAddExpense", updateExpense: "canEditExpense", deleteExpense: "canDeleteExpense",
+      getExpenseEditOptions: "canEditExpense",
       getFoodRevenue: "canViewFoodBills",
       getRoomRevenue: "canViewFoodBills",
       getDailyLedger: "canViewAccounts", listIncomeRecords: "canViewAccounts", getReconciliation: "canViewAccounts",
@@ -81,6 +83,124 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case "getExpenseCategories":
         return NextResponse.json({ categories: parseExpenseCategories(await getSetting("expense_categories")) });
+      case "getExpenseEditOptions": {
+        const db = getDb();
+        const [expenseAccounts, expenseVendors] = await Promise.all([
+          db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname }).from(accounts)
+            .where(eq(accounts.isVirtual, 0)).orderBy(accounts.name),
+          db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(eq(vendors.isActive, 1)).orderBy(vendors.name),
+        ]);
+        return NextResponse.json({ accounts: expenseAccounts, vendors: expenseVendors });
+      }
+      case "getAccountActivity": {
+        if (actionAllowedAll(role, permissions, ["canViewAccounts", "canViewExpenses"]) !== "allowed") return NextResponse.json({ error: "You need account and expense record access to view account activity" }, { status: 403 });
+        const accountKey = rest.accountId === "cash" ? "cash" : Number(rest.accountId);
+        if (accountKey !== "cash" && (!Number.isInteger(accountKey) || accountKey < 1)) return NextResponse.json({ error: "Select a valid account" }, { status: 400 });
+        const today = todayIST();
+        const toDate = typeof rest.toDate === "string" ? rest.toDate : today;
+        const fromDate = typeof rest.fromDate === "string" && rest.fromDate ? rest.fromDate : "0001-01-01";
+        if (!isValidAccountingDateRange(fromDate, toDate, today)) return NextResponse.json({ error: "A valid date range is required" }, { status: 400 });
+        const page = Math.max(1, Math.min(100000, Number(rest.page) || 1));
+        const pageSize = Math.max(10, Math.min(100, Number(rest.pageSize) || 50));
+        const accountId = accountKey === "cash" ? null : accountKey;
+        const db = getDb();
+        const accountCondition = accountId === null ? sql`account_id IS NULL` : sql`account_id = ${accountId}`;
+        const receiptCondition = accountId === null ? sql`0 = 1` : sql`account_id = ${accountId}`;
+        const [allAccounts, accountRows, reconciliations, openingAdjustments] = await Promise.all([
+          db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, bankName: accounts.bankName, accountType: accounts.accountType, accountNumber: accounts.accountNumber, openingBalance: accounts.openingBalance, isVirtual: accounts.isVirtual, isActive: accounts.isActive }).from(accounts).orderBy(accounts.name),
+          accountId === null ? Promise.resolve([]) : db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1),
+          db.select().from(dailyLedger).where(and(accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), sql`${dailyLedger.date} <= ${toDate}`, eq(dailyLedger.isReconciled, 1))).orderBy(desc(dailyLedger.date)),
+          db.select().from(dailyLedger).where(and(accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), sql`${dailyLedger.date} <= ${toDate}`, eq(dailyLedger.openingAdjusted, 1))).orderBy(desc(dailyLedger.date)).limit(1),
+        ]);
+        if (accountId !== null && !accountRows[0]) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+        const activity = await db.all(sql`
+          SELECT * FROM (
+            SELECT 'income-' || id AS id, date, 'income' AS kind, COALESCE(description, source, '') AS description, amount, COALESCE(source_detail, '') AS reference
+            FROM daily_income WHERE ${accountCondition} AND date >= ${fromDate} AND date <= ${toDate}
+            UNION ALL
+            SELECT 'receipt-' || id AS id, business_date AS date, kind, notes AS description, amount, receipt_id AS reference
+            FROM guest_receipts WHERE ${receiptCondition} AND business_date >= ${fromDate} AND business_date <= ${toDate}
+            UNION ALL
+            SELECT 'expense-' || id AS id, expense_date AS date, 'expense' AS kind, COALESCE(purpose, category, '') AS description, -amount AS amount, category AS reference
+            FROM expenses WHERE ${accountCondition} AND expense_date >= ${fromDate} AND expense_date <= ${toDate} AND deleted_at IS NULL
+          ) ORDER BY date DESC, id DESC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+        `) as Array<{ id: string; date: string; kind: string; description: string; amount: number; reference: string }>;
+        const [incomeCount, receiptCount, expenseCount] = await Promise.all([
+          db.select({ count: sql<number>`COUNT(*)` }).from(dailyIncome).where(and(accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), sql`${dailyIncome.date} >= ${fromDate} AND ${dailyIncome.date} <= ${toDate}`)),
+          accountId === null ? Promise.resolve([{ count: 0 }]) : db.select({ count: sql<number>`COUNT(*)` }).from(guestReceipts).where(and(eq(guestReceipts.accountId, accountId), sql`${guestReceipts.businessDate} >= ${fromDate} AND ${guestReceipts.businessDate} <= ${toDate}`)),
+          db.select({ count: sql<number>`COUNT(*)` }).from(expenses).where(and(accountId === null ? isNull(expenses.accountId) : eq(expenses.accountId, accountId), sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))),
+        ]);
+        const activityCount = incomeCount[0].count + receiptCount[0].count + expenseCount[0].count;
+        const actualClose = reconciliations[0];
+        const openingAdjustment = openingAdjustments[0];
+        const seed = accountId === null ? 0 : accountRows[0]?.openingBalance || 0;
+        const anchor = resolveActivityAnchor(seed, actualClose, openingAdjustment);
+        const anchorDate = anchor.date;
+        const [throughIncome, throughReceipts, throughExpenses] = await Promise.all([
+          db.select({ total: sql<number>`COALESCE(SUM(${dailyIncome.amount}), 0)` }).from(dailyIncome).where(and(accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${dailyIncome.date} >= ${anchorDate} AND ${dailyIncome.date} <= ${toDate}` : sql`${dailyIncome.date} > ${anchorDate} AND ${dailyIncome.date} <= ${toDate}`) : sql`${dailyIncome.date} <= ${toDate}`)),
+          accountId === null ? Promise.resolve([{ total: 0 }]) : db.select({ total: sql<number>`COALESCE(SUM(${guestReceipts.amount}), 0)` }).from(guestReceipts).where(and(eq(guestReceipts.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${guestReceipts.businessDate} >= ${anchorDate} AND ${guestReceipts.businessDate} <= ${toDate}` : sql`${guestReceipts.businessDate} > ${anchorDate} AND ${guestReceipts.businessDate} <= ${toDate}`) : sql`${guestReceipts.businessDate} <= ${toDate}`)),
+          db.select({ total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` }).from(expenses).where(and(accountId === null ? isNull(expenses.accountId) : eq(expenses.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${expenses.expenseDate} >= ${anchorDate} AND ${expenses.expenseDate} <= ${toDate}` : sql`${expenses.expenseDate} > ${anchorDate} AND ${expenses.expenseDate} <= ${toDate}`) : sql`${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))),
+        ]);
+        let balanceAsOf = anchor.balance
+          + throughIncome[0].total + throughReceipts[0].total - throughExpenses[0].total;
+        const selectedAccount = accountId === null ? null : accountRows[0];
+        const virtualActivity = selectedAccount?.isVirtual ? await (async () => {
+          const [profiles, receivables] = await Promise.all([
+            db.select().from(platformPaymentProfiles).where(eq(platformPaymentProfiles.virtualAccountId, accountId!)),
+            db.select().from(platformReceivableEntries).where(sql`${platformReceivableEntries.recognitionDate} <= ${toDate}`),
+          ]);
+          const keys = new Set(profiles.map((profile) => profile.platformKey));
+          const platformRows = receivables.filter((row) => keys.has(row.platformKey));
+          const matchingSettlements = keys.size ? await db.select().from(platformSettlements).where(and(inArray(platformSettlements.platformKey, [...keys]), sql`${platformSettlements.payoutDate} <= ${toDate}`)) : [];
+          const settlementIds = matchingSettlements.map((row) => row.id);
+          const allocations = settlementIds.length ? await db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.settlementId, settlementIds)) : [];
+          const settlementDates = new Map(matchingSettlements.map((row) => [row.id, row.payoutDate]));
+          const events = platformRows.filter((row) => row.recognitionDate >= fromDate).map((row) => ({ id: `receivable-${row.id}`, date: row.recognitionDate, kind: "receivable", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: row.expectedNetPaise, reference: row.eventKey }))
+            .concat(allocations.map((row) => ({ id: `allocation-${row.id}`, date: settlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "payout allocation", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: -row.allocatedPaise, reference: String(row.settlementId) })));
+          let websiteBalance = 0;
+          if (!isPiRuntime() && keys.has("razorpay-website")) {
+            const paymentRows = await db.select({
+              id: nativeBookingPayments.id, amountPaise: nativeBookingPayments.amountPaise, refundedPaise: nativeBookingPayments.refundedPaise,
+              feePaise: nativeBookingPayments.feePaise, taxPaise: nativeBookingPayments.taxPaise, verifiedAt: nativeBookingPayments.verifiedAt,
+              bookingId: nativeBookingCheckouts.bookingId, guestName: nativeBookingCheckouts.guestName,
+              gokoBookingId: bookings.gokoBookingId, bookingRef: bookings.bookingRef,
+            }).from(nativeBookingPayments).innerJoin(nativeBookingCheckouts, eq(nativeBookingPayments.checkoutId, nativeBookingCheckouts.id))
+              .leftJoin(bookings, eq(nativeBookingCheckouts.bookingId, bookings.id))
+              .where(and(eq(nativeBookingPayments.captured, 1), eq(nativeBookingCheckouts.environment, "live"), sql`${nativeBookingPayments.verifiedAt} <= ${toDate + "T23:59:59"}`));
+            const paymentIds = paymentRows.map((payment) => payment.id);
+            const webAllocations = paymentIds.length ? await db.select().from(gatewaySettlementAllocations).where(inArray(gatewaySettlementAllocations.paymentId, paymentIds)) : [];
+            const webSettlementIds = [...new Set(webAllocations.map((row) => row.settlementId))];
+            const webSettlements = webSettlementIds.length ? await db.select().from(platformSettlements).where(inArray(platformSettlements.id, webSettlementIds)) : [];
+            const webSettlementDates = new Map(webSettlements.map((row) => [row.id, row.payoutDate]));
+            const effectiveWebAllocations = webAllocations.filter((row) => (webSettlementDates.get(row.settlementId) || "") <= toDate);
+            for (const payment of paymentRows) {
+              const net = gatewayExpectedNetPaise(payment.amountPaise, payment.refundedPaise, payment.feePaise, payment.taxPaise) ?? payment.amountPaise - payment.refundedPaise;
+              if (payment.feePaise == null || payment.taxPaise == null) {
+                if (payment.verifiedAt.slice(0, 10) >= fromDate) events.push({
+                  id: `website-payment-${payment.id}`, date: payment.verifiedAt.slice(0, 10), kind: "website payment · fee pending",
+                  description: `${payment.guestName} · ${payment.gokoBookingId || payment.bookingRef || `Booking #${payment.bookingId || "pending"}`}`,
+                  amount: 0, reference: payment.id,
+                });
+                continue;
+              }
+              const paidOut = effectiveWebAllocations.filter((row) => row.paymentId === payment.id).reduce((sum, row) => sum + row.allocatedPaise, 0);
+              websiteBalance += net - paidOut;
+              if (payment.verifiedAt.slice(0, 10) >= fromDate) events.push({
+                id: `website-payment-${payment.id}`, date: payment.verifiedAt.slice(0, 10), kind: "website payment receivable",
+                description: `${payment.guestName} · ${payment.gokoBookingId || payment.bookingRef || `Booking #${payment.bookingId || "pending"}`}`,
+                amount: net, reference: payment.id,
+              });
+            }
+            events.push(...effectiveWebAllocations.filter((row) => (webSettlementDates.get(row.settlementId) || "") >= fromDate).map((row) => ({ id: `gateway-payout-${row.id}`, date: webSettlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "website payout allocation", description: `Razorpay settlement #${row.settlementId}`, amount: -row.allocatedPaise, reference: row.paymentId })));
+          }
+          balanceAsOf = platformRows.reduce((sum, row) => sum + row.expectedNetPaise, 0) - allocations.reduce((sum, row) => sum + row.allocatedPaise, 0) + websiteBalance;
+          return events;
+        })() : [];
+        const fullActivity = virtualActivity.length ? [...activity, ...virtualActivity].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice((page - 1) * pageSize, page * pageSize) : activity;
+        const totalActivity = virtualActivity.length ? activityCount + virtualActivity.length : activityCount;
+        const maskedNumber = selectedAccount?.accountNumber ? `•••• ${selectedAccount.accountNumber.slice(-4)}` : "";
+        return NextResponse.json({ accounts: allAccounts.map((row) => ({ ...row, accountNumber: row.accountNumber ? `•••• ${row.accountNumber.slice(-4)}` : "" })), account: accountId === null ? { name: "Cash", openingBalance: 0, isVirtual: 0 } : { ...selectedAccount, accountNumber: maskedNumber }, activity: fullActivity, total: totalActivity, page, pageSize, balanceAsOf, checkpointDate: anchor.date, checkpointType: anchor.type });
+      }
       case "getIncomeCategories":
         return NextResponse.json({ categories: parseIncomeCategories(await getSetting("income_categories")) });
       case "addExpense": {
@@ -88,7 +208,7 @@ export async function POST(req: NextRequest) {
         if (!amount || !category) {
           return NextResponse.json({ error: "amount and category are required" }, { status: 400 });
         }
-        if (typeof amount !== "number" || amount <= 0) {
+        if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount <= 0) {
           return NextResponse.json({ error: "amount must be a positive integer (in paise)" }, { status: 400 });
         }
 
@@ -97,6 +217,20 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "expenseDate must be a valid non-future date (YYYY-MM-DD)" }, { status: 400 });
         }
         const month = expenseDate.slice(0, 7);
+        const effectiveMethod = paymentMethod || "cash";
+        const effectiveAccountId = accountId == null || accountId === "" ? null : Number(accountId);
+        if (effectiveMethod !== "cash" && effectiveMethod !== "online") return NextResponse.json({ error: "Payment method must be cash or online" }, { status: 400 });
+        if ((effectiveMethod === "cash") !== (effectiveAccountId === null)) return NextResponse.json({ error: "Cash expenses must use Cash; online expenses must use an account" }, { status: 400 });
+        if (effectiveAccountId !== null && (!Number.isSafeInteger(effectiveAccountId) || effectiveAccountId < 1)) return NextResponse.json({ error: "Select a valid bank account" }, { status: 400 });
+        const db = getDb();
+        if (effectiveAccountId !== null) {
+          const activeAccount = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, effectiveAccountId), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
+          if (!activeAccount.length) return NextResponse.json({ error: "Select an active real bank account" }, { status: 400 });
+        }
+        const reconciled = await db.select({ date: dailyLedger.date }).from(dailyLedger).where(and(
+          sql`${dailyLedger.date} >= ${expenseDate}`, effectiveAccountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, effectiveAccountId), eq(dailyLedger.isReconciled, 1),
+        )).orderBy(dailyLedger.date).limit(1);
+        if (reconciled.length) return NextResponse.json({ error: `Undo the ${reconciled[0].date} reconciliation before adding an expense to this account` }, { status: 409 });
         let billImageLink = "";
 
         const uploadOneImage = async (base64Data: string, mimeType: string, folderId: string): Promise<string> => {
@@ -147,8 +281,8 @@ export async function POST(req: NextRequest) {
           expenseDate,
           createdMonth: month,
           vendorId: vendorId || null,
-          accountId: accountId || null,
-          paymentMethod: paymentMethod || "cash",
+          accountId: effectiveAccountId,
+          paymentMethod: effectiveMethod,
           mainCategory: mainCategory || "stay_expense",
           subCategory: subCategory || "",
         });
@@ -164,11 +298,28 @@ export async function POST(req: NextRequest) {
       }
 
       case "listExpenses": {
-        const { month } = rest;
-        const targetMonth = month || getMonthKey();
-        const expenses = await getExpensesByMonth(targetMonth);
-        const months = await getExpenseMonths();
-        return NextResponse.json({ role, expenses, months, currentMonth: targetMonth, expenseCategories: parseExpenseCategories(await getSetting("expense_categories")) });
+        const today = todayIST();
+        const defaultRange = defaultAccountingDateRange(today);
+        const fromDate = typeof rest.fromDate === "string" ? rest.fromDate : defaultRange.fromDate;
+        const toDate = typeof rest.toDate === "string" ? rest.toDate : defaultRange.toDate;
+        if (!isValidAccountingDateRange(fromDate, toDate, today)) {
+          return NextResponse.json({ error: "A valid date range is required" }, { status: 400 });
+        }
+        const db = getDb();
+        const rows = await db.select({
+          id: expenses.id, amount: expenses.amount, category: expenses.category, customCategory: expenses.customCategory,
+          purpose: expenses.purpose, billImageLink: expenses.billImageLink, vendorId: expenses.vendorId, accountId: expenses.accountId,
+          paymentMethod: expenses.paymentMethod, mainCategory: expenses.mainCategory, subCategory: expenses.subCategory,
+          taskId: expenses.taskId, createdBy: expenses.createdBy, updatedBy: expenses.updatedBy, createdAt: expenses.createdAt,
+          updatedAt: expenses.updatedAt, expenseDate: expenses.expenseDate, createdMonth: expenses.createdMonth,
+          accountName: sql<string>`CASE WHEN ${expenses.accountId} IS NULL THEN 'Cash' ELSE COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name}, 'Account') END`,
+          vendorName: sql<string>`COALESCE(${vendors.name}, '')`,
+        }).from(expenses)
+          .leftJoin(accounts, eq(expenses.accountId, accounts.id))
+          .leftJoin(vendors, eq(expenses.vendorId, vendors.id))
+          .where(and(sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt)))
+          .orderBy(desc(expenses.expenseDate), desc(expenses.id));
+        return NextResponse.json({ role, expenses: rows, fromDate, toDate, expenseCategories: parseExpenseCategories(await getSetting("expense_categories")) });
       }
 
       case "getMyExpenses": {
@@ -182,11 +333,52 @@ export async function POST(req: NextRequest) {
         const blocked = await rejectIfSplitLinked(Number(id));
         if (blocked) return blocked;
 
+        const existingExpense = await getExpenseById(Number(id));
+        if (!existingExpense) return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+
+        const nextDate = rest.expenseDate === undefined ? existingExpense.expenseDate : rest.expenseDate;
+        const nextAmount = amount === undefined ? existingExpense.amount : amount;
+        const nextMethod = rest.paymentMethod === undefined ? (existingExpense.paymentMethod || "cash") : rest.paymentMethod;
+        const nextAccountId = rest.accountId === undefined ? existingExpense.accountId : (rest.accountId === null || rest.accountId === "" ? null : Number(rest.accountId));
+        if (!isValidReconciliationDate(nextDate, todayIST())) return NextResponse.json({ error: "A valid non-future expense date is required" }, { status: 400 });
+        if (!Number.isSafeInteger(nextAmount) || nextAmount <= 0) return NextResponse.json({ error: "Amount must be a positive integer amount in paise" }, { status: 400 });
+        if (nextMethod !== "cash" && nextMethod !== "online") return NextResponse.json({ error: "Payment method must be cash or online" }, { status: 400 });
+        if ((nextMethod === "cash") !== (nextAccountId === null)) return NextResponse.json({ error: "Cash expenses must use Cash; online expenses must use an account" }, { status: 400 });
+        if (nextAccountId !== null && nextAccountId !== existingExpense.accountId) {
+          const activeAccount = await getDb().select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, nextAccountId), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
+          if (!activeAccount.length) return NextResponse.json({ error: "Select an active real bank account" }, { status: 400 });
+        }
+        if (rest.vendorId !== undefined && rest.vendorId !== null && rest.vendorId !== "") {
+          const vendor = await getDb().select({ id: vendors.id }).from(vendors).where(eq(vendors.id, Number(rest.vendorId))).limit(1);
+          if (!vendor.length) return NextResponse.json({ error: "Vendor not found" }, { status: 400 });
+        }
+        const financialChange = nextDate !== existingExpense.expenseDate || nextAmount !== existingExpense.amount || nextAccountId !== existingExpense.accountId;
+        if (financialChange) {
+          const affected = new Map<string, { date: string; accountId: number | null }>();
+          affected.set(`${existingExpense.expenseDate}:${existingExpense.accountId ?? "cash"}`, { date: existingExpense.expenseDate, accountId: existingExpense.accountId });
+          affected.set(`${nextDate}:${nextAccountId ?? "cash"}`, { date: nextDate, accountId: nextAccountId });
+          for (const target of affected.values()) {
+            const ledger = await getDb().select({ date: dailyLedger.date }).from(dailyLedger).where(and(
+              sql`${dailyLedger.date} >= ${target.date}`,
+              target.accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, target.accountId),
+              eq(dailyLedger.isReconciled, 1),
+            )).orderBy(dailyLedger.date).limit(1);
+            if (ledger.length) return NextResponse.json({ error: `Undo the ${ledger[0].date} reconciliation for this account before changing this expense` }, { status: 409 });
+          }
+        }
+
         const updateData: any = { updatedBy: actorName };
-        if (amount !== undefined) updateData.amount = amount;
+        if (amount !== undefined) updateData.amount = nextAmount;
         if (category !== undefined) updateData.category = category;
         if (customCategory !== undefined) updateData.customCategory = customCategory;
         if (purpose !== undefined) updateData.purpose = purpose;
+        if (rest.expenseDate !== undefined) { updateData.expenseDate = nextDate; updateData.createdMonth = nextDate.slice(0, 7); }
+        if (rest.mainCategory !== undefined) updateData.mainCategory = String(rest.mainCategory).trim();
+        if (rest.subCategory !== undefined) updateData.subCategory = String(rest.subCategory).trim();
+        if (rest.vendorId !== undefined) updateData.vendorId = rest.vendorId === null || rest.vendorId === "" ? null : Number(rest.vendorId);
+        if (rest.paymentMethod !== undefined) updateData.paymentMethod = nextMethod;
+        if (rest.accountId !== undefined) updateData.accountId = nextAccountId;
+        if (rest.billImageLink !== undefined) updateData.billImageLink = String(rest.billImageLink || "").slice(0, 4000);
 
         if (updateBillImage) {
           if (isOfflineMode()) {
@@ -232,6 +424,13 @@ export async function POST(req: NextRequest) {
         if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
         const blocked = await rejectIfSplitLinked(Number(id));
         if (blocked) return blocked;
+
+        const expense = await getExpenseById(Number(id));
+        if (!expense) return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+        const reconciled = await getDb().select({ id: dailyLedger.id }).from(dailyLedger).where(and(
+          sql`${dailyLedger.date} >= ${expense.expenseDate}`, expense.accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, expense.accountId), eq(dailyLedger.isReconciled, 1),
+        )).limit(1);
+        if (reconciled.length) return NextResponse.json({ error: `Undo the ${expense.expenseDate} reconciliation before deleting this expense` }, { status: 409 });
 
         if (billImageLink) {
           const fileId = extractDriveFileId(billImageLink);
@@ -519,12 +718,12 @@ export async function POST(req: NextRequest) {
           const activeAccount = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, income.accountId!), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
           if (!activeAccount.length) return NextResponse.json({ error: "The selected online account is not active" }, { status: 400 });
         }
-        const reconciled = await db.select({ id: dailyLedger.id }).from(dailyLedger).where(and(
-          eq(dailyLedger.date, income.date),
+        const reconciled = await db.select({ date: dailyLedger.date }).from(dailyLedger).where(and(
+          sql`${dailyLedger.date} >= ${income.date}`,
           income.accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, income.accountId),
           eq(dailyLedger.isReconciled, 1),
-        )).limit(1);
-        if (reconciled.length) return NextResponse.json({ error: "This account is already reconciled for the selected date. Undo reconciliation before adding income." }, { status: 400 });
+        )).orderBy(dailyLedger.date).limit(1);
+        if (reconciled.length) return NextResponse.json({ error: `Undo the ${reconciled[0].date} reconciliation before adding income to this account` }, { status: 409 });
         await db.insert(dailyIncome).values({
           ...income,
           createdBy: username || displayName,
@@ -541,24 +740,29 @@ export async function POST(req: NextRequest) {
       }
 
       case "listIncomeRecords": {
-        const month = typeof rest.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(rest.month) ? rest.month : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
+        const today = todayIST();
+        const defaultRange = defaultAccountingDateRange(today);
+        const fromDate = typeof rest.fromDate === "string" ? rest.fromDate : defaultRange.fromDate;
+        const toDate = typeof rest.toDate === "string" ? rest.toDate : defaultRange.toDate;
+        if (!isValidAccountingDateRange(fromDate, toDate, today)) {
+          return NextResponse.json({ error: "A valid date range is required" }, { status: 400 });
+        }
         const db = getDb();
-        const [rows, monthRows, allAccounts] = await Promise.all([
+        const [rows, allAccounts] = await Promise.all([
           db.select({
             id: dailyIncome.id, date: dailyIncome.date, accountId: dailyIncome.accountId, type: dailyIncome.type,
             amount: dailyIncome.amount, source: dailyIncome.source, sourceDetail: dailyIncome.sourceDetail,
             description: dailyIncome.description, createdBy: dailyIncome.createdBy, createdAt: dailyIncome.createdAt,
             accountName: sql<string>`COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name})`,
           }).from(dailyIncome).leftJoin(accounts, eq(dailyIncome.accountId, accounts.id))
-            .where(sql`${dailyIncome.date} >= ${month + "-01"} AND ${dailyIncome.date} < date(${month + "-01"}, '+1 month')`)
+            .where(sql`${dailyIncome.date} >= ${fromDate} AND ${dailyIncome.date} <= ${toDate}`)
             .orderBy(desc(dailyIncome.date), desc(dailyIncome.createdAt)),
-          db.selectDistinct({ month: sql<string>`substr(${dailyIncome.date}, 1, 7)` }).from(dailyIncome).orderBy(desc(sql`substr(${dailyIncome.date}, 1, 7)`)),
           db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname }).from(accounts).orderBy(accounts.name),
         ]);
         return NextResponse.json({
           incomeEntries: rows.map((row) => ({ ...row, accountName: row.accountId == null ? "Cash" : row.accountName || "Account" })),
-          months: Array.from(new Set([month, ...monthRows.map((row) => row.month).filter(Boolean)])).sort().reverse(),
-          currentMonth: month,
+          fromDate,
+          toDate,
           accounts: allAccounts,
           incomeCategories: parseIncomeCategories(await getSetting("income_categories")),
         });
@@ -570,12 +774,12 @@ export async function POST(req: NextRequest) {
         const db = getDb();
         const entry = await db.select({ date: dailyIncome.date, accountId: dailyIncome.accountId }).from(dailyIncome).where(eq(dailyIncome.id, id)).limit(1);
         if (!entry.length) return NextResponse.json({ error: "Income entry not found" }, { status: 404 });
-        const reconciled = await db.select({ ledgerId: dailyLedger.id }).from(dailyLedger).where(and(
-          eq(dailyLedger.date, entry[0].date),
+        const reconciled = await db.select({ date: dailyLedger.date }).from(dailyLedger).where(and(
+          sql`${dailyLedger.date} >= ${entry[0].date}`,
           entry[0].accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, entry[0].accountId),
           eq(dailyLedger.isReconciled, 1),
-        )).limit(1);
-        if (reconciled.length) return NextResponse.json({ error: "This account is already reconciled for the entry date. Undo reconciliation before deleting income." }, { status: 400 });
+        )).orderBy(dailyLedger.date).limit(1);
+        if (reconciled.length) return NextResponse.json({ error: `Undo the ${reconciled[0].date} reconciliation before deleting income` }, { status: 409 });
         await db.delete(dailyIncome).where(eq(dailyIncome.id, id));
         return NextResponse.json({ success: true });
       }
@@ -592,12 +796,26 @@ export async function POST(req: NextRequest) {
         const ledgerEntries = await db.select().from(dailyLedger).where(eq(dailyLedger.date, date));
 
         // Get income/expense totals for the day
-        const incomeEntries = await db.select().from(dailyIncome).where(eq(dailyIncome.date, date));
-        const automaticReceipts = await db.select().from(guestReceipts).where(eq(guestReceipts.businessDate, date));
-        const dayExpenses = await db.select().from(expenses).where(eq(expenses.expenseDate, date));
-
         const priorLedgerEntries = await db.select().from(dailyLedger)
           .where(lt(dailyLedger.date, date)).orderBy(desc(dailyLedger.date));
+        const openingAdjustments = await db.select().from(dailyLedger)
+          .where(and(lt(dailyLedger.date, date), eq(dailyLedger.openingAdjusted, 1))).orderBy(desc(dailyLedger.date));
+        const accountBases: Array<{ accountId: number | null }> = [{ accountId: null }, ...allAccounts.map((account) => ({ accountId: account.id }))];
+        let minStart = date;
+        const unanchored = accountBases.some((acc) => !priorLedgerEntries.some((entry) => entry.accountId === acc.accountId && entry.isReconciled === 1 && entry.actualClosing !== null)
+          && !openingAdjustments.some((entry) => entry.accountId === acc.accountId));
+        if (unanchored) minStart = "0001-01-01";
+        for (const acc of accountBases) {
+          const prior = priorLedgerEntries.find((entry) => entry.accountId === acc.accountId && entry.isReconciled === 1 && entry.actualClosing !== null);
+          const adjustment = openingAdjustments.find((entry) => entry.accountId === acc.accountId);
+          const anchorDate = prior?.date && adjustment?.date ? (prior.date >= adjustment.date ? prior.date : adjustment.date) : prior?.date || adjustment?.date;
+          if (anchorDate && anchorDate < minStart) minStart = anchorDate;
+        }
+        const [incomeEntries, automaticReceipts, dayExpenses] = await Promise.all([
+          db.select().from(dailyIncome).where(sql`${dailyIncome.date} >= ${minStart} AND ${dailyIncome.date} <= ${date}`),
+          db.select().from(guestReceipts).where(sql`${guestReceipts.businessDate} >= ${minStart} AND ${guestReceipts.businessDate} <= ${date}`),
+          db.select().from(expenses).where(and(sql`${expenses.expenseDate} >= ${minStart} AND ${expenses.expenseDate} <= ${date}`, isNull(expenses.deletedAt))),
+        ]);
 
         // Build balance for each account + cash
         const balances = [
@@ -605,14 +823,24 @@ export async function POST(req: NextRequest) {
           ...allAccounts.map((a) => ({ accountId: a.id as number, accountName: (a.nickname || a.name) as string })),
         ].map((acc) => {
           const ledgerEntry = ledgerEntries.find((l) => l.accountId === acc.accountId);
-          const manualIncome = incomeEntries.filter((i) => i.accountId === acc.accountId).reduce((s, i) => s + i.amount, 0);
-          const receiptIncome = automaticReceipts.filter((r) => r.accountId === acc.accountId).reduce((s, r) => s + r.amount, 0);
-          const totalIncome = manualIncome + receiptIncome;
-          const totalExpense = dayExpenses.filter((e) => e.accountId === acc.accountId).reduce((s, e) => s + e.amount, 0);
-
-          const prevEntry = priorLedgerEntries.find((l) => l.accountId === acc.accountId);
+          const priorActualClose = priorLedgerEntries.find((l) => l.accountId === acc.accountId && l.isReconciled === 1 && l.actualClosing !== null);
+          const priorAdjustment = openingAdjustments.find((l) => l.accountId === acc.accountId);
           const account = allAccounts.find((a) => a.id === acc.accountId);
-          const openingBalance = resolveOpeningBalance(ledgerEntry, prevEntry, account?.openingBalance ?? 0);
+          const currentAdjustment = ledgerEntry?.openingAdjusted === 1 ? ledgerEntry : undefined;
+          const priorAnchorIsClose = !!priorActualClose && (!priorAdjustment || priorActualClose.date >= priorAdjustment.date);
+          const openingBalance = currentAdjustment?.openingBalance ?? (priorAnchorIsClose ? priorActualClose?.actualClosing : priorAdjustment?.openingBalance) ?? account?.openingBalance ?? 0;
+          const baseDate = currentAdjustment ? date : priorAnchorIsClose ? priorActualClose?.date : priorAdjustment?.date;
+          const afterBase = <T extends { date?: string; businessDate?: string }>(row: T) => {
+            const rowDate = row.date || row.businessDate || "";
+            return baseDate ? (currentAdjustment ? rowDate >= baseDate : rowDate > baseDate) : true;
+          };
+          const manualIncome = incomeEntries.filter((i) => i.accountId === acc.accountId && afterBase({ date: i.date })).reduce((s, i) => s + i.amount, 0);
+          const receiptIncome = automaticReceipts.filter((r) => r.accountId === acc.accountId && afterBase({ businessDate: r.businessDate })).reduce((s, r) => s + r.amount, 0);
+          const totalIncome = manualIncome + receiptIncome;
+          const totalExpense = dayExpenses.filter((e) => e.accountId === acc.accountId && afterBase({ date: e.expenseDate })).reduce((s, e) => s + e.amount, 0);
+          const dayIncome = incomeEntries.filter((i) => i.accountId === acc.accountId && i.date === date).reduce((s, i) => s + i.amount, 0);
+          const dayReceiptIncome = automaticReceipts.filter((r) => r.accountId === acc.accountId && r.businessDate === date).reduce((s, r) => s + r.amount, 0);
+          const dayExpenseTotal = dayExpenses.filter((e) => e.accountId === acc.accountId && e.expenseDate === date).reduce((s, e) => s + e.amount, 0);
 
           const expectedClosing = openingBalance + totalIncome - totalExpense;
 
@@ -624,6 +852,9 @@ export async function POST(req: NextRequest) {
             manualIncome,
             automaticGuestReceipts: receiptIncome,
             totalExpense,
+            dayIncome: dayIncome + dayReceiptIncome,
+            dayExpense: dayExpenseTotal,
+            asOfDate: date,
             expectedClosing,
             actualClosing: ledgerEntry?.actualClosing ?? null,
             isReconciled: !!ledgerEntry?.isReconciled,
@@ -638,7 +869,7 @@ export async function POST(req: NextRequest) {
         const reconciledBy = ledgerEntries[0]?.reconciledBy || "";
         const reconciledAt = ledgerEntries[0]?.reconciledAt || "";
 
-        return NextResponse.json({ balances, automaticReceipts, isReconciled, notes, reconciledBy, reconciledAt });
+        return NextResponse.json({ balances, automaticReceipts: automaticReceipts.filter((receipt) => receipt.businessDate === date), isReconciled, notes, reconciledBy, reconciledAt });
       }
 
       case "saveReconciliation": {
@@ -657,9 +888,6 @@ export async function POST(req: NextRequest) {
         }
 
         const db = getDb();
-        const incomeEntries = await db.select().from(dailyIncome).where(eq(dailyIncome.date, date));
-        const automaticReceipts = await db.select().from(guestReceipts).where(eq(guestReceipts.businessDate, date));
-        const dayExpenses = await db.select().from(expenses).where(eq(expenses.expenseDate, date));
         const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0)));
         const account = target.accountId === null ? null : allAccounts.find((item) => item.id === target.accountId);
         if (target.type === "online" && !account) {
@@ -669,15 +897,28 @@ export async function POST(req: NextRequest) {
         const priorLedgerEntries = await db.select().from(dailyLedger)
           .where(lt(dailyLedger.date, date)).orderBy(desc(dailyLedger.date));
         const existingLedger = await db.select().from(dailyLedger).where(eq(dailyLedger.date, date));
-        const totalIncome = incomeEntries.filter((item) => item.accountId === target.accountId).reduce((sum, item) => sum + item.amount, 0)
-          + automaticReceipts.filter((item) => item.accountId === target.accountId).reduce((sum, item) => sum + item.amount, 0);
-        const totalExpense = dayExpenses.filter((item) => item.accountId === target.accountId).reduce((sum, item) => sum + item.amount, 0);
+        const openingAdjustments = await db.select().from(dailyLedger).where(and(lt(dailyLedger.date, date), eq(dailyLedger.openingAdjusted, 1))).orderBy(desc(dailyLedger.date));
         const existing = existingLedger.find((item) => item.accountId === target.accountId);
         if (existing?.isReconciled) {
           return NextResponse.json({ error: "This account has already been reconciled. Undo it before trying again." }, { status: 409 });
         }
         const previous = priorLedgerEntries.find((item) => item.accountId === target.accountId);
-        const openingBalance = resolveOpeningBalance(existing, previous, account?.openingBalance ?? 0);
+        const previousActual = priorLedgerEntries.find((item) => item.accountId === target.accountId && item.isReconciled === 1 && item.actualClosing !== null);
+        const previousAdjustment = openingAdjustments.find((item) => item.accountId === target.accountId);
+        const currentAdjustment = existing?.openingAdjusted === 1 ? existing : undefined;
+        const previousAnchorIsClose = !!previousActual && (!previousAdjustment || previousActual.date >= previousAdjustment.date);
+        const openingBalance = currentAdjustment?.openingBalance ?? (previousAnchorIsClose ? previousActual?.actualClosing : previousAdjustment?.openingBalance) ?? account?.openingBalance ?? 0;
+        const anchorDate = currentAdjustment ? date : previousAnchorIsClose ? previousActual?.date : previousAdjustment?.date;
+        const lowerBound = anchorDate || "0000-01-01";
+        const include = (d: string) => anchorDate ? (currentAdjustment ? d >= lowerBound : d > lowerBound) : true;
+        const [incomeEntries, automaticReceipts, dayExpenses] = await Promise.all([
+          db.select().from(dailyIncome).where(sql`${dailyIncome.date} >= ${lowerBound} AND ${dailyIncome.date} <= ${date}`),
+          db.select().from(guestReceipts).where(sql`${guestReceipts.businessDate} >= ${lowerBound} AND ${guestReceipts.businessDate} <= ${date}`),
+          db.select().from(expenses).where(and(sql`${expenses.expenseDate} >= ${lowerBound} AND ${expenses.expenseDate} <= ${date}`, isNull(expenses.deletedAt))),
+        ]);
+        const totalIncome = incomeEntries.filter((item) => item.accountId === target.accountId && include(item.date)).reduce((sum, item) => sum + item.amount, 0)
+          + automaticReceipts.filter((item) => item.accountId === target.accountId && include(item.businessDate)).reduce((sum, item) => sum + item.amount, 0);
+        const totalExpense = dayExpenses.filter((item) => item.accountId === target.accountId && include(item.expenseDate)).reduce((sum, item) => sum + item.amount, 0);
         const expectedClosing = openingBalance + totalIncome - totalExpense;
         const reconciledAt = new Date().toISOString();
         const cleanNotes = typeof notes === "string" ? notes.trim().slice(0, 1000) : "";

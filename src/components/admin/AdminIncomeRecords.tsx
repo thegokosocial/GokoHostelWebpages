@@ -10,6 +10,7 @@ import { incomeSourceLabel, type IncomeAccount } from "./IncomeForm";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
 import { DEFAULT_INCOME_CATEGORIES, type IncomeCategory } from "@/lib/accountCategories";
+import { defaultAccountingDateRange } from "@/lib/accountingDates";
 
 type IncomeRecord = {
   id: number; date: string; accountId: number | null; accountName: string; type: string; amount: number;
@@ -17,10 +18,11 @@ type IncomeRecord = {
 };
 
 export function AdminIncomeRecords({ password, username, role, permissions = {} }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean> }) {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
   const [entries, setEntries] = useState<IncomeRecord[]>([]);
   const [accounts, setAccounts] = useState<IncomeAccount[]>([]);
-  const [months, setMonths] = useState<string[]>([]);
-  const [month, setMonth] = useState("");
+  const [fromDate, setFromDate] = useState(() => defaultAccountingDateRange(today).fromDate);
+  const [toDate, setToDate] = useState(today);
   const [source, setSource] = useState("");
   const [sourceOptions, setSourceOptions] = useState<IncomeCategory[]>(DEFAULT_INCOME_CATEGORIES);
   const [accountId, setAccountId] = useState("all");
@@ -32,16 +34,16 @@ export function AdminIncomeRecords({ password, username, role, permissions = {} 
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password, ...(username ? { username } : {}), ...body }),
   }), [password, username]);
 
-  const load = useCallback(async (selectedMonth?: string) => {
+  const load = useCallback(async (start = fromDate, end = toDate) => {
     setLoading(true); setError("");
     try {
-      const response = await apiCall({ action: "listIncomeRecords", ...(selectedMonth ? { month: selectedMonth } : {}) });
+      const response = await apiCall({ action: "listIncomeRecords", fromDate: start, toDate: end });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) return setError(body.error || "Failed to load income records.");
-      setEntries(body.incomeEntries || []); setAccounts(body.accounts || []); setMonths(body.months || []); setMonth(body.currentMonth || ""); setSourceOptions(body.incomeCategories || DEFAULT_INCOME_CATEGORIES);
+      setEntries(body.incomeEntries || []); setAccounts(body.accounts || []); setFromDate(body.fromDate || start); setToDate(body.toDate || end); setSourceOptions(body.incomeCategories || DEFAULT_INCOME_CATEGORIES);
     } catch { setError("Something went wrong while loading income records."); }
     finally { setLoading(false); }
-  }, [apiCall]);
+  }, [apiCall, fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -64,9 +66,9 @@ export function AdminIncomeRecords({ password, username, role, permissions = {} 
   const total = filtered.reduce((sum, entry) => sum + entry.amount, 0);
 
   return <div>
-    <div className="flex items-center justify-between gap-3"><div><h3 className="font-display text-lg font-bold text-brand-green-dark">Income Records</h3><p className="text-xs text-brand-green-dark/50">Manually recorded income</p></div><Button type="button" variant="ctaOutline" onClick={() => load(month)} disabled={loading}><RefreshCwIcon className={cn("h-4 w-4", loading && "animate-spin")} /> Refresh</Button></div>
-    {months.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{months.map((item) => <button type="button" key={item} onClick={() => load(item)} className={cn("rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wide", item === month ? "bg-brand-green text-white" : "bg-white dark:bg-card text-brand-green-dark/70")}>{item}</button>)}</div>}
+    <div className="flex items-center justify-between gap-3"><div><h3 className="font-display text-lg font-bold text-brand-green-dark">Income Records</h3><p className="text-xs text-brand-green-dark/50">Manually recorded income</p></div><Button type="button" variant="ctaOutline" onClick={() => load()} disabled={loading}><RefreshCwIcon className={cn("h-4 w-4", loading && "animate-spin")} /> Refresh</Button></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="col-span-full grid grid-cols-2 gap-2 sm:flex sm:items-center"><label className="min-w-0 text-xs text-brand-green-dark/60">From<Input className="mt-1 min-w-0" aria-label="From date" type="date" value={fromDate} max={toDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="min-w-0 text-xs text-brand-green-dark/60">To<Input className="mt-1 min-w-0" aria-label="To date" type="date" value={toDate} min={fromDate} max={today} onChange={(event) => setToDate(event.target.value)} /></label><Button className="col-span-2 sm:col-span-1" type="button" variant="outline" onClick={() => load(fromDate, toDate)} disabled={loading}>Apply</Button></div>
       <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search source, notes, account, creator..." />
       <select value={source} onChange={(event) => setSource(event.target.value)} className="rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">All sources</option>{sourceOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="all">All accounts</option><option value="cash">Cash</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.nickname || account.name}</option>)}</select>

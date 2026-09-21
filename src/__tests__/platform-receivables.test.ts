@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bookingAmountsFromRaw, expectedNetPaise, parsePlatformAmounts, rupeesToPaise, subtractPlatformAmounts } from "@/lib/platformReceivables";
+import { allocatePlatformSettlementBatch, bookingAmountsFromRaw, expectedNetPaise, gatewayExpectedNetPaise, parsePlatformAmounts, rupeesToPaise, subtractPlatformAmounts } from "@/lib/platformReceivables";
+import { razorpayPaymentSchema } from "@/lib/razorpay";
 
 describe("platform receivables money rules", () => {
+  it("deducts Razorpay fee, fee tax and refunds from website settlement expectations", () => {
+    expect(gatewayExpectedNetPaise(10000, 500, 250, 45)).toBe(9205);
+    expect(gatewayExpectedNetPaise(10000, 500, null, 45)).toBeNull();
+    expect(gatewayExpectedNetPaise(10000, 500, 250, null)).toBeNull();
+  });
   it("converts decimal rupees exactly", () => {
     expect(rupeesToPaise("450")).toBe(45000);
     expect(rupeesToPaise("22.50")).toBe(2250);
@@ -43,6 +49,22 @@ describe("platform receivables money rules", () => {
 
   it("rejects non-integer platform ledger amounts", () => {
     expect(() => parsePlatformAmounts({ grossPaise: "450.5" })).toThrow("Invalid platform amount: grossPaise");
+  });
+
+  it("rejects malformed multi-booking payout allocations before database access", async () => {
+    await expect(allocatePlatformSettlementBatch({ settlementId: 1, actor: "Admin", allocations: [
+      { bookingId: 1, bookingCycle: 1, allocatedPaise: 0 },
+    ] })).rejects.toThrow("Allocation must be positive paise");
+    await expect(allocatePlatformSettlementBatch({ settlementId: 1, actor: "Admin", allocations: [
+      { bookingId: 1, bookingCycle: 1, allocatedPaise: 100 },
+      { bookingId: 1, bookingCycle: 1, allocatedPaise: 100 },
+    ] })).rejects.toThrow("unique");
+  });
+
+  it("accepts optional verified gateway fee and tax evidence on captured payments", () => {
+    const payment = razorpayPaymentSchema.parse({ entity: "payment", id: "pay_1234567890", order_id: "order_1234567890", amount: 10000, currency: "INR", status: "captured", captured: true, amount_refunded: 0, fee: 236, tax: 36 });
+    expect(payment.fee).toBe(236);
+    expect(payment.tax).toBe(36);
   });
 
   it("records modifications as deltas, not a second full booking", () => {

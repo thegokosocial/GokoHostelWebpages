@@ -32,6 +32,7 @@ export const razorpayPaymentSchema = z.object({
   amount: paise, currency: z.literal("INR"),
   status: z.enum(["created", "authorized", "captured", "refunded", "failed"]),
   captured: z.boolean(), amount_refunded: paise,
+  fee: paise.nullable().optional(), tax: paise.nullable().optional(),
   error_code: z.string().max(120).nullable().optional(),
   error_description: z.string().max(500).nullable().optional(),
   error_reason: z.string().max(120).nullable().optional(),

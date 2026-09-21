@@ -17,8 +17,9 @@ const AdminRoomRevenue = dynamic(() => import("./AdminRoomRevenue").then((m) => 
 const DailyLedger = dynamic(() => import("./DailyLedger").then((m) => m.DailyLedger), { loading: tabLoader, ssr: false });
 const DailyReconcile = dynamic(() => import("./DailyReconcile").then((m) => m.DailyReconcile), { loading: tabLoader, ssr: false });
 const PlatformReceivables = dynamic(() => import("./PlatformReceivables").then((m) => m.PlatformReceivables), { loading: tabLoader, ssr: false });
+const AccountActivity = dynamic(() => import("./AccountActivity").then((m) => m.AccountActivity), { loading: tabLoader, ssr: false });
 
-type AccountsTab = "addExpense" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile" | "platformReceivables";
+type AccountsTab = "addExpense" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile" | "platformReceivables" | "accountActivity";
 
 const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?: string | string[] }[] = [
   { id: "addExpense", label: "Add Expense", icon: <PlusCircleIcon className="h-3.5 w-3.5" />, permission: "canAddExpense" },
@@ -29,7 +30,8 @@ const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?
   { id: "foodBill", label: "Food Revenue", icon: <IndianRupeeIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
   { id: "roomBill", label: "Room Revenue", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
   { id: "reconcile", label: "Reconcile", icon: <ScaleIcon className="h-3.5 w-3.5" />, permission: ["canReconcileCash", "canReconcileOnline"] },
-  { id: "platformReceivables", label: "OTA Receivables", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
+  { id: "platformReceivables", label: "Platform Receivables", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
+  { id: "accountActivity", label: "Account Activity", icon: <BookOpenIcon className="h-3.5 w-3.5" /> },
 ];
 
 export function AdminExpenditure({
@@ -43,7 +45,9 @@ export function AdminExpenditure({
   role: Role;
   permissions: Record<string, boolean>;
 }) {
-  const visibleTabs = TABS.filter((t) => !t.permission || (Array.isArray(t.permission)
+  const visibleTabs = TABS.filter((t) => t.id === "accountActivity"
+    ? hasPermission(role, permissions, "canViewAccounts") && hasPermission(role, permissions, "canViewExpenses")
+    : !t.permission || (Array.isArray(t.permission)
     ? t.permission.some((permission) => hasPermission(role, permissions, permission))
     : hasPermission(role, permissions, t.permission)));
   const defaultTab = visibleTabs[0]?.id || "addExpense";
@@ -94,6 +98,7 @@ export function AdminExpenditure({
         {tab === "roomBill" && <AdminRoomRevenue password={password} username={username} role={role} permissions={permissions} />}
         {tab === "reconcile" && <DailyReconcile password={password} username={username} role={role} permissions={permissions} />}
         {tab === "platformReceivables" && <PlatformReceivables password={password} username={username} role={role} />}
+        {tab === "accountActivity" && <AccountActivity password={password} username={username} />}
       </div>
     </div>
   );

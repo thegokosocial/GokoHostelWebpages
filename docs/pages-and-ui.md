@@ -68,7 +68,9 @@ Lazy-loaded in `src/app/admin/page.tsx`. Query `?section=` / `?tab=` via `useTab
 
 Accounts reconciliation is additionally action-scoped: `canReconcileCash` controls the canonical Cash card, `canReconcileOnline` controls every configured online-account card, and either permission shows the Reconcile tab. Each card saves independently; undo is Admin-only.
 
-Accounts also has an OTA Receivables tab under `canViewAccounts`. It displays recognized platform receivables and payout allocations. Recording/allocating a payout requires `canSettlePlatformPayments`; manual adjustments require `canAdjustPlatformReceivables`.
+Accounts includes Platform Receivables under `canViewAccounts`, with OTA deductions, direct website Razorpay payments, booking details, and multi-entry payout allocation. Recording/allocating a payout requires `canSettlePlatformPayments`; manual adjustments require `canAdjustPlatformReceivables`. Account Activity requires both `canViewAccounts` and `canViewExpenses`, includes all account history with date filters and pagination, and masks account numbers.
+
+Expense and Income Records use inclusive start/end accounting-date filters (default: first of previous month through today), with compact date controls and record cards on phones. Expense details show account, method, and vendor; full edits remain subject to split and reconciliation guards. Platform Receivables and Account Activity switch to stacked entries on narrow screens while retaining wide tables on desktop.
 
 Accounts expense records, Food Revenue guest breakdowns, and Room Revenue stay breakdowns scroll horizontally within their tables on narrow screens. Their column headers stay with the table instead of covering rows during vertical page scrolling.
 

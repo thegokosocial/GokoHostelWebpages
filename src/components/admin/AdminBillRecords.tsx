@@ -11,6 +11,7 @@ import { AdminLoading } from "./AdminLoading";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/accountCategories";
+import { defaultAccountingDateRange } from "@/lib/accountingDates";
 
 export function AdminBillRecords({
   password,
@@ -37,8 +38,9 @@ export function AdminBillRecords({
 
   const [expenses, setExpenses] = useState<any[]>([]);
   const [categories, setCategories] = useState(DEFAULT_EXPENSE_CATEGORIES);
-  const [months, setMonths] = useState<string[]>([]);
-  const [currentMonth, setCurrentMonth] = useState("");
+  const localToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+  const [fromDate, setFromDate] = useState(() => defaultAccountingDateRange(localToday).fromDate);
+  const [toDate, setToDate] = useState(localToday);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"card" | "table">(() => typeof window !== "undefined" && window.innerWidth < 1024 ? "card" : "table");
@@ -48,17 +50,27 @@ export function AdminBillRecords({
   const [editAmount, setEditAmount] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editPurpose, setEditPurpose] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editCustomCategory, setEditCustomCategory] = useState("");
+  const [editMainCategory, setEditMainCategory] = useState("stay_expense");
+  const [editSubCategory, setEditSubCategory] = useState("");
+  const [editPaymentMethod, setEditPaymentMethod] = useState("cash");
+  const [editAccountId, setEditAccountId] = useState("");
+  const [editVendorId, setEditVendorId] = useState("");
+  const [editBillLinks, setEditBillLinks] = useState("");
+  const [accounts, setAccounts] = useState<Array<{ id: number; name: string; nickname: string | null }>>([]);
+  const [vendors, setVendors] = useState<Array<{ id: number; name: string }>>([]);
   const [editSaving, setEditSaving] = useState(false);
 
-  const loadExpenses = useCallback(async (month?: string) => {
+  const loadExpenses = useCallback(async (start = fromDate, end = toDate) => {
     setLoading(true);
     try {
-      const res = await expenseApi({ action: "listExpenses", month });
+      const res = await expenseApi({ action: "listExpenses", fromDate: start, toDate: end });
       if (res.ok) {
         const data = await res.json();
         setExpenses(data.expenses || []);
-        if (data.months) setMonths(data.months);
-        if (data.currentMonth) setCurrentMonth(data.currentMonth);
+        if (data.fromDate) setFromDate(data.fromDate);
+        if (data.toDate) setToDate(data.toDate);
         setCategories(data.expenseCategories || DEFAULT_EXPENSE_CATEGORIES);
       }
     } catch {
@@ -66,11 +78,18 @@ export function AdminBillRecords({
     } finally {
       setLoading(false);
     }
-  }, [expenseApi]);
+  }, [expenseApi, fromDate, toDate]);
 
   useEffect(() => {
     loadExpenses();
   }, [loadExpenses]);
+
+  useEffect(() => {
+    if (!hasPermission(role, permissions, "canEditExpense")) return;
+    expenseApi({ action: "getExpenseEditOptions" }).then(async (response) => {
+      if (response.ok) { const data = await response.json(); setAccounts(data.accounts || []); setVendors(data.vendors || []); }
+    }).catch(() => {});
+  }, [expenseApi, permissions, role]);
 
   const filteredExpenses = searchQuery.trim()
     ? expenses.filter((exp) => {
@@ -78,7 +97,10 @@ export function AdminBillRecords({
         return (
           (exp.category || "").toLowerCase().includes(q) ||
           (exp.purpose || "").toLowerCase().includes(q) ||
-          (exp.createdBy || "").toLowerCase().includes(q)
+          (exp.createdBy || "").toLowerCase().includes(q) ||
+          (exp.accountName || "").toLowerCase().includes(q) ||
+          (exp.vendorName || "").toLowerCase().includes(q) ||
+          (exp.paymentMethod || "").toLowerCase().includes(q)
         );
       })
     : expenses;
@@ -90,6 +112,14 @@ export function AdminBillRecords({
     setEditAmount(((exp.amount || 0) / 100).toString());
     setEditCategory(exp.category || "");
     setEditPurpose(exp.purpose || "");
+    setEditDate(exp.expenseDate || "");
+    setEditCustomCategory(exp.customCategory || "");
+    setEditMainCategory(exp.mainCategory || "stay_expense");
+    setEditSubCategory(exp.subCategory || "");
+    setEditPaymentMethod(exp.paymentMethod || "cash");
+    setEditAccountId(exp.accountId == null ? "" : String(exp.accountId));
+    setEditVendorId(exp.vendorId == null ? "" : String(exp.vendorId));
+    setEditBillLinks((exp.billImageLink || "").split(",").map((link: string) => link.trim()).filter(Boolean).join("\n"));
   };
 
   const saveEdit = async () => {
@@ -103,11 +133,19 @@ export function AdminBillRecords({
         id: editModal.id,
         amount: Math.round(amountNum * 100),
         category: editCategory,
+        customCategory: editCustomCategory,
+        expenseDate: editDate,
+        mainCategory: editMainCategory,
+        subCategory: editSubCategory,
+        paymentMethod: editPaymentMethod,
+        accountId: editPaymentMethod === "cash" ? null : Number(editAccountId),
+        vendorId: editVendorId ? Number(editVendorId) : null,
+        billImageLink: editBillLinks.split("\n").map((link) => link.trim()).filter(Boolean).join(","),
         purpose: editPurpose.trim(),
       });
       if (res.ok) {
         setEditModal(null);
-        loadExpenses(currentMonth);
+        loadExpenses();
       } else {
         const data = await res.json().catch(() => ({}));
         showError("Failed to update", data.error);
@@ -122,7 +160,7 @@ export function AdminBillRecords({
     try {
       const res = await expenseApi({ action: "deleteExpense", id, billImageLink });
       if (res.ok) {
-        loadExpenses(currentMonth);
+        loadExpenses();
       } else {
         const data = await res.json().catch(() => ({}));
         showError("Failed to delete", data.error);
@@ -140,34 +178,15 @@ export function AdminBillRecords({
     <div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="font-display text-lg font-bold text-brand-green-dark">Bill Records</h3>
-        <Button type="button" variant="ctaOutline" onClick={() => loadExpenses(currentMonth)} disabled={loading}>
+        <Button type="button" variant="ctaOutline" onClick={() => loadExpenses()} disabled={loading}>
           {loading ? "..." : "Refresh"}
         </Button>
       </div>
 
-      {months.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {months.map((month) => (
-            <button
-              key={month}
-              type="button"
-              onClick={() => loadExpenses(month)}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
-                month === currentMonth
-                  ? "bg-brand-green text-white"
-                  : "bg-white dark:bg-card text-brand-green-dark/70 hover:bg-brand-green/[0.06]"
-              )}
-            >
-              {month}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-end"><label className="min-w-0 text-xs text-brand-green-dark/60">From<Input className="mt-1 min-w-0" type="date" value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} /></label><label className="min-w-0 text-xs text-brand-green-dark/60">To<Input className="mt-1 min-w-0" type="date" value={toDate} min={fromDate} max={localToday} onChange={(e) => setToDate(e.target.value)} /></label><Button className="col-span-2 sm:col-span-1" type="button" variant="outline" onClick={() => loadExpenses(fromDate, toDate)} disabled={loading}>Apply</Button></div>
         <Input
-          placeholder="Search category, purpose, submitted by..."
+          placeholder="Search category, purpose, account, vendor..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full sm:max-w-sm"
@@ -229,6 +248,10 @@ export function AdminBillRecords({
                         <div><span className="text-brand-green-dark/50">Category:</span> <span className="text-brand-green-dark">{exp.category || "—"}</span></div>
                         <div className="col-span-2"><span className="text-brand-green-dark/50">Purpose:</span> <span className="text-brand-green-dark">{exp.purpose || "—"}</span></div>
                         <div><span className="text-brand-green-dark/50">Amount:</span> <span className="font-medium text-brand-green-dark">₹{((exp.amount || 0) / 100).toFixed(0)}</span></div>
+                        <div><span className="text-brand-green-dark/50">Account:</span> <span className="text-brand-green-dark">{exp.accountName || "Cash"}</span></div>
+                        <div><span className="text-brand-green-dark/50">Method:</span> <span className="capitalize text-brand-green-dark">{exp.paymentMethod || "cash"}</span></div>
+                        <div><span className="text-brand-green-dark/50">Vendor:</span> <span className="text-brand-green-dark">{exp.vendorName || "—"}</span></div>
+                        <div><span className="text-brand-green-dark/50">Type:</span> <span className="text-brand-green-dark">{exp.mainCategory || "—"}{exp.subCategory ? ` / ${exp.subCategory}` : ""}</span></div>
                         <div><span className="text-brand-green-dark/50">By:</span> <span className="text-brand-green-dark">{exp.createdBy || "—"}</span></div>
                       </div>
 
@@ -284,6 +307,7 @@ export function AdminBillRecords({
             <tr className="border-b border-brand-mist bg-brand-sand/50">
               <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Date</th>
               <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Category</th>
+              <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Account / Method</th>
               <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Purpose</th>
               <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Amount (₹)</th>
               <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Bill</th>
@@ -296,7 +320,7 @@ export function AdminBillRecords({
           <tbody>
             {filteredExpenses.length === 0 ? (
               <tr>
-                <td colSpan={(hasPermission(role, permissions, "canEditExpense") || hasPermission(role, permissions, "canDeleteExpense")) ? 7 : 6} className="px-4 py-12 text-center text-brand-green-dark/50">
+                <td colSpan={(hasPermission(role, permissions, "canEditExpense") || hasPermission(role, permissions, "canDeleteExpense")) ? 8 : 7} className="px-4 py-12 text-center text-brand-green-dark/50">
                   {expenses.length === 0 ? "No expense records" : "No matches"}
                 </td>
               </tr>
@@ -307,6 +331,7 @@ export function AdminBillRecords({
                     {exp.expenseDate || (exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90">{exp.category || "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/70">{exp.accountName || "Cash"} · {exp.paymentMethod || "cash"}</td>
                   <td className="max-w-[200px] truncate px-3 py-3 text-brand-green-dark/70">{exp.purpose || "—"}</td>
                   <td className="whitespace-nowrap px-3 py-3 font-medium text-brand-green-dark">
                     ₹{((exp.amount || 0) / 100).toFixed(0)}
@@ -362,7 +387,7 @@ export function AdminBillRecords({
           {filteredExpenses.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-brand-mist bg-brand-sand/30">
-                <td colSpan={3} className="px-3 py-3 text-right font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">
+                <td colSpan={4} className="px-3 py-3 text-right font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">
                   Total
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 font-display text-sm font-bold text-brand-green-dark">
@@ -377,14 +402,15 @@ export function AdminBillRecords({
 
       {editModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setEditModal(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-brand-mist bg-white dark:bg-card p-6 shadow-xl dark:shadow-none" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-brand-mist bg-white dark:bg-card p-6 shadow-xl dark:shadow-none" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-bold text-brand-green-dark">Edit Expense</h3>
               <button type="button" onClick={() => setEditModal(null)} className="rounded-md p-1 text-brand-green-dark/40 hover:text-brand-green-dark">
                 <XIcon className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div><Label className="text-xs">Date</Label><Input className="mt-1" type="date" max={localToday} value={editDate} onChange={(e) => setEditDate(e.target.value)} /></div>
               <div>
                 <Label className="text-xs">Amount (₹)</Label>
                 <Input
@@ -396,6 +422,7 @@ export function AdminBillRecords({
                   className="mt-1"
                 />
               </div>
+              <div><Label className="text-xs">Main category</Label><Input className="mt-1" value={editMainCategory} onChange={(e) => setEditMainCategory(e.target.value)} /></div>
               <div>
                 <Label className="text-xs">Category</Label>
                 <select
@@ -412,6 +439,11 @@ export function AdminBillRecords({
                   )}
                 </select>
               </div>
+              <div><Label className="text-xs">Subcategory</Label><Input className="mt-1" value={editSubCategory} onChange={(e) => setEditSubCategory(e.target.value)} /></div>
+              <div><Label className="text-xs">Custom category</Label><Input className="mt-1" value={editCustomCategory} onChange={(e) => setEditCustomCategory(e.target.value)} /></div>
+              <div><Label className="text-xs">Payment method</Label><select value={editPaymentMethod} onChange={(e) => setEditPaymentMethod(e.target.value)} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="cash">Cash</option><option value="online">Online</option></select></div>
+              <div><Label className="text-xs">Account</Label><select disabled={editPaymentMethod === "cash"} value={editAccountId} onChange={(e) => setEditAccountId(e.target.value)} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">{editPaymentMethod === "cash" ? "Cash" : "Select account"}</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.nickname || account.name}</option>)}</select></div>
+              <div><Label className="text-xs">Vendor</Label><select value={editVendorId} onChange={(e) => setEditVendorId(e.target.value)} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">No vendor / Other</option>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></div>
               <div>
                 <Label className="text-xs">Purpose</Label>
                 <textarea
@@ -421,6 +453,7 @@ export function AdminBillRecords({
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 />
               </div>
+              <div className="sm:col-span-2"><Label className="text-xs">Bill links (one per line)</Label><textarea value={editBillLinks} onChange={(e) => setEditBillLinks(e.target.value)} rows={3} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></div>
             </div>
             <div className="mt-4 flex gap-2">
               <Button type="button" onClick={saveEdit} disabled={editSaving}>

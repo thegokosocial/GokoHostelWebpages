@@ -40,6 +40,7 @@ import {
 } from "@/lib/websiteBookingSettings";
 import { mergeWebsiteCheckoutRaw, parseWebsiteCheckout } from "@/lib/websiteCheckoutSnapshot";
 import { todayIST } from "@/lib/utils";
+import { ensurePlatformProfile } from "@/lib/platformReceivables";
 
 type Checkout = typeof checkouts.$inferSelect;
 const timestamp = () => new Date().toISOString();
@@ -635,12 +636,15 @@ async function recordPayment(row: Checkout, evidence: RazorpayPayment) {
   const captured = evidence.captured && ["captured", "refunded"].includes(evidence.status) ? 1 : 0;
   const rows = await getDb().insert(payments).values({
     id: evidence.id, checkoutId: row.id, amountPaise: evidence.amount,
-    status: evidence.status, captured, refundedPaise: evidence.amount_refunded, verifiedAt: timestamp(),
+    status: evidence.status, captured, refundedPaise: evidence.amount_refunded,
+    feePaise: evidence.fee ?? null, taxPaise: evidence.tax ?? null, verifiedAt: timestamp(),
   }).onConflictDoUpdate({
     target: payments.id,
     set: {
       captured: sql`MAX(${payments.captured}, ${captured})`,
       refundedPaise: sql`MAX(${payments.refundedPaise}, ${evidence.amount_refunded})`,
+      feePaise: evidence.fee ?? sql`${payments.feePaise}`,
+      taxPaise: evidence.tax ?? sql`${payments.taxPaise}`,
       status: sql`CASE WHEN ${payments.status} = 'refunded' THEN 'refunded'
         WHEN ${payments.captured} = 1 AND ${captured} = 0 THEN ${payments.status}
         WHEN ${payments.status} = 'authorized' AND ${evidence.status} = 'created' THEN ${payments.status}
@@ -650,6 +654,7 @@ async function recordPayment(row: Checkout, evidence: RazorpayPayment) {
     setWhere: and(eq(payments.checkoutId, row.id), eq(payments.amountPaise, evidence.amount)),
   }).returning();
   if (!rows.length) throw new RazorpayError("MISMATCH");
+  if (captured && row.environment === "live") await ensurePlatformProfile("Razorpay Website");
   if (captured) {
     await getDb().update(checkouts).set({
       state: sql`CASE WHEN ${checkouts.state} IN ('fulfilled','captured_unfulfilled','cancelled') THEN ${checkouts.state} ELSE 'captured' END`,

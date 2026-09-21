@@ -166,6 +166,7 @@ beforeEach(() => {
   sqlite.exec(readFileSync("migrations/0062_native_guest_checkout.sql", "utf8"));
   sqlite.exec(readFileSync("migrations/0063_guest_booking_amend.sql", "utf8"));
   sqlite.exec(readFileSync("migrations/0065_native_hold_lease_renew.sql", "utf8"));
+  sqlite.exec(readFileSync("migrations/0066_gateway_receivables.sql", "utf8"));
 
   sqlite.prepare(`INSERT INTO channel_config
     (hotel_code, pms_id, api_base_url, api_username, api_password, booking_engine_url, is_active, created_at)

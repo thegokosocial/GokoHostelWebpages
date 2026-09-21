@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { actionAllowed, actionAllowedAll, type ActionPerm } from "@/lib/actionPermissions";
 import { CHECKIN_LOOKUP_DATA_KEYS, checkinLookupData } from "@/lib/checkinLookup";
 import { buildFoodLookupGuests } from "@/lib/foodLookup";
 import { normalizePhone } from "@/lib/phoneUtils";
@@ -160,6 +160,11 @@ describe("RBAC: active permission catalog", () => {
 });
 
 describe("RBAC: Staff with no permissions is blocked", () => {
+  it("requires both Accounts and Expense Records access for account activity", () => {
+    expect(actionAllowedAll("manager", { canViewAccounts: true }, ["canViewAccounts", "canViewExpenses"])).toBe("forbidden");
+    expect(actionAllowedAll("staff", { canViewAccounts: true, canViewExpenses: true }, ["canViewAccounts", "canViewExpenses"])).toBe("allowed");
+    expect(actionAllowedAll("admin", {}, ["canViewAccounts", "canViewExpenses"])).toBe("allowed");
+  });
   const role: UserRole = "staff";
   const permissions = {};
 

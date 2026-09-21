@@ -201,6 +201,7 @@ beforeEach(() => {
     "0061_guest_booking_lookup.sql",
     "0062_native_guest_checkout.sql",
     "0063_guest_booking_amend.sql",
+    "0066_gateway_receivables.sql",
     "0065_native_hold_lease_renew.sql",
   ]) sqlite.exec(readFileSync(`migrations/${file}`, "utf8"));
   state.db = drizzle(sqlite, { schema });

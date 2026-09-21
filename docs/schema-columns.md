@@ -1096,4 +1096,4 @@ Cloudflare-only; excluded from Pi sync allowlist by omission.
 
 ### `native_booking_payments` / `native_booking_refunds` / `native_booking_webhooks`
 
-Mirror preview recovery semantics with **variable** amounts (≥100 paise). Webhook inbox keyed by `event_id`; route via `notes.goko_checkout_id`.
+Mirror preview recovery semantics with **variable** amounts (≥100 paise). Webhook inbox keyed by `event_id`; route via `notes.goko_checkout_id`. Migration `0066_gateway_receivables.sql` adds optional `fee_paise` and `tax_paise` provider evidence to native booking payments; `0068_gateway_settlement_allocations.sql` creates the Cloudflare-only payout map.

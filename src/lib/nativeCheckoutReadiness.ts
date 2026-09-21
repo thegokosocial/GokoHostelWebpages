@@ -30,7 +30,7 @@ const LABELS: Record<CheckoutBlocker, string> = {
   guest_checkout_disabled: "Set GOKO_NATIVE_GUEST_CHECKOUT_ENABLED=true on the Worker",
   hold_internal_disabled: "Set GOKO_NATIVE_HOLD_INTERNAL_ENABLED=true on the Worker",
   hold_guards_missing: "Apply migration 0059 (hold triggers) on D1",
-  checkout_schema_missing: "Apply migrations 0060–0062 (quotes + guest checkout ledger) on D1",
+  checkout_schema_missing: "Apply migrations 0060–0066 (quotes, checkout ledger, and provider fee fields) on D1",
   destination_not_native: "Channel Manager booking URL must be /book",
   gateway_credentials_incomplete: "Configure Razorpay key ID and key secret for the selected gateway environment",
   webhook_secret_missing: "Configure the webhook secret for the selected gateway environment (RAZORPAY_TEST_WEBHOOK_SECRET or RAZORPAY_LIVE_WEBHOOK_SECRET)",

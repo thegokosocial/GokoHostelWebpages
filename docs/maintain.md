@@ -28,7 +28,7 @@ Current menu permissions are `canViewMenu`, `canManageMenuCategories`, `canManag
 
 When a page or action changes, update the source catalog/map, the UI gate, focused RBAC tests, and the matching handbook tables in the same turn. Run `npx vitest run`, `npx tsc --noEmit`, `git diff --check`, and `npm run build` for RBAC/API/UI changes.
 
-**Current schema line:** migration `0054_expense_date.sql` adds a backfilled accounting date for expenses and was applied to remote D1 on 17 Sep 2026. It is the repository’s latest migration. Production Worker rollout remains through the configured Workers Build; verify the live stamp in `MAINTAINER.local.md` after deployment.
+**Expense and receivables schema:** `0054_expense_date.sql` added the accounting date for expenses. Repository migrations `0066_gateway_receivables.sql`, `0067_account_activity_indexes.sql`, and `0068_gateway_settlement_allocations.sql` add provider fee evidence, website payout allocations, and account/date indexes; these repository changes do not imply the migrations have been applied remotely. Production Worker rollout remains through the configured Workers Build; verify the live stamp in `MAINTAINER.local.md` after deployment.
 
 ---
 

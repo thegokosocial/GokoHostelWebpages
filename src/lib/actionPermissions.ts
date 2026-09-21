@@ -27,3 +27,9 @@ export function actionAllowed(
   const keys = typeof required === "string" ? [required] : required;
   return keys.some((k) => permissionEnabled(permissions, k)) ? "allowed" : "forbidden";
 }
+
+/** Require every listed key for compound reads such as account activity. */
+export function actionAllowedAll(role: UserRole, permissions: Record<string, boolean>, required: readonly string[]) {
+  if (role === "admin") return "allowed" as const;
+  return required.every((key) => permissionEnabled(permissions, key)) ? "allowed" as const : "forbidden" as const;
+}

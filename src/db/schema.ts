@@ -211,6 +211,8 @@ export const nativeBookingPayments = sqliteTable("native_booking_payments", {
   status: text("status").notNull(),
   captured: integer("captured").notNull().default(0),
   refundedPaise: integer("refunded_paise").notNull().default(0),
+  feePaise: integer("fee_paise"),
+  taxPaise: integer("tax_paise"),
   verifiedAt: text("verified_at").notNull(),
 }, (t) => [
   index("idx_native_booking_payments_checkout").on(t.checkoutId),
@@ -218,6 +220,8 @@ export const nativeBookingPayments = sqliteTable("native_booking_payments", {
   check("native_payment_status", sql`${t.status} IN ('created','authorized','captured','refunded','failed')`),
   check("native_payment_captured", sql`${t.captured} IN (0,1)`),
   check("native_payment_refunded", sql`${t.refundedPaise} >= 0 AND ${t.refundedPaise} <= ${t.amountPaise}`),
+  check("native_payment_fee", sql`${t.feePaise} IS NULL OR ${t.feePaise} >= 0`),
+  check("native_payment_tax", sql`${t.taxPaise} IS NULL OR ${t.taxPaise} >= 0`),
 ]);
 export const nativeBookingRefunds = sqliteTable("native_booking_refunds", {
   paymentId: text("payment_id").primaryKey().references(() => nativeBookingPayments.id),
@@ -627,6 +631,21 @@ export const platformSettlementAllocations = sqliteTable("platform_settlement_al
   index("idx_platform_allocations_booking").on(table.bookingId, table.bookingCycle),
 ]);
 
+/** Cloudflare-only allocation of a Razorpay payout to a direct website payment. */
+export const gatewaySettlementAllocations = sqliteTable("gateway_settlement_allocations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  settlementId: integer("settlement_id").notNull().references(() => platformSettlements.id),
+  paymentId: text("payment_id").notNull().references(() => nativeBookingPayments.id),
+  allocationKey: text("allocation_key").notNull().unique(),
+  allocatedPaise: integer("allocated_paise").notNull(),
+  notes: text("notes").notNull().default(""),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (t) => [
+  index("idx_gateway_allocations_settlement").on(t.settlementId),
+  index("idx_gateway_allocations_payment").on(t.paymentId),
+]);
+
 export const vendors = sqliteTable("vendors", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
@@ -758,6 +777,7 @@ export const dailyIncome = sqliteTable("daily_income", {
 }, (table) => [
   index("idx_daily_income_date").on(table.date),
   index("idx_daily_income_account").on(table.accountId),
+  index("idx_daily_income_account_date").on(table.accountId, table.date),
 ]);
 
 /** Immutable automatic online guest-receipt journal. Amounts are paise. */
@@ -776,6 +796,7 @@ export const guestReceipts = sqliteTable("guest_receipts", {
   ...syncColumns,
 }, (table) => [
   index("idx_guest_receipts_date_account").on(table.businessDate, table.accountId),
+  index("idx_guest_receipts_account_date").on(table.accountId, table.businessDate),
   index("idx_guest_receipts_source").on(table.sourceType, table.sourceId),
 ]);
 
@@ -826,6 +847,7 @@ export const expenses = sqliteTable("expenses", {
   index("idx_expenses_month").on(table.createdMonth),
   index("idx_expenses_created").on(table.createdAt),
   index("idx_expenses_expense_date").on(table.expenseDate),
+  index("idx_expenses_account_date").on(table.accountId, table.expenseDate),
   index("idx_expenses_created_by").on(table.createdBy),
   uniqueIndex("idx_expenses_task_unique").on(table.taskId),
 ]);

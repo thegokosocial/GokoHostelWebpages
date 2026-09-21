@@ -27,6 +27,9 @@ type AccountBalance = {
   manualIncome?: number;
   automaticGuestReceipts?: number;
   totalExpense: number;
+  dayIncome?: number;
+  dayExpense?: number;
+  asOfDate?: string;
   expectedClosing: number;
   actualClosing: number | null;
   isReconciled: boolean;
@@ -292,13 +295,15 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
                       <p className="text-sm font-medium text-brand-green-dark">₹{(b.openingBalance / 100).toFixed(0)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase text-brand-green-dark/50">+ Income</p>
+                      <p className="text-[10px] uppercase text-brand-green-dark/50">+ Income since close</p>
                       <p className="text-sm font-medium text-emerald-600">₹{(b.totalIncome / 100).toFixed(0)}</p>
                       {(b.automaticGuestReceipts || 0) !== 0 && <p className="text-[10px] text-blue-600">Guest online ₹{((b.automaticGuestReceipts || 0) / 100).toFixed(0)}</p>}
+                      <p className="text-[10px] text-brand-green-dark/50">Selected date: ₹{((b.dayIncome || 0) / 100).toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] uppercase text-brand-green-dark/50">- Expense</p>
+                      <p className="text-[10px] uppercase text-brand-green-dark/50">- Expenses since close</p>
                       <p className="text-sm font-medium text-red-500">₹{(b.totalExpense / 100).toFixed(0)}</p>
+                      <p className="text-[10px] text-brand-green-dark/50">Selected date: ₹{((b.dayExpense || 0) / 100).toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-[10px] uppercase text-brand-green-dark/50">Expected Closing</p>

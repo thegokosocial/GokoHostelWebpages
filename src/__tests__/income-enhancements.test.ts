@@ -56,11 +56,11 @@ describe("manual income enhancements", () => {
   });
 
   it("protects reconciled balances and retains historical accounts in reporting", () => {
-    expect(route).toContain('Undo reconciliation before adding income');
-    expect(route).toContain('Undo reconciliation before deleting income');
+    expect(route).toContain('Undo the ${reconciled[0].date} reconciliation before adding income');
+    expect(route).toContain('Undo the ${reconciled[0].date} reconciliation before deleting income');
     expect(route).toContain('entry[0].accountId === null ? isNull(dailyLedger.accountId)');
     expect(route).toContain('.from(accounts).orderBy(accounts.name)');
-    expect(route).toContain('new Set([month, ...monthRows.map');
+    expect(route).toContain('dailyIncome.date} >= ${fromDate} AND ${dailyIncome.date} <= ${toDate}');
   });
 
   it("uses the entered expense date for accounting instead of creation time", () => {

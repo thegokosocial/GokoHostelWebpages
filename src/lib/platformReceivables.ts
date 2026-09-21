@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   accounts,
@@ -69,6 +69,11 @@ export function rupeesToPaise(value: unknown): number {
   return negative ? -paise : paise;
 }
 
+export function gatewayExpectedNetPaise(amountPaise: number, refundedPaise: number, feePaise: number | null, taxPaise: number | null): number | null {
+  if (feePaise == null || taxPaise == null) return null;
+  return amountPaise - refundedPaise - feePaise - taxPaise;
+}
+
 export function expectedNetPaise(amounts: PlatformAmounts, policy: Record<string, unknown> = {}): number {
   const subtract = (key: string, amount: number) => policy[key] === false ? 0 : amount;
   return amounts.grossPaise
@@ -113,7 +118,7 @@ function amountsFromBooking(booking: {
   };
 }
 
-async function ensurePlatformProfile(platform: string, paymentMode = "prepaid") {
+export async function ensurePlatformProfile(platform: string, paymentMode = "prepaid") {
   const db = getDb();
   const platformKey = cleanPlatformKey(platform);
   const existing = await db.select().from(platformPaymentProfiles)
@@ -334,12 +339,28 @@ export async function getPlatformReceivableSummary() {
     if (current) {
       current.expectedNetPaise += entry.expectedNetPaise;
       current.grossPaise += entry.grossPaise;
+      current.taxChargedPaise += entry.taxChargedPaise;
+      current.taxWithheldPaise += entry.taxWithheldPaise;
+      current.commissionPaise += entry.commissionPaise;
+      current.tdsPaise += entry.tdsPaise;
+      current.tcsPaise += entry.tcsPaise;
+      current.otherDeductionsPaise += entry.otherDeductionsPaise;
       continue;
     }
     const allocatedPaise = allocatedByBookingCycle.get(key) || 0;
     byKey.set(key, { ...entry, allocatedPaise, outstandingPaise: 0 });
   }
-  return [...byKey.values()].map((row) => ({ ...row, outstandingPaise: row.expectedNetPaise - row.allocatedPaise }));
+  const bookingIds = [...new Set([...byKey.values()].map((row) => row.bookingId))];
+  const bookingRows = bookingIds.length ? await db.select({
+    id: bookings.id, guestName: bookings.guestName, bookingRef: bookings.bookingRef, gokoBookingId: bookings.gokoBookingId,
+    checkinDate: bookings.checkinDate, checkoutDate: bookings.checkoutDate, platform: bookings.platform,
+  }).from(bookings).where(inArray(bookings.id, bookingIds)) : [];
+  const bookingMap = new Map(bookingRows.map((row) => [row.id, row]));
+  return [...byKey.values()].map((row) => ({
+    ...row,
+    booking: bookingMap.get(row.bookingId) || null,
+    outstandingPaise: row.expectedNetPaise - row.allocatedPaise,
+  }));
 }
 
 export async function allocatePlatformSettlement(data: {
@@ -351,51 +372,66 @@ export async function allocatePlatformSettlement(data: {
   notes?: string;
   actor: string;
 }) {
-  if (!Number.isSafeInteger(data.allocatedPaise) || data.allocatedPaise <= 0) throw new Error("Allocation must be positive paise");
+  const result = await allocatePlatformSettlementBatch({
+    settlementId: data.settlementId,
+    allocations: [{ bookingId: data.bookingId, bookingCycle: data.bookingCycle, allocatedPaise: data.allocatedPaise, varianceType: data.varianceType, notes: data.notes }],
+    actor: data.actor,
+  });
+  return { id: result.ids[0], unallocatedPaise: result.unallocatedPaise };
+}
+
+export async function allocatePlatformSettlementBatch(data: {
+  settlementId: number;
+  allocations: Array<{ bookingId: number; bookingCycle: number; allocatedPaise: number; varianceType?: string; notes?: string }>;
+  actor: string;
+}) {
+  if (!Number.isSafeInteger(data.settlementId) || data.settlementId <= 0 || !Array.isArray(data.allocations) || data.allocations.length === 0 || data.allocations.length > 100) {
+    throw new Error("Choose a payout and between 1 and 100 receivables");
+  }
+  const deduped = new Set<string>();
+  let requested = 0;
+  for (const item of data.allocations) {
+    const key = `${item.bookingId}:${item.bookingCycle}`;
+    if (!Number.isSafeInteger(item.bookingId) || item.bookingId <= 0 || !Number.isSafeInteger(item.bookingCycle) || item.bookingCycle <= 0 || deduped.has(key)) {
+      throw new Error("Each selected booking cycle must be valid and unique");
+    }
+    deduped.add(key);
+    if (!Number.isSafeInteger(item.allocatedPaise) || item.allocatedPaise <= 0) throw new Error("Allocation must be positive paise");
+    requested += item.allocatedPaise;
+    if (!Number.isSafeInteger(requested)) throw new Error("Allocation total is too large");
+  }
   const db = getDb();
   const settlement = await db.select().from(platformSettlements).where(eq(platformSettlements.id, data.settlementId)).limit(1);
   if (!settlement[0]) throw new Error("Settlement not found");
-  const booking = await db.select().from(bookings).where(eq(bookings.id, data.bookingId)).limit(1);
-  if (!booking[0]) throw new Error("Booking not found");
-  const profile = await db.select({ platformKey: platformPaymentProfiles.platformKey })
-    .from(platformPaymentProfiles).where(eq(platformPaymentProfiles.platformKey, settlement[0].platformKey)).limit(1);
-  if (!profile[0] || profile[0].platformKey !== cleanPlatformKey(booking[0].platform)) throw new Error("Settlement platform does not match booking");
   const existing = await db.select({ allocatedPaise: platformSettlementAllocations.allocatedPaise })
     .from(platformSettlementAllocations).where(eq(platformSettlementAllocations.settlementId, data.settlementId));
   const used = existing.reduce((sum, row) => sum + row.allocatedPaise, 0);
-  if (used + data.allocatedPaise > settlement[0].actualAmountPaise) throw new Error("Allocation exceeds payout amount");
-  const bookingEntries = await db.select({ expectedNetPaise: platformReceivableEntries.expectedNetPaise })
-    .from(platformReceivableEntries)
-    .where(and(
-      eq(platformReceivableEntries.bookingId, data.bookingId),
-      eq(platformReceivableEntries.bookingCycle, data.bookingCycle),
-    ));
-  if (bookingEntries.length === 0) throw new Error("Booking has not been recognized as a platform receivable yet");
-  const expectedNetPaiseForBooking = bookingEntries.reduce((sum, row) => sum + row.expectedNetPaise, 0);
-  const bookingAllocations = await db.select({ allocatedPaise: platformSettlementAllocations.allocatedPaise })
-    .from(platformSettlementAllocations)
-    .where(and(
-      eq(platformSettlementAllocations.bookingId, data.bookingId),
-      eq(platformSettlementAllocations.bookingCycle, data.bookingCycle),
-    ));
-  const bookingAllocatedPaise = bookingAllocations.reduce((sum, row) => sum + row.allocatedPaise, 0);
-  const varianceType = data.varianceType?.trim() || "none";
-  if (varianceType === "none" && bookingAllocatedPaise + data.allocatedPaise > expectedNetPaiseForBooking) {
-    throw new Error("Allocation exceeds the booking's expected net receivable; record an explicit variance for a mismatch");
-  }
-  const allocationKey = `allocation:${data.settlementId}:${data.bookingId}:${data.bookingCycle}:${crypto.randomUUID()}`;
-  const rows = await db.insert(platformSettlementAllocations).values(syncInsert({
-    settlementId: data.settlementId,
-    bookingId: data.bookingId,
-    bookingCycle: data.bookingCycle,
-    allocationKey,
-    allocatedPaise: data.allocatedPaise,
-    varianceType,
-    notes: data.notes || "",
-    createdBy: data.actor,
-    createdAt: new Date().toISOString(),
-  })).returning({ id: platformSettlementAllocations.id });
-  return { id: rows[0]?.id, unallocatedPaise: settlement[0].actualAmountPaise - used - data.allocatedPaise };
+  if (used + requested > settlement[0].actualAmountPaise) throw new Error("Allocation exceeds payout amount");
+  const bookingIds = [...new Set(data.allocations.map((item) => item.bookingId))];
+  const [bookingRows, receivableRows, allocationRows] = await Promise.all([
+    db.select().from(bookings).where(inArray(bookings.id, bookingIds)),
+    db.select().from(platformReceivableEntries).where(inArray(platformReceivableEntries.bookingId, bookingIds)),
+    db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.bookingId, bookingIds)),
+  ]);
+  const bookingsById = new Map(bookingRows.map((row) => [row.id, row]));
+  const insertionRows = data.allocations.map((item) => {
+    if (!bookingsById.has(item.bookingId)) throw new Error(`Booking #${item.bookingId} not found`);
+    const receivables = receivableRows.filter((row) => row.bookingId === item.bookingId && row.bookingCycle === item.bookingCycle);
+    if (!receivables.length) throw new Error(`Booking #${item.bookingId} has not been recognized as a platform receivable yet`);
+    if (!receivables.some((row) => row.platformKey === settlement[0].platformKey)) throw new Error("Settlement platform does not match selected receivables");
+    const expected = receivables.reduce((sum, row) => sum + row.expectedNetPaise, 0);
+    const allocated = allocationRows.filter((row) => row.bookingId === item.bookingId && row.bookingCycle === item.bookingCycle).reduce((sum, row) => sum + row.allocatedPaise, 0);
+    const varianceType = item.varianceType?.trim() || "none";
+    if (varianceType === "none" && allocated + item.allocatedPaise > expected) throw new Error(`Allocation exceeds booking #${item.bookingId}'s expected net; select a variance reason`);
+    return syncInsert({
+      settlementId: data.settlementId, bookingId: item.bookingId, bookingCycle: item.bookingCycle,
+      allocationKey: `allocation:${data.settlementId}:${item.bookingId}:${item.bookingCycle}:${crypto.randomUUID()}`,
+      allocatedPaise: item.allocatedPaise, varianceType, notes: item.notes || "", createdBy: data.actor, createdAt: new Date().toISOString(),
+    });
+  });
+  // One multi-row INSERT keeps a selected payout allocation all-or-nothing.
+  const rows = await db.insert(platformSettlementAllocations).values(insertionRows).returning({ id: platformSettlementAllocations.id });
+  return { ids: rows.map((row) => row.id), unallocatedPaise: settlement[0].actualAmountPaise - used - requested };
 }
 
 export function bookingAmountsFromRaw(rawData: string | null | undefined, fallback: { amountTotal?: number | null; amountTax?: number | null } = {}): PlatformAmounts {

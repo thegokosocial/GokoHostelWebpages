@@ -49,7 +49,7 @@ describe("Splits wiring", () => {
     expect(route).toContain("if (!settlementId)");
     const expenses = readFileSync("src/app/api/admin/expenses/route.ts", "utf8");
     expect(expenses).toContain("rejectIfSplitLinked");
-    expect(expenses).not.toContain("isPiRuntime");
+    expect(expenses).toContain("!isPiRuntime()");
     expect(ui).toContain("settleLocked");
     expect(ui).toContain("onDeleted");
     expect(route).toContain("split expense post-save bookkeeping failed");

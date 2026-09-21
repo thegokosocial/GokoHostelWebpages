@@ -196,6 +196,8 @@ View list/tabs: `canViewFoodOrders` / `canViewFoodTabs`. Place/void/qty/market-p
 
 list/getMy: `canViewExpenses`. add: `canAddExpense`. update/delete: edit/delete expense keys. food revenue **and** room revenue (`getRoomRevenue`): `canViewFoodBills`. ledger: `canViewAccounts`. income: `canAddIncome`. cash reconcile: `canReconcileCash`; configured-account reconcile: `canReconcileOnline`. The retired `canReconcileAccounts` and `canReconcile` keys grant both scopes during compatibility. Undo reconciliation is Admin-only. Opening balance: `canManageAccountSettings` (legacy alias `canManageAccounts`).
 
+`getAccountActivity` requires both `canViewAccounts` and `canViewExpenses`; this is an AND gate. `getExpenseEditOptions` requires `canEditExpense`.
+
 Accounts UI shows the Reconcile tab when either scoped reconciliation permission is available. Every account is saved separately; server authorization is selected from the submitted cash/online target.
 
 ### `/api/admin/splits`
@@ -208,7 +210,7 @@ Entire route: `canManageAccountSettings` (or legacy `canManageAccounts`) or admi
 
 ### `/api/admin/platform-settlements`
 
-`list` requires `canViewAccounts`. `createSettlement` and `allocate` require `canSettlePlatformPayments`; `adjust` requires `canAdjustPlatformReceivables`. Admin bypasses all maps. Virtual platform accounts are deliberately excluded from bank-receipt defaults and reconciliation.
+`list` requires `canViewAccounts`. `createSettlement`, `allocate`, and `allocateBatch` require `canSettlePlatformPayments`; `adjust` requires `canAdjustPlatformReceivables`. Admin bypasses all maps. Virtual platform accounts are deliberately excluded from bank-receipt defaults and reconciliation.
 
 ---
 
