@@ -1,70 +1,51 @@
-# June Data Review: Booking and Check-in Matching
+# Booking and Check-in Matching Review
 
-## Production data inspected
+This note contains design guidance only. Production dates, row counts, guest contacts, booking identifiers, and other record-level details are intentionally excluded. The runnable simulation in `scripts/audit-june-booking-matching.ts` uses synthetic fixture data.
 
-Read-only D1 queries on 2026-09-07 found:
+## Synthetic simulation result
 
-- 8 check-in records with June 2026 arrival dates.
-- 0 booking records with June 2026 check-in dates.
-- The Bookings table currently contains 1 record, with a 2026-09-18 check-in date.
-- All 8 June check-ins are already checked out.
-- June check-ins consist of 1 Booking.com record, 3 Offline booking records, and 4 Walk-ins.
-- The Booking.com record has a collected platform booking reference.
-- Offline booking and Walk-in records have independently generated GOKO IDs.
-
-Therefore, no real June check-in can currently be linked to a real June Bookings row. There is no booking-side historical data to join. The June records can validate the shape of collected check-in data, while matching correctness must be exercised with mock booking rows.
-
-## Mock simulation result
-
-The runnable simulation is `scripts/audit-june-booking-matching.ts`.
-
-It passed all 14 modeled check-ins: 10 linked, 2 intentionally unmatched, 1 ambiguous, and 1 standalone walk-in. The five group records linked to the same booking despite using five different phone numbers, arriving on two dates, and reporting different “number of persons” values.
+The simulation validates 14 synthetic check-ins: 10 linked, 2 intentionally unmatched, 1 ambiguous, and 1 standalone walk-in. The group scenarios use synthetic contacts and fixture dates.
 
 It covers:
 
-- One-person OTA booking matching the shape of the real June Booking.com check-in.
-- Two-person offline booking where both guests use different phones and the same optional Booking ID.
-- Five-person booking with five separate self-check-ins and five different phone numbers.
-- One group member arriving one day after the booking starts.
-- Offline booking holder matched by unique phone and stay date when no Booking ID is supplied.
-- Offline group member with their own phone and no shared Booking ID.
-- Returning guest phone reused across two non-overlapping stays.
-- Wrong OTA Booking ID.
-- Duplicate Booking ID on two overlapping bookings.
-- Walk-in with a generated GOKO ID.
+- One-person OTA booking matching.
+- Multi-person offline bookings where guests use different synthetic contacts and a shared optional Booking ID.
+- Group members arriving on different fixture dates.
+- Offline booking-holder matching by unique contact and stay date when no Booking ID is supplied.
+- Returning contacts across non-overlapping stays.
+- Wrong or duplicate booking references.
+- Walk-ins with generated synthetic IDs.
 
-The model deliberately links only exact, unique Booking ID matches within the property and stay dates. Phone/date fallback applies only to Offline booking. Walk-ins remain standalone.
+The model links only exact, unique Booking ID matches within the property and stay dates. Contact/date fallback applies only to Offline booking. Walk-ins remain standalone.
 
-## Does the plan work?
+## Matching behavior
 
 It works for:
 
 - OTA groups when every guest enters the shared platform Booking ID.
 - Offline groups when every guest enters the same optional Booking ID supplied by staff.
-- A single offline booking holder when phone and dates identify exactly one booking.
+- A single offline booking holder when contact and dates identify exactly one booking.
 - Group sizes that differ from the value typed into “number of persons,” because matching does not use that field.
 
 It cannot automatically map:
 
-- Historical June records, because June Bookings rows do not exist.
-- An offline group member who enters their own phone but no shared Booking ID.
-- A wrong/missing OTA reference.
+- A check-in when no compatible booking row exists.
+- An offline group member who enters their own contact but no shared Booking ID.
+- A wrong or missing OTA reference.
 - Duplicate booking references that remain ambiguous after property and date filtering.
-- A bed to a historical June stay, because those stays are complete and the beds no longer retain a check-in relationship.
+- Historical stays when the source no longer retains enough identity data.
 
-These cases must remain unlinked or require staff selection. Treating them as failures to match is the correct safety behavior; guessing would allow one checkout to close the wrong booking.
+These cases must remain unlinked or require staff selection. Guessing could allow one checkout to close the wrong booking.
 
-## Required corrections to the implementation plan
+## Implementation guidance
 
 1. Define compatible dates as `booking.checkin_date <= checkin.arrival_date < booking.checkout_date`. This supports a group member arriving later while rejecting a reused Booking ID outside the stay.
 2. Match exact IDs against `booking_ref` and `goko_booking_id`. Do not use `cm_booking_id` until legacy numeric check-in IDs have been separated from genuine channel-manager IDs.
-3. Normalize Booking IDs by trimming whitespace and comparing case-insensitively; do not remove other characters because punctuation may be meaningful.
-4. Show an optional Booking ID field for Offline booking. Without it, only the booking holder may be found through the phone/date fallback.
-5. Never use the check-in “number of persons” to create links. Compare linked record count with `bookings.persons` only as a staff warning.
-6. Treat a duplicate or over-capacity set of linked check-ins as a review warning. Do not silently unlink guests during checkout.
-7. For the current single-property self-check-in, use the configured property when matching. Add a check-in property field only if the same form later serves multiple properties.
-8. Do not claim that existing June bed links can be backfilled: completed beds no longer retain sufficient identity data for a reliable reconstruction.
+3. Normalize IDs by trimming whitespace and comparing case-insensitively; preserve punctuation because it may be meaningful.
+4. Show an optional Booking ID field for Offline booking. Without it, only the booking holder may be found through the contact/date fallback.
+5. Never use “number of persons” to create links. Compare linked record count with `bookings.persons` only as a staff warning.
+6. Treat duplicate or over-capacity linked check-ins as a review warning. Do not silently unlink guests during checkout.
+7. For a single-property self-check-in form, use the configured property when matching. Add a check-in property field only if the same form later serves multiple properties.
+8. Do not infer historical links when source identity fields have been discarded.
 
-## Conclusion
-
-Whole-booking checkout remains feasible. Its reliable key is a unique shared Booking ID plus explicit database relationships. Phone/date is a narrow offline fallback, and “number of persons” is validation information rather than identity.
+Whole-booking checkout remains feasible when it uses a unique shared Booking ID and explicit database relationships. Contact/date is a narrow offline fallback, and “number of persons” is validation information rather than identity.

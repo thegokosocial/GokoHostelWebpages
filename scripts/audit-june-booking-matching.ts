@@ -56,63 +56,63 @@ function match(checkin: Checkin, bookings: Booking[]): Result {
 }
 
 const bookings: Booking[] = [
-  { id: 1, property: "goko_hostel", checkinDate: "2026-06-04", checkoutDate: "2026-06-14", persons: 1, bookingRef: "6761188994", contact: "9000000001" },
-  { id: 2, property: "goko_hostel", checkinDate: "2026-06-10", checkoutDate: "2026-06-13", persons: 2, bookingRef: "PAIR-JUNE", contact: "9000000002" },
-  { id: 3, property: "goko_hostel", checkinDate: "2026-06-13", checkoutDate: "2026-06-17", persons: 5, bookingRef: "GROUP-FIVE", contact: "9000000003" },
-  { id: 4, property: "goko_hostel", checkinDate: "2026-06-20", checkoutDate: "2026-06-22", persons: 1, bookingRef: "REPEAT-A", contact: "9000000004" },
-  { id: 5, property: "goko_hostel", checkinDate: "2026-06-25", checkoutDate: "2026-06-27", persons: 1, bookingRef: "REPEAT-B", contact: "9000000004" },
-  { id: 6, property: "goko_hostel", checkinDate: "2026-06-28", checkoutDate: "2026-06-30", persons: 2, bookingRef: "DUPLICATE", contact: "9000000006" },
-  { id: 7, property: "goko_hostel", checkinDate: "2026-06-28", checkoutDate: "2026-06-30", persons: 2, bookingRef: "DUPLICATE", contact: "9000000007" },
+  { id: 1, property: "goko_hostel", checkinDate: "2030-06-04", checkoutDate: "2030-06-14", persons: 1, bookingRef: "SYNTHETIC-BOOKING-01", contact: "synthetic-contact-2" },
+  { id: 2, property: "goko_hostel", checkinDate: "2030-06-10", checkoutDate: "2030-06-13", persons: 2, bookingRef: "SYNTHETIC-BOOKING-02", contact: "synthetic-contact-3" },
+  { id: 3, property: "goko_hostel", checkinDate: "2030-06-13", checkoutDate: "2030-06-17", persons: 5, bookingRef: "SYNTHETIC-BOOKING-03", contact: "synthetic-contact-4" },
+  { id: 4, property: "goko_hostel", checkinDate: "2030-06-20", checkoutDate: "2030-06-22", persons: 1, bookingRef: "SYNTHETIC-BOOKING-04", contact: "synthetic-contact-5" },
+  { id: 5, property: "goko_hostel", checkinDate: "2030-06-25", checkoutDate: "2030-06-27", persons: 1, bookingRef: "SYNTHETIC-BOOKING-05", contact: "synthetic-contact-5" },
+  { id: 6, property: "goko_hostel", checkinDate: "2030-06-28", checkoutDate: "2030-06-30", persons: 2, bookingRef: "SYNTHETIC-BOOKING-06", contact: "synthetic-contact-6" },
+  { id: 7, property: "goko_hostel", checkinDate: "2030-06-28", checkoutDate: "2030-06-30", persons: 2, bookingRef: "SYNTHETIC-BOOKING-06", contact: "synthetic-contact-7" },
 ];
 
 const cases: Array<{ checkin: Checkin; expected: Result; reason: string }> = [
   {
-    checkin: { label: "actual June OTA shape", property: "goko_hostel", arrivalDate: "2026-06-04", platform: "Booking.com", bookingId: "6761188994", contact: "9993921560", reportedPersons: 1 },
+    checkin: { label: "synthetic OTA shape", property: "goko_hostel", arrivalDate: "2030-06-04", platform: "Booking.com", bookingId: "SYNTHETIC-BOOKING-01", contact: "synthetic-contact-8", reportedPersons: 1 },
     expected: { kind: "linked", bookingId: 1 },
     reason: "exact OTA reference",
   },
   ...Array.from({ length: 5 }, (_, index) => ({
-    checkin: { label: `five-person group guest ${index + 1}`, property: "goko_hostel", arrivalDate: index === 4 ? "2026-06-14" : "2026-06-13", platform: "Booking.com", bookingId: "GROUP-FIVE", contact: `811111111${index}`, reportedPersons: [5, 1, 2, 1, 5][index] },
+    checkin: { label: `five-person group guest ${index + 1}`, property: "goko_hostel", arrivalDate: index === 4 ? "2030-06-14" : "2030-06-13", platform: "Booking.com", bookingId: "SYNTHETIC-BOOKING-03", contact: `synthetic-group-contact-${index + 1}`, reportedPersons: [5, 1, 2, 1, 5][index] },
     expected: { kind: "linked", bookingId: 3 } as Result,
-    reason: "same booking reference; distinct guest phone",
+    reason: "same booking reference; distinct synthetic contacts",
   })),
   {
-    checkin: { label: "two-person booking guest 1", property: "goko_hostel", arrivalDate: "2026-06-10", platform: "Offline booking", bookingId: "PAIR-JUNE", contact: "8222222221", reportedPersons: 2 },
+    checkin: { label: "two-person booking guest 1", property: "goko_hostel", arrivalDate: "2030-06-10", platform: "Offline booking", bookingId: "SYNTHETIC-BOOKING-02", contact: "synthetic-contact-9", reportedPersons: 2 },
     expected: { kind: "linked", bookingId: 2 },
     reason: "optional offline reference supplied",
   },
   {
-    checkin: { label: "two-person booking guest 2", property: "goko_hostel", arrivalDate: "2026-06-10", platform: "Offline booking", bookingId: "PAIR-JUNE", contact: "8222222222", reportedPersons: 1 },
+    checkin: { label: "two-person booking guest 2", property: "goko_hostel", arrivalDate: "2030-06-10", platform: "Offline booking", bookingId: "SYNTHETIC-BOOKING-02", contact: "synthetic-contact-10", reportedPersons: 1 },
     expected: { kind: "linked", bookingId: 2 },
     reason: "optional offline reference supplied",
   },
   {
-    checkin: { label: "offline booking holder without reference", property: "goko_hostel", arrivalDate: "2026-06-13", platform: "Offline booking", bookingId: "", contact: "9000000003", reportedPersons: 5 },
+    checkin: { label: "offline booking holder without reference", property: "goko_hostel", arrivalDate: "2030-06-13", platform: "Offline booking", bookingId: "", contact: "synthetic-contact-4", reportedPersons: 5 },
     expected: { kind: "linked", bookingId: 3 },
     reason: "unique phone/date fallback",
   },
   {
-    checkin: { label: "offline group member without reference", property: "goko_hostel", arrivalDate: "2026-06-13", platform: "Offline booking", bookingId: "", contact: "8333333333", reportedPersons: 1 },
+    checkin: { label: "offline group member without reference", property: "goko_hostel", arrivalDate: "2030-06-13", platform: "Offline booking", bookingId: "", contact: "synthetic-contact-11", reportedPersons: 1 },
     expected: { kind: "unmatched" },
     reason: "own phone cannot identify booking holder's reservation",
   },
   {
-    checkin: { label: "returning phone on first stay", property: "goko_hostel", arrivalDate: "2026-06-20", platform: "Offline booking", bookingId: "", contact: "9000000004", reportedPersons: 1 },
+    checkin: { label: "returning contact on first stay", property: "goko_hostel", arrivalDate: "2030-06-20", platform: "Offline booking", bookingId: "", contact: "synthetic-contact-5", reportedPersons: 1 },
     expected: { kind: "linked", bookingId: 4 },
     reason: "stay date separates repeated phone",
   },
   {
-    checkin: { label: "wrong OTA reference", property: "goko_hostel", arrivalDate: "2026-06-13", platform: "Booking.com", bookingId: "NOT-A-BOOKING", contact: "8444444444", reportedPersons: 5 },
+    checkin: { label: "wrong OTA reference", property: "goko_hostel", arrivalDate: "2030-06-13", platform: "Booking.com", bookingId: "SYNTHETIC-BOOKING-07", contact: "synthetic-contact-12", reportedPersons: 5 },
     expected: { kind: "unmatched" },
     reason: "never fall back to OTA phone/name",
   },
   {
-    checkin: { label: "duplicate reference", property: "goko_hostel", arrivalDate: "2026-06-28", platform: "Booking.com", bookingId: "DUPLICATE", contact: "8555555555", reportedPersons: 2 },
+    checkin: { label: "duplicate reference", property: "goko_hostel", arrivalDate: "2030-06-28", platform: "Booking.com", bookingId: "SYNTHETIC-BOOKING-06", contact: "synthetic-contact-13", reportedPersons: 2 },
     expected: { kind: "ambiguous" },
     reason: "never choose between duplicate candidates",
   },
   {
-    checkin: { label: "walk-in", property: "goko_hostel", arrivalDate: "2026-06-12", platform: "Walk-in", bookingId: "GOKO20260612MOCK", contact: "8666666666", reportedPersons: 3 },
+    checkin: { label: "walk-in", property: "goko_hostel", arrivalDate: "2030-06-12", platform: "Walk-in", bookingId: "SYNTHETIC-BOOKING-08", contact: "synthetic-contact-14", reportedPersons: 3 },
     expected: { kind: "standalone" },
     reason: "walk-ins do not create or link bookings",
   },
@@ -126,7 +126,7 @@ const counts = cases.reduce<Record<string, number>>((result, testCase) => {
   return result;
 }, {});
 
-console.log(`Validated ${cases.length} mock June check-ins: ${JSON.stringify(counts)}`);
+console.log(`Validated ${cases.length} synthetic fixture check-ins: ${JSON.stringify(counts)}`);
 for (const testCase of cases) {
   const result = match(testCase.checkin, bookings);
   console.log(`${testCase.checkin.label}: ${result.kind}${result.kind === "linked" ? ` → booking ${result.bookingId}` : ""} (${testCase.reason})`);

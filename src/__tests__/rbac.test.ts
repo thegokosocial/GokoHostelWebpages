@@ -413,11 +413,11 @@ describe("Check-in lookup contract", () => {
   it("keeps returning-guest fields including Drive links and Form C", () => {
     const data = checkinLookupData({
       name: "Ada Guest",
-      contact: "9876543210",
+      contact: "test-contact-001",
       comingFrom: "Goa",
       nationality: "France",
       emergencyName: "Sam",
-      emergencyPhone: "9123456780",
+      emergencyPhone: "test-phone-001",
       idType: "passport",
       idCardLink: "https://drive.google.com/file/d/abc/view",
       visaLink: "https://drive.google.com/file/d/visa/view",

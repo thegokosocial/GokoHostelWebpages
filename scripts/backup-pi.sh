@@ -2,18 +2,22 @@
 # Backup all critical data from the Raspberry Pi to local Mac.
 #
 # Usage:
-#   bash scripts/backup-pi.sh                    # uses goko-server.local
+#   PI_HOST=<local-pi-host> PI_USER=<local-pi-user> PI_PASS=... bash scripts/backup-pi.sh
 #   bash scripts/backup-pi.sh 192.168.0.80       # uses specific IP
 #   PI_PASS=mypass bash scripts/backup-pi.sh     # custom password
 
 set -euo pipefail
 
-PI_HOST="${1:-goko-server.local}"
-PI_USER="${PI_USER:-goko}"
-PI_PASS="${PI_PASS:-goko@123}"
+PI_HOST="${1:-${PI_HOST:-}}"
+PI_USER="${PI_USER:-}"
+PI_PASS="${PI_PASS:-}"
 BACKUP_BASE="${BACKUP_BASE:-$HOME/goko-pi-backups}"
 DATE=$(date +%Y-%m-%d)
 BACKUP_DIR="$BACKUP_BASE/$DATE"
+: "${PI_HOST:?Set PI_HOST from local-only access notes}"
+: "${PI_USER:?Set PI_USER from local-only access notes}"
+: "${PI_PASS:?Set PI_PASS from local-only access notes}"
+
 SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o LogLevel=ERROR"
 
 run_ssh() {

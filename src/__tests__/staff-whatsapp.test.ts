@@ -18,16 +18,16 @@ describe("staff WhatsApp routing", () => {
     expect(new URL(links.defaultApp).searchParams.get("text")).toBe(message);
   });
   it.each([
-    ["98336 24363", "919833624363"], ["+44 7700 900123", "447700900123"],
-    ["0044 7700 900123", "447700900123"], ["+65 8123 4567", "6581234567"],
-    ["123", ""], ["call 9833624363", ""], ["000", ""], ["++447700900123", ""],
+    ["11111 11111", "911111111111"], ["+1 202-555-0100", "12025550100"], ["+44 7700 900123", "447700900123"],
+    ["0044 7700 900123", "447700900123"], ["+1 202-555-0147", "12025550147"],
+    ["123", ""], ["call 2025550100", ""], ["000", ""], ["++447700900123", ""],
   ])("normalizes %s without changing explicit international codes", (input, expected) => {
     expect(bookingWhatsAppNumber(input)).toBe(expected);
     if (expected) expect(staffWhatsAppLinks({ phone: expected, message: "Hi", section: "bookings" }, "https://goko.test").business).toContain(`phone=${expected}&`);
   });
   it("restores only a valid current-owner unexpired draft", () => {
     const now = Date.now();
-    const draft = { owner: "admin", phone: "919833624363", message: "Hi", section: "bookings", createdAt: now };
+    const draft = { owner: "admin", phone: "447700900123", message: "Hi", section: "bookings", createdAt: now };
     expect(parseStaffWhatsAppDraft(JSON.stringify(draft), "admin", now)).toEqual(draft);
     expect(parseStaffWhatsAppDraft(JSON.stringify(draft), "other", now)).toBeNull();
     expect(parseStaffWhatsAppDraft(JSON.stringify(draft), "admin", now + STAFF_WHATSAPP_TTL)).toBeNull();

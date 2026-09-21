@@ -1,7 +1,7 @@
 # Goko Hostel - Raspberry Pi Server Documentation
 
 > **Last Updated:** June 14, 2026  
-> **Server Hostname:** goko-server  
+> **Server Hostname:** `<pi-host>`
 > **OS:** Raspberry Pi OS Lite 64-bit (Bookworm, kernel 6.12.75)  
 > **Hardware:** Raspberry Pi 4 (8GB RAM), 512GB SD card
 
@@ -29,14 +29,14 @@
 
 | Item | Value |
 |------|-------|
-| **Primary URL** | **`https://pi.gokohostel.com`** (Cloudflare Tunnel — works from anywhere) |
-| Admin Panel | `https://pi.gokohostel.com/admin` |
-| SSH Command | `ssh goko@goko-server.local` or `ssh goko@192.168.0.80` (local WiFi only) |
-| Password | `goko@123` |
-| Local URL | `http://goko-server.local` or `http://192.168.0.80` (local WiFi only) |
+| **Primary URL** | **`https://<pi-tunnel-hostname>`** (Cloudflare Tunnel — works from anywhere) |
+| Admin Panel | `https://<pi-tunnel-hostname>/admin` |
+| SSH Command | `ssh <configured-user>@<configured-pi-host>` or `ssh <configured-user>@<configured-pi-host>` (local WiFi only) |
+| Password | `<configured-locally>` |
+| Local URL | `http://<pi-host>` or `http://<local-ip>` (local WiFi only) |
 | WiFi Network | Navjoy02 (2.4GHz only) |
-| Web App Path | `/home/goko/goko-web/` |
-| Database Path | `/home/goko/goko-data/goko.db` |
+| Web App Path | `/home/<pi-user>/goko-web/` |
+| Database Path | `/home/<pi-user>/goko-data/goko.db` |
 | Tunnel Config | `/etc/cloudflared/config.yml` |
 | Disk Free | ~439GB of 470GB |
 
@@ -46,13 +46,13 @@
 
 | Service | Username | Password | Notes |
 |---------|----------|----------|-------|
-| SSH | `goko` | `goko@123` | Main user account |
+| SSH | `goko` | `<configured-user>@<configured-pi-host>` | Main user account |
 | Root | - | - | Use `sudo -i` from goko user |
 
 ```bash
-ssh goko@goko-server.local
+ssh <configured-user>@<configured-pi-host>
 # or by IP
-ssh goko@192.168.0.80
+ssh <configured-user>@<configured-pi-host>
 ```
 
 ---
@@ -61,14 +61,14 @@ ssh goko@192.168.0.80
 
 Six ways to reach the Pi, in order of preference:
 
-### 1. Cloudflare Tunnel (pi.gokohostel.com) - PRIMARY
+### 1. Cloudflare Tunnel (<pi-tunnel-hostname>) - PRIMARY
 
 Works from **any device, any network, anywhere in the world**. No local WiFi needed. This is the main way to reach the Pi.
 
 | Property | Value |
 |----------|-------|
-| Admin Panel | `https://pi.gokohostel.com/admin` |
-| Heartbeat API | `https://pi.gokohostel.com/api/sync` |
+| Admin Panel | `https://<pi-tunnel-hostname>/admin` |
+| Heartbeat API | `https://<pi-tunnel-hostname>/api/sync` |
 | Tunnel ID | `70dd8761-4dfa-4b30-ab64-ba430c823d5d` |
 | Config | `/etc/cloudflared/config.yml` |
 | Service | `cloudflared.service` (enabled, auto-starts on boot) |
@@ -76,20 +76,20 @@ Works from **any device, any network, anywhere in the world**. No local WiFi nee
 
 ```bash
 # Test from anywhere
-curl https://pi.gokohostel.com/api/sync
+curl https://<pi-tunnel-hostname>/api/sync
 
 # Sync, deploy, shutdown — all via tunnel
-curl -X POST https://pi.gokohostel.com/api/sync \
+curl -X POST https://<pi-tunnel-hostname>/api/sync \
   -H "Content-Type: application/json" \
-  -d '{"password":"admin@goko","action":"status"}'
+  -d '{"password":"<configured-locally>","action":"status"}'
 
 # Restart tunnel (from Pi SSH or admin panel Server Sync tab)
 sudo systemctl restart cloudflared
 ```
 
-The Cloudflare Worker has `PI_PUBLIC_URL=https://pi.gokohostel.com` set as a secret, so the Server Sync tab on `www.gokohostel.com` uses the tunnel to reach the Pi — not local WiFi.
+The Cloudflare Worker has `PI_PUBLIC_URL=https://<pi-tunnel-hostname>` set as a secret, so the Server Sync tab on `www.gokohostel.com` uses the tunnel to reach the Pi — not local WiFi.
 
-**If `pi.gokohostel.com` stops working:** The tunnel process may have crashed. The health check script (`/usr/local/bin/health-check.sh`) runs every 10 min and auto-restarts it. You can also restart from the admin panel: Management > Server Sync > "Restart tunnel".
+**If `<pi-tunnel-hostname>` stops working:** The tunnel process may have crashed. The health check script (`/usr/local/bin/health-check.sh`) runs every 10 min and auto-restarts it. You can also restart from the admin panel: Management > Server Sync > "Restart tunnel".
 
 ---
 
@@ -98,11 +98,11 @@ The Cloudflare Worker has `PI_PUBLIC_URL=https://pi.gokohostel.com` set as a sec
 Standard access over the local network. Works only when your device and the Pi are on the same WiFi with no client isolation.
 
 ```bash
-ssh goko@goko-server.local
+ssh <configured-user>@<configured-pi-host>
 # or by IP
-ssh goko@192.168.0.80
+ssh <configured-user>@<configured-pi-host>
 # HTTP
-http://192.168.0.80
+http://<local-ip>
 ```
 
 > **Warning:** The D-Link router may enable AP/client isolation, making WiFi devices unable to see each other. Use the Cloudflare Tunnel instead.
@@ -112,11 +112,11 @@ http://192.168.0.80
 
 ### 3. mDNS/Avahi
 
-`goko-server.local` resolves on any device on the same LAN. No IP needed. Depends on WiFi working (same limitations as method 2).
+`<pi-host>` resolves on any device on the same LAN. No IP needed. Depends on WiFi working (same limitations as method 2).
 
 ```bash
-ping goko-server.local
-ssh goko@goko-server.local
+ping <pi-host>
+ssh <configured-user>@<configured-pi-host>
 ```
 
 ---
@@ -138,14 +138,14 @@ If no WiFi is found after 45 seconds on boot, the Pi creates its own hotspot:
 | Property | Value |
 |----------|-------|
 | SSID | `GokoPi-Setup` |
-| Password | `goko12345` |
-| Pi IP | `192.168.4.1` |
+| Password | `<configured-locally>` |
+| Pi IP | `<local-ip>` |
 
 **To use:**
 1. Power on Pi at a location with no known WiFi
 2. Wait ~1 minute
 3. Connect your phone/laptop to `GokoPi-Setup`
-4. SSH: `ssh goko@192.168.4.1`
+4. SSH: `ssh <configured-user>@<configured-pi-host>`
 5. Configure real WiFi:
    ```bash
    sudo nmcli device wifi connect "WIFI_NAME" password "WIFI_PASSWORD"
@@ -177,7 +177,7 @@ Auto-reboots the Pi if the kernel freezes for more than 15 seconds. Not an "acce
 | PM2 | v7.0.1 | Process manager (keep app running) |
 | Nginx | latest | Reverse proxy (port 80 → 3000) |
 | SQLite3 | v3.40.1 | Database engine |
-| Avahi | latest | mDNS (goko-server.local resolution) |
+| Avahi | latest | mDNS (<pi-host> resolution) |
 
 **Memory:** 4GB swap file configured (+ 512MB existing = 4.5GB total swap)
 
@@ -256,7 +256,7 @@ Checks if nginx, PM2 processes, and cloudflared are running. Restarts any that a
 
 #### `/usr/local/bin/backup-db.sh`
 
-Copies `/home/goko/goko-data/goko.db` to `/home/goko/backups/` with a dated filename. Deletes backups older than 7 days.
+Copies `/home/<pi-user>/goko-data/goko.db` to `/home/<pi-user>/backups/` with a dated filename. Deletes backups older than 7 days.
 
 ---
 
@@ -277,10 +277,10 @@ Copies `/home/goko/goko-data/goko.db` to `/home/goko/backups/` with a dated file
 
 | Path | Purpose |
 |------|---------|
-| `/home/goko/goko-web/` | Web application (Next.js) |
-| `/home/goko/goko-web/.env.local` | Environment variables (passwords, secrets) |
-| `/home/goko/goko-data/goko.db` | SQLite database |
-| `/home/goko/backups/` | Daily database backups |
+| `/home/<pi-user>/goko-web/` | Web application (Next.js) |
+| `/home/<pi-user>/goko-web/.env.local` | Environment variables (passwords, secrets) |
+| `/home/<pi-user>/goko-data/goko.db` | SQLite database |
+| `/home/<pi-user>/backups/` | Daily database backups |
 | `/etc/nginx/sites-available/goko` | Nginx config |
 | `/usr/local/bin/` | All custom scripts |
 
@@ -290,10 +290,10 @@ Copies `/home/goko/goko-data/goko.db` to `/home/goko/backups/` with a dated file
 
 | Property | Value |
 |----------|-------|
-| Hostname | `goko-server` |
-| mDNS Address | `goko-server.local` |
+| Hostname | `<pi-host>` |
+| mDNS Address | `<pi-host>` |
 | WiFi Network | Navjoy02 (2.4GHz) |
-| IP Address | 192.168.0.80 (DHCP) |
+| IP Address | <local-ip> (DHCP) |
 | 5GHz Support | NOT available on this Pi |
 
 ### WiFi Commands
@@ -310,11 +310,11 @@ sudo nmtui                              # Interactive network UI
 
 1. **If you have access via another method** (ethernet, hotspot, Pi Connect):
    ```bash
-   ssh goko@goko-server.local
+   ssh <configured-user>@<configured-pi-host>
    sudo nmcli device wifi connect "NEW_WIFI" password "NEW_PASS"
    ```
 
-2. **If no access at all**, power on the Pi and wait for the fallback hotspot (`GokoPi-Setup`), then SSH via `192.168.4.1` and configure from there.
+2. **If no access at all**, power on the Pi and wait for the fallback hotspot (`GokoPi-Setup`), then SSH via `<local-ip>` and configure from there.
 
 3. **Pre-configure multiple networks** before travel:
    ```bash
@@ -332,7 +332,7 @@ sudo nmtui                              # Interactive network UI
 
 - **Script:** `/usr/local/bin/backup-db.sh`
 - **Schedule:** Daily at 3 AM
-- **Location:** `/home/goko/backups/`
+- **Location:** `/home/<pi-user>/backups/`
 - **Retention:** 7 days (older backups auto-deleted)
 
 ### Mac-side: Manual Full Backup
@@ -411,7 +411,7 @@ All core infrastructure is deployed and running:
 | Item | Status | Details |
 |------|--------|---------|
 | GokoWeb app | **Running** | PM2 managed, auto-restart on crash/boot |
-| Cloudflare Tunnel | **Running** | `pi.gokohostel.com` → `localhost:3000`, auto-starts on boot |
+| Cloudflare Tunnel | **Running** | `<pi-tunnel-hostname>` → `localhost:3000`, auto-starts on boot |
 | `.env.local` | **Configured** | Admin passwords, sync secret, Cloudflare URL |
 | Sync Engine | **Active** | Bi-directional sync with Cloudflare D1 |
 | Health Check | **Active** | Every 10 min, auto-restarts nginx/PM2/cloudflared |
@@ -424,7 +424,7 @@ All core infrastructure is deployed and running:
 The Cloudflare Worker needs `PI_PUBLIC_URL` to reach the Pi via tunnel:
 
 ```bash
-echo "https://pi.gokohostel.com" | npx wrangler secret put PI_PUBLIC_URL --name goko-hostel-latest-webpage
+echo "https://<pi-tunnel-hostname>" | npx wrangler secret put PI_PUBLIC_URL --name goko-hostel-latest-webpage
 ```
 
 This is already set. Only re-run if the tunnel domain changes.
@@ -440,7 +440,7 @@ The config proxies all traffic from port 80 to the Next.js app on port 3000:
 ```nginx
 server {
     listen 80;
-    server_name goko-server.local _;
+    server_name <pi-host> _;
 
     location / {
         proxy_pass http://localhost:3000;
@@ -487,7 +487,7 @@ cat /var/log/goko-failover.log
 cat /etc/dnsmasq.d/failover-hosts
 
 # Manually test DNS resolution
-dig @192.168.0.80 gokohostel.com +short
+dig @<local-ip> gokohostel.com +short
 
 # Restart dnsmasq
 sudo systemctl restart dnsmasq
@@ -498,10 +498,10 @@ sudo systemctl restart dnsmasq
 For the failover to work, devices on the hostel WiFi must use the Pi as their DNS server.
 
 **For D-Link routers (current setup):**
-1. Open `http://192.168.0.1` in a browser
+1. Open `http://<local-ip>` in a browser
 2. Go to Setup > Network Settings (or LAN Settings)
 3. Find DHCP Server Settings
-4. Set **Primary DNS** to `192.168.0.80` (the Pi's IP)
+4. Set **Primary DNS** to `<local-ip>` (the Pi's IP)
 5. Set **Secondary DNS** to `8.8.8.8` (fallback if Pi is down)
 6. Save and reboot router
 
@@ -522,9 +522,9 @@ For the failover to work, devices on the hostel WiFi must use the Pi as their DN
 
 | Date | Change |
 |------|--------|
-| 2026-06-14 | Fresh setup: Pi OS Lite 64-bit (Bookworm), Node 20, PM2, Nginx, SQLite, swap, scripts, fallback access methods |
-| 2026-06-15 | Added local DNS failover: dnsmasq, failover monitor, self-signed SSL, admin UI toggle |
-| 2026-08-29 | Promoted Cloudflare Tunnel to primary access method. Set `PI_PUBLIC_URL` secret on Worker. Updated docs: tunnel is method #1, local WiFi demoted to fallback. Marked all infra as deployed (was wrongly listed as "Not Yet Set Up"). |
+| Live deployment details are kept in local maintainer notes. | Fresh setup: Pi OS Lite 64-bit (Bookworm), Node 20, PM2, Nginx, SQLite, swap, scripts, fallback access methods |
+| Live deployment details are kept in local maintainer notes. | Added local DNS failover: dnsmasq, failover monitor, self-signed SSL, admin UI toggle |
+| Live deployment details are kept in local maintainer notes. | Promoted Cloudflare Tunnel to primary access method. Set `PI_PUBLIC_URL` secret on Worker. Updated docs: tunnel is method #1, local WiFi demoted to fallback. Marked all infra as deployed (was wrongly listed as "Not Yet Set Up"). |
 
 ---
 

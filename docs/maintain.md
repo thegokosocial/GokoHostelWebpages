@@ -41,7 +41,7 @@ npm run dev                 # http://localhost:3000
 # login /admin — password in secrets-and-access.md
 ```
 
-`.env.local` is already on this Mac (Google + admin + D1 token). Do not run `next build` / `deploy:cf` in this checkout while `next dev` is running (shared `.next`). Use `npm run dev:clean` if chunks go missing.
+`.env.local` remains local. Do not run `next build` / `deploy:cf` in this checkout while `next dev` is running (shared `.next`). Use `npm run dev:clean` if chunks go missing.
 
 ```bash
 npm test
@@ -168,7 +168,7 @@ Prefer tunnel, not LAN:
 
 ```bash
 # SSH credentials: secrets-and-access.md (LAN only; prefer tunnel)
-ssh goko@goko-server.local
+ssh "$PI_USER@$PI_HOST"
 cd /home/goko/goko-web
 git pull origin main
 npm install                   # if lockfile changed
@@ -236,7 +236,7 @@ Conventions: [conventions.md](conventions.md).
 4. Env manager cannot pass RBAC gates (`permissions: {}`).
 5. `db.transaction()` + `getDb()` inside = food-order 500s.
 6. `drizzle-kit generate` ≠ Wrangler `migrations/`.
-7. Pi hostname live `goko-server`, setup script says `goko`.
+7. Pi hostname and deployment details are maintained in local-only notes.
 8. Form C fallback secret if `ADMIN_PASSWORD` unset.
 9. R2 GET always JPEG.
 10. GitHub CI `next build` is not a Worker deploy.
