@@ -99,9 +99,10 @@ export async function POST(req: NextRequest) {
 
     switch (action) {
       case "listOrders": {
-        const { status, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit, includeItems } = rest;
+        const { status, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit, includeItems, includeModifications } = rest;
         const limitNum = Math.min(Number(rawLimit) || 50, 200);
         const withItems = includeItems !== false;
+        const withModifications = includeModifications !== false;
 
         const db = getDb();
 
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
           const orderIds = orders.map((o) => o.id);
           const [itemsMap, modCountMap] = await Promise.all([
             withItems ? getFoodOrderItemsBatch(orderIds) : Promise.resolve(new Map()),
-            getModCountMap(orderIds),
+            withModifications ? getModCountMap(orderIds) : Promise.resolve(new Map<number, number>()),
           ]);
           const withItemsRows = orders.map((o) => ({
             ...o,
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
         const orderIds = orders.map((o) => o.id);
         const [itemsMap, modCountMap] = await Promise.all([
           withItems ? getFoodOrderItemsBatch(orderIds) : Promise.resolve(new Map()),
-          getModCountMap(orderIds),
+          withModifications ? getModCountMap(orderIds) : Promise.resolve(new Map<number, number>()),
         ]);
         const withItemsRows = orders.map((o) => ({
           ...o,

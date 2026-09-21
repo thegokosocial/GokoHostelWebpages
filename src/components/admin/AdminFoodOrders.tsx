@@ -2853,7 +2853,7 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
     if (!from || !to) return;
     setLoading(true);
     try {
-      const res = await apiCall({ action: "listOrders", dateFrom: from, dateTo: to, limit: 200, includeItems: false });
+      const res = await apiCall({ action: "listOrders", dateFrom: from, dateTo: to, limit: 200, includeItems: false, includeModifications: false });
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);

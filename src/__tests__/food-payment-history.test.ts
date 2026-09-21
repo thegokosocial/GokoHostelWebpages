@@ -1,0 +1,49 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+
+const mocks = vi.hoisted(() => ({
+  authenticateUser: vi.fn(),
+  getDb: vi.fn(),
+}));
+
+vi.mock("@/lib/auth", () => ({ authenticateUser: mocks.authenticateUser }));
+vi.mock("@/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/db/queries", () => ({}));
+
+import { POST } from "@/app/api/admin/food-orders/route";
+
+function request(body: Record<string, unknown>) {
+  return new NextRequest("http://localhost/api/admin/food-orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "pw", action: "listOrders", ...body }),
+  });
+}
+
+describe("Payment History", () => {
+  beforeEach(() => {
+    for (const fn of Object.values(mocks)) fn.mockReset();
+    mocks.authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+  });
+
+  it("returns paid order headers without querying modification badges", async () => {
+    const orders = [{ id: 77, orderNumber: "F-77", guestName: "Paid Guest", paymentStatus: "paid", total: 50000 }];
+    const limit = vi.fn(async () => orders);
+    const orderBy = vi.fn(() => ({ limit }));
+    const where = vi.fn(() => ({ orderBy }));
+    const from = vi.fn(() => ({ where }));
+    const select = vi.fn(() => ({ from }));
+    mocks.getDb.mockReturnValue({ select });
+
+    const response = await POST(request({
+      dateFrom: "2026-09-01",
+      dateTo: "2026-09-21",
+      includeItems: false,
+      includeModifications: false,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ orders: [{ id: 77, paymentStatus: "paid", hasModifications: false }] });
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+});
