@@ -220,7 +220,12 @@ describe("layout / extract", () => {
   });
   it("food orders import the shared modal", () => {
     const src = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
+    const modal = readFileSync("src/components/admin/RecordPaymentModal.tsx", "utf8");
+    const accountsApi = readFileSync("src/app/api/admin/account-settings/route.ts", "utf8");
     expect(src).toContain("RecordPaymentModal");
     expect(src).not.toContain("function PaymentModal");
+    expect(modal).toContain('payload.action = roomAccountList ? "getRoomReceiptAccounts" : "getFoodReceiptAccounts"');
+    expect(accountsApi).toContain('getFoodReceiptAccounts: "canMarkPaid"');
+    expect(accountsApi).toContain('getSetting("food_online_receipt_account_id")');
   });
 });

@@ -208,7 +208,7 @@ Every action requires `canViewSplits`. Then: list* → view; people/groups → `
 
 ### `/api/admin/account-settings`
 
-Accounts/vendors/categories actions use `canManageAccountSettings` (or legacy `canManageAccounts`) or admin; employee actions also accept `canManageEmployees`, and payroll actions use `canManagePayroll`. `removeEmployee` requires `canManageEmployees` (or the account-settings fallback) and only removes an inactive employee from the roster; linked history is retained.
+Accounts/vendors/categories actions use `canManageAccountSettings` (or legacy `canManageAccounts`) or admin; employee actions also accept `canManageEmployees`, and payroll actions use `canManagePayroll`. `getFoodReceiptAccounts` is a read-only active, non-virtual account list gated by `canMarkPaid` for the food payment modal; it does not grant account-management access. `removeEmployee` requires `canManageEmployees` (or the account-settings fallback) and only removes an inactive employee from the roster; linked history is retained.
 
 ### `/api/admin/platform-settlements`
 

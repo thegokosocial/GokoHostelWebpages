@@ -67,7 +67,7 @@ export function RecordPaymentModal({
     const payload: Record<string, string> = { password };
     if (username) payload.username = username;
     const roomAccountList = receiptKind === "room";
-    payload.action = roomAccountList ? "getRoomReceiptAccounts" : "listAccounts";
+    payload.action = roomAccountList ? "getRoomReceiptAccounts" : "getFoodReceiptAccounts";
     void fetch(roomAccountList ? "/api/admin/bookings" : "/api/admin/account-settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then((r) => r.ok ? r.json() : null).then((data) => {
         if (!data) return;

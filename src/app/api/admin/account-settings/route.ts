@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
     const actionPermissions: Record<string, string> = {
       listCategories: "canManageAccountSettings", saveCategories: "canManageAccountSettings",
       listAccounts: "canManageAccountSettings", saveReceiptDefaults: "canManageAccountSettings",
+      getFoodReceiptAccounts: "canMarkPaid",
       addAccount: "canManageAccountSettings", updateAccount: "canManageAccountSettings", deleteAccount: "canManageAccountSettings",
       listVendors: "canManageVendors", addVendor: "canManageVendors", updateVendor: "canManageVendors", deleteVendor: "canManageVendors",
       listEmployees: "canManageEmployees", addEmployee: "canManageEmployees", updateEmployee: "canManageEmployees", deleteEmployee: "canManageEmployees", removeEmployee: "canManageEmployees",
@@ -63,6 +64,14 @@ export async function POST(req: NextRequest) {
           getSetting("food_online_receipt_account_id"), getSetting("room_online_receipt_account_id"),
         ]);
         return NextResponse.json({ accounts: items, foodOnlineReceiptAccountId, roomOnlineReceiptAccountId });
+      }
+      case "getFoodReceiptAccounts": {
+        const [items, defaultId] = await Promise.all([
+          db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, isActive: accounts.isActive })
+            .from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))),
+          getSetting("food_online_receipt_account_id"),
+        ]);
+        return NextResponse.json({ accounts: items, foodOnlineReceiptAccountId: defaultId });
       }
       case "saveReceiptDefaults": {
         const validate = async (raw: unknown) => {

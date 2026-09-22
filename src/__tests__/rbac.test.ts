@@ -57,6 +57,10 @@ const EXPENSES_PERMISSIONS: Record<string, ActionPerm> = {
   adjustOpeningBalance: "canManageAccountSettings",
 };
 
+const ACCOUNT_SETTINGS_PERMISSIONS: Record<string, ActionPerm> = {
+  getFoodReceiptAccounts: "canMarkPaid",
+};
+
 const BOOKINGS_PERMISSIONS: Record<string, ActionPerm> = {
   getRoomReceiptAccounts: ["canAddBooking", "canCheckIn", "canRecordBookingPayments", "canDeleteBooking"],
   collectOtaBookingPayment: "canRecordBookingPayments",
@@ -118,6 +122,12 @@ describe("RBAC: Admin always has access", () => {
     for (const action of Object.keys(EXPENSES_PERMISSIONS)) {
       expect(checkPermission(role, permissions, EXPENSES_PERMISSIONS, action)).toBe("allowed");
     }
+  });
+
+  it("food payment staff can read receipt accounts without account-management access", () => {
+    expect(checkPermission("staff", { canMarkPaid: true }, ACCOUNT_SETTINGS_PERMISSIONS, "getFoodReceiptAccounts")).toBe("allowed");
+    expect(checkPermission("manager", { canViewFoodOrders: true }, ACCOUNT_SETTINGS_PERMISSIONS, "getFoodReceiptAccounts")).toBe("forbidden");
+    expect(checkPermission("staff", { canManageAccountSettings: true }, ACCOUNT_SETTINGS_PERMISSIONS, "getFoodReceiptAccounts")).toBe("forbidden");
   });
 
   it("admin can access all splits actions", () => {
