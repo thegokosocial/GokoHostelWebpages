@@ -36,7 +36,7 @@ sequenceDiagram
 | `ADMIN_PASSWORD` | omitted, or `admin` | `role: admin`, `permissions: {}`, **bypasses** all maps |
 | `MANAGER_PASSWORD` | omitted, or `manager` | `role: manager`, `permissions: {}` |
 
-DB users retain the JSON `permissions` object. New password hashes use a versioned per-user salted KDF; legacy hashes migrate after successful login.
+DB users retain the JSON `permissions` object. New password hashes use a versioned per-user salted PBKDF2-SHA-256 KDF with 100,000 iterations (the Cloudflare Workers WebCrypto ceiling); legacy hashes migrate after successful login.
 
 Kitchen (`authenticateKitchen`): env admin **or** env manager **or any DB user hash** (no username). Access uses the same session cookie with `scope=kitchen`; passwords are not stored in browser storage.
 

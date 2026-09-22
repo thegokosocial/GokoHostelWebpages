@@ -13,7 +13,9 @@ export type AuthResult = {
 
 export type KitchenAuthResult = { role: UserRole; displayName: string; username?: string; permissions?: Record<string, boolean> };
 
-const PBKDF2_ITERATIONS = 120_000;
+// Cloudflare Workers WebCrypto rejects PBKDF2 requests above 100,000 rounds.
+// Keep this value in the serialized hash so future changes can be versioned.
+const PBKDF2_ITERATIONS = 100_000;
 
 function base64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");

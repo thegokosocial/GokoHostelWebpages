@@ -60,6 +60,11 @@ describe("authenticateKitchen workflows", () => {
     digest.mockRestore();
   });
 
+  it("uses a Cloudflare Workers-compatible PBKDF2 iteration count", async () => {
+    const hash = await hashPassword("worker-compatible-pw");
+    expect(hash.split("$").slice(0, 3)).toEqual(["pbkdf2", "1", "100000"]);
+  });
+
   it("falls back to staff role and username when those fields are empty", async () => {
     const secret = "plain";
     getAllUsers.mockResolvedValue([
