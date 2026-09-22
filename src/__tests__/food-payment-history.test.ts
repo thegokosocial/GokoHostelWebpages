@@ -91,6 +91,9 @@ describe("Payment History", () => {
     expect(summary).toContain('const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid")');
     expect(summary).toContain('const unpaidGroups = filteredGroups.filter((group) => group.pendingAmount > 0)');
     expect(summary).toContain('const paidGroups = filteredGroups.filter((group) => group.pendingAmount <= 0)');
+    expect(summary).toContain('const hasLoadedOrders = Object.prototype.hasOwnProperty.call(hostelOrdersMap, g.checkinId)');
+    expect(summary).toContain('cachedOrders.filter((o) => o.paymentStatus !== "paid")');
+    expect(summary).toContain(': g.tabTotal');
     expect(summary).toContain('group.pendingAmount <= 0');
     expect(summary).toContain('group.paidAmount > 0');
     expect(summary).toContain('border-l-red-400');

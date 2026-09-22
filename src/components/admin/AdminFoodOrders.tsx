@@ -915,7 +915,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       const paidOrders = paidByHostel.get(g.checkinId) || [];
       const allOrders = [...new Map([...cachedOrders, ...paidOrders].map((o) => [o.id, o])).values()];
       const paidAmount = paidOrders.reduce((s, o) => s + o.total, 0);
-      const pendingAmount = cachedOrders.reduce((s, o) => s + o.total, 0);
+      const hasLoadedOrders = Object.prototype.hasOwnProperty.call(hostelOrdersMap, g.checkinId);
+      const pendingAmount = hasLoadedOrders
+        ? cachedOrders.filter((o) => o.paymentStatus !== "paid").reduce((s, o) => s + o.total, 0)
+        : g.tabTotal;
       const hostelLatest = cachedOrders.length > 0
         ? cachedOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, "")
         : g.latestOrderTime || "";
