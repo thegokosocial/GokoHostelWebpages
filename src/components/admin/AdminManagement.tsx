@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon, ReceiptIcon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon, ReceiptIcon, CreditCardIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role, type ManagementTab } from "./types";
 import {
@@ -35,6 +35,7 @@ const ManagementTasks = dynamic(() => import("./ManagementTasks").then((m) => m.
 const ServerSync = dynamic(() => import("./ServerSync").then((m) => m.ServerSync), { loading: tabLoader, ssr: false });
 const ChannelManager = dynamic(() => import("./ChannelManager").then((m) => m.ChannelManager), { loading: tabLoader, ssr: false });
 const BookingSettings = dynamic(() => import("./BookingSettings").then((m) => m.BookingSettings), { loading: tabLoader, ssr: false });
+const RazorpayPayments = dynamic(() => import("./RazorpayPayments").then((m) => m.RazorpayPayments), { loading: tabLoader, ssr: false });
 const AdminWebsite = dynamic(() => import("./AdminWebsite").then((m) => m.AdminWebsite), { loading: tabLoader, ssr: false });
 const AdminAnalytics = dynamic(() => import("./AdminAnalytics").then((m) => m.AdminAnalytics), { loading: tabLoader, ssr: false });
 const QuickLinks = dynamic(() => import("./QuickLinks").then((m) => m.QuickLinks), { loading: tabLoader, ssr: false });
@@ -60,6 +61,7 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "serverSync", label: "Server Sync", icon: <ServerIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "channelManager", label: "Channel Manager", icon: <WifiIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "bookingSettings", label: "Booking Settings", icon: <SettingsIcon className="h-3.5 w-3.5" />, adminOnly: true },
+  { id: "razorpayPayments", label: "Razorpay payments", icon: <CreditCardIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "analytics", label: "Analytics", icon: <BarChart3Icon className="h-3.5 w-3.5" />, permission: "canViewAnalytics" },
   { id: "quickLinks", label: "Links & QRs", icon: <LinkIcon className="h-3.5 w-3.5" />, permission: "canViewQuickLinks" },
 ];
@@ -227,6 +229,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         {tab === "serverSync" && <ServerSync password={password} username={username} role={role} />}
         {tab === "channelManager" && <ChannelManager password={password} username={username} role={role} initialTab={initialChannelTab} />}
         {tab === "bookingSettings" && visibleTabs.some((t) => t.id === "bookingSettings") && <BookingSettings password={password} username={username} />}
+        {tab === "razorpayPayments" && visibleTabs.some((t) => t.id === "razorpayPayments") && <RazorpayPayments password={password} username={username} />}
         {tab === "analytics" && <AdminAnalytics password={password} username={username} role={role} permissions={permissions} />}
         {tab === "quickLinks" && <QuickLinks password={password} username={username} role={role} />}
       </div>

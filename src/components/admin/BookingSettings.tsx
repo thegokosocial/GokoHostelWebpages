@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
 import { RazorpayTestPreview } from "@/components/admin/RazorpayTestPreview";
-import { WebsitePaymentsLedger } from "@/components/admin/WebsitePaymentsLedger";
 import {
   BOOKING_EMAIL_KINDS,
   BOOKING_EMAIL_KIND_LABELS,
@@ -296,9 +295,6 @@ export function BookingSettings({ password, username }: { password: string; user
       </>}
       {!messageSection && <Button type="button" onClick={save}>Save booking settings</Button>}
     </fieldset>
-    {section === "payments" && (
-      <WebsitePaymentsLedger password={password} username={username} />
-    )}
     {section === "payments" && settings.gatewayEnvironment === "test" && (
       <RazorpayTestPreview password={password} username={username} />
     )}

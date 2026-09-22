@@ -38,6 +38,15 @@ describe("admin mobile navigation", () => {
     expect(management).toContain('aria-label="Food settings tabs"');
     expect(management).toContain('validValues: visibleTabs.map((t) => t.id)');
   });
+  it("keeps Razorpay payment records under Management with a room tab and food placeholder", () => {
+    expect(management).toContain('id: "razorpayPayments", label: "Razorpay payments"');
+    expect(management).toContain('import("./RazorpayPayments")');
+    const razorpayPayments = readFileSync("src/components/admin/RazorpayPayments.tsx", "utf8");
+    expect(razorpayPayments).toContain('aria-label="Razorpay payment tabs"');
+    expect(razorpayPayments).toContain("WebsitePaymentsLedger");
+    expect(razorpayPayments).toContain("Food payment records will be available here soon.");
+    expect(bookingSettings).not.toContain("WebsitePaymentsLedger");
+  });
   it("shares the Account Settings selector styling across existing Management section selectors", () => {
     const consumers = [management, accounts, bookingSettings, channelManager, audit, logs, website];
     for (const source of consumers) {

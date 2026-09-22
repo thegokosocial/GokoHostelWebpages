@@ -29,7 +29,7 @@ function when(iso: string) {
   }
 }
 
-/** Management → Booking Settings → Payments: native website checkout attempts (test + live). */
+/** Management → Razorpay payments → Room: native website checkout attempts (test + live). */
 export function WebsitePaymentsLedger({ password, username }: { password: string; username?: string }) {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [busy, setBusy] = useState(false);

@@ -182,7 +182,7 @@ test("desktop Management navigation opens every admin tab", async ({ page }) => 
     ["Bulk Upload", "bulkUpload"], ["QR Codes", "qrGenerator"],
     ["Account Settings", "accountSettings"], ["Attendance", "attendance"], ["To Do", "tasks"],
     ["Server Sync", "serverSync"], ["Channel Manager", "channelManager"],
-    ["Booking Settings", "bookingSettings"], ["Analytics", "analytics"], ["Links & QRs", "quickLinks"],
+    ["Booking Settings", "bookingSettings"], ["Razorpay payments", "razorpayPayments"], ["Analytics", "analytics"], ["Links & QRs", "quickLinks"],
   ] as const;
   for (const [label, tab] of tabs) {
     await page.getByRole("button", { name: label, exact: true }).click();
@@ -191,6 +191,11 @@ test("desktop Management navigation opens every admin tab", async ({ page }) => 
       ? /section=management(?:&|$)/
       : new RegExp(`section=management&tab=${tab}(?:&|$)`));
   }
+
+  await page.getByRole("button", { name: "Razorpay payments", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Room", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "Food", exact: true }).click();
+  await expect(page.getByText("Food payment records will be available here soon.")).toBeVisible();
 
   // Menu and Bill Settings are grouped under the Food Settings navigation item.
   await page.getByRole("button", { name: "Food Settings", exact: true }).click();
