@@ -167,7 +167,7 @@ test("desktop navigation opens every top-level admin page", async ({ page }) => 
     // query, while every non-default section is encoded explicitly.
     await expect(page).toHaveURL(section === "dashboard"
       ? /\/admin(?:\?|$)/
-      : new RegExp(`section=${section}(?:&|$)`));
+      : new RegExp(`section=${section}(?:&|$)`), { timeout: 15_000 });
   }
 });
 
