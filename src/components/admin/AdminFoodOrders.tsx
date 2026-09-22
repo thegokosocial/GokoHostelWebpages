@@ -799,6 +799,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [discountModalGroup, setDiscountModalGroup] = useState<SummaryGroup | null>(null);
   const [priceModalItem, setPriceModalItem] = useState<{ orderId: number; itemId: number; itemName: string } | null>(null);
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
+  const orderCardRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [voidingItemId, setVoidingItemId] = useState<number | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [voidedItemReasons, setVoidedItemReasons] = useState<Record<number, string>>({});
@@ -1038,9 +1039,21 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     if (!groupHasPendingSpecialPrice(selectedGroupOrders)) setSpBillWarning(false);
   }, [selectedGroupOrders]);
 
+  useEffect(() => {
+    if (!editingOrderId || !selectedGroup || drawerView !== "orders") return;
+    const orderCard = orderCardRefs.current[editingOrderId];
+    if (!orderCard) return;
+    const frame = window.requestAnimationFrame(() => {
+      orderCard.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editingOrderId, selectedGroup, drawerView, selectedGroupOrders.length, loadingOrders]);
+
   const selectGroup = async (group: SummaryGroup) => {
     setSelectedGroupKey(group.key);
     setModHistoryOrderId(null);
+    setEditingOrderId(null);
+    orderCardRefs.current = {};
     setDrawerView("orders");
     setSpBillWarning(false);
 
@@ -1655,10 +1668,21 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                   {selectedGroupOrders.map((order) => {
                     const isEditing = editingOrderId === order.id;
                     return (
-                    <div key={order.id} className="rounded-lg border border-brand-mist p-3">
+                    <div
+                      key={order.id}
+                      ref={(node) => { orderCardRefs.current[order.id] = node; }}
+                      data-order-id={order.id}
+                      className={cn(
+                        "rounded-lg border p-3 transition-all duration-300",
+                        isEditing
+                          ? "border-brand-green bg-brand-green/[0.05] shadow-md ring-2 ring-brand-green/25"
+                          : "border-brand-mist",
+                      )}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-1">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs font-bold text-brand-green">{order.orderNumber}</span>
+                          {isEditing && <span className="rounded-full bg-brand-green px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
                           <StatusBadge status={order.status} />
                           <OrderPaymentBadge paymentStatus={order.paymentStatus} />
                           {order.hasModifications && (

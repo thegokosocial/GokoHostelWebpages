@@ -409,6 +409,15 @@ describe("food-tab UI checkout workflows", () => {
     expect(source).toContain('showError("Payment", data.error || "Could not record payment")');
   });
 
+  it("8d. Item editing scrolls the selected order into view and marks it clearly", () => {
+    const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
+    expect(source).toContain("orderCardRefs.current[editingOrderId]");
+    expect(source).toContain('scrollIntoView({ behavior: "smooth", block: "center" })');
+    expect(source).toContain('data-order-id={order.id}');
+    expect(source).toContain('>Editing</span>');
+    expect(source).toContain("ring-2 ring-brand-green/25");
+  });
+
   it("9. Inventory: no other src/components guest-checkout button besides the four UIs", () => {
     const files = walkTsx(join(ROOT, "src/components"));
     const handlerHits: string[] = [];
