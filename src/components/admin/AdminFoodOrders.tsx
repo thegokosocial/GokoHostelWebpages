@@ -1223,18 +1223,25 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     }
   };
 
-  const markGroupPaid = async (group: SummaryGroup, paymentMethod: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string) => {
+  const markGroupPaid = async (group: SummaryGroup, paymentMethod: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string): Promise<boolean> => {
     const orders = getGroupOrders(group);
     const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid");
     const orderIds = unpaidOrders.map((o) => o.id);
-    if (orderIds.length === 0) return;
+    if (orderIds.length === 0) return false;
     setBusy(group.key);
     try {
       const res = await apiCall({ action: "markOrderPaid", orderIds, paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId });
       if (res.ok) {
         await load();
         setSelectedGroupKey(null);
+        return true;
       }
+      const data = await res.json().catch(() => ({}));
+      showError("Payment", data.error || "Could not record payment");
+      return false;
+    } catch (error) {
+      showError("Payment", error instanceof Error ? error.message : "Could not record payment");
+      return false;
     } finally {
       setBusy(null);
     }
@@ -1888,9 +1895,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           guestName={paymentModalGroup.guestName}
           initialMethod={paymentModalMethod}
           password={password} username={username} receiptKind="food"
-          onConfirm={(method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
-            markGroupPaid(paymentModalGroup, method, cashReceived, changeGiven, onlineAccountId, receiptId);
-            setPaymentModalGroup(null);
+          onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
+            const saved = await markGroupPaid(paymentModalGroup, method, cashReceived, changeGiven, onlineAccountId, receiptId);
+            if (saved) setPaymentModalGroup(null);
+            return saved;
           }}
           onClose={() => setPaymentModalGroup(null)}
         />
@@ -2759,7 +2767,7 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
     }
   }, [apiCall]);
 
-  const handleMarkPaid = async (order: Order, method: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string) => {
+  const handleMarkPaid = async (order: Order, method: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string): Promise<boolean> => {
     setBusy(true);
     try {
       const res = await apiCall({
@@ -2772,16 +2780,22 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         onlineAccountId,
         receiptId,
       });
-      if (res.ok && selectedGroup) {
-        setPaymentEditOrder(null);
-        await refreshGroupOrders(selectedGroup);
+      if (res.ok) {
+        if (selectedGroup) await refreshGroupOrders(selectedGroup);
+        return true;
       }
+      const data = await res.json().catch(() => ({}));
+      showError("Payment", data.error || "Could not record payment");
+      return false;
+    } catch (error) {
+      showError("Payment", error instanceof Error ? error.message : "Could not record payment");
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
-  const handleRevertToPending = async (order: Order) => {
+  const handleRevertToPending = async (order: Order): Promise<boolean> => {
     setBusy(true);
     try {
       const res = await apiCall({
@@ -2792,16 +2806,23 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         cashReceived: 0,
         changeGiven: 0,
       });
-      if (res.ok && selectedGroup) {
+      if (res.ok) {
         setRevertConfirmOrder(null);
-        await refreshGroupOrders(selectedGroup);
+        if (selectedGroup) await refreshGroupOrders(selectedGroup);
+        return true;
       }
+      const data = await res.json().catch(() => ({}));
+      showError("Payment", data.error || "Could not revert payment");
+      return false;
+    } catch (error) {
+      showError("Payment", error instanceof Error ? error.message : "Could not revert payment");
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
-  const handleUpdatePayment = async (order: Order, updates: { paymentMethod?: string; cashReceived?: number; changeGiven?: number; onlineAccountId?: number; receiptId?: string }) => {
+  const handleUpdatePayment = async (order: Order, updates: { paymentMethod?: string; cashReceived?: number; changeGiven?: number; onlineAccountId?: number; receiptId?: string }): Promise<boolean> => {
     setBusy(true);
     try {
       const res = await apiCall({
@@ -2809,9 +2830,16 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         orderId: order.id,
         ...updates,
       });
-      if (res.ok && selectedGroup) {
-        await refreshGroupOrders(selectedGroup);
+      if (res.ok) {
+        if (selectedGroup) await refreshGroupOrders(selectedGroup);
+        return true;
       }
+      const data = await res.json().catch(() => ({}));
+      showError("Payment", data.error || "Could not update payment");
+      return false;
+    } catch (error) {
+      showError("Payment", error instanceof Error ? error.message : "Could not update payment");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -3114,13 +3142,12 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
           initialMethod={paymentEditOrder.paymentStatus === "paid" ? (paymentEditOrder.paymentMethod || "online") : "online"}
           initialCash={paymentEditOrder.paymentStatus === "paid" ? paymentEditOrder.cashReceived : 0}
           password={password} username={username} receiptKind="food"
-          onConfirm={(method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
-            if (paymentEditOrder.paymentStatus === "paid") {
-              handleUpdatePayment(paymentEditOrder, { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId });
-            } else {
-              handleMarkPaid(paymentEditOrder, method, cashReceived, changeGiven, onlineAccountId, receiptId);
-            }
-            setPaymentEditOrder(null);
+          onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
+            const saved = paymentEditOrder.paymentStatus === "paid"
+              ? await handleUpdatePayment(paymentEditOrder, { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId })
+              : await handleMarkPaid(paymentEditOrder, method, cashReceived, changeGiven, onlineAccountId, receiptId);
+            if (saved) setPaymentEditOrder(null);
+            return saved;
           }}
           onClose={() => setPaymentEditOrder(null)}
         />

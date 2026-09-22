@@ -1032,6 +1032,17 @@ export async function POST(req: NextRequest) {
           changes.push(`Change given: ${fmt(order.changeGiven ?? 0)} → ${fmt(newChangeGiven)}`);
         }
 
+        const nextStatus = newPaymentStatus ?? order.paymentStatus;
+        const method = newPaymentMethod ?? order.paymentMethod;
+        const cash = Number(newCashReceived ?? order.cashReceived) || 0;
+        const onlineAmount = method === "online" ? order.total : method === "split" ? Math.max(0, order.total - cash) : 0;
+        const oldOnlineAmount = order.paymentStatus === "paid" ? (order.paymentMethod === "online" ? order.total : order.paymentMethod === "split" ? Math.max(0, order.total - (order.cashReceived || 0)) : 0) : 0;
+        const oldAccountId = oldOnlineAmount > 0 ? await latestReceiptAccount("food_order", orderId) : null;
+        const accountChanged = order.paymentStatus === "paid" && onlineAmount > 0 && onlineAccountId != null && Number(onlineAccountId) !== oldAccountId;
+        if (accountChanged) {
+          changes.push(`Receiving account changed`);
+        }
+
         if (changes.length === 0) {
           return NextResponse.json({ success: true, role, message: "No changes" });
         }
@@ -1046,14 +1057,8 @@ export async function POST(req: NextRequest) {
 
         const db = getDb();
         await db.update(foodOrders).set(updateData).where(eq(foodOrders.id, orderId));
-        const nextStatus = newPaymentStatus ?? order.paymentStatus;
-        const method = newPaymentMethod ?? order.paymentMethod;
-        const cash = Number(newCashReceived ?? order.cashReceived) || 0;
-        const onlineAmount = method === "online" ? order.total : method === "split" ? Math.max(0, order.total - cash) : 0;
-        const oldOnlineAmount = order.paymentStatus === "paid" ? (order.paymentMethod === "online" ? order.total : order.paymentMethod === "split" ? Math.max(0, order.total - (order.cashReceived || 0)) : 0) : 0;
-        const changedAllocation = order.paymentStatus === "paid" && (nextStatus !== "paid" || oldOnlineAmount !== onlineAmount || (onlineAmount > 0 && onlineAccountId != null));
+        const changedAllocation = order.paymentStatus === "paid" && (nextStatus !== "paid" || oldOnlineAmount !== onlineAmount || accountChanged);
         if (changedAllocation && oldOnlineAmount > 0) {
-          const oldAccountId = await latestReceiptAccount("food_order", orderId);
           if (oldAccountId) await createGuestReceipt({ receiptId: `${receiptId || crypto.randomUUID()}:reverse`, sourceType: "food_order", sourceId: orderId, kind: "reversal", accountId: oldAccountId, amount: -oldOnlineAmount, createdBy: actorName, notes: `Correction for food order ${order.orderNumber}` });
         }
         if (nextStatus === "paid" && onlineAmount > 0 && (order.paymentStatus !== "paid" || changedAllocation)) {

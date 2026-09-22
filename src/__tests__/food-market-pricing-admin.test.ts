@@ -7,7 +7,7 @@ const q = vi.hoisted(() => ({
   addOrderModification: vi.fn(), addAuditEntry: vi.fn(), updateFoodOrderPayment: vi.fn(),
   updateFoodOrderItemQuantity: vi.fn(), deleteFoodOrderItem: vi.fn(), addStock: vi.fn(), decrementStock: vi.fn(),
   restoreStock: vi.fn(),
-  latestReceiptAccount: vi.fn(), createGuestReceipt: vi.fn(),
+  latestReceiptAccount: vi.fn(), createGuestReceipt: vi.fn(), resolveReceiptAccount: vi.fn(),
   getDb: vi.fn(),
 }));
 
@@ -21,7 +21,7 @@ vi.mock("@/db/queries", () => ({
   addStock: q.addStock, decrementStock: q.decrementStock, restoreStock: q.restoreStock,
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
-vi.mock("@/lib/guestReceipts", () => ({ latestReceiptAccount: q.latestReceiptAccount, createGuestReceipt: q.createGuestReceipt, receiptBusinessDate: vi.fn(() => "2026-09-22"), resolveReceiptAccount: vi.fn() }));
+vi.mock("@/lib/guestReceipts", () => ({ latestReceiptAccount: q.latestReceiptAccount, createGuestReceipt: q.createGuestReceipt, receiptBusinessDate: vi.fn(() => "2026-09-22"), resolveReceiptAccount: q.resolveReceiptAccount }));
 
 import { POST } from "@/app/api/admin/food-orders/route";
 
@@ -44,6 +44,7 @@ beforeEach(() => {
   q.addOrderModification.mockResolvedValue(undefined);
   q.addAuditEntry.mockResolvedValue(undefined);
   q.latestReceiptAccount.mockResolvedValue(null);
+  q.resolveReceiptAccount.mockResolvedValue(7);
   q.createGuestReceipt.mockResolvedValue(undefined);
   q.updateFoodOrderItemQuantity.mockImplementation(async (id: number, quantity: number, price: number) => Object.assign(pendingItem, { quantity, lineTotal: quantity * price }));
   q.getDb.mockReturnValue({
@@ -83,6 +84,33 @@ describe("admin market-pricing workflows", () => {
     const response = await POST(new NextRequest("http://localhost/api/admin/food-orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "pw", action: "updatePaymentDetails", orderId: 10, paymentStatus: "paid" }) }));
     expect(response.status).toBe(400);
     expect(q.updateFoodOrderPayment).not.toHaveBeenCalled();
+  });
+
+  it("corrects the receiving account for an already-paid online order", async () => {
+    const paidOrder = {
+      ...order,
+      paymentStatus: "paid",
+      paymentMethod: "online",
+      total: 10000,
+      cashReceived: 0,
+      changeGiven: 0,
+      paidBy: "Admin",
+    };
+    q.getFoodOrderById.mockResolvedValue(paidOrder);
+    q.getFoodOrderItems.mockResolvedValue([{ ...pendingItem, pricingStatus: "fixed", itemPrice: 5000, lineTotal: 10000 }]);
+    q.latestReceiptAccount.mockResolvedValue(7);
+    q.resolveReceiptAccount.mockResolvedValue(9);
+
+    const response = await POST(new NextRequest("http://localhost/api/admin/food-orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "pw", action: "updatePaymentDetails", orderId: 10, paymentMethod: "online", onlineAccountId: 9 }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ kind: "reversal", accountId: 7, amount: -10000 }));
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ kind: "food", accountId: 9, amount: 10000 }));
+    expect(q.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "food_payment_modified", details: expect.stringContaining("Receiving account changed") }));
   });
 
   it("rejects non-positive final prices", async () => {

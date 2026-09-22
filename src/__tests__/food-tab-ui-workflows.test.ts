@@ -400,6 +400,15 @@ describe("food-tab UI checkout workflows", () => {
     })).resolves.toEqual({ checkout: true });
   });
 
+  it("8c. Food payment modals await saves and keep failed submissions retryable", () => {
+    const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
+    expect(source).toContain("const saved = await markGroupPaid");
+    expect(source).toContain("if (saved) setPaymentModalGroup(null)");
+    expect(source).toContain("const saved = paymentEditOrder.paymentStatus === \"paid\"");
+    expect(source).toContain("if (saved) setPaymentEditOrder(null)");
+    expect(source).toContain('showError("Payment", data.error || "Could not record payment")');
+  });
+
   it("9. Inventory: no other src/components guest-checkout button besides the four UIs", () => {
     const files = walkTsx(join(ROOT, "src/components"));
     const handlerHits: string[] = [];
