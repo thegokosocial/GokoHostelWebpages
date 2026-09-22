@@ -3,7 +3,7 @@ description: Keep the GokoWeb docs/ handbook in sync whenever behavior, APIs, sc
 alwaysApply: true
 ---
 
-# Handbook — update with the code
+# Handbook and regression tests — update with the code
 
 Committed `docs/` is how this project is explained. Gitignored `docs/secrets-and-access.md` and `MAINTAINER.local.md` hold passwords and live stamps.
 
@@ -11,9 +11,11 @@ Committed `docs/` is how this project is explained. Gitignored `docs/secrets-and
 
 1. Identify which handbook files the change touches (table below).
 2. Edit those files so they match **source**, not memory. Cite real action names, setting keys, tables, routes.
-3. If a password, token, Worker version, or D1 stamp changed: `docs/secrets-and-access.md` and/or `MAINTAINER.local.md`.
-4. Do **not** `git add docs/secrets-and-access.md` or `MAINTAINER.local.md`.
-5. If those secrets files are missing on this machine, say so. Do not invent live IDs.
+3. Add or update a focused regression test in the same turn: Vitest for logic/API/auth/data behavior; Playwright for critical cross-page or user-visible workflows. Extend an existing suite first.
+4. Cover success and the relevant permission, boundary, duplicate/retry, and failure cases. Do not require browser tests for pure logic already covered at the unit/API layer.
+5. If a password, token, Worker version, or D1 stamp changed: `docs/secrets-and-access.md` and/or `MAINTAINER.local.md`.
+6. Do **not** `git add docs/secrets-and-access.md` or `MAINTAINER.local.md`.
+7. If those secrets files are missing on this machine, say so. Do not invent live IDs.
 
 For any page or RBAC change, keep the complete view/action matrix synchronized in `docs/pages-and-ui.md` and `docs/auth-rbac.md`. A page-level `canView*` key is only an entry gate; document and test create, edit, delete, payment, workflow, and destructive action permissions separately.
 
@@ -44,5 +46,11 @@ Skip only for pure comment/format/typo-in-code with zero behavior change.
 | Tests / CI | `docs/testing-and-ci.md` |
 
 Index: `docs/README.md`. New agent: `docs/llm-onboarding.md` + `docs/developing.md`. Dedicated pass: skill `goko-local-docs`. Project-wide agent instructions also live in the repository root `AGENTS.md` and apply to every chat/agent working in GokoWeb.
+
+## Test-layer choice
+
+- Vitest covers pure logic, parsers, money/date rules, permissions, API routes, error contracts, retries, idempotency, and disposable-database workflows.
+- Playwright covers critical navigation and cross-component journeys, responsive behavior, and user-visible loading/empty/unauthorized states with deterministic mocked APIs.
+- Reuse existing helpers and suites; add shared fixtures only when multiple tests need the same setup.
 
 If you change a landmine (array wire format, permission mismatch, occupancy split, `useAdminApi` target), update `docs/llm-onboarding.md`.

@@ -1,6 +1,6 @@
 ---
 name: goko-local-docs
-description: Review and update the GokoWeb handbook in docs/ (architecture, flows, API map). Secrets stay in gitignored secrets-and-access.md. Use when changing APIs, schema, auth, PMS, food, CMS, sync, deploy, or secrets; when the user asks to update docs; or after a feature lands.
+description: Keep GokoWeb handbook docs and regression tests synchronized with feature, API, schema, auth, UI, PMS, food, CMS, sync, deploy, and workflow changes. Secrets stay in gitignored secrets-and-access.md.
 ---
 
 # Goko handbook
@@ -11,14 +11,22 @@ Committed `docs/` is the knowledge base. Never `git add docs/secrets-and-access.
 
 1. Read `docs/README.md` then `docs/llm-onboarding.md` (landmines).
 2. Diff the change against **source** (`src/`, `migrations/`, `wrangler.jsonc`). Do not trust an older handbook paragraph if the route disagrees.
-3. Patch every matching file in the table below. Keep mermaid diagrams accurate.
-4. Secrets/passwords/live IDs → only `docs/secrets-and-access.md` and `MAINTAINER.local.md`.
-5. Production stamps (Worker version, D1 applied list, R2) → `MAINTAINER.local.md`.
-6. If those gitignored files are missing, stop and say so.
+3. Identify the smallest meaningful regression test: Vitest for logic/API/auth/data behavior; Playwright for cross-page or user-visible workflows. Extend an existing suite before creating a new one.
+4. Add or update that regression test in the same turn. Cover success plus relevant authorization, boundary, duplicate/retry, and failure behavior; do not add browser coverage for pure logic that is already well covered by Vitest.
+5. Patch every matching file in the table below. Keep mermaid diagrams accurate.
+6. Secrets/passwords/live IDs → only `docs/secrets-and-access.md` and `MAINTAINER.local.md`.
+7. Production stamps (Worker version, D1 applied list, R2) → `MAINTAINER.local.md`.
+8. If those gitignored files are missing, say so; never invent live values.
 
 ## Commit gate
 
-Before committing, inspect both the working-tree and staged diffs. A commit that changes product behavior must also include the matching handbook updates in the same commit; do not commit source-only RBAC/API/page changes. Confirm the permission catalog, UI gates, server action maps, tests, `docs/pages-and-ui.md`, `docs/auth-rbac.md`, `docs/api-map.md`, and relevant flow/onboarding docs are synchronized. Run `git diff --cached --check` plus the applicable tests/typecheck/build before pushing.
+Before committing, inspect both the working-tree and staged diffs. A commit that changes product behavior must include a focused regression test and the matching handbook updates in the same commit; do not commit source-only RBAC/API/page changes. Confirm the permission catalog, UI gates, server action maps, tests, `docs/pages-and-ui.md`, `docs/auth-rbac.md`, `docs/api-map.md`, and relevant flow/onboarding docs are synchronized. Run `git diff --cached --check` plus the applicable tests/typecheck/build before pushing.
+
+## Test-layer choice
+
+- Vitest: pure logic, parsers, money/date rules, permissions, API routes, error contracts, retries, idempotency, and disposable-database workflows.
+- Playwright: critical navigation and cross-component journeys, responsive behavior, and user-visible loading/empty/unauthorized states. Use deterministic mocked APIs; never production credentials or live mutable data.
+- Reuse existing helpers and suites. Add shared fixtures only when multiple tests need the same setup.
 
 ## File map
 
@@ -53,4 +61,4 @@ Before committing, inspect both the working-tree and staged diffs. A commit that
 
 ## Done when
 
-Handbook matches the diff. Stale sentences that contradict `src/` are gone. Secrets file still gitignored.
+Handbook and focused regression tests match the diff. Stale sentences that contradict `src/` are gone. Secrets file remains gitignored. A behavior change without a test or matching docs update is not ready for handoff.

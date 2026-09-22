@@ -46,4 +46,6 @@ Any behavior/API/schema/auth change → update `docs/` in the same turn (`.curso
 
 ## Tests
 
-`npm test`. Touch RBAC / stock / inventory / CMS → update the matching `src/__tests__/*`.
+Every behavior change needs a focused regression test in the same turn. Use Vitest for logic/API/auth/data behavior and Playwright for critical cross-page user workflows. Extend an existing suite before creating a new one. Touch RBAC / stock / inventory / CMS → update the matching `src/__tests__/*`.
+
+Every behavior, API, schema, auth, permission, page, or workflow change also requires matching committed maintainer documentation; source-only changes are not ready for handoff.

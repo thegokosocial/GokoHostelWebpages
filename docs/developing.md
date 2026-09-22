@@ -56,6 +56,17 @@ One Next.js 15.5 App Router monolith: marketing site, guest check-in/food, kitch
 | Permission | `ManagementUsers.tsx` **and** the route map (they diverge — see onboarding §4) |
 | Handbook | matching `docs/*.md` same turn. Secrets → `secrets-and-access.md` only |
 
+## Feature-change gate
+
+Every behavior, page, API, schema, permission, authentication, or workflow change must include:
+
+1. A focused regression test in the appropriate existing Vitest or Playwright suite.
+2. Matching committed handbook updates in the same turn.
+3. Permission catalog, UI gate, server action map, API map, and page/flow docs updated together when applicable.
+4. Proportional validation before handoff; RBAC/API/UI changes require the checks listed in `AGENTS.md`.
+
+Use Vitest for logic, API, auth, data, error, retry, and idempotency behavior. Use Playwright for critical user-visible cross-page workflows and responsive behavior. Browser tests use deterministic mocked APIs and never production credentials or live mutable state.
+
 Do **not**:
 
 - SSR `/events` or `/community-area`
