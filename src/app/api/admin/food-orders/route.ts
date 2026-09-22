@@ -405,24 +405,27 @@ export async function POST(req: NextRequest) {
         const accountId = allocations.some((allocation) => allocation.onlineAmount > 0)
           ? await resolveReceiptAccount("food", onlineAccountId)
           : undefined;
-        const db = getDb();
-        await db.transaction(async (tx: any) => {
-          const currentRows = await tx.select().from(foodOrders).where(inArray(foodOrders.id, orderIds));
+        const db = getDb() as any;
+        const assertCurrentOrders = async (client: any) => {
+          const currentRows = await client.select().from(foodOrders).where(inArray(foodOrders.id, orderIds));
           if (currentRows.length !== orderIds.length || currentRows.some((order: any) => order.status === "cancelled" || order.paymentStatus === "paid")) {
             throw Object.assign(new Error("A selected order changed before payment was recorded"), { status: 409 });
           }
+        };
+        const buildPaymentWrites = (client: any) => {
+          const writes: any[] = [];
           for (const allocation of allocations) {
             const order = existingOrders.find((candidate) => candidate.id === allocation.orderId)!;
-            await tx.update(foodOrders).set(syncUpdate({
+            writes.push(client.update(foodOrders).set(syncUpdate({
               paymentStatus: "paid",
               paymentMethod: allocation.paymentMethod,
               paidBy: actorName,
               cashReceived: allocation.cashReceived,
               changeGiven: allocation.changeGiven,
               updatedAt: new Date().toISOString(),
-            })).where(eq(foodOrders.id, allocation.orderId));
+            })).where(eq(foodOrders.id, allocation.orderId)));
             if (allocation.onlineAmount > 0) {
-              await tx.insert(guestReceipts).values(syncInsert({
+              writes.push(client.insert(guestReceipts).values(syncInsert({
                 receiptId: `${receiptId || crypto.randomUUID()}:food:${allocation.orderId}`,
                 sourceType: "food_order",
                 sourceId: allocation.orderId,
@@ -433,17 +436,30 @@ export async function POST(req: NextRequest) {
                 notes: `Food order ${order.orderNumber}`,
                 createdBy: actorName,
                 createdAt: new Date().toISOString(),
-              }));
+              })));
             }
           }
-          await tx.insert(auditLog).values({
+          writes.push(client.insert(auditLog).values({
             timestamp: new Date().toISOString(),
             username: actorName,
             action: "food_order_paid",
             target: `orders:${orderIds.join(",")}`,
             details: `Marked paid via ${method}${tenderCash ? `, cash received ₹${(tenderCash / 100).toFixed(0)}` : ""}${tenderChange ? `, change ₹${(tenderChange / 100).toFixed(0)}` : ""}`,
+          }));
+          return writes;
+        };
+
+        // D1 is auto-commit and exposes atomic multi-statement writes through
+        // batch(). Keep the explicit transaction fallback for the Pi SQLite runtime.
+        if (typeof db.batch === "function") {
+          await assertCurrentOrders(db);
+          await db.batch(buildPaymentWrites(db));
+        } else {
+          await db.transaction(async (tx: any) => {
+            await assertCurrentOrders(tx);
+            for (const write of buildPaymentWrites(tx)) await write;
           });
-        });
+        }
         return NextResponse.json({ success: true, role });
       }
 

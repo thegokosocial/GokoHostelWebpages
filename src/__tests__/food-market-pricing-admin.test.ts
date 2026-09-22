@@ -8,6 +8,7 @@ const q = vi.hoisted(() => ({
   updateFoodOrderItemQuantity: vi.fn(), deleteFoodOrderItem: vi.fn(), addStock: vi.fn(), decrementStock: vi.fn(),
   restoreStock: vi.fn(),
   latestReceiptAccount: vi.fn(), createGuestReceipt: vi.fn(), resolveReceiptAccount: vi.fn(),
+  getFoodOrderItemsBatch: vi.fn(),
   getDb: vi.fn(),
 }));
 
@@ -20,6 +21,7 @@ vi.mock("@/db/queries", () => ({
   updateFoodOrderStatus: q.updateFoodOrderStatus,
   updateFoodOrderItemQuantity: q.updateFoodOrderItemQuantity, deleteFoodOrderItem: q.deleteFoodOrderItem,
   addStock: q.addStock, decrementStock: q.decrementStock, restoreStock: q.restoreStock,
+  getFoodOrderItemsBatch: q.getFoodOrderItemsBatch,
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
 vi.mock("@/lib/guestReceipts", () => ({ latestReceiptAccount: q.latestReceiptAccount, createGuestReceipt: q.createGuestReceipt, receiptBusinessDate: vi.fn(() => "2026-09-22"), resolveReceiptAccount: q.resolveReceiptAccount }));
@@ -49,6 +51,7 @@ beforeEach(() => {
   q.latestReceiptAccount.mockResolvedValue(null);
   q.resolveReceiptAccount.mockResolvedValue(7);
   q.createGuestReceipt.mockResolvedValue(undefined);
+  q.getFoodOrderItemsBatch.mockResolvedValue(new Map());
   q.updateFoodOrderItemQuantity.mockImplementation(async (id: number, quantity: number, price: number) => Object.assign(pendingItem, { quantity, lineTotal: quantity * price }));
   q.getDb.mockReturnValue({
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [pendingItem] }) }) }),
@@ -142,6 +145,40 @@ describe("admin market-pricing workflows", () => {
       body: JSON.stringify({ password: "pw", action: "markOrderPaid", orderIds: [10], paymentMethod: "online" }),
     }));
     expect(cancelledResponse.status).toBe(409);
+  });
+
+  it("records online payment atomically through the D1 batch path", async () => {
+    const payableOrder = { ...order, total: 400, paymentMethod: "", paymentStatus: "pending" };
+    q.getFoodOrderById.mockResolvedValue(payableOrder);
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([[10, [{ status: "active", pricingStatus: "fixed" }]]]));
+    q.resolveReceiptAccount.mockResolvedValue(7);
+
+    const currentRows = vi.fn(async () => [payableOrder]);
+    const updateWhere = vi.fn(async () => undefined);
+    const update = vi.fn(() => ({ set: () => ({ where: updateWhere }) }));
+    const insertValues = vi.fn(async () => undefined);
+    const insert = vi.fn(() => ({ values: insertValues }));
+    const batch = vi.fn(async (writes: unknown[]) => {
+      expect(writes).toHaveLength(3);
+      return [];
+    });
+    q.getDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: currentRows }) }),
+      update,
+      insert,
+      batch,
+    });
+
+    const response = await POST(new NextRequest("http://localhost/api/admin/food-orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "pw", action: "markOrderPaid", orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledTimes(2);
   });
 
   it("reverts a paid online order to pending and reverses its receipt with an audit entry", async () => {
