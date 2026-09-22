@@ -1,6 +1,6 @@
 # Data model
 
-**Git-safe.** Schema: `src/db/schema.ts`. Repository SQL: `migrations/0001_initial.sql` … `0065_native_hold_lease_renew.sql`. Repository migrations are not proof of deployment; what production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the common migration set (it skips CMS/splits/bill-share migrations as configured); gateway/native tables remain unused/unsynced on Pi and their services reject Pi.
+**Git-safe.** Schema: `src/db/schema.ts`. Repository SQL: `migrations/0001_initial.sql` … `0069_ota_postpaid_booking_payments.sql`. Repository migrations are not proof of deployment; what production D1 has *applied* is in `MAINTAINER.local.md`. D1 id is in committed `wrangler.jsonc`. Pi migrator applies the common migration set (it skips CMS/splits/bill-share migrations as configured); gateway/native tables remain unused/unsynced on Pi and their services reject Pi.
 
 Money = **paise** integers except `bookings` amounts, which are **rupees**. Dates = ISO or `YYYY-MM-DD`. Month keys = `JUNE-2026`.
 

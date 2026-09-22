@@ -197,7 +197,7 @@ Validation on 2026-09-22:
 - `git diff --check` — passed.
 - `npm run build` — passed. Next.js reported non-fatal hook-dependency and `<img>` optimization warnings.
 
-These checks validate the local application and Pi migration path. They do not represent a production deployment or a live test between disconnected Pi and Cloudflare instances.
+These checks validate the local application and Pi migration path. After validation, commit `ab2ae68` was pushed to `main`, the Workers deployment reached 100% traffic on 22 Sep 2026, and migration `0069_ota_postpaid_booking_payments.sql` was applied to production D1. A live disconnected Pi/Cloudflare financial-sync test was not performed.
 
 ## Policy note
 
