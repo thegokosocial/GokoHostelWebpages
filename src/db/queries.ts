@@ -1172,12 +1172,7 @@ export async function getFoodOrdersByStatus(status: string) {
 export async function getActiveFoodOrders() {
   const db = getDb();
   return db.select().from(foodOrders)
-    .where(
-      and(
-        sql`${foodOrders.status} != 'served'`,
-        sql`${foodOrders.status} != 'cancelled'`
-      )
-    )
+    .where(inArray(foodOrders.status, ["pending_approval", "placed", "preparing", "ready"]))
     .orderBy(foodOrders.createdAt);
 }
 

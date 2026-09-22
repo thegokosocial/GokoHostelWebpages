@@ -64,6 +64,8 @@ describe("Workers CPU: zero-regression API paths", () => {
     expect(dashboard).toContain("scope: authScope");
     expect(readFile("src/components/admin/AdminFoodOrders.tsx")).toContain('authScope="admin"');
     expect(route).toContain('authenticateKitchen(password, scope === "admin" ? "admin" : "kitchen")');
+    expect(readFile("src/db/queries.ts")).toContain('inArray(foodOrders.status, ["pending_approval", "placed", "preparing", "ready"])');
+    expect(dashboard).toContain('showError("Kitchen orders unavailable"');
   });
 
   it("lets any authenticated user hit the login auth action before RBAC", () => {

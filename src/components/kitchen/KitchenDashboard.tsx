@@ -184,7 +184,9 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
         onLogout();
         throw new Error("Unauthorized");
       }
-      return res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kitchen request failed");
+      return data;
     },
     [password, authScope, onLogout]
   );
@@ -224,11 +226,12 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
     } catch (err: any) {
       if (err?.message !== "Unauthorized") {
         console.error("Fetch orders error:", err);
+        showError("Kitchen orders unavailable", err?.message || "Could not load active orders. Please retry.");
       }
     } finally {
       fetchingRef.current = false;
     }
-  }, [api]);
+  }, [api, showError]);
 
   const fetchMenuItems = useCallback(async () => {
     try {
