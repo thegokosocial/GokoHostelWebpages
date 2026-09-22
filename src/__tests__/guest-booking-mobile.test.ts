@@ -73,6 +73,14 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("disabled={busy || !stayReady}");
     expect(panel).toContain("Choose your check-in and check-out dates.");
   });
+  it("gently scrolls the first available result into view", () => {
+    expect(panel).toContain("firstAvailabilityCardRef");
+    expect(panel).toContain("window.requestAnimationFrame");
+    expect(panel).toContain('window.matchMedia("(prefers-reduced-motion: reduce)")');
+    expect(panel).toContain('block: "start", behavior');
+    expect(panel).toContain('className="scroll-mt-24');
+    expect(panel).toContain("if (!rooms?.length) return;");
+  });
   it("searches with dates only, shows nightly prices and uses a configured limit", () => {
     expect(panel).not.toContain('stay.guests');
     expect(panel).toContain('maxSelectedBeds'); expect(panel).toContain('Maximum {maxSelectedBeds} beds reached');

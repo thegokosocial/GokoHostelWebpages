@@ -41,7 +41,7 @@ function goToConfirmation(ref: string, guestAccessToken?: string | null) {
 }
 
 export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate: string; checkoutDate: string } } }) {
-  const panelRef = useRef<HTMLDivElement>(null), reviewRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null), reviewRef = useRef<HTMLDivElement>(null), firstAvailabilityCardRef = useRef<HTMLElement | null>(null);
   const [inView, setInView] = useState(false);
   const [tab, setTab] = useState<"search" | "booking">("search");
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
@@ -91,6 +91,14 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     reviewRef.current?.focus({ preventScroll: true });
     reviewRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
   }, [review]);
+  useEffect(() => {
+    if (!rooms?.length) return;
+    const frame = window.requestAnimationFrame(() => {
+      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      firstAvailabilityCardRef.current?.scrollIntoView({ block: "start", behavior });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rooms]);
   function openReview() {
     // setReview(true) is a no-op when already open — re-scroll so a second click still works.
     if (review) {
@@ -427,11 +435,11 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         <h3 className="font-semibold">Available for {searchedStay?.checkinDate} – {searchedStay?.checkoutDate}</h3>
         {rooms.length === 0 ? <p className="mt-3">No online beds are available for these dates. Try different dates or contact us.</p> : <>
           <div className="mt-4 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="min-w-0 space-y-4">{rooms.map(room => {
+          <div className="min-w-0 space-y-4">{rooms.map((room, index) => {
             const photos = resolveRoomGallery(room.name);
             const quantity = selection[room.id] || 0;
             const canAdd = canAddGuestRoom(rooms, selection, room, maxSelectedBeds ?? 0);
-            return <article key={room.id} className="min-w-0 overflow-hidden rounded-2xl border border-brand-green/20 bg-white p-3 shadow-sm sm:p-4 xl:grid xl:grid-cols-[130px_minmax(0,1fr)_210px] xl:gap-4">
+            return <article ref={index === 0 ? firstAvailabilityCardRef : undefined} key={room.id} className="scroll-mt-24 min-w-0 overflow-hidden rounded-2xl border border-brand-green/20 bg-white p-3 shadow-sm sm:p-4 xl:grid xl:grid-cols-[130px_minmax(0,1fr)_210px] xl:gap-4">
               <div className="grid min-w-0 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:contents">
                 <div className="min-w-0">
                   {photos.length ? (
