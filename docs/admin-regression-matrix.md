@@ -15,7 +15,7 @@ This is the maintainer map for expanding Admin regression coverage. The surface 
 | Reviews | `reviews` | review and WhatsApp suites | list/send/edit/reset, invalid phone, rate limits, settings, role access |
 | Management: Menu/Food/Bill settings | `food` | food/menu suites | CRUD, availability, upload/branding, validation, role access |
 | Management: CMS/Quick Links/QR | `website`, `quick-links`, `qr-history` | `website-cms-api`, `site-cms`, `qr-history-api` | auth/RBAC, CRUD, upload validation, public rendering, safe deletion |
-| Management: Channel/Booking/Razorpay | channel-manager, booking-settings/payments | Aiosell and native payment suites | admin-only gate, stale config, provider failure, retry/idempotency, audit |
+| Management: Channel/Booking/Razorpay | channel-manager, booking-settings/payments | Aiosell, `booking-settings-api`, and native payment suites | admin-only gate, stale config, provider failure, retry/idempotency, audit |
 | Management: Users/Audit/Logs/Health/Backup/Attendance/Tasks | checkins, attendance, tasks, admin settings | `rbac`, `tasks-api`, audit/log suites | admin/manager/staff matrix, ownership, destructive confirmation, retention, failure states |
 
 ## Minimum test shape for a new action
