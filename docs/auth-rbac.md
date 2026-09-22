@@ -90,7 +90,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Booking:** `canAddBooking`, `canCheckIn`, `canCheckOut`, `canDeleteBooking`, `canRecordBookingPayments`, `canManageBookingTemplates`
 
-**Food:** `canViewFoodOrders`, `canViewFoodTabs`, `canPlaceOrders`, `canEditFoodOrders`, `canVoidFoodOrders`, `canMarkPaid`, `canApplyFoodDiscounts`, `canGenerateFoodBills`, `canManageInventory`, `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageFoodSettings`
+**Food:** `canViewFoodOrders`, `canViewFoodTabs`, `canPlaceOrders`, `canEditFoodOrders`, `canVoidFoodOrders`, `canMarkPaid`, `canApplyFoodDiscounts`, `canGenerateFoodBills`, `canManageInventory`, `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageFoodSettings`. The food payment modal may call `getFoodReceiptAccounts` with an empty password after login; it authenticates through the existing admin session cookie and still requires `canMarkPaid` (or admin bypass).
 
 **Expenses:** `canAddExpense`, `canEditExpense`, `canDeleteExpense`, `canViewExpenses`, `canViewFoodBills`, `canAddIncome`, `canReconcileCash`, `canReconcileOnline`, `canSettlePlatformPayments`, `canAdjustPlatformReceivables`, `canManageAccountSettings`, `canManageVendors`, `canManageEmployees`, `canManagePayroll`
 

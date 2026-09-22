@@ -225,6 +225,9 @@ describe("layout / extract", () => {
     expect(src).toContain("RecordPaymentModal");
     expect(src).not.toContain("function PaymentModal");
     expect(modal).toContain('payload.action = roomAccountList ? "getRoomReceiptAccounts" : "getFoodReceiptAccounts"');
+    expect(modal).toContain('if (!receiptKind) return;');
+    expect(modal).toContain('password: password || ""');
+    expect(modal).not.toContain('if (!password || !receiptKind) return;');
     expect(accountsApi).toContain('getFoodReceiptAccounts: "canMarkPaid"');
     expect(accountsApi).toContain('getSetting("food_online_receipt_account_id")');
   });

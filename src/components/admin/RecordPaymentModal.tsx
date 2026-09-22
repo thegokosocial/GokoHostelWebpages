@@ -63,8 +63,10 @@ export function RecordPaymentModal({
   const [operationId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
-    if (!password || !receiptKind) return;
-    const payload: Record<string, string> = { password };
+    // After login the admin UI clears the password and authenticates API calls
+    // with the admin session cookie, so an empty password is valid here.
+    if (!receiptKind) return;
+    const payload: Record<string, string> = { password: password || "" };
     if (username) payload.username = username;
     const roomAccountList = receiptKind === "room";
     payload.action = roomAccountList ? "getRoomReceiptAccounts" : "getFoodReceiptAccounts";
