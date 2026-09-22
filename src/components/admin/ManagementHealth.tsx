@@ -128,7 +128,7 @@ export function ManagementHealth({ password, role }: { password: string; role: R
   );
 
   const handleReconnect = () => {
-    window.location.href = `/api/auth/google/start?password=${encodeURIComponent(password)}`;
+    window.location.href = "/api/auth/google/start";
   };
 
   const sortedStats = sortStatsChronologically(stats);

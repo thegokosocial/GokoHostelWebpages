@@ -14,7 +14,7 @@ Code: `src/lib/auth.ts`, `src/lib/actionPermissions.ts`, `src/lib/adminNav.ts`.
 
 ## How login works
 
-There are **no JWT cookies**. The admin SPA keeps the password in React state (optional “remember me” in localStorage). `/admin` opens directly to one username/password form; every new login sends `{ password, username, action }`. The server determines whether the account is admin, manager, or a database user from those credentials. Older remembered sessions without a username remain supported for compatibility.
+The admin and kitchen SPAs authenticate once through `/api/auth/login`. The server issues a short-lived, HttpOnly session cookie; subsequent API calls do not send or store the password. `/api/auth/logout` revokes the current session and `/api/auth/session` restores the UI state. Cloudflare and Pi sessions are local to each runtime.
 
 ```mermaid
 sequenceDiagram
@@ -36,9 +36,9 @@ sequenceDiagram
 | `ADMIN_PASSWORD` | omitted, or `admin` | `role: admin`, `permissions: {}`, **bypasses** all maps |
 | `MANAGER_PASSWORD` | omitted, or `manager` | `role: manager`, `permissions: {}` |
 
-DB users: `users.password_hash` = SHA-256(password + `"goko-salt-2026"`). JSON `permissions` object.
+DB users retain the JSON `permissions` object. New password hashes use a versioned per-user salted KDF; legacy hashes migrate after successful login.
 
-Kitchen (`authenticateKitchen`): env admin **or** env manager **or any DB user hash** (no username). Stored in `sessionStorage.kitchen_pw`.
+Kitchen (`authenticateKitchen`): env admin **or** env manager **or any DB user hash** (no username). Access uses the same session cookie with `scope=kitchen`; passwords are not stored in browser storage.
 
 ---
 
@@ -68,7 +68,7 @@ Booking Settings saves additionally require the revision returned by `getSetting
 
 `/api/admin/reviews`: admin **or** `canViewReviews`.
 
-`/api/admin/import` and `/api/admin/upload`: env `ADMIN_PASSWORD` / `MANAGER_PASSWORD` only — **not** DB users.
+`/api/admin/import` uses the shared session and `canAddCheckin`. `/api/admin/upload` uses the shared session and `canAddCheckin` or `canEditRecords`.
 
 Form C: token = `ADMIN_PASSWORD` or fallback `"goko-form-c-secret"`.
 

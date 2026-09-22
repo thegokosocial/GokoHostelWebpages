@@ -113,6 +113,8 @@ Existing section selectors within Management use a shared wrapping style based o
 
 The public guest page is `/quick-links`. It displays active sections and cards from the Links & QRs Management tab. Uploaded QR images are the primary scan-first content; when a card has a URL but no uploaded image, the page generates and displays a QR code automatically. QR codes scale to the available phone width, and guests do not need to tap anything. The admin editor keeps upload/preview failures visible and prevents saving a failed upload as an empty QR card. The supplied Self Check-In QR and Food Order QR assets are seeded only when those existing cards have no saved image, so later administrator uploads are preserved.
 
+Admin and Kitchen login now use server sessions. Passwords are entered only on the login form, are not remembered in browser storage, and are not included in subsequent API requests. Sessions expire and can be revoked with logout.
+
 ---
 
 ## Booking dashboard files

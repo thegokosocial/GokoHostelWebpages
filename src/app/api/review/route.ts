@@ -3,11 +3,15 @@ import { getReviewRequestByToken, submitReviewRating, submitReviewFeedback, getS
 import { getDb } from "@/db";
 import { reviewFeedback } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { assertGuestOrigin, guestBookingRateLimit } from "@/lib/guestBookingRateLimit";
 
 const VALID_IMPROVEMENT_AREAS = ["Dorms", "Washrooms", "Comfort", "Vibe", "Common Area", "Cafe Food"];
 
 export async function POST(req: NextRequest) {
   try {
+    assertGuestOrigin(req);
+    const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
+    if (!guestBookingRateLimit(`review:${ip}`, 20, 10 * 60_000)) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     const body = await req.json();
     const { action, token, ...rest } = body;
 

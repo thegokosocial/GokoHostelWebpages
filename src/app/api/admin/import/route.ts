@@ -4,6 +4,8 @@ import { getDb } from "@/db";
 import { checkins } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { getMonthKey, addSystemLog } from "@/db/queries";
+import { authenticateUser } from "@/lib/auth";
+import { actionAllowed } from "@/lib/actionPermissions";
 
 const MAX_ROWS = 500;
 
@@ -138,12 +140,11 @@ export async function POST(req: NextRequest) {
   // Template download request (JSON body with action: "template")
   if (contentType.includes("application/json")) {
     const body = await req.json();
-    const password = body.password as string;
-    const adminPw = process.env.ADMIN_PASSWORD;
-    const managerPw = process.env.MANAGER_PASSWORD;
-    if (!password || (password !== adminPw && password !== managerPw)) {
+    const auth = await authenticateUser("", typeof body.username === "string" ? body.username : undefined);
+    if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (actionAllowed(auth.role, auth.permissions, "canAddCheckin") !== "allowed") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
 
     const buf = generateTemplate();
     return new NextResponse(buf, {
@@ -157,13 +158,12 @@ export async function POST(req: NextRequest) {
   // Import request (multipart form data)
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
-  const password = formData.get("password") as string;
-
-  const adminPw = process.env.ADMIN_PASSWORD;
-  const managerPw = process.env.MANAGER_PASSWORD;
-  if (!password || (password !== adminPw && password !== managerPw)) {
+  const username = String(formData.get("username") || "") || undefined;
+  const auth = await authenticateUser("", username);
+  if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (actionAllowed(auth.role, auth.permissions, "canAddCheckin") !== "allowed") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
 
   if (!file || file.size === 0) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });

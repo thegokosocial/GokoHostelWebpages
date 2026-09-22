@@ -236,7 +236,7 @@ describe("Kitchen bulk status workflow", () => {
 describe("Admin bookings shell source-scan", () => {
   it("logs in with action auth, fills inventory/bookings viewport, and client-loads BookingDashboard", () => {
     const adminPage = readFile("src/app/admin/page.tsx");
-    expect(adminPage).toContain('action: "auth"');
+    expect(adminPage).toContain('scope: "admin"');
     expect(adminPage).not.toMatch(/action: "list"/);
     expect(adminPage).toMatch(/fillViewport = section === "inventory"/);
     expect(adminPage).toMatch(/fillViewport \? "h-dvh" : "min-h-screen"/);

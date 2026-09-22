@@ -6,7 +6,9 @@ Push payloads and event producers are documented in [Push notifications](push-no
 
 **Git-safe.** Auth: send env `ADMIN_PASSWORD` (value in [secrets-and-access.md](secrets-and-access.md)). RBAC: [auth-rbac.md](auth-rbac.md). 42 `route.ts` files under `src/app/api/`.
 
-Almost every admin route is `POST` + JSON `{ password, username?, action, ... }`. Unknown `action` → 400. Missing auth → 401. RBAC fail → 403.
+Almost every admin route remains `POST` + JSON `{ action, ... }`; legacy password fields are accepted only by compatibility paths during migration. Unknown `action` → 400. Missing auth → 401. RBAC fail → 403.
+
+Authentication migration: `/api/auth/login` accepts credentials once and sets an HttpOnly `goko_session` cookie; `/api/auth/session` returns the current non-secret identity; `/api/auth/logout` revokes it. Admin and kitchen API calls use the cookie and no longer need password fields. Legacy direct-password calls remain accepted only by compatibility paths during migration.
 
 ## Error responses
 

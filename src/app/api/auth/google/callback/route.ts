@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/db/queries";
+import { cookies } from "next/headers";
 
 const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID!;
 const GOOGLE_WEB_CLIENT_SECRET = process.env.GOOGLE_WEB_CLIENT_SECRET!;
@@ -30,29 +31,20 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const storedStateRaw = await getSetting("oauth_state_nonce");
-  if (!storedStateRaw) {
+  const storedNonce = (await cookies()).get("goko_oauth_state")?.value;
+  if (!storedNonce) {
     return NextResponse.redirect(
       `${req.nextUrl.origin}/admin?oauth_error=expired_state`
     );
   }
 
-  let storedState: { nonce: string; expiry: number };
-  try {
-    storedState = JSON.parse(storedStateRaw);
-  } catch {
-    return NextResponse.redirect(
-      `${req.nextUrl.origin}/admin?oauth_error=invalid_state`
-    );
-  }
-
-  if (stateData.nonce !== storedState.nonce || Date.now() > storedState.expiry) {
+  if (stateData.nonce !== storedNonce) {
     return NextResponse.redirect(
       `${req.nextUrl.origin}/admin?oauth_error=expired_state`
     );
   }
 
-  await setSetting("oauth_state_nonce", "");
+  (await cookies()).set("goko_oauth_state", "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/api/auth/google", maxAge: 0 });
 
   const redirectUri = `${req.nextUrl.origin}/api/auth/google/callback`;
 

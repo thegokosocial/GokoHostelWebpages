@@ -62,7 +62,6 @@ function AdminPageInner() {
   const [pendingBookingId, setPendingBookingId] = useState<number | null>(null);
   const [pendingCheckinId, setPendingCheckinId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [autoLogging, setAutoLogging] = useState(true);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -91,10 +90,6 @@ function AdminPageInner() {
       if (!res.ok) { setCpError(data.error || "Failed to change password"); return; }
       setCpSuccess("Password changed successfully!");
       setCpCurrent(""); setCpNew(""); setCpConfirm("");
-      setPassword(cpNew);
-      if (rememberMe) {
-        localStorage.setItem("gokoAdminSession", JSON.stringify({ password: cpNew, username: username || "" }));
-      }
     } catch {
       setCpError("Something went wrong");
     } finally {
@@ -103,44 +98,21 @@ function AdminPageInner() {
   };
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("gokoAdminSession");
-      if (saved) {
-        const session = JSON.parse(saved);
-        if (session.password) {
-          setPassword(session.password);
-          setUsername(session.username || "");
-          setRememberMe(true);
-          const body: any = { password: session.password, action: "auth" };
-          if (session.username) body.username = session.username;
-          fetch("/api/admin/checkins", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }).then(async (res) => {
-            if (res.ok) {
-              const data = await res.json();
-              const nextSection = firstVisibleAdminSection(data.role, data.permissions || {}, section);
-              if (!nextSection) {
-                clearStaffWhatsAppDraft();
-                localStorage.removeItem("gokoAdminSession");
-              } else {
-                setRole(data.role);
-                setPermissions(data.permissions || {});
-                if (nextSection !== section) setSection(nextSection);
-              }
-            } else {
-              clearStaffWhatsAppDraft();
-              localStorage.removeItem("gokoAdminSession");
-            }
-            setAutoLogging(false);
-          }).catch(() => { setAutoLogging(false); });
-          return;
+    fetch("/api/auth/session")
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json();
+        const nextSection = firstVisibleAdminSection(data.role, data.permissions || {}, section);
+        if (nextSection) {
+          setUsername(data.username || "");
+          setRole(data.role);
+          setPermissions(data.permissions || {});
+          if (nextSection !== section) setSection(nextSection);
         }
-      }
-    } catch {}
-    setAutoLogging(false);
-  }, []);
+      })
+      .catch(() => {})
+      .finally(() => setAutoLogging(false));
+  }, [section, setSection]);
 
   useEffect(() => {
     if (!role || role === "admin") return;
@@ -152,12 +124,10 @@ function AdminPageInner() {
     setLoading(true);
     setError("");
     try {
-      const body: any = { password, username, action: "auth" };
-
-      const res = await fetch("/api/admin/checkins", {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ password, username, scope: "admin" }),
       });
       if (res.status === 401) { setError("Incorrect credentials"); return; }
       if (!res.ok) throw new Error("Failed");
@@ -169,10 +139,9 @@ function AdminPageInner() {
       }
       setRole(data.role);
       setPermissions(data.permissions || {});
+      setUsername(data.username || username);
+      setPassword("");
       if (nextSection !== section) setSection(nextSection);
-      if (rememberMe) {
-        localStorage.setItem("gokoAdminSession", JSON.stringify({ password, username: username || "" }));
-      }
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -181,13 +150,13 @@ function AdminPageInner() {
   };
 
   const handleLogout = () => {
+    void fetch("/api/auth/logout?scope=admin", { method: "POST" });
     clearStaffWhatsAppDraft();
     setRole(null);
     setPassword("");
     setUsername("");
     setSection("dashboard");
     setPermissions({});
-    localStorage.removeItem("gokoAdminSession");
   };
 
   if (autoLogging) {
@@ -249,10 +218,6 @@ function AdminPageInner() {
               </div>
             </div>
             {error && <p className="text-sm text-red-500">{error}</p>}
-            <label className="flex items-center gap-2 text-sm text-brand-green-dark/70 dark:text-zinc-400">
-              <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-brand-mist dark:border-zinc-600" />
-              Keep me signed in
-            </label>
             <Button type="submit" variant="cta" className="w-full" disabled={loading || !password || !username}>
               {loading ? "Verifying..." : "Login"}
             </Button>

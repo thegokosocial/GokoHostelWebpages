@@ -13,21 +13,21 @@ function exists(relativePath: string): boolean {
 }
 
 describe("Workers CPU: zero-regression API paths", () => {
-  it("hashes the kitchen password once before comparing user rows", () => {
+  it("uses one legacy digest and verifies versioned KDF hashes for kitchen users", () => {
     const auth = readFile("src/lib/auth.ts");
     const fn = auth.match(/export async function authenticateKitchen[\s\S]*?\nexport /)?.[0]
       ?? auth.match(/export async function authenticateKitchen[\s\S]*$/)?.[0];
     expect(fn).toBeTruthy();
-    expect(fn!).toContain("const computed = await hashPassword(password)");
-    const hashAt = fn!.indexOf("const computed = await hashPassword(password)");
+    expect(fn!).toContain("const legacy = await legacyHashPassword(password)");
+    const hashAt = fn!.indexOf("const legacy = await legacyHashPassword(password)");
     expect(fn!.indexOf("process.env.ADMIN_PASSWORD")).toBeGreaterThan(-1);
     expect(fn!.indexOf("process.env.ADMIN_PASSWORD")).toBeLessThan(hashAt);
     expect(fn!.indexOf("process.env.MANAGER_PASSWORD")).toBeGreaterThan(-1);
     expect(fn!.indexOf("process.env.MANAGER_PASSWORD")).toBeLessThan(hashAt);
     const loop = fn!.match(/for \(const user of allUsers\) \{[\s\S]*?\n    \}/)?.[0];
     expect(loop).toBeTruthy();
-    expect(loop!).not.toMatch(/hashPassword/);
-    expect(loop!).toContain("computed === user.passwordHash");
+    expect(loop!).toContain("legacy === user.passwordHash");
+    expect(loop!).toContain("verifyPassword(password, user.passwordHash)");
   });
 
   it("loads kitchen ticket tags by ordered item ids, not the full menu", () => {
@@ -70,7 +70,7 @@ describe("Workers CPU: zero-regression API paths", () => {
     const permMap = checkins.match(/const ACTION_PERMISSIONS: Record<string, ActionPerm> = \{[\s\S]*?\n    \};/)?.[0];
     expect(permMap).toBeTruthy();
     expect(permMap!).not.toMatch(/\bauth\s*:/);
-    expect(adminPage).toContain('action: "auth"');
+    expect(adminPage).toContain('scope: "admin"');
     expect(adminPage).not.toMatch(/action: "list"/);
     expect(adminPage).toContain("firstVisibleAdminSection");
     expect(adminPage).toContain("This account has no admin sections assigned.");

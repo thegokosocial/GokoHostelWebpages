@@ -274,6 +274,20 @@ export const users = sqliteTable("users", {
   ...syncColumnsWithDelete,
 });
 
+/** Server-side staff sessions. Deliberately excluded from Cloudflare/Pi sync. */
+export const authSessions = sqliteTable("auth_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  username: text("username").notNull(),
+  role: text("role").notNull(),
+  displayName: text("display_name").notNull(),
+  permissions: text("permissions").notNull().default("{}"),
+  scope: text("scope").notNull().default("admin"),
+  createdAt: text("created_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  lastSeenAt: text("last_seen_at").notNull(),
+  revokedAt: text("revoked_at"),
+});
+
 export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),

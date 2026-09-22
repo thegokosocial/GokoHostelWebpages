@@ -1,12 +1,13 @@
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: DENY
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()
-  X-DNS-Prefetch-Control: on
-  Cross-Origin-Opener-Policy: same-origin
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()
+X-DNS-Prefetch-Control: on
+Cross-Origin-Opener-Policy: same-origin
   Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://tagmanager.google.com; img-src 'self' data: blob: https://cdn.prod.website-files.com https://*.googleusercontent.com https://drive.google.com; media-src 'self' https://cdn.prod.website-files.com; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com; frame-src https://bookingengine.stayflexi.com
+
 
 /_next/static/*
   Cache-Control: public,max-age=31536000,immutable

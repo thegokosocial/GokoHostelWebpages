@@ -7,17 +7,17 @@ describe("admin login UI", () => {
   it("opens directly to username/password login without role selection", () => {
     expect(adminPage).toContain('id="admin-user"');
     expect(adminPage).toContain('id="admin-pw"');
-    expect(adminPage).toContain('const body: any = { password, username, action: "auth" };');
+    expect(adminPage).toContain('body: JSON.stringify({ password, username, scope: "admin" })');
     expect(adminPage).not.toContain("Select your access level");
     expect(adminPage).not.toContain("Back to role selection");
     expect(adminPage).not.toContain("selectedRole");
   });
 
-  it("keeps password visibility and remember-me controls", () => {
+  it("keeps password visibility without persisting credentials", () => {
     expect(adminPage).toContain("showPassword");
     expect(adminPage).toContain('aria-label={showPassword ? "Hide password" : "Show password"}');
-    expect(adminPage).toContain("Keep me signed in");
-    expect(adminPage).toContain('localStorage.setItem("gokoAdminSession"');
+    expect(adminPage).not.toContain("Keep me signed in");
+    expect(adminPage).not.toContain("gokoAdminSession");
   });
 
   it("does not offer self-service password change to admin accounts", () => {

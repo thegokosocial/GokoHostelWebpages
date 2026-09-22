@@ -16,8 +16,11 @@ import { getRuntimeName, isPiRuntime } from "@/lib/runtime";
 import { eq, sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { exec } from "child_process";
+import { getAuthSession } from "@/lib/authSession";
 
-function authenticateSync(password: string, syncSecret?: string): boolean {
+async function authenticateSync(password: string, syncSecret?: string): Promise<boolean> {
+  const session = await getAuthSession("admin");
+  if (session?.role === "admin") return true;
   const adminPw = process.env.ADMIN_PASSWORD;
   const secret = process.env.SYNC_SECRET;
 
@@ -60,7 +63,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(data);
     }
 
-    if (!authenticateSync(password, syncSecret)) {
+    if (!(await authenticateSync(password, syncSecret))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

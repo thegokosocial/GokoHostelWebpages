@@ -3,6 +3,7 @@ import { gmailListMessages, gmailGetMessage } from "@/lib/googleApiFetch";
 import { isBookingEmail, parseBookingEmail, getOtaSearchQuery } from "@/lib/otaEmailParser";
 import { addBooking, getAllBookings, deleteEmailBookings, setSetting, getSetting, addAuditEntry, addSystemLog } from "@/db/queries";
 import { isOfflineMode } from "@/lib/runtime";
+import { authenticateUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   if (isOfflineMode()) {
@@ -13,7 +14,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { password, resync } = body;
 
-    if (!password || (password !== process.env.ADMIN_PASSWORD && password !== process.env.MANAGER_PASSWORD)) {
+    const auth = await authenticateUser("", typeof body.username === "string" ? body.username : undefined);
+    if (!auth || !["admin", "manager"].includes(auth.role)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

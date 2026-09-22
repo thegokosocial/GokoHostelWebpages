@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setSetting } from "@/db/queries";
+import { cookies } from "next/headers";
+import { getAuthSession } from "@/lib/authSession";
 
 const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID!;
 const SCOPES = [
@@ -8,19 +9,14 @@ const SCOPES = [
 ].join(" ");
 
 export async function GET(req: NextRequest) {
-  const password = req.nextUrl.searchParams.get("password");
-  if (!password) {
-    return NextResponse.json({ error: "Missing password" }, { status: 400 });
-  }
-
-  const adminPass = process.env.ADMIN_PASSWORD;
-  if (password !== adminPass) {
+  const auth = await getAuthSession("admin");
+  if (!auth || auth.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const nonce = crypto.randomUUID();
   const expiry = Date.now() + 10 * 60 * 1000;
-  await setSetting("oauth_state_nonce", JSON.stringify({ nonce, expiry }));
+  (await cookies()).set("goko_oauth_state", nonce, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/api/auth/google", maxAge: 600 });
 
   const redirectUri = `${req.nextUrl.origin}/api/auth/google/callback`;
   const state = btoa(JSON.stringify({ nonce }));

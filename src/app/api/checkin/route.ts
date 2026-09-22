@@ -7,6 +7,7 @@ import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
 import { isSameCheckinVisit } from "@/lib/checkinDuplicate";
 import { getAgeFromDob } from "@/lib/parseDob";
+import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRateLimit";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -40,6 +41,11 @@ async function uploadToDrive(file: File, guestName: string, fileType: string): P
 }
 
 export async function POST(req: NextRequest) {
+  const contentLength = Number(req.headers.get("content-length") || "0");
+  if (contentLength > 35 * 1024 * 1024) return NextResponse.json({ error: "Submission is too large" }, { status: 413 });
+  try { assertGuestOrigin(req); } catch { return NextResponse.json({ error: "Invalid request origin" }, { status: 403 }); }
+  const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
+  if (!guestBookingRateLimit(`checkin:${ip}`, 8, 10 * 60_000)) return NextResponse.json({ error: "Too many submissions. Please try again later." }, { status: 429 });
   try {
     const formData = await req.formData();
 

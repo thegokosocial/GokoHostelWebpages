@@ -17,34 +17,34 @@ const KitchenDashboard = dynamic(
 );
 
 export default function KitchenPage() {
-  const [password, setPassword] = useState("");
+  const [authenticated, setAuthenticated] = useState(false);
   const [inputPassword, setInputPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const saved = sessionStorage.getItem("kitchen_pw");
-    if (saved) setPassword(saved);
+    fetch("/api/auth/session?scope=kitchen")
+      .then((res) => { if (res.ok) setAuthenticated(true); })
+      .catch(() => {});
   }, []);
 
-  // Auth is handled via the kitchen API password independently.
-  // Kitchen access is authenticated separately from admin-panel permissions.
+  // Kitchen access uses its own server-side session and remains separate from
+  // admin-panel permissions.
   const login = async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/food/kitchen", {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: inputPassword, action: "listOrders" }),
+        body: JSON.stringify({ password: inputPassword, scope: "kitchen" }),
       });
       if (res.status === 401) {
         setError("Incorrect password");
         return;
       }
       if (!res.ok) throw new Error("Failed");
-      sessionStorage.setItem("kitchen_pw", inputPassword);
-      setPassword(inputPassword);
+      setAuthenticated(true);
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -53,12 +53,12 @@ export default function KitchenPage() {
   };
 
   const logout = () => {
-    sessionStorage.removeItem("kitchen_pw");
-    setPassword("");
+    void fetch("/api/auth/logout?scope=kitchen", { method: "POST" });
+    setAuthenticated(false);
     setInputPassword("");
   };
 
-  if (!password) {
+  if (!authenticated) {
     return (
       <section className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-background">
         <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-border bg-white dark:bg-card p-8 shadow-lg">
@@ -100,5 +100,5 @@ export default function KitchenPage() {
     );
   }
 
-  return <KitchenDashboard password={password} onLogout={logout} />;
+  return <KitchenDashboard password="" onLogout={logout} />;
 }

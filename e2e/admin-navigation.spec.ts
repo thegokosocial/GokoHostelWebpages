@@ -4,6 +4,18 @@ import { DEFAULT_WEBSITE_BOOKING_SETTINGS } from "../src/lib/websiteBookingSetti
 async function mockAdminApi(page: Page) {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/auth/login") {
+      await route.fulfill({ json: { role: "admin", username: "e2e-admin", permissions: {} } });
+      return;
+    }
+    if (url.pathname === "/api/auth/session") {
+      await route.fulfill({ status: 401, json: { authenticated: false } });
+      return;
+    }
+    if (url.pathname === "/api/auth/logout") {
+      await route.fulfill({ json: { success: true } });
+      return;
+    }
     if (!url.pathname.startsWith("/api/admin/")) {
       await route.fulfill({ json: {} });
       return;

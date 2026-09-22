@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
 import { getMonthKey, incrementStat, addSystemLog } from "@/db/queries";
 import { isOfflineMode } from "@/lib/runtime";
+import { authenticateUser } from "@/lib/auth";
+import { actionAllowed } from "@/lib/actionPermissions";
 
 export async function POST(req: NextRequest) {
   if (isOfflineMode()) {
@@ -13,16 +15,19 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     const name = formData.get("name") as string || "Guest";
     const type = formData.get("type") as string || "doc";
-    const password = formData.get("password") as string;
-
-    const adminPw = process.env.ADMIN_PASSWORD;
-    const managerPw = process.env.MANAGER_PASSWORD;
-    if (!password || (password !== adminPw && password !== managerPw)) {
+    const username = String(formData.get("username") || "") || undefined;
+    const auth = await authenticateUser("", username);
+    if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const access = actionAllowed(auth.role, auth.permissions, ["canAddCheckin", "canEditRecords"]);
+    if (access !== "allowed") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
 
     if (!file || file.size === 0) {
       return NextResponse.json({ error: "No file" }, { status: 400 });
+    }
+    if (file.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)) {
+      return NextResponse.json({ error: "Unsupported or oversized document" }, { status: 400 });
     }
 
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
