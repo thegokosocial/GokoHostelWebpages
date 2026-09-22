@@ -81,7 +81,13 @@ export async function POST(req: NextRequest) {
           if (!found[0]) throw new Error("Selected receipt account no longer exists");
           return id;
         };
-        const [foodId, roomId] = await Promise.all([validate(rest.foodOnlineReceiptAccountId), validate(rest.roomOnlineReceiptAccountId)]);
+        let foodId: number;
+        let roomId: number;
+        try {
+          [foodId, roomId] = await Promise.all([validate(rest.foodOnlineReceiptAccountId), validate(rest.roomOnlineReceiptAccountId)]);
+        } catch (error) {
+          return NextResponse.json({ error: error instanceof Error ? error.message : "Select valid receipt accounts" }, { status: 400 });
+        }
         await Promise.all([
           setSetting("food_online_receipt_account_id", String(foodId)),
           setSetting("room_online_receipt_account_id", String(roomId)),
