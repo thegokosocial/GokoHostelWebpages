@@ -80,14 +80,26 @@ describe("Payment History", () => {
     expect(offset).toHaveBeenCalledWith(200);
   });
 
-  it("loads recent paid orders in Payment Summary and merges duplicate order IDs", () => {
+  it("loads recent paid orders in Order Summary and keeps payment actions consolidated", () => {
     const source = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
-    const summary = source.slice(source.indexOf("function PaymentSummary("), source.indexOf("function PaymentHistoryPanel("));
+    const summary = source.slice(source.indexOf("function OrderSummary("), source.indexOf("function PaymentSummary("));
     expect(summary).toContain('paymentStatus: "paid"');
     expect(summary).toContain("dateFrom: localDateStr(paidFrom)");
     expect(summary).toContain("dateTo: localDateStr(new Date())");
     expect(summary).toContain("while (true)");
     expect(summary).toContain("paidOffset += page.length");
-    expect(summary).toContain("new Map(orders.map((order) => [order.id, order]))");
+    expect(summary).toContain('const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid")');
+    expect(summary).toContain('paymentDue={actualGroupPending}');
+    expect(summary).toContain('aria-label={`Edit payment for ${order.orderNumber}`}');
+    expect(summary).toContain('Payment History');
+  });
+
+  it("reopens paid orders when bill items change", () => {
+    const source = readFileSync("src/app/api/admin/food-orders/route.ts", "utf8");
+    expect(source).toContain("async function reopenPaidOrder");
+    expect(source).toContain('action: "food_payment_reopened"');
+    expect(source).toContain('kind: "reversal"');
+    expect(source).toContain('Bill item voided; payment returned to pending');
+    expect(source).toContain('Order quantity changed; payment returned to pending');
   });
 });

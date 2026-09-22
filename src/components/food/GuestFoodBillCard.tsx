@@ -73,6 +73,7 @@ export function GuestFoodBillCard({
   expanded,
   onToggle,
   footerActions,
+  paymentDue,
   className = "",
 }: {
   orders: GuestFoodBillOrder[];
@@ -82,6 +83,7 @@ export function GuestFoodBillCard({
   expanded?: boolean;
   onToggle?: () => void;
   footerActions?: ReactNode;
+  paymentDue?: number;
   className?: string;
 }) {
   const accent = branding.accent || DEFAULT_BILL_BRANDING.accent;
@@ -109,7 +111,8 @@ export function GuestFoodBillCard({
   const { cgst, sgst } = splitGstPaise(tax);
   const rateForLabels = tax > 0 ? foodTaxRateFromAmounts(subtotal, tax) : (branding.taxRate || 0);
   const { cgstRate, sgstRate } = splitGstRate(rateForLabels);
-  const showPayment = variant === "unpaid" && !!(branding.qrUrl || branding.upiId);
+  const due = paymentDue ?? total;
+  const showPayment = variant === "unpaid" && due > 0 && !!(branding.qrUrl || branding.upiId);
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
   const latest = orders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b), orders[0]);
@@ -196,7 +199,7 @@ export function GuestFoodBillCard({
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
             Pay{" "}
             <span className="font-semibold" style={{ color: accent }}>
-              {formatRupees(total)}
+              {formatRupees(due)}
             </span>
             {" "}via UPI
           </p>

@@ -34,7 +34,7 @@ async function withBillBranding(
   return loaded;
 }
 
-type FoodTab = "summary" | "place" | "combined" | "payment" | "active";
+type FoodTab = "summary" | "place" | "combined" | "active";
 
 const KitchenDashboard = dynamic(() => import("@/components/kitchen/KitchenDashboard").then((m) => m.KitchenDashboard), {
   loading: () => <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>,
@@ -169,7 +169,6 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
     summary: "canViewFoodTabs",
     place: "canPlaceOrders",
     combined: "canGenerateFoodBills",
-    payment: "canMarkPaid",
     active: "canViewFoodOrders",
   };
 
@@ -177,11 +176,12 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
     { id: "summary" as FoodTab, label: "Order Summary" },
     { id: "place" as FoodTab, label: "Place Order" },
     { id: "combined" as FoodTab, label: "Combined Bill" },
-    { id: "payment" as FoodTab, label: "Payment Summary" },
     { id: "active" as FoodTab, label: "Active Orders" },
-  ] as { id: FoodTab; label: string }[]).filter((t) => hasPermission(role, permissions, TAB_PERMISSIONS[t.id]));
+  ] as { id: FoodTab; label: string }[]).filter((t) => t.id === "summary"
+    ? hasPermission(role, permissions, "canViewFoodTabs") || hasPermission(role, permissions, "canMarkPaid")
+    : hasPermission(role, permissions, TAB_PERMISSIONS[t.id]));
 
-  const [tab, setTab] = useTabWithHistory<FoodTab>("tab", TABS[0]?.id || "summary");
+  const [tab, setTab] = useTabWithHistory<FoodTab>("tab", TABS[0]?.id || "summary", { validValues: TABS.map((t) => t.id) });
 
   return (
     <div>
@@ -213,7 +213,6 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
       {tab === "place" && <PlaceOrder apiCall={apiCall} prefillGuest={prefillGuest} onPrefillConsumed={clearPrefillGuest} onOrderPlaced={() => setTab("summary")} />}
       {tab === "summary" && <OrderSummary apiCall={apiCall} password={password} username={username} onOrderMore={(guest) => { setPrefillGuest(guest); setTab("place"); }} onAddNewOrder={() => setTab("place")} role={role} permissions={permissions} />}
       {tab === "combined" && <CombinedBill apiCall={apiCall} password={password} username={username} role={role} permissions={permissions} />}
-      {tab === "payment" && <PaymentSummary apiCall={apiCall} password={password} username={username} />}
     </div>
   );
 }
@@ -770,12 +769,15 @@ interface SummaryGroup {
   latestOrderTime: string;
   earliestOrderTime: string;
   hasModifications: boolean;
+  paidAmount: number;
+  pendingAmount: number;
 }
 
 function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder, role, permissions }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string; onOrderMore: (guest: PrefillGuest) => void; onAddNewOrder?: () => void; role?: Role; permissions?: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
   const [hostelGuests, setHostelGuests] = useState<GuestWithTab[]>([]);
   const [walkinOrders, setWalkinOrders] = useState<Order[]>([]);
+  const [recentPaidOrders, setRecentPaidOrders] = useState<Order[]>([]);
   const [hostelOrdersMap, setHostelOrdersMap] = useState<Record<number, Order[]>>({});
   const [pendingApprovalOrders, setPendingApprovalOrders] = useState<Order[]>([]);
   const [approvingId, setApprovingId] = useState<number | null>(null);
@@ -791,6 +793,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [printingGroup, setPrintingGroup] = useState<string | null>(null);
   const [paymentModalGroup, setPaymentModalGroup] = useState<SummaryGroup | null>(null);
   const [paymentModalMethod, setPaymentModalMethod] = useState<string>("online");
+  const [paymentEditOrder, setPaymentEditOrder] = useState<Order | null>(null);
   const [discountModalGroup, setDiscountModalGroup] = useState<SummaryGroup | null>(null);
   const [priceModalItem, setPriceModalItem] = useState<{ orderId: number; itemId: number; itemName: string } | null>(null);
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
@@ -806,6 +809,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [billBranding, setBillBranding] = useState<BillBranding>(DEFAULT_BILL_BRANDING);
   const [billBrandingReady, setBillBrandingReady] = useState(false);
   const [whatsAppBusy, setWhatsAppBusy] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  usePanelHistory(showHistory, () => setShowHistory(false));
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
@@ -838,11 +843,31 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         const data = await activeRes.json();
         setPendingApprovalOrders((data.orders || []).filter((o: Order) => o.status === "pending_approval"));
       }
+      let historyDays = 7;
       if (menuRes.ok) {
         const data = await menuRes.json();
+        historyDays = Math.min(90, Math.max(1, parseInt(data.paymentHistoryDays) || 7));
         setCategories(data.categories || []);
         setMenuItems((data.items || []).map((i: any) => ({ id: i.id, categoryId: i.categoryId, name: i.name, nameKannada: i.nameKannada || "", description: i.description || "", price: i.price, priceText: i.priceText || "", tags: i.tags || "[]", isAvailable: i.isAvailable })));
       }
+      const paidFrom = new Date();
+      paidFrom.setDate(paidFrom.getDate() - historyDays);
+      const paidOrders: Order[] = [];
+      let paidOffset = 0;
+      while (true) {
+        const paidRes = await apiCall({
+          action: "listOrders", status: "all_history", paymentStatus: "paid",
+          dateFrom: localDateStr(paidFrom), dateTo: localDateStr(new Date()), limit: 200, offset: paidOffset,
+          includeItems: true, includeModifications: true,
+        });
+        if (!paidRes.ok) break;
+        const data = await paidRes.json();
+        const page = (data.orders || []) as Order[];
+        paidOrders.push(...page.filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled"));
+        if (page.length < 200) break;
+        paidOffset += page.length;
+      }
+      setRecentPaidOrders([...new Map(paidOrders.map((o) => [o.id, o])).values()]);
     } finally {
       setLoading(false);
     }
@@ -869,8 +894,26 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const groups: SummaryGroup[] = useMemo(() => {
     const result: SummaryGroup[] = [];
 
+    const paidByHostel = new Map<number, Order[]>();
+    const paidByWalkin = new Map<string, Order[]>();
+    for (const order of recentPaidOrders) {
+      if (order.guestType === "hostel" && order.checkinId) {
+        const list = paidByHostel.get(order.checkinId) || [];
+        list.push(order); paidByHostel.set(order.checkinId, list);
+      } else {
+        const isTable = order.roomInfo && /^Table \d+$/i.test(order.roomInfo);
+        const key = isTable ? `table_${order.roomInfo}` : (order.guestPhone || `_no_phone_${order.id}`);
+        const list = paidByWalkin.get(key) || [];
+        list.push(order); paidByWalkin.set(key, list);
+      }
+    }
+
     for (const g of hostelGuests) {
       const cachedOrders = hostelOrdersMap[g.checkinId] || [];
+      const paidOrders = paidByHostel.get(g.checkinId) || [];
+      const allOrders = [...new Map([...cachedOrders, ...paidOrders].map((o) => [o.id, o])).values()];
+      const paidAmount = paidOrders.reduce((s, o) => s + o.total, 0);
+      const pendingAmount = cachedOrders.reduce((s, o) => s + o.total, 0);
       const hostelLatest = cachedOrders.length > 0
         ? cachedOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, "")
         : g.latestOrderTime || "";
@@ -883,16 +926,34 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         guestType: "hostel",
         contactInfo: g.contact,
         roomInfo: g.bedInfo,
-        orders: cachedOrders,
-        totalAmount: g.tabTotal,
-        totalSubtotal: g.tabTotal,
-        totalTax: 0,
-        orderCount: g.orderCount,
+        orders: allOrders,
+        totalAmount: pendingAmount + paidAmount,
+        totalSubtotal: allOrders.reduce((s, o) => s + o.subtotal, 0),
+        totalTax: allOrders.reduce((s, o) => s + o.tax, 0),
+        orderCount: Math.max(g.orderCount, allOrders.length),
         latestOrderTime: hostelLatest,
         earliestOrderTime: hostelEarliest,
-        hasModifications: cachedOrders.length > 0
-          ? cachedOrders.some((o) => o.hasModifications)
+        hasModifications: allOrders.length > 0
+          ? allOrders.some((o) => o.hasModifications)
           : (g.hasModifications || false),
+        paidAmount,
+        pendingAmount,
+      });
+    }
+    const knownHostelIds = new Set(hostelGuests.map((g) => g.checkinId));
+    for (const [checkinId, paidOrders] of paidByHostel) {
+      if (knownHostelIds.has(checkinId) || paidOrders.length === 0) continue;
+      const first = paidOrders[0];
+      result.push({
+        key: `hostel_${checkinId}`, guestName: first.guestName, guestType: "hostel",
+        contactInfo: first.guestPhone, roomInfo: first.roomInfo, orders: paidOrders,
+        totalAmount: paidOrders.reduce((s, o) => s + o.total, 0),
+        totalSubtotal: paidOrders.reduce((s, o) => s + o.subtotal, 0),
+        totalTax: paidOrders.reduce((s, o) => s + o.tax, 0), orderCount: paidOrders.length,
+        latestOrderTime: paidOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, ""),
+        earliestOrderTime: paidOrders.reduce((min, o) => !min || o.createdAt < min ? o.createdAt : min, ""),
+        hasModifications: paidOrders.some((o) => o.hasModifications),
+        paidAmount: paidOrders.reduce((s, o) => s + o.total, 0), pendingAmount: 0,
       });
     }
 
@@ -902,6 +963,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       const key = isTable ? `table_${order.roomInfo}` : (order.guestPhone || `_no_phone_${order.id}`);
       if (!walkinMap.has(key)) walkinMap.set(key, []);
       walkinMap.get(key)!.push(order);
+    }
+    for (const [key, paidOrders] of paidByWalkin) {
+      if (!walkinMap.has(key)) walkinMap.set(key, []);
+      const ids = new Set(walkinMap.get(key)!.map((o) => o.id));
+      walkinMap.get(key)!.push(...paidOrders.filter((o) => !ids.has(o.id)));
     }
     for (const [groupKey, groupOrders] of walkinMap) {
       const latest = groupOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, "");
@@ -921,6 +987,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         latestOrderTime: latest,
         earliestOrderTime: earliest,
         hasModifications: groupOrders.some((o) => o.hasModifications),
+        paidAmount: groupOrders.filter((o) => o.paymentStatus === "paid").reduce((s, o) => s + o.total, 0),
+        pendingAmount: groupOrders.filter((o) => o.paymentStatus !== "paid").reduce((s, o) => s + o.total, 0),
       });
     }
 
@@ -934,7 +1002,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     });
 
     return result;
-  }, [hostelGuests, walkinOrders, hostelOrdersMap]);
+  }, [hostelGuests, walkinOrders, recentPaidOrders, hostelOrdersMap]);
 
   const filteredGroups = useMemo(() => {
     if (filter === "all") return groups;
@@ -944,13 +1012,13 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const getGroupOrders = useCallback((group: SummaryGroup): Order[] => {
     if (group.guestType === "walkin") return group.orders;
     const checkinId = parseInt(group.key.replace("hostel_", ""), 10);
-    return hostelOrdersMap[checkinId] || [];
+    return hostelOrdersMap[checkinId] || group.orders;
   }, [hostelOrdersMap]);
 
   const selectedGroup = selectedGroupKey ? groups.find((g) => g.key === selectedGroupKey) || null : null;
-  const selectedGroupOrders = selectedGroup
+  const selectedGroupOrders = useMemo(() => selectedGroup
     ? [...getGroupOrders(selectedGroup)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    : [];
+    : [], [selectedGroup, getGroupOrders]);
 
   useEffect(() => {
     if (!groupHasPendingSpecialPrice(selectedGroupOrders)) setSpBillWarning(false);
@@ -969,7 +1037,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         const res = await apiCall({ action: "getGuestTab", checkinId });
         if (res.ok) {
           const data = await res.json();
-          setHostelOrdersMap((prev) => ({ ...prev, [checkinId]: data.orders || [] }));
+          const paid = recentPaidOrders.filter((o) => o.checkinId === checkinId);
+          const merged = [...new Map([...(data.orders || []), ...paid].map((o: Order) => [o.id, o])).values()];
+          setHostelOrdersMap((prev) => ({ ...prev, [checkinId]: merged }));
         }
       } finally {
         setLoadingOrders(null);
@@ -995,10 +1065,14 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       const res = await apiCall({ action: "getGuestTab", checkinId });
       if (res.ok) {
         const data = await res.json();
-        setHostelOrdersMap((prev) => ({ ...prev, [checkinId]: data.orders || [] }));
+        const paid = recentPaidOrders.filter((o) => o.checkinId === checkinId);
+        const merged = [...new Map([...(data.orders || []), ...paid].map((o: Order) => [o.id, o])).values()];
+        setHostelOrdersMap((prev) => ({ ...prev, [checkinId]: merged }));
       }
     }
-  }, [apiCall]);
+    const paidRes = await apiCall({ action: "listOrders", status: "all_history", paymentStatus: "paid", limit: 200, includeItems: true, includeModifications: true });
+    if (paidRes.ok) setRecentPaidOrders(((await paidRes.json()).orders || []).filter((o: Order) => o.status !== "cancelled"));
+  }, [apiCall, recentPaidOrders]);
 
   const toggleModHistory = async (orderId: number) => {
     if (modHistoryOrderId === orderId) { setModHistoryOrderId(null); return; }
@@ -1087,6 +1161,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const actualGroupTotal = selectedGroupOrders.length > 0
     ? selectedGroupOrders.reduce((sum, o) => sum + o.total, 0)
     : selectedGroup?.totalAmount || 0;
+  const actualGroupPending = selectedGroupOrders.length > 0
+    ? selectedGroupOrders.filter((o) => o.paymentStatus !== "paid").reduce((sum, o) => sum + o.total, 0)
+    : selectedGroup?.pendingAmount || 0;
 
   const groupHasSpPending = groupHasPendingSpecialPrice(selectedGroupOrders);
 
@@ -1133,7 +1210,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
   const markGroupPaid = async (group: SummaryGroup, paymentMethod: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string) => {
     const orders = getGroupOrders(group);
-    const orderIds = orders.map((o) => o.id);
+    const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid");
+    const orderIds = unpaidOrders.map((o) => o.id);
     if (orderIds.length === 0) return;
     setBusy(group.key);
     try {
@@ -1146,6 +1224,25 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       setBusy(null);
     }
   };
+
+  const updatePayment = async (order: Order, updates: Record<string, unknown>) => {
+    setBusy(`payment_${order.id}`);
+    try {
+      const res = await apiCall({ action: "updatePaymentDetails", orderId: order.id, ...updates });
+      if (res.ok && selectedGroup) {
+        setPaymentEditOrder(null);
+        await refreshAfterEdit(selectedGroup);
+      } else if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showError("Payment", data.error || "Could not update payment");
+      }
+    } finally { setBusy(null); }
+  };
+
+  const revertPayment = async (order: Order) => updatePayment(order, {
+    paymentStatus: order.guestType === "hostel" && order.checkinId ? "on_tab" : "pending",
+    paymentMethod: "", cashReceived: 0, changeGiven: 0,
+  });
 
   const handlePrintGroup = async (group: SummaryGroup) => {
     const orders = getGroupOrders(group);
@@ -1206,9 +1303,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     <div className="space-y-3 pb-20">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-display text-lg font-bold text-brand-green-dark">Order Summary ({filteredGroups.length})</h3>
-        <button type="button" onClick={load} className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-brand-green hover:bg-brand-green/[0.06]">
-          <RefreshCwIcon className="h-3.5 w-3.5" /> Refresh
-        </button>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => setShowHistory(true)} className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-brand-green hover:bg-brand-green/[0.06]"><HistoryIcon className="h-3.5 w-3.5" /> Payment History</button>
+          <button type="button" onClick={load} className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-brand-green hover:bg-brand-green/[0.06]"><RefreshCwIcon className="h-3.5 w-3.5" /> Refresh</button>
+        </div>
       </div>
 
       {/* Filter Toggle */}
@@ -1268,7 +1366,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
       {filteredGroups.length === 0 && pendingApprovalOrders.length === 0 && (
         <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-8 text-center text-sm text-brand-green-dark/50">
-          No unpaid orders
+          No unpaid or recent paid orders
         </div>
       )}
 
@@ -1283,7 +1381,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
               onClick={() => selectGroup(group)}
               className={cn(
                 "rounded-xl border border-brand-mist bg-white dark:bg-card p-3 text-left transition-shadow hover:shadow-md dark:hover:shadow-none",
-                group.guestType === "hostel" ? "border-l-[3px] border-l-green-400" : "border-l-[3px] border-l-gray-300"
+                group.pendingAmount > 0 ? "border-l-[3px] border-l-orange-400" : "border-l-[3px] border-l-green-400"
               )}
             >
               <div className="flex items-start justify-between gap-1">
@@ -1300,6 +1398,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                 </p>
               )}
               <p className="mt-2 text-lg font-bold text-brand-green">₹{(group.totalAmount / 100).toFixed(0)}</p>
+              <div className="mt-0.5 flex gap-2 text-[11px] font-medium">
+                {group.paidAmount > 0 && <span className="text-green-600">₹{(group.paidAmount / 100).toFixed(0)} paid</span>}
+                {group.pendingAmount > 0 && <span className="text-orange-600">₹{(group.pendingAmount / 100).toFixed(0)} unpaid</span>}
+              </div>
               <div className="mt-1 flex items-center justify-between text-xs text-brand-green-dark/50">
                 <span>
                   {group.orderCount} order{group.orderCount !== 1 ? "s" : ""}
@@ -1349,6 +1451,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
             {drawerView === "bill" ? (
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+                <div className="mb-3 rounded-lg border border-brand-mist bg-brand-sand/30 px-3 py-2 text-xs">
+                  <div className="flex justify-between"><span>Bill total</span><b>₹{(actualGroupTotal / 100).toFixed(0)}</b></div>
+                  <div className="flex justify-between"><span className="text-green-700">Paid</span><b className="text-green-700">₹{((actualGroupTotal - actualGroupPending) / 100).toFixed(0)}</b></div>
+                  <div className="flex justify-between"><span className={actualGroupPending > 0 ? "text-orange-700" : "text-green-700"}>Unpaid</span><b className={actualGroupPending > 0 ? "text-orange-700" : "text-green-700"}>₹{(actualGroupPending / 100).toFixed(0)}</b></div>
+                </div>
                 <GuestFoodBillCard
                   orders={selectedGroupOrders.map((o) => ({
                     guestName: selectedGroup.guestName,
@@ -1369,7 +1476,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                       pricingStatus: i.pricingStatus,
                     })),
                   }))}
-                  variant="unpaid"
+                  variant={actualGroupPending > 0 ? "unpaid" : "paid"}
+                  paymentDue={actualGroupPending}
                   branding={{
                     hostelName: billBranding.hostelName,
                     location: billBranding.location,
@@ -1434,15 +1542,27 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                             setPaymentModalMethod("online");
                             setPaymentModalGroup(selectedGroup);
                           }}
-                          disabled={busy === selectedGroup.key || groupHasSpPending}
+                          disabled={busy === selectedGroup.key || groupHasSpPending || actualGroupPending <= 0}
                           className="flex items-center gap-1.5 rounded-lg border border-green-500 bg-green-50 dark:bg-green-950 px-3 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 disabled:opacity-50"
                         >
-                          <BanknoteIcon className="h-3.5 w-3.5" /> Pay · ₹{(actualGroupTotal / 100).toFixed(0)}
+                        <BanknoteIcon className="h-3.5 w-3.5" /> Pay · ₹{(actualGroupPending / 100).toFixed(0)}
                         </button>
                       )}
                     </>
                   }
                 />
+                {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
+                  <div className="mt-3 space-y-1.5 rounded-lg border border-brand-mist p-2">
+                    {selectedGroupOrders.map((order) => (
+                      <div key={order.id} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-mono text-brand-green-dark/70">{order.orderNumber} · ₹{(order.total / 100).toFixed(0)}</span>
+                        {order.paymentStatus === "paid" ? (
+                          <button type="button" aria-label={`Edit payment for ${order.orderNumber}`} title="Edit payment" onClick={() => setPaymentEditOrder(order)} className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"><PencilIcon className="h-3.5 w-3.5" /></button>
+                        ) : <span className="font-medium text-orange-600">Unpaid</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
             <>
@@ -1699,10 +1819,12 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         </div>
       )}
 
+      {showHistory && <PaymentHistoryPanel apiCall={apiCall} onClose={() => setShowHistory(false)} />}
+
       {/* Payment Modal */}
       {paymentModalGroup && (
         <RecordPaymentModal
-          totalAmount={actualGroupTotal}
+          totalAmount={paymentModalGroup.pendingAmount}
           guestName={paymentModalGroup.guestName}
           initialMethod={paymentModalMethod}
           password={password} username={username} receiptKind="food"
@@ -1711,6 +1833,21 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
             setPaymentModalGroup(null);
           }}
           onClose={() => setPaymentModalGroup(null)}
+        />
+      )}
+
+      {paymentEditOrder && (
+        <RecordPaymentModal
+          totalAmount={paymentEditOrder.total}
+          guestName={paymentEditOrder.guestName}
+          initialMethod={paymentEditOrder.paymentMethod || "online"}
+          initialCash={paymentEditOrder.cashReceived}
+          mode="correction"
+          password={password} username={username} receiptKind="food"
+          secondaryActionLabel="Revert to Pending"
+          onSecondaryAction={() => revertPayment(paymentEditOrder)}
+          onConfirm={(method, cashReceived, changeGiven, onlineAccountId, receiptId, _amount, _op, note) => updatePayment(paymentEditOrder, { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId, note })}
+          onClose={() => setPaymentEditOrder(null)}
         />
       )}
 

@@ -86,7 +86,7 @@ Exact names in code. UI defaults in `AdminFoodSettings.tsx`.
 | `food_kitchen_whatsapp` | `""` | kitchen WhatsApp number |
 | `food_customer_whatsapp` | `true` | open wa.me after guest order |
 | `food_show_out_of_stock` | `false` | show unavailable on guest menu |
-| `food_payment_history_days` | `7` | payment summary retention |
+| `food_payment_history_days` | `7` | recent paid orders shown in Order Summary |
 | `food_bill_hostel_name` | `Goko Hostel` | PDF / thermal / My Bills header |
 | `food_bill_location` | `Gokarna, Karnataka` | header subtitle |
 | `food_bill_accent` | `#E67E22` | hex accent for header/status/pay amount |
@@ -98,6 +98,6 @@ Exact names in code. UI defaults in `AdminFoodSettings.tsx`.
 
 **Guest bill layout:** left accent rail (not full-bleed orange) → Food tab meta (no order IDs) → status outline → single ITEM/QTY/AMOUNT list (items coalesced across orders; voided lines omitted by `/api/food/bills` and `mergeBillLineItems`) → Subtotal / Discount / CGST + SGST → Grand Total → QR + UPI. My Bills and admin Order Summary **Bill** share `GuestFoodBillCard`. Kitchen tickets unchanged. Bill branding keys are **not** in Pi `SYNCABLE_SETTINGS` (QR is R2/cloud-only).
 
-**Payment Summary:** loads via `getGuestsWithTabs` + `getWalkinOrders` + `getMenu`, then `getGuestAllOrders` per open tab (not `listOrders`/`all_history`, which pulls hundreds of line-items and can D1-fail). Those read actions accept `canViewFoodOrders` **or** `canMarkPaid` so pay-capable staff without view-orders do not see a blank tab. **Payment History** calls `listOrders` with `includeItems: false` and `includeModifications: false`, loading only the selected range's order headers. **Order History** keeps modification badges, and fetches line items via `getOrderDetails` on expand.
+**Order Summary:** shows every unpaid order and recent paid orders within `food_payment_history_days`. Groups with any unpaid order remain orange; fully paid groups are green. The Bill view preserves Print, WhatsApp, Discount, and Order More, charges only the unpaid balance, and exposes payment correction/revert controls per paid order to staff with `canMarkPaid`. Pay-capable staff can open the consolidated summary even without `canViewFoodOrders`. **Payment History** calls `listOrders` with `includeItems: false` and `includeModifications: false`, loading only the selected range's order headers. **Order History** keeps modification badges, and fetches line items via `getOrderDetails` on expand.
 
 **Sync drift:** `syncEngine` `SYNCABLE_SETTINGS` still lists `food_kannada_labels` (old name). Print/display keys are **not** in that list. Pi may not get Kannada flags. Do not document `food_kannada_labels` as the live UI key.

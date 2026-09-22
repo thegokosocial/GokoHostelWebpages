@@ -98,6 +98,30 @@ export async function POST(req: NextRequest) {
       return new Map(modCounts.map((r) => [r.orderId, r.count]));
     }
 
+    async function reopenPaidOrder(order: Awaited<ReturnType<typeof getFoodOrderById>>, reason: string) {
+      if (!order || order.paymentStatus !== "paid") return {};
+      const onlineAmount = order.paymentMethod === "online"
+        ? order.total
+        : order.paymentMethod === "split"
+          ? Math.max(0, order.total - ((order.cashReceived || 0) - (order.changeGiven || 0)))
+          : 0;
+      if (onlineAmount > 0) {
+        const accountId = await latestReceiptAccount("food_order", order.id);
+        if (accountId) {
+          await createGuestReceipt({
+            receiptId: `${crypto.randomUUID()}:reopen`, sourceType: "food_order", sourceId: order.id,
+            kind: "reversal", accountId, amount: -onlineAmount, createdBy: actorName,
+            notes: `Payment reopened for food order ${order.orderNumber}`,
+          });
+        }
+      }
+      await addAuditEntry({ username: actorName, action: "food_payment_reopened", target: `order:${order.id}`, details: reason });
+      return {
+        paymentStatus: order.checkinId ? "on_tab" : "pending",
+        paymentMethod: "", paidBy: "", cashReceived: 0, changeGiven: 0,
+      };
+    }
+
     switch (action) {
       case "listOrders": {
         const { status, paymentStatus, dateFrom, dateTo, guestType, phone, search, auditHistory, limit: rawLimit, offset: rawOffset, includeItems, includeModifications } = rest;
@@ -447,7 +471,7 @@ export async function POST(req: NextRequest) {
         const activeItems = await db.select().from(foodOrderItems)
           .where(and(eq(foodOrderItems.orderId, orderId), sql`${foodOrderItems.status} != 'voided'`));
         const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
-        const [currentOrder] = await db.select({ discount: foodOrders.discount }).from(foodOrders).where(eq(foodOrders.id, orderId)).limit(1);
+        const currentOrder = await getFoodOrderById(orderId);
         const exemptions = await getMenuItemCategoryExemptions(activeItems.map((i) => i.menuItemId));
         const discountableSubtotal = activeItems.filter((i) => !exemptions.get(i.menuItemId)).reduce((sum, i) => sum + i.lineTotal, 0);
         const existingDiscount = Math.min(currentOrder?.discount || 0, discountableSubtotal);
@@ -455,7 +479,8 @@ export async function POST(req: NextRequest) {
         const voidTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
         const newTax = Math.round((newSubtotal * voidTaxRate) / 100);
         const newTotal = newSubtotal + newTax;
-        await updateFoodOrder(orderId, { subtotal: newSubtotal, tax: newTax, total: newTotal, discount: existingDiscount });
+        const paymentReset = await reopenPaidOrder(currentOrder, "Bill item voided; payment returned to pending");
+        await updateFoodOrder(orderId, { subtotal: newSubtotal, tax: newTax, total: newTotal, discount: existingDiscount, ...paymentReset });
 
         await addAuditEntry({
           username: actorName,
@@ -476,7 +501,7 @@ export async function POST(req: NextRequest) {
         const [item] = await getDb().select().from(foodOrderItems).where(and(eq(foodOrderItems.id, orderItemId), eq(foodOrderItems.orderId, orderId))).limit(1);
         if (!order || !item) return NextResponse.json({ error: "Order item not found" }, { status: 404 });
         if (item.pricingStatus !== "pending") return NextResponse.json({ error: "Only pending prices can be finalized" }, { status: 400 });
-        if (order.status === "cancelled" || order.paymentStatus === "paid") return NextResponse.json({ error: "This order cannot be repriced" }, { status: 400 });
+        if (order.status === "cancelled") return NextResponse.json({ error: "This order cannot be repriced" }, { status: 400 });
         const customLabel = typeof label === "string" ? label.trim().slice(0, 24) : "";
         const oldPrice = item.itemPrice;
         await getDb().update(foodOrderItems).set({
@@ -493,7 +518,8 @@ export async function POST(req: NextRequest) {
         const subtotal = grossSubtotal - discount;
         const tax = Math.round((subtotal * foodTaxPercent(await getSetting("food_tax_rate"))) / 100);
         const total = subtotal + tax;
-        await updateFoodOrder(orderId, { subtotal, tax, total, discount });
+        const paymentReset = await reopenPaidOrder(order, "Item price changed; payment returned to pending");
+        await updateFoodOrder(orderId, { subtotal, tax, total, discount, ...paymentReset });
         await addOrderModification({
           orderId,
           action: "price_finalized",
@@ -542,7 +568,7 @@ export async function POST(req: NextRequest) {
         const updItems = await getFoodOrderItems(orderId);
         const actItems = updItems.filter((i) => i.status !== "voided");
         const grossSub = actItems.reduce((sum, i) => sum + i.lineTotal, 0);
-        const [curOrd] = await db.select({ discount: foodOrders.discount }).from(foodOrders).where(eq(foodOrders.id, orderId)).limit(1);
+        const curOrd = await getFoodOrderById(orderId);
         const qtyExemptions = await getMenuItemCategoryExemptions(actItems.map((i) => i.menuItemId));
         const qtyDiscountable = actItems.filter((i) => !qtyExemptions.get(i.menuItemId)).reduce((sum, i) => sum + i.lineTotal, 0);
         const disc = Math.min(curOrd?.discount || 0, qtyDiscountable);
@@ -550,7 +576,8 @@ export async function POST(req: NextRequest) {
         const qtySubtotal = grossSub - disc;
         const qtyTax = Math.round((qtySubtotal * qtyTaxRate) / 100);
         const qtyTotal = qtySubtotal + qtyTax;
-        await updateFoodOrder(orderId, { subtotal: qtySubtotal, tax: qtyTax, total: qtyTotal, discount: disc });
+        const paymentReset = await reopenPaidOrder(curOrd, "Order quantity changed; payment returned to pending");
+        await updateFoodOrder(orderId, { subtotal: qtySubtotal, tax: qtyTax, total: qtyTotal, discount: disc, ...paymentReset });
 
         return NextResponse.json({ success: true, role, data: { subtotal: qtySubtotal, tax: qtyTax, total: qtyTotal } });
       }

@@ -499,7 +499,7 @@ export function AdminFoodSettings({ password, username, role }: { password: stri
           <div className="grid gap-1.5 sm:grid-cols-3 sm:items-center">
             <div>
               <Label className="text-sm font-medium text-brand-green-dark">Paid Orders Visibility</Label>
-              <p className="text-[11px] text-brand-green-dark/40">How many days of paid orders to show in Payment Summary (unpaid always visible)</p>
+              <p className="text-[11px] text-brand-green-dark/40">How many days of paid orders to show in Order Summary (unpaid always visible)</p>
             </div>
             <div className="sm:col-span-2">
               <div className="flex items-center gap-2 max-w-[160px]">
