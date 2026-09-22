@@ -113,6 +113,11 @@ describe("Payment History", () => {
     expect(summary).toContain('title="Edit food items"');
     expect(source).toContain('<BanknoteIcon className="h-3 w-3" /> Edit Payment');
     expect(summary).toContain('setDrawerView("orders"); setEditingOrderId(order.id)');
+    expect(summary).toContain('scrollIntoView({ behavior: "smooth", block: "center" })');
+    expect(summary).toContain('data-order-id={order.id}');
+    expect(summary).toContain('>Editing</span>');
+    expect(summary).toContain('ring-2 ring-brand-green/25');
+    expect(summary).toContain('setEditingOrderId(null)');
     expect(summary).toContain('const canEditOrderItems = hasPermission');
     expect(summary).toContain('Payment History');
   });
@@ -124,5 +129,24 @@ describe("Payment History", () => {
     expect(source).toContain('kind: "reversal"');
     expect(source).toContain('Bill item voided; payment returned to pending');
     expect(source).toContain('Order quantity changed; payment returned to pending');
+  });
+
+  it("keeps payment and food-edit actions distinct and guarded by their permissions", () => {
+    const source = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
+    const summary = source.slice(source.indexOf("function OrderSummary("), source.indexOf("function PaymentSummary("));
+    expect(summary).toContain('hasPermission(role || "staff", permissions || {}, "canMarkPaid")');
+    expect(summary).toContain('hasPermission(role || "staff", permissions || {}, "canEditFoodOrders")');
+    expect(summary).toContain('title="Edit payment"');
+    expect(summary).toContain('title="Edit order items"');
+    expect(summary).toContain("setVoidingItemId(null)");
+    expect(summary).toContain("setPaymentEditOrder(null)");
+  });
+
+  it("prevents duplicate payment submits while the modal request is in flight", () => {
+    const source = readFileSync("src/components/admin/RecordPaymentModal.tsx", "utf8");
+    expect(source).toContain("if (saving) return;");
+    expect(source).toContain("setSaving(true)");
+    expect(source).toContain("await onConfirm");
+    expect(source).toContain("setSaving(false)");
   });
 });
