@@ -14,13 +14,13 @@ import { createPreviewAttempt, previewSnapshot, reconcilePreviewAttempt, verifyP
   refundPreviewPayment, processPreviewWebhook } from "@/lib/razorpayPreview";
 import { verifyRazorpaySignature, checkRazorpayTestConnectivity, testRazorpayCredentials } from "@/lib/razorpay";
 
-const state = vi.hoisted(() => ({ db: null as any, role: "admin", pi: false, unavailableAuth: false }));
+const state = vi.hoisted(() => ({ db: null as any, role: "admin", pi: false, unavailableAuth: false, session: false }));
 vi.mock("@/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => state.pi }));
 vi.mock("@opennextjs/cloudflare", () => ({ getCloudflareContext: () => { throw new Error("no cloudflare context"); } }));
 vi.mock("@/lib/auth", () => ({ authenticateUser: async (password: string) => {
   if (state.unavailableAuth) throw new Error("DUMMY_AUTH_INTERNAL");
-  return password === "DUMMY_PASSWORD" ? { role: state.role, displayName: "Test Admin", permissions: {
+  return (password === "DUMMY_PASSWORD" || (password === "" && state.session)) ? { role: state.role, displayName: "Test Admin", permissions: {
     canManageAccounts: true, canViewAccounts: true, canManageInventory: true, canSettlePlatformPayments: true,
   } } : null;
 } }));
@@ -47,7 +47,7 @@ function payment(attempt: any, status = "captured", id = "pay_DUMMY1") {
 const payload = (p: any, event = "payment.captured") => JSON.stringify({ event, account_id: "acc_DUMMY", payload: { payment: { entity: p } } });
 
 beforeEach(() => {
-  state.role = "admin"; state.pi = false; state.unavailableAuth = false;
+  state.role = "admin"; state.pi = false; state.unavailableAuth = false; state.session = false;
   sqlite = new SQLite(":memory:"); sqlite.pragma("foreign_keys = ON");
   // Exact source migration, isolated memory DB. No live D1/Pi migration occurs.
   sqlite.exec(readFileSync("migrations/0057_razorpay_test_preview.sql", "utf8"));
@@ -175,6 +175,10 @@ describe("Razorpay adapter and security boundaries", () => {
     state.unavailableAuth = true;
     const response = await adminApi(adminRequest("listTestAttempts")); expect(response.status).toBe(503);
     expect(await response.text()).not.toContain("DUMMY_AUTH_INTERNAL");
+  });
+  it("accepts an admin session when the UI has cleared the plaintext password", async () => {
+    state.session = true;
+    expect((await adminApi(adminRequest("listTestAttempts", {}, ""))).status).toBe(200);
   });
   it("rejects Pi before DB/network operations for admin, webhook and services", async () => {
     state.pi = true;

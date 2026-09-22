@@ -19,7 +19,9 @@ import {
 } from "@/lib/razorpayPreview";
 import { listWebsiteCheckoutAttempts, GuestCheckoutError } from "@/lib/nativeGuestCheckout";
 
-const credentials = { password: z.string().min(1).max(1024), username: z.string().max(100).optional() };
+// Admin UI clears its plaintext password after login; an empty value means the
+// request must authenticate through the existing admin session cookie.
+const credentials = { password: z.string().max(1024), username: z.string().max(100).optional() };
 const id = z.string().uuid();
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ ...credentials, action: z.literal("checkTestConnectivity") }).strict(),
@@ -61,13 +63,14 @@ export async function POST(req: NextRequest) {
       if (error instanceof PreviewError) throw error;
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400, headers });
     }
-    // Missing credentials retain the existing admin API's 401 semantics.
+    // Missing credentials retain the existing admin API's 401 semantics. An
+    // empty password is allowed through to authenticateUser(), which resolves
+    // the existing admin session cookie after the UI clears its password.
     if (
       !value ||
       typeof value !== "object" ||
       !("password" in value) ||
-      typeof value.password !== "string" ||
-      !value.password
+      typeof value.password !== "string"
     ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
     }
