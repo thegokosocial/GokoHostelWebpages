@@ -11,6 +11,7 @@ const channelManager = readFileSync("src/components/admin/ChannelManager.tsx", "
 const audit = readFileSync("src/components/admin/ManagementAudit.tsx", "utf8");
 const logs = readFileSync("src/components/admin/ManagementLogs.tsx", "utf8");
 const website = readFileSync("src/components/admin/AdminWebsite.tsx", "utf8");
+const websitePayments = readFileSync("src/components/admin/WebsitePaymentsLedger.tsx", "utf8");
 const managementTabStyles = readFileSync("src/components/admin/managementSectionTabs.ts", "utf8");
 const foodOrder = readFileSync("src/app/food-order/page.tsx", "utf8");
 
@@ -46,6 +47,10 @@ describe("admin mobile navigation", () => {
     expect(razorpayPayments).toContain("WebsitePaymentsLedger");
     expect(razorpayPayments).toContain("Food payment records will be available here soon.");
     expect(bookingSettings).not.toContain("WebsitePaymentsLedger");
+    expect(websitePayments).toContain("25 entries per page");
+    expect(websitePayments).toContain("DateRangePicker");
+    expect(websitePayments).toContain("Previous");
+    expect(websitePayments).toContain("Next");
   });
   it("shares the Account Settings selector styling across existing Management section selectors", () => {
     const consumers = [management, accounts, bookingSettings, channelManager, audit, logs, website];

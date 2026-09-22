@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import {
@@ -1851,7 +1851,7 @@ export async function refundWebsiteOrphanCapture(bookingId: number, performedBy:
   };
 }
 
-/** Staff-facing outcome for Management → Booking Settings → Website payments. */
+/** Staff-facing outcome for Management → Razorpay payments → Room. */
 export function websiteCheckoutOutcome(
   state: string,
   hasCapturedPayment: boolean,
@@ -1876,12 +1876,46 @@ export function websiteCheckoutOutcome(
   return "Unknown";
 }
 
-/** Recent native website checkout attempts for admin audit (test + live). */
-export async function listWebsiteCheckoutAttempts(limit = 50) {
+const WEBSITE_PAYMENTS_PAGE_SIZE = 25;
+
+type WebsiteCheckoutAttemptFilters = {
+  page?: number;
+  query?: string;
+  fromDate?: string;
+  toDate?: string;
+};
+
+function istDateBoundary(date: string, endExclusive = false): string | null {
+  const parsed = new Date(`${date}T00:00:00.000+05:30`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (endExclusive) parsed.setTime(parsed.getTime() + 24 * 60 * 60 * 1000);
+  return parsed.toISOString();
+}
+
+/** Paginated native website checkout attempts for admin audit (test + live). */
+export async function listWebsiteCheckoutAttempts(filters: WebsiteCheckoutAttemptFilters = {}) {
   cloudOnly();
   const db = getDb();
-  const capped = Math.min(100, Math.max(1, Math.floor(limit)));
-  const rows = await db.select({
+  const page = Math.max(1, Math.floor(filters.page || 1));
+  const conditions = [];
+  const query = filters.query?.trim();
+  if (query) {
+    const pattern = `%${query}%`;
+    conditions.push(or(
+      like(checkouts.guestName, pattern),
+      like(checkouts.guestEmail, pattern),
+      like(checkouts.guestPhone, pattern),
+      like(checkouts.razorpayOrderId, pattern),
+      like(bookings.gokoBookingId, pattern),
+      like(bookings.bookingRef, pattern),
+    ));
+  }
+  const from = filters.fromDate ? istDateBoundary(filters.fromDate) : null;
+  const to = filters.toDate ? istDateBoundary(filters.toDate, true) : null;
+  if (from) conditions.push(gte(checkouts.createdAt, from));
+  if (to) conditions.push(lt(checkouts.createdAt, to));
+  const where = conditions.length ? and(...conditions) : undefined;
+  const baseQuery = db.select({
     id: checkouts.id,
     state: checkouts.state,
     environment: checkouts.environment,
@@ -1900,9 +1934,15 @@ export async function listWebsiteCheckoutAttempts(limit = 50) {
     bookingRef: bookings.bookingRef,
     bookingStatus: bookings.status,
   }).from(checkouts)
+    .leftJoin(bookings, eq(checkouts.bookingId, bookings.id));
+  const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(checkouts)
     .leftJoin(bookings, eq(checkouts.bookingId, bookings.id))
+    .where(where);
+  const rows = await baseQuery
+    .where(where)
     .orderBy(desc(checkouts.createdAt))
-    .limit(capped);
+    .limit(WEBSITE_PAYMENTS_PAGE_SIZE)
+    .offset((page - 1) * WEBSITE_PAYMENTS_PAGE_SIZE);
 
   const ids = rows.map((r) => r.id);
   const payRows = ids.length
@@ -1921,20 +1961,26 @@ export async function listWebsiteCheckoutAttempts(limit = 50) {
     byCheckout.set(p.checkoutId, list);
   }
 
-  return rows.map((row) => {
+  return {
+    attempts: rows.map((row) => {
     const pays = byCheckout.get(row.id) || [];
     const hasCaptured = pays.some((p) => p.captured === 1);
     const outcome = row.dueNowPaise === 0 && row.state === "fulfilled"
       ? "Pay at property" as const
       : websiteCheckoutOutcome(row.state, hasCaptured, row.bookingStatus);
-    return {
+      return {
       ...row,
       gokoBookingId: row.gokoBookingId || row.bookingRef || null,
       outcome,
       paymentIds: pays.map((p) => p.id),
       capturedPaise: pays.filter((p) => p.captured === 1).reduce((s, p) => s + p.amountPaise, 0),
-    };
-  });
+      };
+    }),
+    page,
+    pageSize: WEBSITE_PAYMENTS_PAGE_SIZE,
+    total: Number(count || 0),
+    totalPages: Math.max(1, Math.ceil(Number(count || 0) / WEBSITE_PAYMENTS_PAGE_SIZE)),
+  };
 }
 
 /** Peek notes without full processing — used by webhook router. */

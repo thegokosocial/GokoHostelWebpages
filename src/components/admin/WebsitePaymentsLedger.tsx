@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/dates/DateRangePicker";
 
 type Attempt = {
   id: string;
@@ -32,6 +34,12 @@ function when(iso: string) {
 /** Management → Razorpay payments → Room: native website checkout attempts (test + live). */
 export function WebsitePaymentsLedger({ password, username }: { password: string; username?: string }) {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [query, setQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -42,18 +50,19 @@ export function WebsitePaymentsLedger({ password, username }: { password: string
       const res = await fetch("/api/admin/booking-payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, username, action: "listWebsiteAttempts" }),
+        body: JSON.stringify({ password, username, action: "listWebsiteAttempts", page, query: query || undefined, fromDate: fromDate || undefined, toDate: toDate || undefined }),
         signal: AbortSignal.timeout(15000),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Unable to load website payments");
       setAttempts(data.attempts || []);
+      setTotalPages(data.totalPages || 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load website payments");
     } finally {
       setBusy(false);
     }
-  }, [password, username]);
+  }, [fromDate, page, password, query, toDate, username]);
 
   useEffect(() => {
     void load();
@@ -71,6 +80,26 @@ export function WebsitePaymentsLedger({ password, username }: { password: string
         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void load()}>
           {busy ? "Refreshing…" : "Refresh"}
         </Button>
+      </div>
+      <div className="grid gap-2 rounded-lg border border-brand-mist bg-brand-sand/20 p-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+          Search
+          <Input value={searchDraft} onChange={(e) => setSearchDraft(e.target.value)} placeholder="Guest, email, Goko ID or Razorpay order" />
+        </label>
+        <DateRangePicker
+          variant="compact"
+          applyMode="manual"
+          minNights={0}
+          labels={{ start: "From", end: "To" }}
+          startDate={fromDate}
+          endDate={toDate}
+          onChange={({ startDate, endDate }) => { setFromDate(startDate); setToDate(endDate); setPage(1); }}
+          className="w-full sm:w-56"
+        />
+        <div className="flex gap-2 sm:justify-end">
+          <Button type="button" size="sm" onClick={() => { setQuery(searchDraft.trim()); setPage(1); }}>Search</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => { setSearchDraft(""); setQuery(""); setFromDate(""); setToDate(""); setPage(1); }}>Clear</Button>
+        </div>
       </div>
       {error && <p className="text-sm text-red-700">{error}</p>}
       {attempts.length === 0 && !busy && !error && (
@@ -119,6 +148,13 @@ export function WebsitePaymentsLedger({ password, username }: { password: string
           </table>
         </div>
       )}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+        <span>Page {page} of {totalPages} · 25 entries per page</span>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={busy || page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
+          <Button type="button" size="sm" variant="outline" disabled={busy || page >= totalPages} onClick={() => setPage((value) => value + 1)}>Next</Button>
+        </div>
+      </div>
     </section>
   );
 }

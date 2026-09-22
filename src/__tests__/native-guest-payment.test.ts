@@ -409,7 +409,7 @@ describe("Native guest payment verify / reconcile / min-amount", () => {
       VALUES ('pay_ok', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 57000, 'captured', 1, 0, ?)
     `).run(now);
 
-    const attempts = await listWebsiteCheckoutAttempts(50);
+    const attempts = (await listWebsiteCheckoutAttempts({ page: 1 })).attempts;
     expect(attempts).toHaveLength(3);
     const byId = Object.fromEntries(attempts.map((a) => [a.id, a]));
     expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"].outcome).toBe("Failed");
@@ -418,5 +418,18 @@ describe("Native guest payment verify / reconcile / min-amount", () => {
     expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2"].gokoBookingId).toBeNull();
     expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"].outcome).toBe("Passed");
     expect(byId["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"].paymentIds).toEqual(["pay_ok"]);
+
+    const filtered = await listWebsiteCheckoutAttempts({ page: 1, query: "pawan" });
+    expect(filtered.attempts.map((attempt) => attempt.id)).toEqual([
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+    ]);
+    expect(filtered.total).toBe(2);
+    expect(filtered.pageSize).toBe(25);
+    expect(filtered.totalPages).toBe(1);
+
+    const dateFiltered = await listWebsiteCheckoutAttempts({ page: 1, fromDate: "2026-09-18", toDate: "2026-09-18" });
+    expect(dateFiltered.attempts).toHaveLength(2);
+    expect(dateFiltered.attempts.every((attempt) => attempt.id !== "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3")).toBe(true);
   });
 });

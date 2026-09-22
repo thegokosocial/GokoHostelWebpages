@@ -23,10 +23,18 @@ import { listWebsiteCheckoutAttempts, GuestCheckoutError } from "@/lib/nativeGue
 // request must authenticate through the existing admin session cookie.
 const credentials = { password: z.string().max(1024), username: z.string().max(100).optional() };
 const id = z.string().uuid();
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const bodySchema = z.discriminatedUnion("action", [
   z.object({ ...credentials, action: z.literal("checkTestConnectivity") }).strict(),
   z.object({ ...credentials, action: z.literal("listTestAttempts") }).strict(),
-  z.object({ ...credentials, action: z.literal("listWebsiteAttempts") }).strict(),
+  z.object({
+    ...credentials,
+    action: z.literal("listWebsiteAttempts"),
+    page: z.number().int().min(1).optional(),
+    query: z.string().trim().max(120).optional(),
+    fromDate: isoDate.optional(),
+    toDate: isoDate.optional(),
+  }).strict(),
   z.object({ ...credentials, action: z.literal("createTestAttempt"), requestKey: id }).strict(),
   z.object({ ...credentials, action: z.literal("getTestRequest"), requestKey: id }).strict(),
   z.object({ ...credentials, action: z.literal("getTestAttempt"), attemptId: id }).strict(),
@@ -100,7 +108,7 @@ export async function POST(req: NextRequest) {
         break;
       case "listWebsiteAttempts":
         try {
-          result = { attempts: await listWebsiteCheckoutAttempts(50) };
+          result = await listWebsiteCheckoutAttempts(body);
         } catch (error) {
           const message = error instanceof Error ? error.message : "";
           if (/no such table|SQLITE_ERROR/i.test(message)) {
