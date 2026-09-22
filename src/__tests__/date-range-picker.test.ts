@@ -145,6 +145,9 @@ describe("DateRangePicker adaptive layout contracts", () => {
 
   it("keeps dual-month nav above captions and floors month width", () => {
     expect(calendarSource).toContain("min-w-[16.5rem]");
+    expect(calendarSource).toContain("md:w-auto md:min-w-[13.5rem]");
+    expect(calendarSource).toContain("md:size-7");
+    expect(calendarSource).toContain("md:gap-3");
     expect(calendarSource).toContain("multiMonth");
     expect(calendarSource).toContain("z-10");
     expect(calendarSource).toContain("truncate");

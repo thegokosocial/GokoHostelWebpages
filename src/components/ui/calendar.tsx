@@ -26,10 +26,10 @@ function Calendar({
         root: cn("w-fit max-w-full", defaults.root),
         months: cn(
           "relative flex gap-4",
-          multiMonth ? "flex-row flex-wrap md:gap-6" : "flex-col",
+          multiMonth ? "flex-row flex-wrap md:gap-3" : "flex-col",
           defaults.months,
         ),
-        month: cn("flex w-full min-w-[16.5rem] flex-col gap-3", defaults.month),
+        month: cn("flex w-full min-w-[16.5rem] flex-col gap-3 md:w-auto md:min-w-[13.5rem] md:gap-2", defaults.month),
         month_caption: cn(
           "relative z-0 flex h-9 w-full items-center justify-center px-10",
           defaults.month_caption,
@@ -52,17 +52,17 @@ function Calendar({
         month_grid: cn("w-full border-collapse", defaults.month_grid),
         weekdays: cn("flex", defaults.weekdays),
         weekday: cn(
-          "flex-1 rounded-md text-[0.7rem] font-normal text-muted-foreground",
+          "flex-1 rounded-md text-[0.7rem] font-normal text-muted-foreground md:text-[0.65rem]",
           defaults.weekday,
         ),
-        week: cn("mt-1 flex w-full", defaults.week),
+        week: cn("mt-1 flex w-full md:mt-0.5", defaults.week),
         day: cn(
-          "relative flex-1 p-0 text-center text-sm focus-within:relative focus-within:z-20",
+          "relative flex-1 p-0 text-center text-sm md:text-xs focus-within:relative focus-within:z-20",
           defaults.day,
         ),
         day_button: cn(
           buttonVariants({ variant: "ghost", size: "icon" }),
-          "mx-auto size-9 max-w-full p-0 font-normal aria-selected:opacity-100",
+          "mx-auto size-9 max-w-full p-0 font-normal aria-selected:opacity-100 md:size-7",
           defaults.day_button,
         ),
         range_start: "rounded-l-md bg-brand-green/15",
