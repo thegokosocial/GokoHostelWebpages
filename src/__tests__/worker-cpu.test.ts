@@ -66,6 +66,9 @@ describe("Workers CPU: zero-regression API paths", () => {
     expect(route).toContain('authenticateKitchen(password, scope === "admin" ? "admin" : "kitchen")');
     expect(readFile("src/db/queries.ts")).toContain('inArray(foodOrders.status, ["pending_approval", "placed", "preparing", "ready"])');
     expect(dashboard).toContain('showError("Kitchen orders unavailable"');
+    expect(dashboard).toContain("lastFetchErrorRef");
+    expect(dashboard).toContain("now - previous.at >= 30_000");
+    expect(route).toContain("Kitchen modification metadata unavailable:");
   });
 
   it("lets any authenticated user hit the login auth action before RBAC", () => {

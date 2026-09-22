@@ -127,6 +127,18 @@ describe("Kitchen listOrders workflows", () => {
     expect(json.data.orders).toMatchObject([{ id: 11, status: "placed", createdAt: "2024-01-01T00:00:00.000Z" }]);
   });
 
+  it("keeps the kitchen board available when optional modification metadata is unavailable", async () => {
+    kitchenMocks.getActiveFoodOrders.mockResolvedValue([{ id: 12, status: "placed", orderNumber: "K-12" }]);
+    kitchenMocks.getFoodOrderItemsBatch.mockResolvedValue(new Map([[12, []]]));
+    kitchenMocks.getMenuItemTagsByIds.mockResolvedValue(new Map());
+    kitchenMocks.getDb.mockImplementation(() => { throw new Error("D1_ERROR: order_modifications unavailable"); });
+
+    const res = await POST(req({ password: "ok", action: "listOrders" }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.data.orders).toEqual([{ id: 12, status: "placed", orderNumber: "K-12", hasModifications: false, items: [] }]);
+  });
+
   it("dedupes menu ids, skips non-numeric ids, maps tags, and flags modifications", async () => {
     kitchenMocks.getActiveFoodOrders.mockResolvedValue([{ id: 10, status: "placed", orderNumber: "K-1" }]);
     kitchenMocks.getFoodOrderItemsBatch.mockResolvedValue(new Map([

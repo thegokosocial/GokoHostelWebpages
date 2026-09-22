@@ -172,6 +172,7 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
   const lastSoundRef = useRef(0);
   const badgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastFetchErrorRef = useRef<{ message: string; at: number } | null>(null);
 
   const api = useCallback(
     async (action: string, extra: Record<string, any> = {}) => {
@@ -200,6 +201,7 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
         const incoming: Order[] = data.data.orders;
         setOrders(incoming);
         setIsBusy(data.data.isBusy);
+        lastFetchErrorRef.current = null;
 
         const placedCount = incoming.filter((o) => o.status === "placed").length;
         if (placedCount > prevPlacedCountRef.current && prevPlacedCountRef.current !== -1) {
@@ -226,7 +228,13 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
     } catch (err: any) {
       if (err?.message !== "Unauthorized") {
         console.error("Fetch orders error:", err);
-        showError("Kitchen orders unavailable", err?.message || "Could not load active orders. Please retry.");
+        const message = err?.message || "Could not load active orders. Please retry.";
+        const previous = lastFetchErrorRef.current;
+        const now = Date.now();
+        if (!previous || previous.message !== message || now - previous.at >= 30_000) {
+          lastFetchErrorRef.current = { message, at: now };
+          showError("Kitchen orders unavailable", message);
+        }
       }
     } finally {
       fetchingRef.current = false;

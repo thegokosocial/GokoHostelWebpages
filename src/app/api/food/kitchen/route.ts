@@ -51,12 +51,19 @@ export async function POST(req: NextRequest) {
       const orderIds = orders.map((o) => o.id);
       const modCountMap = new Map<number, number>();
       if (orderIds.length > 0) {
-        const db = getDb();
-        const modCounts = await db.select({
-          orderId: orderModifications.orderId,
-          count: sql<number>`COUNT(*)`,
-        }).from(orderModifications).where(inArray(orderModifications.orderId, orderIds)).groupBy(orderModifications.orderId);
-        for (const row of modCounts) modCountMap.set(row.orderId, row.count);
+        // Modification badges are supplemental kitchen metadata. Do not make
+        // the operational order board unavailable if this optional query is
+        // temporarily unavailable during schema sync or database recovery.
+        try {
+          const db = getDb();
+          const modCounts = await db.select({
+            orderId: orderModifications.orderId,
+            count: sql<number>`COUNT(*)`,
+          }).from(orderModifications).where(inArray(orderModifications.orderId, orderIds)).groupBy(orderModifications.orderId);
+          for (const row of modCounts) modCountMap.set(row.orderId, row.count);
+        } catch (error) {
+          console.warn("Kitchen modification metadata unavailable:", error);
+        }
       }
 
       const ordersWithItems = orders.map((order) => {
