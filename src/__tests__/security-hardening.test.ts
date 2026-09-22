@@ -31,6 +31,12 @@ describe("security hardening", () => {
     expect(health).not.toContain("encodeURIComponent(password)");
   });
 
+  it("allows session-authenticated payment account reads after password clearing", () => {
+    const modal = read("src/components/admin/RecordPaymentModal.tsx");
+    expect(modal).toContain('const payload: Record<string, string> = { password: password || "" }');
+    expect(modal).not.toContain("if (!password || !receiptKind) return;");
+  });
+
   it("keeps upload/import on shared authorization and includes the session migration", () => {
     expect(read("src/app/api/admin/upload/route.ts")).toContain("authenticateUser");
     expect(read("src/app/api/admin/import/route.ts")).toContain("authenticateUser");
