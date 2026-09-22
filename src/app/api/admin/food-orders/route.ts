@@ -48,6 +48,7 @@ import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
 import { auditDateBounds } from "@/lib/auditRetention";
 import { dbRead } from "@/lib/dbRetry";
 import { billShareExpiresAt, generateBillShareToken, publicBillShareUrl } from "@/lib/billShare";
+import { foodAmountPaid, foodDue, foodPaymentState } from "@/lib/foodPaymentBalance";
 
 export async function POST(req: NextRequest) {
   try {
@@ -98,27 +99,20 @@ export async function POST(req: NextRequest) {
       return new Map(modCounts.map((r) => [r.orderId, r.count]));
     }
 
-    async function reopenPaidOrder(order: Awaited<ReturnType<typeof getFoodOrderById>>, reason: string) {
-      if (!order || order.paymentStatus !== "paid") return {};
-      const onlineAmount = order.paymentMethod === "online"
-        ? order.total
-        : order.paymentMethod === "split"
-          ? Math.max(0, order.total - ((order.cashReceived || 0) - (order.changeGiven || 0)))
-          : 0;
-      if (onlineAmount > 0) {
-        const accountId = await latestReceiptAccount("food_order", order.id);
-        if (accountId) {
-          await createGuestReceipt({
-            receiptId: `${crypto.randomUUID()}:reopen`, sourceType: "food_order", sourceId: order.id,
-            kind: "reversal", accountId, amount: -onlineAmount, createdBy: actorName,
-            notes: `Payment reopened for food order ${order.orderNumber}`,
-          });
-        }
+    function paymentForEditedTotal(order: Awaited<ReturnType<typeof getFoodOrderById>> | null, total: number) {
+      if (!order) return {};
+      const paid = foodAmountPaid(order);
+      if (paid > total) {
+        return { overpayment: paid - total, error: `Order total is ₹${(total / 100).toFixed(0)}, but ₹${(paid / 100).toFixed(0)} has already been paid. Choose a correction or refund before saving this reduction.` };
       }
-      await addAuditEntry({ username: actorName, action: "food_payment_reopened", target: `order:${order.id}`, details: reason });
+      const state = foodPaymentState(total, paid, order.paymentStatus === "on_tab");
       return {
-        paymentStatus: order.checkinId ? "on_tab" : "pending",
-        paymentMethod: "", paidBy: "", cashReceived: 0, changeGiven: 0,
+        amountPaid: state.amountPaid,
+        paymentStatus: state.paymentStatus,
+        paymentMethod: order.paymentMethod,
+        paidBy: state.amountPaid > 0 ? order.paidBy : "",
+        cashReceived: state.amountPaid > 0 ? order.cashReceived || 0 : 0,
+        changeGiven: state.amountPaid > 0 ? order.changeGiven || 0 : 0,
       };
     }
 
@@ -384,14 +378,15 @@ export async function POST(req: NextRequest) {
         const orders = await Promise.all(orderIds.map((id: number) => getFoodOrderById(id)));
         if (orders.some((order) => !order)) return NextResponse.json({ error: "Order not found" }, { status: 404 });
         const existingOrders = orders.filter((order): order is NonNullable<typeof order> => !!order);
-        if (existingOrders.some((order) => order.status === "cancelled" || order.paymentStatus === "paid")) {
-          return NextResponse.json({ error: "Every selected order must be an unpaid active order" }, { status: 409 });
+        if (existingOrders.some((order) => order.status === "cancelled" || foodDue(order) <= 0)) {
+          return NextResponse.json({ error: "Every selected order must have an outstanding balance" }, { status: 409 });
         }
         const itemsByOrder = await getFoodOrderItemsBatch(orderIds);
         if (existingOrders.some((order) => (itemsByOrder.get(order.id) || []).some((item) => item.status !== "voided" && item.pricingStatus === "pending"))) {
           return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });
         }
-        const combinedTotal = existingOrders.reduce((sum, order) => sum + order.total, 0);
+        const payableOrders = existingOrders.map((order) => ({ id: order.id, total: foodDue(order) }));
+        const combinedTotal = payableOrders.reduce((sum, order) => sum + order.total, 0);
         if (method === "cash" && (tenderCash < combinedTotal || tenderChange !== tenderCash - combinedTotal)) {
           return NextResponse.json({ error: "Cash received and change do not match the combined total" }, { status: 400 });
         }
@@ -401,7 +396,7 @@ export async function POST(req: NextRequest) {
         if (method === "split" && (tenderCash <= 0 || tenderCash >= combinedTotal || tenderChange !== 0)) {
           return NextResponse.json({ error: "Split payment must contain both cash and online amounts" }, { status: 400 });
         }
-        const allocations = allocateFoodPayment(existingOrders, method, tenderCash, tenderChange);
+        const allocations = allocateFoodPayment(payableOrders, method, tenderCash, tenderChange);
         const accountId = allocations.some((allocation) => allocation.onlineAmount > 0)
           ? await resolveReceiptAccount("food", onlineAccountId)
           : undefined;
@@ -417,7 +412,8 @@ export async function POST(req: NextRequest) {
           for (const allocation of allocations) {
             const order = existingOrders.find((candidate) => candidate.id === allocation.orderId)!;
             writes.push(client.update(foodOrders).set(syncUpdate({
-              paymentStatus: "paid",
+              amountPaid: foodPaymentState(order.total, foodAmountPaid(order) + allocation.total, order.paymentStatus === "on_tab").amountPaid,
+              paymentStatus: foodPaymentState(order.total, foodAmountPaid(order) + allocation.total, order.paymentStatus === "on_tab").paymentStatus,
               paymentMethod: allocation.paymentMethod,
               paidBy: actorName,
               cashReceived: allocation.cashReceived,
@@ -495,8 +491,9 @@ export async function POST(req: NextRequest) {
         const voidTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
         const newTax = Math.round((newSubtotal * voidTaxRate) / 100);
         const newTotal = newSubtotal + newTax;
-        const paymentReset = await reopenPaidOrder(currentOrder, "Bill item voided; payment returned to pending");
-        await updateFoodOrder(orderId, { subtotal: newSubtotal, tax: newTax, total: newTotal, discount: existingDiscount, ...paymentReset });
+        const paymentUpdate = paymentForEditedTotal(currentOrder, newTotal);
+        if (paymentUpdate.error) return NextResponse.json({ error: paymentUpdate.error, requiresPaymentAdjustment: true }, { status: 409 });
+        await updateFoodOrder(orderId, { subtotal: newSubtotal, tax: newTax, total: newTotal, discount: existingDiscount, ...paymentUpdate });
 
         await addAuditEntry({
           username: actorName,
@@ -534,8 +531,9 @@ export async function POST(req: NextRequest) {
         const subtotal = grossSubtotal - discount;
         const tax = Math.round((subtotal * foodTaxPercent(await getSetting("food_tax_rate"))) / 100);
         const total = subtotal + tax;
-        const paymentReset = await reopenPaidOrder(order, "Item price changed; payment returned to pending");
-        await updateFoodOrder(orderId, { subtotal, tax, total, discount, ...paymentReset });
+        const paymentUpdate = paymentForEditedTotal(order, total);
+        if (paymentUpdate.error) return NextResponse.json({ error: paymentUpdate.error, requiresPaymentAdjustment: true }, { status: 409 });
+        await updateFoodOrder(orderId, { subtotal, tax, total, discount, ...paymentUpdate });
         await addOrderModification({
           orderId,
           action: "price_finalized",
@@ -569,6 +567,19 @@ export async function POST(req: NextRequest) {
 
         const oldQty = targetItem.quantity;
         const qtyDiff = oldQty - (newQuantity > 0 ? newQuantity : 0);
+        const currentOrder = await getFoodOrderById(orderId);
+        const projectedItems = allOrderItems
+          .filter((item) => item.id !== orderItemId && item.status !== "voided")
+          .concat(newQuantity > 0 ? [{ ...targetItem, quantity: newQuantity, lineTotal: newQuantity * targetItem.itemPrice }] : []);
+        const projectedGross = projectedItems.reduce((sum, item) => sum + item.lineTotal, 0);
+        const projectedExemptions = await getMenuItemCategoryExemptions(projectedItems.map((item) => item.menuItemId));
+        const projectedDiscountable = projectedItems.filter((item) => !projectedExemptions.get(item.menuItemId)).reduce((sum, item) => sum + item.lineTotal, 0);
+        const projectedDiscount = Math.min(currentOrder?.discount || 0, projectedDiscountable);
+        const projectedSubtotal = projectedGross - projectedDiscount;
+        const projectedTax = Math.round((projectedSubtotal * foodTaxPercent(await getSetting("food_tax_rate"))) / 100);
+        const projectedTotal = projectedSubtotal + projectedTax;
+        const paymentUpdate = paymentForEditedTotal(currentOrder, projectedTotal);
+        if (paymentUpdate.error) return NextResponse.json({ error: paymentUpdate.error, requiresPaymentAdjustment: true }, { status: 409 });
 
         if (newQuantity <= 0) {
           await deleteFoodOrderItem(orderItemId);
@@ -592,8 +603,7 @@ export async function POST(req: NextRequest) {
         const qtySubtotal = grossSub - disc;
         const qtyTax = Math.round((qtySubtotal * qtyTaxRate) / 100);
         const qtyTotal = qtySubtotal + qtyTax;
-        const paymentReset = await reopenPaidOrder(curOrd, "Order quantity changed; payment returned to pending");
-        await updateFoodOrder(orderId, { subtotal: qtySubtotal, tax: qtyTax, total: qtyTotal, discount: disc, ...paymentReset });
+        await updateFoodOrder(orderId, { subtotal: qtySubtotal, tax: qtyTax, total: qtyTotal, discount: disc, ...paymentUpdate });
 
         return NextResponse.json({ success: true, role, data: { subtotal: qtySubtotal, tax: qtyTax, total: qtyTotal } });
       }
@@ -650,6 +660,9 @@ export async function POST(req: NextRequest) {
             const newSubtotal = Math.max(0, od.grossSubtotal - orderDiscount);
             const newTax = Math.round((newSubtotal * discTaxRate) / 100);
             const newTotal = newSubtotal + newTax;
+            const current = existingOrders.find((order) => order?.id === od.id);
+            const paymentUpdate = paymentForEditedTotal(current || null, newTotal);
+            if (paymentUpdate.error) throw Object.assign(new Error(paymentUpdate.error), { status: 409 });
             await tx.update(foodOrders).set(syncUpdate({
               discount: orderDiscount,
               discountReason: reason,
@@ -657,6 +670,8 @@ export async function POST(req: NextRequest) {
               subtotal: newSubtotal,
               tax: newTax,
               total: newTotal,
+              amountPaid: paymentUpdate.amountPaid,
+              paymentStatus: paymentUpdate.paymentStatus,
               updatedAt: new Date().toISOString(),
             })).where(eq(foodOrders.id, od.id));
             await tx.insert(orderModifications).values(syncInsert({
@@ -703,6 +718,9 @@ export async function POST(req: NextRequest) {
             const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
             const newTax = Math.round((grossSubtotal * rmTaxRate) / 100);
             const newTotal = grossSubtotal + newTax;
+            const current = existingOrders.find((order) => order?.id === oid);
+            const paymentUpdate = paymentForEditedTotal(current || null, newTotal);
+            if (paymentUpdate.error) throw Object.assign(new Error(paymentUpdate.error), { status: 409 });
             await tx.update(foodOrders).set(syncUpdate({
               discount: 0,
               discountReason: "",
@@ -710,6 +728,8 @@ export async function POST(req: NextRequest) {
               subtotal: grossSubtotal,
               tax: newTax,
               total: newTotal,
+              amountPaid: paymentUpdate.amountPaid,
+              paymentStatus: paymentUpdate.paymentStatus,
               updatedAt: new Date().toISOString(),
             })).where(eq(foodOrders.id, oid));
             await tx.insert(orderModifications).values(syncInsert({
@@ -803,7 +823,7 @@ export async function POST(req: NextRequest) {
           latestOrderTime: sql<string>`MAX(${foodOrders.createdAt})`,
         }).from(foodOrders)
           .where(and(
-            inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+            inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
             sql`${foodOrders.status} != 'cancelled'`,
           ))
           .groupBy(foodOrders.checkinId);
@@ -819,7 +839,7 @@ export async function POST(req: NextRequest) {
                 .from(foodOrders)
                 .where(and(
                   inArray(foodOrders.checkinId, checkinIds),
-                  inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+                  inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
                   sql`${foodOrders.status} != 'cancelled'`,
                 ))
             : Promise.resolve([]),
@@ -963,7 +983,7 @@ export async function POST(req: NextRequest) {
           .where(
             and(
               eq(foodOrders.guestType, "walkin"),
-              inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+              inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
               sql`${foodOrders.status} != 'cancelled'`,
             )
           )
@@ -1051,8 +1071,27 @@ export async function POST(req: NextRequest) {
         const nextStatus = newPaymentStatus ?? order.paymentStatus;
         const method = newPaymentMethod ?? order.paymentMethod;
         const cash = Number(newCashReceived ?? order.cashReceived) || 0;
-        const onlineAmount = method === "online" ? order.total : method === "split" ? Math.max(0, order.total - cash) : 0;
-        const oldOnlineAmount = order.paymentStatus === "paid" ? (order.paymentMethod === "online" ? order.total : order.paymentMethod === "split" ? Math.max(0, order.total - (order.cashReceived || 0)) : 0) : 0;
+        const currentPaid = foodAmountPaid(order);
+        const nextPaid = newPaymentStatus === "paid"
+          ? order.total
+          : newPaymentStatus !== undefined && newPaymentStatus !== "partial"
+            ? 0
+            : currentPaid;
+        const newPaymentCollection = newPaymentStatus === "paid" && order.paymentStatus !== "paid"
+          ? Math.max(0, order.total - currentPaid)
+          : 0;
+        const replacementAllocation = newPaymentCollection
+          || (newPaymentStatus === "paid" || order.paymentStatus === "paid" ? nextPaid : 0);
+        const onlineAmount = method === "online"
+          ? replacementAllocation
+          : method === "split"
+            ? Math.max(0, replacementAllocation - cash)
+            : 0;
+        const oldOnlineAmount = order.paymentMethod === "online"
+          ? currentPaid
+          : order.paymentMethod === "split"
+            ? Math.max(0, currentPaid - (order.cashReceived || 0))
+            : 0;
         const oldAccountId = oldOnlineAmount > 0 ? await latestReceiptAccount("food_order", orderId) : null;
         const accountChanged = order.paymentStatus === "paid" && onlineAmount > 0 && onlineAccountId != null && Number(onlineAccountId) !== oldAccountId;
         if (accountChanged) {
@@ -1064,12 +1103,16 @@ export async function POST(req: NextRequest) {
         }
 
         const updateData: Record<string, any> = { updatedAt: new Date().toISOString() };
-        if (newPaymentStatus !== undefined) updateData.paymentStatus = newPaymentStatus;
+        if (newPaymentStatus !== undefined) {
+          const state = foodPaymentState(order.total, nextPaid, newPaymentStatus === "on_tab");
+          updateData.amountPaid = state.amountPaid;
+          updateData.paymentStatus = state.paymentStatus;
+        }
         if (newPaymentMethod !== undefined) updateData.paymentMethod = newPaymentMethod;
         if (newCashReceived !== undefined) updateData.cashReceived = newCashReceived;
         if (newChangeGiven !== undefined) updateData.changeGiven = newChangeGiven;
         if (newPaymentStatus === "paid" && !order.paidBy) updateData.paidBy = actorName;
-        if (newPaymentStatus && newPaymentStatus !== "paid" && order.paymentStatus === "paid") updateData.paidBy = "";
+        if (newPaymentStatus && newPaymentStatus !== "paid" && nextPaid === 0) updateData.paidBy = "";
 
         const db = getDb();
         await db.update(foodOrders).set(updateData).where(eq(foodOrders.id, orderId));

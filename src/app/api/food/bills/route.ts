@@ -6,6 +6,7 @@ import { foodOrders, checkins } from "@/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { brandingFromSettings, publicBillBranding, BILL_SETTINGS_KEYS } from "@/lib/foodBillFormat";
 import { foodTaxPercent } from "@/lib/foodLookup";
+import { foodAmountPaid, foodDue } from "@/lib/foodPaymentBalance";
 
 async function loadBillsForPhone(normalized: string) {
   const orderMap = new Map<number, true>();
@@ -19,6 +20,8 @@ async function loadBillsForPhone(normalized: string) {
     subtotal: number;
     tax: number;
     total: number;
+    amountPaid: number;
+    amountDue?: number;
     discount: number;
     paymentStatus: string;
     paymentMethod: string | null;
@@ -58,6 +61,7 @@ async function loadBillsForPhone(normalized: string) {
         subtotal: o.subtotal,
         tax: o.tax,
         total: o.total,
+        amountPaid: foodAmountPaid(o),
         discount: o.discount,
         paymentStatus: o.paymentStatus,
         paymentMethod: o.paymentMethod,
@@ -91,6 +95,8 @@ async function loadBillsForPhone(normalized: string) {
       subtotal: o.subtotal,
       tax: o.tax,
       total: o.total,
+      amountPaid: foodAmountPaid(o),
+      amountDue: foodDue(o),
       discount: o.discount,
       paymentStatus: o.paymentStatus,
       paymentMethod: o.paymentMethod,
@@ -131,10 +137,10 @@ async function loadBillsForPhone(normalized: string) {
   });
 
   const unpaidOrders = ordersWithItems.filter(
-    (o) => o.paymentStatus !== "paid" && o.status !== "cancelled"
+    (o) => foodDue(o) > 0 && o.status !== "cancelled"
   );
   const paidOrders = ordersWithItems.filter(
-    (o) => o.paymentStatus === "paid" && o.status !== "cancelled"
+    (o) => foodDue(o) <= 0 && o.status !== "cancelled"
   );
 
   const billSettings: Record<string, string> = {};

@@ -1257,7 +1257,7 @@ export async function getGuestFoodTab(checkinId: number) {
   return db.select().from(foodOrders)
     .where(and(
       eq(foodOrders.checkinId, checkinId),
-      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+      inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
       sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt);
@@ -1335,11 +1335,11 @@ export async function getOrderModifications(orderId: number) {
 export async function getGuestTabTotal(checkinId: number): Promise<number> {
   const db = getDb();
   const rows = await db.select({
-    total: sql<number>`COALESCE(SUM(${foodOrders.total}), 0)`
+    total: sql<number>`COALESCE(SUM(${foodOrders.total} - ${foodOrders.amountPaid}), 0)`
   }).from(foodOrders)
     .where(and(
       eq(foodOrders.checkinId, checkinId),
-      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+      inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
       sql`${foodOrders.status} != 'cancelled'`,
     ));
   return rows[0]?.total || 0;
@@ -1351,7 +1351,7 @@ export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
   return db.select().from(foodOrders)
     .where(and(
       inArray(foodOrders.checkinId, checkinIds),
-      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+      inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
       sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt);

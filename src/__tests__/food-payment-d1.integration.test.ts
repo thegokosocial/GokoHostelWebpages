@@ -8,6 +8,7 @@ const q = vi.hoisted(() => ({
   authenticateUser: vi.fn(),
   getFoodOrderById: vi.fn(),
   getFoodOrderItemsBatch: vi.fn(),
+  latestReceiptAccount: vi.fn(),
   resolveReceiptAccount: vi.fn(),
   getDb: vi.fn(),
 }));
@@ -19,6 +20,7 @@ vi.mock("@/db/queries", () => ({
 }));
 vi.mock("@/lib/guestReceipts", () => ({
   resolveReceiptAccount: q.resolveReceiptAccount,
+  latestReceiptAccount: q.latestReceiptAccount,
   receiptBusinessDate: vi.fn(() => "2026-09-22"),
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
@@ -76,6 +78,7 @@ function createPaymentTables(sqlite: SQLite.Database) {
       subtotal INTEGER NOT NULL DEFAULT 0,
       tax INTEGER NOT NULL DEFAULT 0,
       payment_status TEXT NOT NULL DEFAULT 'pending',
+      amount_paid INTEGER NOT NULL DEFAULT 0,
       payment_method TEXT DEFAULT '',
       paid_by TEXT DEFAULT '',
       cash_received INTEGER DEFAULT 0,
@@ -159,6 +162,7 @@ describe("food payment D1 persistence", () => {
     q.getFoodOrderById.mockResolvedValue({ id: 10, orderNumber: "F-10", status: "placed", paymentStatus: "pending", total: 400 });
     q.getFoodOrderItemsBatch.mockResolvedValue(new Map([[10, [{ status: "active", pricingStatus: "fixed" }]]]));
     q.resolveReceiptAccount.mockResolvedValue(7);
+    q.latestReceiptAccount.mockResolvedValue(7);
     q.getDb.mockReturnValue(db);
   });
 
@@ -171,8 +175,8 @@ describe("food payment D1 persistence", () => {
     const response = await POST(request({ orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }));
 
     expect(response.status).toBe(200);
-    expect(sqlite.prepare("SELECT payment_status, payment_method, paid_by FROM food_orders WHERE id = 10").get()).toMatchObject({
-      payment_status: "paid", payment_method: "online", paid_by: "Admin",
+    expect(sqlite.prepare("SELECT payment_status, amount_paid, payment_method, paid_by FROM food_orders WHERE id = 10").get()).toMatchObject({
+      payment_status: "paid", amount_paid: 400, payment_method: "online", paid_by: "Admin",
     });
     expect(sqlite.prepare("SELECT source_id, account_id, amount, kind FROM guest_receipts").all()).toEqual([
       { source_id: 10, account_id: 7, amount: 400, kind: "food" },
@@ -186,8 +190,8 @@ describe("food payment D1 persistence", () => {
     const response = await POST(request({ orderIds: [10], paymentMethod: "cash", cashReceived: 500, changeGiven: 100 }));
 
     expect(response.status).toBe(200);
-    expect(sqlite.prepare("SELECT payment_status, payment_method, cash_received, change_given FROM food_orders WHERE id = 10").get()).toMatchObject({
-      payment_status: "paid", payment_method: "cash", cash_received: 500, change_given: 100,
+    expect(sqlite.prepare("SELECT payment_status, amount_paid, payment_method, cash_received, change_given FROM food_orders WHERE id = 10").get()).toMatchObject({
+      payment_status: "paid", amount_paid: 400, payment_method: "cash", cash_received: 500, change_given: 100,
     });
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM guest_receipts").get()).toEqual({ count: 0 });
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_log").get()).toEqual({ count: 1 });
@@ -204,5 +208,16 @@ describe("food payment D1 persistence", () => {
     });
     expect(sqlite.prepare("SELECT account_id, amount FROM guest_receipts").all()).toEqual([{ account_id: 7, amount: 300 }]);
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_log").get()).toEqual({ count: 1 });
+  });
+
+  it("collects only the outstanding balance for a partially paid order", async () => {
+    sqlite.prepare("UPDATE food_orders SET amount_paid = 200, payment_status = 'partial' WHERE id = 10").run();
+    q.getFoodOrderById.mockResolvedValue({ id: 10, orderNumber: "F-10", status: "placed", paymentStatus: "partial", amountPaid: 200, total: 400 });
+
+    const response = await POST(request({ orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }));
+
+    expect(response.status).toBe(200);
+    expect(sqlite.prepare("SELECT payment_status, amount_paid FROM food_orders WHERE id = 10").get()).toMatchObject({ payment_status: "paid", amount_paid: 400 });
+    expect(sqlite.prepare("SELECT amount FROM guest_receipts").all()).toEqual([{ amount: 200 }]);
   });
 });

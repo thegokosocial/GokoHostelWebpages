@@ -923,6 +923,28 @@ describe("walk-in advance payment", () => {
     expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 10, kind: "refund", accountId: 22, amount: -20000, receiptId: "refund-1" }));
   });
 
+  it("requires an explicit correction or refund when a booking edit would exceed the revised total", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 800, paymentMethod: "cash", cashReceived: 800 },
+      assignments: [],
+    });
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountTotal: 500 }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/less than the amount already collected/i);
+    expect(q.updateBookingFull).not.toHaveBeenCalled();
+  });
+
+  it("preserves the collected booking amount when the revised total increases", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 400, paymentStatus: "paid", paymentMethod: "cash", cashReceived: 400 },
+      assignments: [],
+    });
+    const res = await POST(req({ password: "x", action: "editReservation", bookingId: 10, amountTotal: 1600 }));
+    expect(res.status).toBe(200);
+    expect(q.updateBookingFull).toHaveBeenCalledWith(10, expect.objectContaining({ amountTotal: 1600 }));
+    expect(q.updateBookingFull.mock.calls[0][1]).not.toHaveProperty("amountPaid");
+  });
+
   it("validates a changed booking total against the edited final amount received", async () => {
     q.getBookingDetail.mockResolvedValue({
       booking: { id: 10, guestName: "Guest", checkinDate: "2026-09-05", checkoutDate: "2026-09-06", status: "received", source: "manual", amountTotal: 1050, amountPaid: 500, paymentMethod: "cash", cashReceived: 500 },

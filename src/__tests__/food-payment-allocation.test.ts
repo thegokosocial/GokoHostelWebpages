@@ -24,4 +24,12 @@ describe("combined food payment allocation", () => {
       { orderId: 12, total: 4300, paymentMethod: "split", cashReceived: 0, changeGiven: 0, onlineAmount: 4300 },
     ]);
   });
+
+  it("allocates a combined payment oldest first when only balances are payable", () => {
+    const payable = [{ id: 11, total: 2000 }, { id: 12, total: 500 }];
+    expect(allocateFoodPayment(payable, "online")).toMatchObject([
+      { orderId: 11, total: 2000, onlineAmount: 2000 },
+      { orderId: 12, total: 500, onlineAmount: 500 },
+    ]);
+  });
 });

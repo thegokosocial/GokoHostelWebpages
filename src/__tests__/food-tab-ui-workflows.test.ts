@@ -404,7 +404,7 @@ describe("food-tab UI checkout workflows", () => {
     const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
     expect(source).toContain("const saved = await markGroupPaid");
     expect(source).toContain("if (saved) setPaymentModalGroup(null)");
-    expect(source).toContain("const saved = paymentEditOrder.paymentStatus === \"paid\"");
+    expect(source).toContain("const saved = foodAmountPaid(paymentEditOrder) > 0");
     expect(source).toContain("if (saved) setPaymentEditOrder(null)");
     expect(source).toContain('showError("Payment", data.error || "Could not record payment")');
   });

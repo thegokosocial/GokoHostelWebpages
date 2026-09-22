@@ -76,12 +76,33 @@ export function formatGstRateLabel(rate: number): string {
   return rate.toFixed(1).replace(/\.0$/, "");
 }
 
-export type BillPaymentStatusLabel = "Open tab" | "Paid" | "Pending";
+export type BillPaymentStatusLabel = "Open tab" | "Paid" | "Partially paid" | "Pending";
 
 export function billPaymentStatusLabel(paymentStatus: string | null | undefined): BillPaymentStatusLabel {
   if (paymentStatus === "paid") return "Paid";
+  if (paymentStatus === "partial") return "Partially paid";
   if (paymentStatus === "on_tab") return "Open tab";
   return "Pending";
+}
+
+/** Return only the currently payable quantity of an order. */
+export function payableBillItems<
+  T extends { quantity: number; lineTotal: number; itemPrice?: number; price?: number; status?: string },
+>(items: T[], amountPaid: number, total: number): T[] {
+  let paidRemaining = Math.min(Math.max(0, amountPaid || 0), Math.max(0, total || 0));
+  const result: T[] = [];
+  for (const item of items) {
+    if (item.status === "voided" || item.quantity <= 0 || item.lineTotal <= 0) continue;
+    const payableLine = Math.max(0, item.lineTotal - Math.min(item.lineTotal, paidRemaining));
+    paidRemaining = Math.max(0, paidRemaining - item.lineTotal);
+    if (payableLine <= 0) continue;
+    const unitPrice = item.itemPrice ?? item.price ?? 0;
+    const payableQuantity = unitPrice > 0
+      ? Math.min(item.quantity, Math.max(1, Math.ceil(payableLine / unitPrice)))
+      : item.quantity;
+    result.push({ ...item, quantity: payableQuantity, lineTotal: payableLine });
+  }
+  return result;
 }
 
 /** Flatten and coalesce line items by name + unit price (guest tab bill). */

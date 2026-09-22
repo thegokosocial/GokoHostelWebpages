@@ -6,6 +6,7 @@ import {
   billPaymentStatusLabel,
   formatGstRateLabel,
   mergeBillLineItems,
+  payableBillItems,
   splitGstPaise,
   splitGstRate,
 } from "@/lib/foodBillFormat";
@@ -26,6 +27,7 @@ export type GuestFoodBillOrder = {
   guestName?: string;
   roomInfo?: string | null;
   paymentStatus?: string;
+  amountPaid?: number;
   paymentMethod?: string | null;
   createdAt: string;
   subtotal: number;
@@ -91,9 +93,10 @@ export function GuestFoodBillCard({
   const tax = orders.reduce((s, o) => s + o.tax, 0);
   const total = orders.reduce((s, o) => s + o.total, 0);
   const discount = orders.reduce((s, o) => s + (o.discount || 0), 0);
+  const due = paymentDue ?? orders.reduce((s, o) => s + Math.max(0, o.total - (o.amountPaid || 0)), 0);
   const items = mergeBillLineItems(
     orders.flatMap((o) =>
-      o.items
+      (variant === "unpaid" ? payableBillItems(o.items, o.amountPaid || 0, o.total) : o.items)
         .filter((i) => i.pricingStatus !== "pending" && i.status !== "voided")
         .map((i) => ({
           name: i.itemName || i.name,
@@ -111,7 +114,6 @@ export function GuestFoodBillCard({
   const { cgst, sgst } = splitGstPaise(tax);
   const rateForLabels = tax > 0 ? foodTaxRateFromAmounts(subtotal, tax) : (branding.taxRate || 0);
   const { cgstRate, sgstRate } = splitGstRate(rateForLabels);
-  const due = paymentDue ?? total;
   const showPayment = variant === "unpaid" && due > 0 && !!(branding.qrUrl || branding.upiId);
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
@@ -183,8 +185,14 @@ export function GuestFoodBillCard({
         )}
         <div className="mt-1 flex justify-between text-sm font-semibold text-zinc-800 dark:text-zinc-100">
           <span>Grand Total</span>
-          <span>{pendingPrice ? "Price pending" : formatRupees(total)}</span>
+          <span>{pendingPrice ? "Price pending" : formatRupees(variant === "unpaid" ? due : total)}</span>
         </div>
+        {due !== total && !pendingPrice && (
+          <div className="flex justify-between text-sm font-bold text-orange-700 dark:text-orange-400">
+            <span>Amount Due</span>
+            <span>{formatRupees(due)}</span>
+          </div>
+        )}
       </div>
 
       {showPayment && !pendingPrice && (
@@ -258,7 +266,7 @@ export function GuestFoodBillCard({
             </p>
           )}
           <p className="mt-1 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-            {pendingPrice ? "Price pending" : `₹${Math.round(total / 100)}`}
+            {pendingPrice ? "Price pending" : `₹${Math.round((variant === "unpaid" ? due : total) / 100)}`}
           </p>
         </div>
       ) : (
@@ -291,7 +299,7 @@ export function GuestFoodBillCard({
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-              {pendingPrice ? "Price pending" : `₹${Math.round(total / 100)}`}
+              {pendingPrice ? "Price pending" : `₹${Math.round((variant === "unpaid" ? due : total) / 100)}`}
             </span>
             <svg
               className={`h-4 w-4 text-zinc-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}

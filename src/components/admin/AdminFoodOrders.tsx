@@ -20,6 +20,7 @@ import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/Recor
 import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
+import { foodAmountPaid, foodDue } from "@/lib/foodPaymentBalance";
 
 async function withBillBranding(
   password: string,
@@ -65,6 +66,7 @@ export interface Order {
   subtotal: number;
   tax: number;
   total: number;
+  amountPaid?: number;
   status: string;
   paymentStatus: string;
   paymentMethod: string;
@@ -915,10 +917,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       const cachedOrders = hostelOrdersMap[g.checkinId] || [];
       const paidOrders = paidByHostel.get(g.checkinId) || [];
       const allOrders = [...new Map([...cachedOrders, ...paidOrders].map((o) => [o.id, o])).values()];
-      const paidAmount = paidOrders.reduce((s, o) => s + o.total, 0);
+      const paidAmount = allOrders.reduce((s, o) => s + foodAmountPaid(o), 0);
       const hasLoadedOrders = Object.prototype.hasOwnProperty.call(hostelOrdersMap, g.checkinId);
       const pendingAmount = hasLoadedOrders
-        ? cachedOrders.filter((o) => o.paymentStatus !== "paid").reduce((s, o) => s + o.total, 0)
+        ? cachedOrders.reduce((s, o) => s + foodDue(o), 0)
         : g.tabTotal;
       const hostelLatest = cachedOrders.length > 0
         ? cachedOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, "")
@@ -959,7 +961,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         latestOrderTime: paidOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, ""),
         earliestOrderTime: paidOrders.reduce((min, o) => !min || o.createdAt < min ? o.createdAt : min, ""),
         hasModifications: paidOrders.some((o) => o.hasModifications),
-        paidAmount: paidOrders.reduce((s, o) => s + o.total, 0), pendingAmount: 0,
+        paidAmount: paidOrders.reduce((s, o) => s + foodAmountPaid(o), 0), pendingAmount: paidOrders.reduce((s, o) => s + foodDue(o), 0),
       });
     }
 
@@ -993,8 +995,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         latestOrderTime: latest,
         earliestOrderTime: earliest,
         hasModifications: groupOrders.some((o) => o.hasModifications),
-        paidAmount: groupOrders.filter((o) => o.paymentStatus === "paid").reduce((s, o) => s + o.total, 0),
-        pendingAmount: groupOrders.filter((o) => o.paymentStatus !== "paid").reduce((s, o) => s + o.total, 0),
+        paidAmount: groupOrders.reduce((s, o) => s + foodAmountPaid(o), 0),
+        pendingAmount: groupOrders.reduce((s, o) => s + foodDue(o), 0),
       });
     }
 
@@ -1031,7 +1033,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   // Mixed groups show only the unpaid orders in the bill. Fully paid groups still
   // open their complete paid bill so Print/Bill/Order More remain available.
   const billOrders = useMemo(() => {
-    const unpaid = selectedGroupOrders.filter((o) => o.paymentStatus !== "paid");
+    const unpaid = selectedGroupOrders.filter((o) => foodDue(o) > 0);
     return unpaid.length > 0 ? unpaid : selectedGroupOrders;
   }, [selectedGroupOrders]);
 
@@ -1189,9 +1191,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     ? selectedGroupOrders.reduce((sum, o) => sum + o.total, 0)
     : selectedGroup?.totalAmount || 0;
   const actualGroupPending = selectedGroupOrders.length > 0
-    ? selectedGroupOrders.filter((o) => o.paymentStatus !== "paid").reduce((sum, o) => sum + o.total, 0)
+    ? selectedGroupOrders.reduce((sum, o) => sum + foodDue(o), 0)
     : selectedGroup?.pendingAmount || 0;
-  const billTotal = billOrders.reduce((sum, o) => sum + o.total, 0);
+  const billTotal = billOrders.reduce((sum, o) => sum + foodDue(o), 0);
 
   const groupHasSpPending = groupHasPendingSpecialPrice(selectedGroupOrders);
 
@@ -1238,7 +1240,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
   const markGroupPaid = async (group: SummaryGroup, paymentMethod: string, cashReceived: number = 0, changeGiven: number = 0, onlineAccountId?: number, receiptId?: string): Promise<boolean> => {
     const orders = getGroupOrders(group);
-    const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid");
+    const unpaidOrders = orders.filter((o) => foodDue(o) > 0);
     const orderIds = unpaidOrders.map((o) => o.id);
     if (orderIds.length === 0) return false;
     setBusy(group.key);
@@ -1281,8 +1283,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
   const handlePrintGroup = async (group: SummaryGroup) => {
     const groupOrders = getGroupOrders(group);
-    const orders = groupOrders.some((o) => o.paymentStatus !== "paid")
-      ? groupOrders.filter((o) => o.paymentStatus !== "paid")
+    const orders = groupOrders.some((o) => foodDue(o) > 0)
+      ? groupOrders.filter((o) => foodDue(o) > 0)
       : groupOrders;
     if (orders.length === 0) return;
     setPrintingGroup(group.key);
@@ -1519,6 +1521,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     guestName: selectedGroup.guestName,
                     roomInfo: selectedGroup.roomInfo || o.roomInfo,
                     paymentStatus: o.paymentStatus,
+                    amountPaid: foodAmountPaid(o),
                     paymentMethod: o.paymentMethod,
                     createdAt: o.createdAt,
                     subtotal: o.subtotal,
@@ -1615,7 +1618,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-brand-green-dark/70">{order.orderNumber} · ₹{(order.total / 100).toFixed(0)}</span>
                           <div className="flex items-center gap-1">
-                            {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && order.paymentStatus === "paid" ? (
+                            {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && foodAmountPaid(order) > 0 ? (
                               <button type="button" aria-label={`Edit payment for ${order.orderNumber}`} title="Edit payment" onClick={() => setPaymentEditOrder(order)} className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"><BanknoteIcon className="h-3.5 w-3.5" /></button>
                             ) : <span className="font-medium text-orange-600">Unpaid</span>}
                             {canEditOrderItems && (
@@ -2681,8 +2684,8 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
       const overrideOrders = detailOrders[`hostel_${checkinId}`];
       const effectiveOrders = overrideOrders || orders;
       const nonCancelled = effectiveOrders.filter(o => o.status !== "cancelled");
-      const paidAmt = nonCancelled.filter(o => o.paymentStatus === "paid").reduce((s, o) => s + o.total, 0);
-      const pendingAmt = nonCancelled.filter(o => o.paymentStatus !== "paid").reduce((s, o) => s + o.total, 0);
+      const paidAmt = nonCancelled.reduce((s, o) => s + foodAmountPaid(o), 0);
+      const pendingAmt = nonCancelled.reduce((s, o) => s + foodDue(o), 0);
       const cashAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && o.paymentMethod === "cash").reduce((s, o) => s + o.total, 0);
       const onlineAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && (o.paymentMethod === "online" || o.paymentMethod === "split")).reduce((s, o) => s + o.total, 0);
       const totalAmt = nonCancelled.reduce((s, o) => s + o.total, 0);
@@ -2707,8 +2710,8 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
       const overrideOrders = detailOrders[`walkin_${groupKey}`];
       const effectiveOrders = overrideOrders || orders;
       const nonCancelled = effectiveOrders.filter(o => o.status !== "cancelled");
-      const paidAmt = nonCancelled.filter(o => o.paymentStatus === "paid").reduce((s, o) => s + o.total, 0);
-      const pendingAmt = nonCancelled.filter(o => o.paymentStatus !== "paid").reduce((s, o) => s + o.total, 0);
+      const paidAmt = nonCancelled.reduce((s, o) => s + foodAmountPaid(o), 0);
+      const pendingAmt = nonCancelled.reduce((s, o) => s + foodDue(o), 0);
       const cashAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && o.paymentMethod === "cash").reduce((s, o) => s + o.total, 0);
       const onlineAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && (o.paymentMethod === "online" || o.paymentMethod === "split")).reduce((s, o) => s + o.total, 0);
       const totalAmt = nonCancelled.reduce((s, o) => s + o.total, 0);
@@ -2875,9 +2878,11 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
     ? selectedOrders.reduce((sum, o) => sum + o.total, 0)
     : selectedGroup?.totalAmount || 0;
   const actualGroupPaid = selectedOrders.length > 0
-    ? selectedOrders.filter(o => o.paymentStatus === "paid").reduce((sum, o) => sum + o.total, 0)
+    ? selectedOrders.reduce((sum, o) => sum + foodAmountPaid(o), 0)
     : selectedGroup?.paidAmount || 0;
-  const actualGroupPending = actualGroupTotal - actualGroupPaid;
+  const actualGroupPending = selectedOrders.length > 0
+    ? selectedOrders.reduce((sum, o) => sum + foodDue(o), 0)
+    : actualGroupTotal - actualGroupPaid;
 
   if (loading) return <LoadingState />;
 
@@ -3089,7 +3094,7 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
                       {/* Actions */}
                       {order.status !== "cancelled" && (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {order.paymentStatus !== "paid" ? (
+                          {foodDue(order) > 0 ? (
                             <button
                               type="button"
                               onClick={() => setPaymentEditOrder(order)}
@@ -3163,11 +3168,11 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         <RecordPaymentModal
           totalAmount={paymentEditOrder.total}
           guestName={selectedGroup?.guestName || ""}
-          initialMethod={paymentEditOrder.paymentStatus === "paid" ? (paymentEditOrder.paymentMethod || "online") : "online"}
-          initialCash={paymentEditOrder.paymentStatus === "paid" ? paymentEditOrder.cashReceived : 0}
+          initialMethod={foodAmountPaid(paymentEditOrder) > 0 ? (paymentEditOrder.paymentMethod || "online") : "online"}
+          initialCash={foodAmountPaid(paymentEditOrder) > 0 ? paymentEditOrder.cashReceived : 0}
           password={password} username={username} receiptKind="food"
           onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
-            const saved = paymentEditOrder.paymentStatus === "paid"
+            const saved = foodAmountPaid(paymentEditOrder) > 0
               ? await handleUpdatePayment(paymentEditOrder, { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId })
               : await handleMarkPaid(paymentEditOrder, method, cashReceived, changeGiven, onlineAccountId, receiptId);
             if (saved) setPaymentEditOrder(null);
@@ -3281,8 +3286,8 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
       const g = map.get(key)!;
       g.orders.push(o);
       g.total += o.total;
-      if (o.paymentStatus === "paid") g.paid += o.total;
-      else g.pending += o.total;
+      g.paid += foodAmountPaid(o);
+      g.pending += foodDue(o);
     }
     return [...map.values()].sort((a, b) => {
       const aTime = a.orders[0]?.createdAt || "";
@@ -3292,8 +3297,8 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
   }, [orders]);
 
   const totalAll = orders.filter(o => o.status !== "cancelled").reduce((s, o) => s + o.total, 0);
-  const totalPaid = orders.filter(o => o.paymentStatus === "paid" && o.status !== "cancelled").reduce((s, o) => s + o.total, 0);
-  const totalPending = totalAll - totalPaid;
+  const totalPaid = orders.filter(o => o.status !== "cancelled").reduce((s, o) => s + foodAmountPaid(o), 0);
+  const totalPending = orders.filter(o => o.status !== "cancelled").reduce((s, o) => s + foodDue(o), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -4229,6 +4234,7 @@ export function PaymentBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     pending: "text-yellow-600",
     on_tab: "text-blue-600",
+    partial: "text-orange-600",
     paid: "text-green-600",
   };
   return <span className={cn("font-medium", colors[status] || "text-gray-600 dark:text-gray-400")}>{status.replace("_", " ")}</span>;
@@ -4236,16 +4242,19 @@ export function PaymentBadge({ status }: { status: string }) {
 
 export function OrderPaymentBadge({ paymentStatus }: { paymentStatus: string }) {
   const paid = paymentStatus === "paid";
+  const partial = paymentStatus === "partial";
   return (
     <span
       className={cn(
         "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
         paid
           ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400"
-          : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400",
+          : partial
+            ? "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400"
+            : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400",
       )}
     >
-      {paid ? "Paid" : "Unpaid"}
+      {paid ? "Paid" : partial ? "Partial" : "Unpaid"}
     </span>
   );
 }

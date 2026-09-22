@@ -88,21 +88,21 @@ describe("Payment History", () => {
     expect(summary).toContain("dateTo: localDateStr(new Date())");
     expect(summary).toContain("while (true)");
     expect(summary).toContain("paidOffset += page.length");
-    expect(summary).toContain('const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid")');
+    expect(summary).toContain('const unpaidOrders = orders.filter((o) => foodDue(o) > 0)');
     expect(summary).toContain('const unpaidGroups = filteredGroups.filter((group) => group.pendingAmount > 0)');
     expect(summary).toContain('const paidGroups = filteredGroups.filter((group) => group.pendingAmount <= 0)');
     expect(summary).toContain('const hasLoadedOrders = Object.prototype.hasOwnProperty.call(hostelOrdersMap, g.checkinId)');
-    expect(summary).toContain('cachedOrders.filter((o) => o.paymentStatus !== "paid")');
+    expect(summary).toContain('cachedOrders.reduce((s, o) => s + foodDue(o), 0)');
     expect(summary).toContain(': g.tabTotal');
     expect(summary).toContain('group.pendingAmount <= 0');
     expect(summary).toContain('group.paidAmount > 0');
     expect(summary).toContain('border-l-red-400');
     expect(summary).toContain('border-l-orange-400');
     expect(summary).toContain('border-l-green-400');
-    expect(summary).toContain('const unpaid = selectedGroupOrders.filter((o) => o.paymentStatus !== "paid")');
+    expect(summary).toContain('const unpaid = selectedGroupOrders.filter((o) => foodDue(o) > 0)');
     expect(source).toContain('hasPermission(role, permissions, "canViewFoodOrders")');
     expect(summary).toContain('<OrderPaymentBadge paymentStatus={order.paymentStatus} />');
-    expect(source).toContain('paid ? "Paid" : "Unpaid"');
+    expect(source).toContain('partial ? "Partial" : "Unpaid"');
     expect(summary).toContain('orders={billOrders.map((o) => ({');
     expect(summary).toContain('paymentDue={actualGroupPending}');
     expect(summary).toContain('aria-label={`Edit payment for ${order.orderNumber}`}');
@@ -122,13 +122,12 @@ describe("Payment History", () => {
     expect(summary).toContain('Payment History');
   });
 
-  it("reopens paid orders when bill items change", () => {
+  it("preserves payment balances when bill items change", () => {
     const source = readFileSync("src/app/api/admin/food-orders/route.ts", "utf8");
-    expect(source).toContain("async function reopenPaidOrder");
-    expect(source).toContain('action: "food_payment_reopened"');
-    expect(source).toContain('kind: "reversal"');
-    expect(source).toContain('Bill item voided; payment returned to pending');
-    expect(source).toContain('Order quantity changed; payment returned to pending');
+    expect(source).toContain("function paymentForEditedTotal");
+    expect(source).toContain("foodAmountPaid(order)");
+    expect(source).toContain("requiresPaymentAdjustment: true");
+    expect(source).toContain('amountPaid: foodPaymentState(order.total, foodAmountPaid(order) + allocation.total');
   });
 
   it("keeps payment and food-edit actions distinct and guarded by their permissions", () => {

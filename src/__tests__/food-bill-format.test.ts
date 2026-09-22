@@ -8,6 +8,7 @@ import {
   splitGstRate,
   billPaymentStatusLabel,
   DEFAULT_BILL_BRANDING,
+  payableBillItems,
 } from "@/lib/foodBillFormat";
 import { sanitizeBillPaymentQrUrl } from "@/lib/mediaKeys";
 
@@ -51,8 +52,26 @@ describe("bill branding helpers", () => {
 
   it("maps payment status labels", () => {
     expect(billPaymentStatusLabel("paid")).toBe("Paid");
+    expect(billPaymentStatusLabel("partial")).toBe("Partially paid");
     expect(billPaymentStatusLabel("on_tab")).toBe("Open tab");
     expect(billPaymentStatusLabel("pending")).toBe("Pending");
+  });
+});
+
+describe("payableBillItems", () => {
+  it("shows only the newly added quantity after a partial edit", () => {
+    const payable = payableBillItems([
+      { itemName: "Shampoo", quantity: 3, itemPrice: 200, lineTotal: 600 },
+    ], 400, 600);
+    expect(payable).toEqual([{ itemName: "Shampoo", quantity: 1, itemPrice: 200, lineTotal: 200 }]);
+  });
+
+  it("removes paid lines and leaves later unpaid lines visible", () => {
+    const payable = payableBillItems([
+      { itemName: "Tea", quantity: 1, itemPrice: 100, lineTotal: 100 },
+      { itemName: "Meal", quantity: 1, itemPrice: 500, lineTotal: 500 },
+    ], 100, 600);
+    expect(payable).toEqual([{ itemName: "Meal", quantity: 1, itemPrice: 500, lineTotal: 500 }]);
   });
 });
 

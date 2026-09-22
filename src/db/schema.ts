@@ -546,6 +546,7 @@ export const foodOrders = sqliteTable("food_orders", {
   total: integer("total").notNull().default(0),
   status: text("status").notNull().default("placed"),
   paymentStatus: text("payment_status").notNull().default("pending"),
+  amountPaid: integer("amount_paid").notNull().default(0),
   paymentMethod: text("payment_method").default(""),
   paidBy: text("paid_by").default(""),
   cashReceived: integer("cash_received").default(0),
