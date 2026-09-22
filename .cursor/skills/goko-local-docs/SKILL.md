@@ -12,7 +12,7 @@ Committed `docs/` is the knowledge base. Never `git add docs/secrets-and-access.
 1. Read `docs/README.md` then `docs/llm-onboarding.md` (landmines).
 2. Diff the change against **source** (`src/`, `migrations/`, `wrangler.jsonc`). Do not trust an older handbook paragraph if the route disagrees.
 3. Identify the smallest meaningful regression test: Vitest for logic/API/auth/data behavior; Playwright for cross-page or user-visible workflows. Extend an existing suite before creating a new one.
-4. Add or update that regression test in the same turn. Cover success plus relevant authorization, boundary, duplicate/retry, and failure behavior; do not add browser coverage for pure logic that is already well covered by Vitest.
+4. Add or update the regression test in the same turn as every feature or behavior change. A behavior change is not ready to commit without matching test coverage. Cover success plus the relevant authorization, boundary, duplicate/retry, and failure behavior; for money, payment, receipt, audit, inventory, or workflow changes, assert the side effects as well as the response. Do not add browser coverage for pure logic that is already well covered by Vitest.
 5. Patch every matching file in the table below. Keep mermaid diagrams accurate.
 6. Secrets/passwords/live IDs → only `docs/secrets-and-access.md` and `MAINTAINER.local.md`.
 7. Production stamps (Worker version, D1 applied list, R2) → `MAINTAINER.local.md`.
@@ -20,7 +20,7 @@ Committed `docs/` is the knowledge base. Never `git add docs/secrets-and-access.
 
 ## Commit gate
 
-Before committing, inspect both the working-tree and staged diffs. A commit that changes product behavior must include a focused regression test and the matching handbook updates in the same commit; do not commit source-only RBAC/API/page changes. Confirm the permission catalog, UI gates, server action maps, tests, `docs/pages-and-ui.md`, `docs/auth-rbac.md`, `docs/api-map.md`, and relevant flow/onboarding docs are synchronized. Run `git diff --cached --check` plus the applicable tests/typecheck/build before pushing.
+Before every commit, inspect both the working-tree and staged diffs. Every feature or behavior update must have its focused regression test added or updated before the commit, and the matching maintainer/handbook documentation must be included in that same commit. Never commit source-only behavior, RBAC, API, page, workflow, payment, receipt, or audit changes. Confirm the permission catalog, UI gates, server action maps, tests, `docs/pages-and-ui.md`, `docs/auth-rbac.md`, `docs/api-map.md`, and relevant flow/onboarding docs are synchronized. Run `git diff --cached --check` plus the applicable tests/typecheck/build before pushing. If a change is intentionally test-exempt because it is non-behavioral, record that rationale in the handoff.
 
 ## Test-layer choice
 
