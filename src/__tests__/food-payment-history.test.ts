@@ -91,10 +91,22 @@ describe("Payment History", () => {
     expect(summary).toContain('const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid")');
     expect(summary).toContain('const unpaidGroups = filteredGroups.filter((group) => group.pendingAmount > 0)');
     expect(summary).toContain('const paidGroups = filteredGroups.filter((group) => group.pendingAmount <= 0)');
+    expect(summary).toContain('group.pendingAmount <= 0');
+    expect(summary).toContain('group.paidAmount > 0');
+    expect(summary).toContain('border-l-red-400');
+    expect(summary).toContain('border-l-orange-400');
+    expect(summary).toContain('border-l-green-400');
     expect(summary).toContain('const unpaid = selectedGroupOrders.filter((o) => o.paymentStatus !== "paid")');
+    expect(source).toContain('hasPermission(role, permissions, "canViewFoodOrders")');
+    expect(summary).toContain('<OrderPaymentBadge paymentStatus={order.paymentStatus} />');
+    expect(source).toContain('paid ? "Paid" : "Unpaid"');
     expect(summary).toContain('orders={billOrders.map((o) => ({');
     expect(summary).toContain('paymentDue={actualGroupPending}');
     expect(summary).toContain('aria-label={`Edit payment for ${order.orderNumber}`}');
+    expect(summary).toContain('{item.quantity}× {item.itemName}');
+    expect(summary).toContain('aria-label={`Edit items for ${order.orderNumber}`}');
+    expect(summary).toContain('setDrawerView("orders"); setEditingOrderId(order.id)');
+    expect(summary).toContain('const canEditOrderItems = hasPermission');
     expect(summary).toContain('Payment History');
   });
 

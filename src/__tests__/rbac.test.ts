@@ -567,4 +567,19 @@ describe("Order status polling / stepper", () => {
     expect(shouldPollOrderStatus("preparing", false)).toBe(true);
     expect(shouldPollOrderStatus("preparing", true)).toBe(false);
   });
+
+  it("renders cancelled orders as a terminal state and unknown statuses with a fallback", () => {
+    const source = readFileSync("src/app/food-order/status/page.tsx", "utf8");
+    expect(source).toContain('const statusMessage = STATUS_MESSAGES[order.status] || "We are checking the latest status of your order"');
+    expect(source).toContain('role="status"');
+    expect(source).toContain('This order was cancelled');
+  });
+});
+
+describe("Food order summary permissions", () => {
+  it("allows a manager with page-level food access to open Order Summary", () => {
+    expect(checkPermission("manager", { canViewFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "listOrders")).toBe("allowed");
+    expect(checkPermission("manager", { canViewFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "getGuestsWithTabs")).toBe("allowed");
+    expect(checkPermission("manager", { canViewFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "markOrderPaid")).toBe("forbidden");
+  });
 });

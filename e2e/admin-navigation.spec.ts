@@ -188,7 +188,7 @@ test("desktop Management navigation opens every admin tab", async ({ page }) => 
     await page.getByRole("button", { name: label, exact: true }).click();
     // Dorms is the default admin tab and therefore removes `tab` from the URL.
     await expect(page).toHaveURL(tab === "dorms"
-      ? /section=management(?:&|$)/
+      ? /section=management(?:$|#)/
       : new RegExp(`section=management&tab=${tab}(?:&|$)`));
   }
 

@@ -178,7 +178,9 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
     { id: "combined" as FoodTab, label: "Combined Bill" },
     { id: "active" as FoodTab, label: "Active Orders" },
   ] as { id: FoodTab; label: string }[]).filter((t) => t.id === "summary"
-    ? hasPermission(role, permissions, "canViewFoodTabs") || hasPermission(role, permissions, "canMarkPaid")
+    ? hasPermission(role, permissions, "canViewFoodTabs")
+      || hasPermission(role, permissions, "canViewFoodOrders")
+      || hasPermission(role, permissions, "canMarkPaid")
     : hasPermission(role, permissions, TAB_PERMISSIONS[t.id]));
 
   const [tab, setTab] = useTabWithHistory<FoodTab>("tab", TABS[0]?.id || "summary", { validValues: TABS.map((t) => t.id) });
@@ -1019,6 +1021,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const selectedGroupOrders = useMemo(() => selectedGroup
     ? [...getGroupOrders(selectedGroup)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : [], [selectedGroup, getGroupOrders]);
+  const canEditOrderItems = hasPermission(role || "staff", permissions || {}, "canEditFoodOrders")
+    || hasPermission(role || "staff", permissions || {}, "canPlaceOrders")
+    || hasPermission(role || "staff", permissions || {}, "canViewFoodOrders");
   // Mixed groups show only the unpaid orders in the bill. Fully paid groups still
   // open their complete paid bill so Print/Bill/Order More remain available.
   const billOrders = useMemo(() => {
@@ -1390,7 +1395,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
               onClick={() => selectGroup(group)}
               className={cn(
                 "rounded-xl border border-brand-mist bg-white dark:bg-card p-3 text-left transition-shadow hover:shadow-md dark:hover:shadow-none",
-                group.pendingAmount > 0 ? "border-l-[3px] border-l-orange-400" : "border-l-[3px] border-l-green-400"
+                group.pendingAmount <= 0
+                  ? "border-l-[3px] border-l-green-400"
+                  : group.paidAmount > 0
+                    ? "border-l-[3px] border-l-orange-400"
+                    : "border-l-[3px] border-l-red-400"
               )}
             >
               <div className="flex items-start justify-between gap-1">
@@ -1577,18 +1586,39 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     </>
                   }
                 />
-                {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
-                  <div className="mt-3 space-y-1.5 rounded-lg border border-brand-mist p-2">
+                <div className="mt-3 space-y-1.5 rounded-lg border border-brand-mist p-2">
                     {selectedGroupOrders.map((order) => (
-                      <div key={order.id} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-mono text-brand-green-dark/70">{order.orderNumber} · ₹{(order.total / 100).toFixed(0)}</span>
-                        {order.paymentStatus === "paid" ? (
-                          <button type="button" aria-label={`Edit payment for ${order.orderNumber}`} title="Edit payment" onClick={() => setPaymentEditOrder(order)} className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"><PencilIcon className="h-3.5 w-3.5" /></button>
-                        ) : <span className="font-medium text-orange-600">Unpaid</span>}
+                      <div key={order.id} className="rounded-md border border-brand-mist/70 px-2 py-1.5 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-brand-green-dark/70">{order.orderNumber} · ₹{(order.total / 100).toFixed(0)}</span>
+                          <div className="flex items-center gap-1">
+                            {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && order.paymentStatus === "paid" ? (
+                              <button type="button" aria-label={`Edit payment for ${order.orderNumber}`} title="Edit payment" onClick={() => setPaymentEditOrder(order)} className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"><PencilIcon className="h-3.5 w-3.5" /></button>
+                            ) : <span className="font-medium text-orange-600">Unpaid</span>}
+                            {canEditOrderItems && (
+                              <button
+                                type="button"
+                                aria-label={`Edit items for ${order.orderNumber}`}
+                                title="Edit order items"
+                                onClick={() => { setDrawerView("orders"); setEditingOrderId(order.id); setVoidingItemId(null); }}
+                                className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"
+                              >
+                                <PencilIcon className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-1 space-y-0.5 text-brand-green-dark/60">
+                          {order.items.filter((item) => item.status !== "voided").map((item) => (
+                            <div key={item.id} className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate">{item.quantity}× {item.itemName}</span>
+                              <span className="shrink-0">₹{(item.lineTotal / 100).toFixed(0)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
-                )}
               </div>
             ) : (
             <>
@@ -1620,6 +1650,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs font-bold text-brand-green">{order.orderNumber}</span>
                           <StatusBadge status={order.status} />
+                          <OrderPaymentBadge paymentStatus={order.paymentStatus} />
                           {order.hasModifications && (
                             <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">Modified</span>
                           )}
@@ -4147,4 +4178,20 @@ export function PaymentBadge({ status }: { status: string }) {
     paid: "text-green-600",
   };
   return <span className={cn("font-medium", colors[status] || "text-gray-600 dark:text-gray-400")}>{status.replace("_", " ")}</span>;
+}
+
+export function OrderPaymentBadge({ paymentStatus }: { paymentStatus: string }) {
+  const paid = paymentStatus === "paid";
+  return (
+    <span
+      className={cn(
+        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+        paid
+          ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400"
+          : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400",
+      )}
+    >
+      {paid ? "Paid" : "Unpaid"}
+    </span>
+  );
 }

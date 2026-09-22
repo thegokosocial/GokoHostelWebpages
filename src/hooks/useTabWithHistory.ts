@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useCallback, useTransition } from "react";
+import { useCallback } from "react";
 
 interface TabHistoryOptions {
   /** Other param names to remove from the URL when this param changes */
@@ -27,7 +27,6 @@ export function useTabWithHistory<T extends string>(
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const [, startTransition] = useTransition();
 
   const raw = searchParams.get(paramName);
   const isValid = raw && (!options?.validValues || options.validValues.includes(raw));
@@ -47,9 +46,7 @@ export function useTabWithHistory<T extends string>(
         }
       }
       const query = params.toString();
-      startTransition(() => {
-        router.push(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
-      });
+      router.push(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [searchParams.toString(), router, pathname, paramName, defaultValue, options?.clearParams?.join(",")]

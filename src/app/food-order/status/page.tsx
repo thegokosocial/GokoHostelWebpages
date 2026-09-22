@@ -41,6 +41,13 @@ const STATUS_ICONS: Record<string, string> = {
   ready: "✅",
   served: "🍽️",
 };
+const STATUS_MESSAGES: Record<string, string> = {
+  pending_approval: "Waiting for staff to confirm your order",
+  placed: "Your order has been received",
+  preparing: "The kitchen is preparing your food",
+  ready: "Your order is ready for pickup!",
+  served: "Enjoy your meal!",
+};
 
 function formatPrice(paise: number): string {
   return `₹${Math.round(paise / 100)}`;
@@ -112,13 +119,14 @@ function OrderStatusContent() {
   }, [phoneReady, fetchStatus]);
 
   useEffect(() => {
-    if (!order || !shouldPollOrderStatus(order.status, false)) return;
+    const status = order?.status;
+    if (!status || !shouldPollOrderStatus(status, false)) return;
     const tick = () => {
-      if (shouldPollOrderStatus(order.status, document.hidden)) fetchStatus();
+      if (shouldPollOrderStatus(status, document.hidden)) fetchStatus();
     };
     const interval = setInterval(tick, 10000);
     const onVis = () => {
-      if (shouldPollOrderStatus(order.status, document.hidden)) fetchStatus();
+      if (shouldPollOrderStatus(status, document.hidden)) fetchStatus();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
@@ -166,8 +174,9 @@ function OrderStatusContent() {
     );
   }
 
-  const currentStepIndex = stepperIndex(order.status);
   const isCancelled = order.status === "cancelled";
+  const currentStepIndex = stepperIndex(order.status);
+  const statusMessage = STATUS_MESSAGES[order.status] || "We are checking the latest status of your order";
 
   return (
     <div className="min-h-screen goko-mesh goko-noise bg-brand-sand dark:bg-background p-4 pt-8">
@@ -180,6 +189,13 @@ function OrderStatusContent() {
 
         {/* Progress stepper */}
         <div className="mb-6 rounded-2xl bg-white/95 dark:bg-card/95 p-5 shadow-xl dark:shadow-none backdrop-blur-sm">
+          {isCancelled ? (
+            <div className="rounded-xl bg-brand-red/10 p-4 text-center" role="status">
+              <div className="text-3xl" aria-hidden="true">✕</div>
+              <p className="mt-2 text-sm font-semibold text-brand-red">This order was cancelled</p>
+            </div>
+          ) : (
+          <>
           <div className="relative flex justify-between">
             {/* Connecting line */}
             <div className="absolute left-0 right-0 top-5 h-0.5 bg-gray-200 dark:bg-white/10" />
@@ -218,16 +234,11 @@ function OrderStatusContent() {
             })}
           </div>
 
-          <div className={`mt-5 rounded-xl p-3 text-center ${isCancelled ? "bg-brand-red/10" : "bg-brand-green/10 dark:bg-brand-green/20"}`}>
-            <p className={`text-sm font-medium ${isCancelled ? "text-brand-red" : "text-brand-green-dark dark:text-brand-green"}`}>
-              {order.status === "pending_approval" && "Waiting for staff to confirm your order"}
-              {order.status === "placed" && "Your order has been received"}
-              {order.status === "preparing" && "The kitchen is preparing your food"}
-              {order.status === "ready" && "Your order is ready for pickup!"}
-              {order.status === "served" && "Enjoy your meal!"}
-              {order.status === "cancelled" && "This order was cancelled"}
-            </p>
+          <div className="mt-5 rounded-xl bg-brand-green/10 p-3 text-center dark:bg-brand-green/20">
+            <p className="text-sm font-medium text-brand-green-dark dark:text-brand-green">{statusMessage}</p>
           </div>
+          </>
+          )}
         </div>
 
         {/* Order details */}
