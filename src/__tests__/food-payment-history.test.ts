@@ -89,6 +89,10 @@ describe("Payment History", () => {
     expect(summary).toContain("while (true)");
     expect(summary).toContain("paidOffset += page.length");
     expect(summary).toContain('const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid")');
+    expect(summary).toContain('const unpaidGroups = filteredGroups.filter((group) => group.pendingAmount > 0)');
+    expect(summary).toContain('const paidGroups = filteredGroups.filter((group) => group.pendingAmount <= 0)');
+    expect(summary).toContain('const unpaid = selectedGroupOrders.filter((o) => o.paymentStatus !== "paid")');
+    expect(summary).toContain('orders={billOrders.map((o) => ({');
     expect(summary).toContain('paymentDue={actualGroupPending}');
     expect(summary).toContain('aria-label={`Edit payment for ${order.orderNumber}`}');
     expect(summary).toContain('Payment History');

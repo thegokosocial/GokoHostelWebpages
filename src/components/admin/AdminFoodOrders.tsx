@@ -1019,6 +1019,12 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const selectedGroupOrders = useMemo(() => selectedGroup
     ? [...getGroupOrders(selectedGroup)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : [], [selectedGroup, getGroupOrders]);
+  // Mixed groups show only the unpaid orders in the bill. Fully paid groups still
+  // open their complete paid bill so Print/Bill/Order More remain available.
+  const billOrders = useMemo(() => {
+    const unpaid = selectedGroupOrders.filter((o) => o.paymentStatus !== "paid");
+    return unpaid.length > 0 ? unpaid : selectedGroupOrders;
+  }, [selectedGroupOrders]);
 
   useEffect(() => {
     if (!groupHasPendingSpecialPrice(selectedGroupOrders)) setSpBillWarning(false);
@@ -1164,6 +1170,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const actualGroupPending = selectedGroupOrders.length > 0
     ? selectedGroupOrders.filter((o) => o.paymentStatus !== "paid").reduce((sum, o) => sum + o.total, 0)
     : selectedGroup?.pendingAmount || 0;
+  const billTotal = billOrders.reduce((sum, o) => sum + o.total, 0);
 
   const groupHasSpPending = groupHasPendingSpecialPrice(selectedGroupOrders);
 
@@ -1245,7 +1252,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   });
 
   const handlePrintGroup = async (group: SummaryGroup) => {
-    const orders = getGroupOrders(group);
+    const groupOrders = getGroupOrders(group);
+    const orders = groupOrders.some((o) => o.paymentStatus !== "paid")
+      ? groupOrders.filter((o) => o.paymentStatus !== "paid")
+      : groupOrders;
     if (orders.length === 0) return;
     setPrintingGroup(group.key);
     try {
@@ -1370,9 +1380,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         </div>
       )}
 
-      {/* Card Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {filteredGroups.map((group) => {
+      {(() => {
+        const renderGroupCard = (group: SummaryGroup) => {
           const timeSince = group.earliestOrderTime ? formatTimeSince(group.earliestOrderTime) : "";
           return (
             <button
@@ -1413,8 +1422,26 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
               </div>
             </button>
           );
-        })}
-      </div>
+        };
+        const unpaidGroups = filteredGroups.filter((group) => group.pendingAmount > 0);
+        const paidGroups = filteredGroups.filter((group) => group.pendingAmount <= 0);
+        return (
+          <div className="space-y-4">
+            {unpaidGroups.length > 0 && (
+              <section>
+                <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-orange-600">Unpaid ({unpaidGroups.length})</h4>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{unpaidGroups.map(renderGroupCard)}</div>
+              </section>
+            )}
+            {paidGroups.length > 0 && (
+              <section>
+                <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-green-600">Paid ({paidGroups.length})</h4>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{paidGroups.map(renderGroupCard)}</div>
+              </section>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Slide-over Panel */}
       {selectedGroup && (
@@ -1446,18 +1473,17 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
               <span className="text-sm text-brand-green-dark/70">
                 {drawerView === "bill" ? "Bill" : `${selectedGroup.orderCount} order${selectedGroup.orderCount !== 1 ? "s" : ""}`}
               </span>
-              <span className="text-xl font-bold text-brand-green">₹{(actualGroupTotal / 100).toFixed(0)}</span>
+              <span className="text-xl font-bold text-brand-green">₹{((drawerView === "bill" ? billTotal : actualGroupTotal) / 100).toFixed(0)}</span>
             </div>
 
             {drawerView === "bill" ? (
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
                 <div className="mb-3 rounded-lg border border-brand-mist bg-brand-sand/30 px-3 py-2 text-xs">
-                  <div className="flex justify-between"><span>Bill total</span><b>₹{(actualGroupTotal / 100).toFixed(0)}</b></div>
-                  <div className="flex justify-between"><span className="text-green-700">Paid</span><b className="text-green-700">₹{((actualGroupTotal - actualGroupPending) / 100).toFixed(0)}</b></div>
-                  <div className="flex justify-between"><span className={actualGroupPending > 0 ? "text-orange-700" : "text-green-700"}>Unpaid</span><b className={actualGroupPending > 0 ? "text-orange-700" : "text-green-700"}>₹{(actualGroupPending / 100).toFixed(0)}</b></div>
+                  <div className="flex justify-between"><span>{actualGroupPending > 0 ? "Unpaid bill" : "Paid bill"}</span><b>₹{(billTotal / 100).toFixed(0)}</b></div>
+                  {actualGroupPending > 0 && <p className="mt-1 text-[11px] text-orange-700">Paid orders are excluded from the bill items below.</p>}
                 </div>
                 <GuestFoodBillCard
-                  orders={selectedGroupOrders.map((o) => ({
+                  orders={billOrders.map((o) => ({
                     guestName: selectedGroup.guestName,
                     roomInfo: selectedGroup.roomInfo || o.roomInfo,
                     paymentStatus: o.paymentStatus,
@@ -1486,8 +1512,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     qrUrl: billBranding.paymentQrUrl,
                     footer: billBranding.footer,
                     taxRate: foodTaxRateFromAmounts(
-                      selectedGroupOrders.reduce((s, o) => s + o.subtotal, 0),
-                      selectedGroupOrders.reduce((s, o) => s + o.tax, 0),
+                      billOrders.reduce((s, o) => s + o.subtotal, 0),
+                      billOrders.reduce((s, o) => s + o.tax, 0),
                     ),
                   }}
                   alwaysExpanded
