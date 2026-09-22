@@ -34,9 +34,9 @@ const CHECKINS_PERMISSIONS: Record<string, ActionPerm> = {
 const FOOD_ORDERS_PERMISSIONS: Record<string, ActionPerm> = {
   listOrders: ["canViewFoodOrders", "canMarkPaid"], getOrderDetails: "canViewFoodOrders",
   getOrderModifications: "canViewFoodOrders", getActiveGuests: "canViewFoodOrders",
-  getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"],
+  getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
   getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
-  getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid"],
+  getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
   updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
   voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
@@ -201,6 +201,15 @@ describe("RBAC: Staff with no permissions is blocked", () => {
   });
 
   it("staff cannot mark orders paid without canMarkPaid", () => {
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "markOrderPaid")).toBe("forbidden");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "applyDiscount")).toBe("forbidden");
+  });
+
+  it("food-bill staff can load Combined Bill supporting reads without payment access", () => {
+    const permissions = { canGenerateFoodBills: true };
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getCombinedBill")).toBe("allowed");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getGuestsWithTabs")).toBe("allowed");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getMenu")).toBe("allowed");
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "markOrderPaid")).toBe("forbidden");
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "applyDiscount")).toBe("forbidden");
   });

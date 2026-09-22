@@ -7,7 +7,6 @@ import {
   getFoodOrderItemsBatch,
   getOrderModifications,
   updateFoodOrderStatus,
-  updateFoodOrderPayment,
   updateFoodOrder,
   createFoodOrder,
   addFoodOrderItems,
@@ -40,9 +39,11 @@ import { normalizePhone } from "@/lib/phoneUtils";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { getDb } from "@/db";
-import { foodOrders, foodOrderItems, checkins, orderModifications } from "@/db/schema";
+import { auditLog, foodOrders, foodOrderItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
 import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
-import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
+import { createGuestReceipt, latestReceiptAccount, receiptBusinessDate, resolveReceiptAccount } from "@/lib/guestReceipts";
+import { syncInsert, syncUpdate } from "@/db/syncMeta";
+import { allocateFoodPayment, type FoodPaymentMethod } from "@/lib/foodPaymentAllocation";
 import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
 import { auditDateBounds } from "@/lib/auditRetention";
 import { dbRead } from "@/lib/dbRetry";
@@ -64,9 +65,9 @@ export async function POST(req: NextRequest) {
     const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
       listOrders: ["canViewFoodOrders", "canMarkPaid"], getOrderDetails: "canViewFoodOrders",
       getOrderModifications: "canViewFoodOrders", getActiveGuests: "canViewFoodOrders",
-      getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"],
+      getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
       getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
-      getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid"],
+      getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
       createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
       updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
       voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
@@ -347,36 +348,77 @@ export async function POST(req: NextRequest) {
 
       case "markOrderPaid": {
         const { orderIds, paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId } = rest;
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+        if (!Array.isArray(orderIds) || orderIds.length === 0 || orderIds.some((id: unknown) => !Number.isInteger(id))) {
           return NextResponse.json({ error: "orderIds required" }, { status: 400 });
         }
-        if (!paymentMethod) return NextResponse.json({ error: "paymentMethod required" }, { status: 400 });
+        if (!paymentMethod || !["cash", "online", "split"].includes(paymentMethod)) return NextResponse.json({ error: "paymentMethod required" }, { status: 400 });
+        if (new Set(orderIds).size !== orderIds.length) return NextResponse.json({ error: "Duplicate orderIds are not allowed" }, { status: 400 });
 
-        for (const oid of orderIds) {
-          const order = await getFoodOrderById(oid);
-          if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-          const pendingItems = await getFoodOrderItems(oid);
-          if (pendingItems.some((item) => item.status !== "voided" && item.pricingStatus === "pending")) {
-            return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });
-          }
-          await updateFoodOrderPayment(oid, {
-            paymentStatus: "paid",
-            paymentMethod,
-            paidBy: actorName,
-            cashReceived: cashReceived ?? 0,
-            changeGiven: changeGiven ?? 0,
-          });
-          const onlineAmount = paymentMethod === "online" ? order.total : paymentMethod === "split" ? Math.max(0, order.total - (Number(cashReceived) || 0)) : 0;
-          if (onlineAmount > 0) {
-            const accountId = await resolveReceiptAccount("food", onlineAccountId);
-            await createGuestReceipt({ receiptId: `${receiptId || crypto.randomUUID()}:food:${oid}`, sourceType: "food_order", sourceId: oid, kind: "food", accountId, amount: onlineAmount, createdBy: actorName, notes: `Food order ${order.orderNumber}` });
-          }
+        const method = paymentMethod as FoodPaymentMethod;
+        const tenderCash = Number(cashReceived) || 0;
+        const tenderChange = Number(changeGiven) || 0;
+        const orders = await Promise.all(orderIds.map((id: number) => getFoodOrderById(id)));
+        if (orders.some((order) => !order)) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+        const existingOrders = orders.filter((order): order is NonNullable<typeof order> => !!order);
+        if (existingOrders.some((order) => order.status === "cancelled" || order.paymentStatus === "paid")) {
+          return NextResponse.json({ error: "Every selected order must be an unpaid active order" }, { status: 409 });
         }
-        await addAuditEntry({
-          username: actorName,
-          action: "food_order_paid",
-          target: `orders:${orderIds.join(",")}`,
-          details: `Marked paid via ${paymentMethod}${cashReceived ? `, cash received ₹${(cashReceived / 100).toFixed(0)}` : ""}${changeGiven ? `, change ₹${(changeGiven / 100).toFixed(0)}` : ""}`,
+        const itemsByOrder = await getFoodOrderItemsBatch(orderIds);
+        if (existingOrders.some((order) => (itemsByOrder.get(order.id) || []).some((item) => item.status !== "voided" && item.pricingStatus === "pending"))) {
+          return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });
+        }
+        const combinedTotal = existingOrders.reduce((sum, order) => sum + order.total, 0);
+        if (method === "cash" && (tenderCash < combinedTotal || tenderChange !== tenderCash - combinedTotal)) {
+          return NextResponse.json({ error: "Cash received and change do not match the combined total" }, { status: 400 });
+        }
+        if (method === "online" && (tenderCash !== 0 || tenderChange !== 0)) {
+          return NextResponse.json({ error: "Online payment cannot include cash tender" }, { status: 400 });
+        }
+        if (method === "split" && (tenderCash <= 0 || tenderCash >= combinedTotal || tenderChange !== 0)) {
+          return NextResponse.json({ error: "Split payment must contain both cash and online amounts" }, { status: 400 });
+        }
+        const allocations = allocateFoodPayment(existingOrders, method, tenderCash, tenderChange);
+        const accountId = allocations.some((allocation) => allocation.onlineAmount > 0)
+          ? await resolveReceiptAccount("food", onlineAccountId)
+          : undefined;
+        const db = getDb();
+        await db.transaction(async (tx: any) => {
+          const currentRows = await tx.select().from(foodOrders).where(inArray(foodOrders.id, orderIds));
+          if (currentRows.length !== orderIds.length || currentRows.some((order: any) => order.status === "cancelled" || order.paymentStatus === "paid")) {
+            throw Object.assign(new Error("A selected order changed before payment was recorded"), { status: 409 });
+          }
+          for (const allocation of allocations) {
+            const order = existingOrders.find((candidate) => candidate.id === allocation.orderId)!;
+            await tx.update(foodOrders).set(syncUpdate({
+              paymentStatus: "paid",
+              paymentMethod: allocation.paymentMethod,
+              paidBy: actorName,
+              cashReceived: allocation.cashReceived,
+              changeGiven: allocation.changeGiven,
+              updatedAt: new Date().toISOString(),
+            })).where(eq(foodOrders.id, allocation.orderId));
+            if (allocation.onlineAmount > 0) {
+              await tx.insert(guestReceipts).values(syncInsert({
+                receiptId: `${receiptId || crypto.randomUUID()}:food:${allocation.orderId}`,
+                sourceType: "food_order",
+                sourceId: allocation.orderId,
+                kind: "food",
+                accountId,
+                amount: allocation.onlineAmount,
+                businessDate: receiptBusinessDate(),
+                notes: `Food order ${order.orderNumber}`,
+                createdBy: actorName,
+                createdAt: new Date().toISOString(),
+              }));
+            }
+          }
+          await tx.insert(auditLog).values({
+            timestamp: new Date().toISOString(),
+            username: actorName,
+            action: "food_order_paid",
+            target: `orders:${orderIds.join(",")}`,
+            details: `Marked paid via ${method}${tenderCash ? `, cash received ₹${(tenderCash / 100).toFixed(0)}` : ""}${tenderChange ? `, change ₹${(tenderChange / 100).toFixed(0)}` : ""}`,
+          });
         });
         return NextResponse.json({ success: true, role });
       }
@@ -515,13 +557,17 @@ export async function POST(req: NextRequest) {
 
       case "applyDiscount": {
         const { orderIds, discountPercent, discountAmount, reason } = rest;
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+        if (!Array.isArray(orderIds) || orderIds.length === 0 || orderIds.some((id: unknown) => !Number.isInteger(id))) {
           return NextResponse.json({ error: "orderIds required" }, { status: 400 });
         }
+        if (new Set(orderIds).size !== orderIds.length) return NextResponse.json({ error: "Duplicate orderIds are not allowed" }, { status: 400 });
         if (!reason) return NextResponse.json({ error: "reason required" }, { status: 400 });
         if (discountPercent == null && discountAmount == null) {
           return NextResponse.json({ error: "discountPercent or discountAmount required" }, { status: 400 });
         }
+
+        const existingOrders = await Promise.all(orderIds.map((orderId: number) => getFoodOrderById(orderId)));
+        if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
 
         const discTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
 
@@ -549,39 +595,44 @@ export async function POST(req: NextRequest) {
           totalDiscount = Math.max(0, Math.min(discountableTotal, Math.abs(Number(discountAmount))));
         }
 
-        let discountAssigned = 0;
-        for (let oi = 0; oi < orderData.length; oi++) {
-          const od = orderData[oi];
-          const isLast = oi === orderData.length - 1;
-          const proportion = discountableTotal > 0 ? od.discountableSubtotal / discountableTotal : 0;
-          const orderDiscount = isLast ? (totalDiscount - discountAssigned) : Math.round(totalDiscount * proportion);
-          discountAssigned += orderDiscount;
-          const newSubtotal = Math.max(0, od.grossSubtotal - orderDiscount);
-          const newTax = Math.round((newSubtotal * discTaxRate) / 100);
-          const newTotal = newSubtotal + newTax;
-          await updateFoodOrder(od.id, {
-            discount: orderDiscount,
-            discountReason: reason,
-            discountBy: actorName,
-            subtotal: newSubtotal,
-            tax: newTax,
-            total: newTotal,
+        const db = getDb();
+        await db.transaction(async (tx: any) => {
+          let discountAssigned = 0;
+          for (let oi = 0; oi < orderData.length; oi++) {
+            const od = orderData[oi];
+            const isLast = oi === orderData.length - 1;
+            const proportion = discountableTotal > 0 ? od.discountableSubtotal / discountableTotal : 0;
+            const orderDiscount = isLast ? (totalDiscount - discountAssigned) : Math.round(totalDiscount * proportion);
+            discountAssigned += orderDiscount;
+            const newSubtotal = Math.max(0, od.grossSubtotal - orderDiscount);
+            const newTax = Math.round((newSubtotal * discTaxRate) / 100);
+            const newTotal = newSubtotal + newTax;
+            await tx.update(foodOrders).set(syncUpdate({
+              discount: orderDiscount,
+              discountReason: reason,
+              discountBy: actorName,
+              subtotal: newSubtotal,
+              tax: newTax,
+              total: newTotal,
+              updatedAt: new Date().toISOString(),
+            })).where(eq(foodOrders.id, od.id));
+            await tx.insert(orderModifications).values(syncInsert({
+              orderId: od.id,
+              action: "discount",
+              oldValue: `₹${(od.grossSubtotal / 100).toFixed(0)}`,
+              newValue: `₹${(newTotal / 100).toFixed(0)}`,
+              reason: `${reason} (discount ₹${(orderDiscount / 100).toFixed(0)})`,
+              modifiedBy: actorName,
+              createdAt: new Date().toISOString(),
+            }));
+          }
+          await tx.insert(auditLog).values({
+            timestamp: new Date().toISOString(),
+            username: actorName,
+            action: "food_discount",
+            target: `orders:${orderIds.join(",")}`,
+            details: `Discount ₹${(totalDiscount / 100).toFixed(0)} on discountable ₹${(discountableTotal / 100).toFixed(0)} of gross ₹${(grossTotal / 100).toFixed(0)}. Reason: ${reason}`,
           });
-          await addOrderModification({
-            orderId: od.id,
-            action: "discount",
-            oldValue: `₹${(od.grossSubtotal / 100).toFixed(0)}`,
-            newValue: `₹${(newTotal / 100).toFixed(0)}`,
-            reason: `${reason} (discount ₹${(orderDiscount / 100).toFixed(0)})`,
-            modifiedBy: actorName,
-          });
-        }
-
-        await addAuditEntry({
-          username: actorName,
-          action: "food_discount",
-          target: `orders:${orderIds.join(",")}`,
-          details: `Discount ₹${(totalDiscount / 100).toFixed(0)} on discountable ₹${(discountableTotal / 100).toFixed(0)} of gross ₹${(grossTotal / 100).toFixed(0)}. Reason: ${reason}`,
         });
         return NextResponse.json({ success: true, role });
       }
@@ -594,36 +645,47 @@ export async function POST(req: NextRequest) {
 
         const rmTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
 
-        const rmItemsByOrder = await getFoodOrderItemsBatch(removeOrderIds);
-        for (const oid of removeOrderIds) {
-          const items = rmItemsByOrder.get(oid) || [];
-          const activeItems = items.filter((i) => i.status !== "voided");
-          const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
-          const newTax = Math.round((grossSubtotal * rmTaxRate) / 100);
-          const newTotal = grossSubtotal + newTax;
-          await updateFoodOrder(oid, {
-            discount: 0,
-            discountReason: "",
-            discountBy: "",
-            subtotal: grossSubtotal,
-            tax: newTax,
-            total: newTotal,
-          });
-          await addOrderModification({
-            orderId: oid,
-            action: "discount",
-            oldValue: "discount applied",
-            newValue: "discount removed",
-            reason: "Discount removed",
-            modifiedBy: actorName,
-          });
+        if (!Array.isArray(removeOrderIds) || removeOrderIds.length === 0 || removeOrderIds.some((id: unknown) => !Number.isInteger(id))) {
+          return NextResponse.json({ error: "orderIds required" }, { status: 400 });
         }
-
-        await addAuditEntry({
-          username: actorName,
-          action: "food_discount_removed",
-          target: `orders:${removeOrderIds.join(",")}`,
-          details: `Discount removed from ${removeOrderIds.length} order(s)`,
+        if (new Set(removeOrderIds).size !== removeOrderIds.length) return NextResponse.json({ error: "Duplicate orderIds are not allowed" }, { status: 400 });
+        const existingOrders = await Promise.all(removeOrderIds.map((orderId: number) => getFoodOrderById(orderId)));
+        if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
+        const rmItemsByOrder = await getFoodOrderItemsBatch(removeOrderIds);
+        const db = getDb();
+        await db.transaction(async (tx: any) => {
+          for (const oid of removeOrderIds) {
+            const items = rmItemsByOrder.get(oid) || [];
+            const activeItems = items.filter((i) => i.status !== "voided");
+            const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
+            const newTax = Math.round((grossSubtotal * rmTaxRate) / 100);
+            const newTotal = grossSubtotal + newTax;
+            await tx.update(foodOrders).set(syncUpdate({
+              discount: 0,
+              discountReason: "",
+              discountBy: "",
+              subtotal: grossSubtotal,
+              tax: newTax,
+              total: newTotal,
+              updatedAt: new Date().toISOString(),
+            })).where(eq(foodOrders.id, oid));
+            await tx.insert(orderModifications).values(syncInsert({
+              orderId: oid,
+              action: "discount",
+              oldValue: "discount applied",
+              newValue: "discount removed",
+              reason: "Discount removed",
+              modifiedBy: actorName,
+              createdAt: new Date().toISOString(),
+            }));
+          }
+          await tx.insert(auditLog).values({
+            timestamp: new Date().toISOString(),
+            username: actorName,
+            action: "food_discount_removed",
+            target: `orders:${removeOrderIds.join(",")}`,
+            details: `Discount removed from ${removeOrderIds.length} order(s)`,
+          });
         });
         return NextResponse.json({ success: true, role });
       }
@@ -991,6 +1053,6 @@ export async function POST(req: NextRequest) {
     const userMessage = raw.includes("Failed query") || raw.includes("D1_ERROR")
       ? "Database temporarily unavailable. Please try again."
       : raw;
-    return NextResponse.json({ error: userMessage }, { status: /Receiving bank|Selected receiving bank/.test(raw) ? 400 : 500 });
+    return NextResponse.json({ error: userMessage }, { status: error?.status || (/Receiving bank|Selected receiving bank/.test(raw) ? 400 : 500) });
   }
 }

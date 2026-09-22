@@ -212,7 +212,7 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
       )}
       {tab === "place" && <PlaceOrder apiCall={apiCall} prefillGuest={prefillGuest} onPrefillConsumed={clearPrefillGuest} onOrderPlaced={() => setTab("summary")} />}
       {tab === "summary" && <OrderSummary apiCall={apiCall} password={password} username={username} onOrderMore={(guest) => { setPrefillGuest(guest); setTab("place"); }} onAddNewOrder={() => setTab("place")} role={role} permissions={permissions} />}
-      {tab === "combined" && <CombinedBill apiCall={apiCall} password={password} username={username} />}
+      {tab === "combined" && <CombinedBill apiCall={apiCall} password={password} username={username} role={role} permissions={permissions} />}
       {tab === "payment" && <PaymentSummary apiCall={apiCall} password={password} username={username} />}
     </div>
   );
@@ -1849,7 +1849,7 @@ function VoidReasonPopup({ itemName, onVoid, onCancel, busy }: {
 
 // ─── Combined Bill ───────────────────────────────────────────────────────────
 
-function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string }) {
+function CombinedBill({ apiCall, password, username, role, permissions }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string; role: Role; permissions: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
   const [guests, setGuests] = useState<GuestWithTab[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -1863,6 +1863,9 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
   const [billBranding, setBillBranding] = useState<BillBranding>(DEFAULT_BILL_BRANDING);
   const [billBrandingReady, setBillBrandingReady] = useState(false);
   const [whatsAppBusyKey, setWhatsAppBusyKey] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
@@ -1989,6 +1992,44 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
     } finally {
       setPrintingCombined(false);
     }
+  };
+
+  const combinedOrders = preview?.guests.flatMap((g: any) => g.orders || []) || [];
+  const combinedOrderIds = combinedOrders.map((o: any) => o.id).filter((id: unknown): id is number => Number.isInteger(id));
+  const combinedGrossSubtotal = combinedOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0) + (o.discount || 0), 0);
+  const combinedDiscount = combinedOrders.reduce((sum: number, o: any) => sum + (o.discount || 0), 0);
+  const combinedExemptCategoryIds = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
+  const combinedMenuCategoryMap = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
+  const combinedExemptSubtotal = combinedOrders.reduce((sum: number, o: any) => sum + (o.items || []).reduce((itemSum: number, i: any) => {
+    const categoryId = combinedMenuCategoryMap.get(i.menuItemId);
+    return i.status !== "voided" && categoryId !== undefined && combinedExemptCategoryIds.has(categoryId) ? itemSum + (i.lineTotal || 0) : itemSum;
+  }, 0), 0);
+  const combinedDiscountableSubtotal = Math.max(0, combinedGrossSubtotal - combinedExemptSubtotal);
+  const canCombinedPay = hasPermission(role, permissions, "canMarkPaid");
+  const canCombinedDiscount = hasPermission(role, permissions, "canApplyFoodDiscounts") || canCombinedPay;
+
+  const reloadCombinedPreview = async () => {
+    if (selectedIds.length === 0) return;
+    const res = await apiCall({ action: "getCombinedBill", checkinIds: selectedIds });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) setPreview(data);
+    else { setPreview(null); showError("Combined Bill", data.error || "Could not reload combined bill"); }
+  };
+
+  const handleCombinedPayment = async (method: string, cashReceived: number, changeGiven: number, onlineAccountId?: number, receiptId?: string) => {
+    if (combinedOrderIds.length === 0) return;
+    setActionBusy(true);
+    try {
+      const res = await apiCall({ action: "markOrderPaid", orderIds: combinedOrderIds, paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showError("Combined payment", data.error || "Could not record payment"); return; }
+      setPaymentOpen(false);
+      setSelectedIds([]);
+      setPreview(null);
+      showSuccess("Combined payment recorded");
+      const guestsRes = await apiCall({ action: "getGuestsWithTabs" });
+      if (guestsRes.ok) setGuests((await guestsRes.json()).guests || []);
+    } finally { setActionBusy(false); }
   };
 
   const cardBranding = (orders: any[]) => ({
@@ -2173,9 +2214,75 @@ function CombinedBill({ apiCall, password, username }: { apiCall: (body: any) =>
                 <DownloadIcon className="h-4 w-4" />
                 Download PDF
               </button>
+              {canCombinedDiscount && (
+                <button
+                  type="button"
+                  onClick={() => setDiscountOpen(true)}
+                  disabled={actionBusy}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-purple-300 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50"
+                >
+                  <TagIcon className="h-4 w-4" /> Discount
+                </button>
+              )}
+              {canCombinedPay && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentOpen(true)}
+                  disabled={actionBusy}
+                  className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-green-500 px-4 py-2 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50"
+                >
+                  <BanknoteIcon className="h-4 w-4" /> Pay · ₹{(preview.grandTotal / 100).toFixed(0)}
+                </button>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {paymentOpen && preview && (
+        <RecordPaymentModal
+          totalAmount={preview.grandTotal}
+          guestName={`Combined bill · ${preview.guests.length} guests`}
+          initialMethod="online"
+          password={password}
+          username={username}
+          receiptKind="food"
+          onConfirm={(method, cashReceived, changeGiven, onlineAccountId, receiptId) => handleCombinedPayment(method, cashReceived, changeGiven, onlineAccountId, receiptId)}
+          onClose={() => !actionBusy && setPaymentOpen(false)}
+        />
+      )}
+
+      {discountOpen && preview && (
+        <DiscountModal
+          totalAmount={combinedGrossSubtotal}
+          discountableAmount={combinedDiscountableSubtotal}
+          exemptAmount={combinedExemptSubtotal}
+          currentDiscount={combinedDiscount}
+          guestName={`Combined bill · ${preview.guests.length} guests`}
+          onApply={async (data) => {
+            setActionBusy(true);
+            try {
+              const res = await apiCall({ action: "applyDiscount", orderIds: combinedOrderIds, ...data });
+              const body = await res.json().catch(() => ({}));
+              if (!res.ok) { showError("Combined discount", body.error || "Could not apply discount"); return; }
+              setDiscountOpen(false);
+              showSuccess("Combined discount applied");
+              await reloadCombinedPreview();
+            } finally { setActionBusy(false); }
+          }}
+          onRemove={combinedDiscount > 0 ? async () => {
+            setActionBusy(true);
+            try {
+              const res = await apiCall({ action: "removeDiscount", orderIds: combinedOrderIds });
+              const body = await res.json().catch(() => ({}));
+              if (!res.ok) { showError("Combined discount", body.error || "Could not remove discount"); return; }
+              setDiscountOpen(false);
+              showSuccess("Combined discount removed");
+              await reloadCombinedPreview();
+            } finally { setActionBusy(false); }
+          } : undefined}
+          onClose={() => !actionBusy && setDiscountOpen(false)}
+        />
       )}
     </div>
   );
@@ -3600,8 +3707,8 @@ function DiscountModal({
   exemptAmount: number;
   currentDiscount: number;
   guestName: string;
-  onApply: (data: { discountPercent?: number; discountAmount?: number; reason: string }) => void;
-  onRemove?: () => void;
+  onApply: (data: { discountPercent?: number; discountAmount?: number; reason: string }) => void | Promise<void>;
+  onRemove?: () => void | Promise<void>;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"percent" | "fixed">("percent");
@@ -3623,12 +3730,16 @@ function DiscountModal({
 
   const canApply = discountPaise > 0 && finalReason.trim().length > 0 && !saving;
 
-  const handleApply = () => {
+  const handleApply = async () => {
     setSaving(true);
-    if (mode === "percent") {
-      onApply({ discountPercent: Number(percentInput) || 0, reason: finalReason });
-    } else {
-      onApply({ discountAmount: Math.round((Number(fixedInput) || 0) * 100), reason: finalReason });
+    try {
+      if (mode === "percent") {
+        await onApply({ discountPercent: Number(percentInput) || 0, reason: finalReason });
+      } else {
+        await onApply({ discountAmount: Math.round((Number(fixedInput) || 0) * 100), reason: finalReason });
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -3795,7 +3906,10 @@ function DiscountModal({
           {onRemove && currentDiscount > 0 && (
             <button
               type="button"
-              onClick={() => { setSaving(true); onRemove(); }}
+              onClick={async () => {
+                setSaving(true);
+                try { await onRemove(); } finally { setSaving(false); }
+              }}
               disabled={saving}
               className="rounded-lg border border-red-300 dark:border-red-800 px-3 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-40"
             >
@@ -3811,7 +3925,7 @@ function DiscountModal({
           </button>
           <button
             type="button"
-            onClick={handleApply}
+            onClick={() => void handleApply()}
             disabled={!canApply}
             className="flex-1 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-40"
           >

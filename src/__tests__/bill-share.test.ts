@@ -96,6 +96,17 @@ describe("mock workflows (source contracts)", () => {
     expect(ui).toMatch(/WhatsApp/);
   });
 
+  it("Combined Bill exposes permission-gated pay and discount actions for all preview orders", () => {
+    const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
+    const route = readFileSync("src/app/api/admin/food-orders/route.ts", "utf8");
+    expect(ui).toContain("canCombinedPay");
+    expect(ui).toContain("canCombinedDiscount");
+    expect(ui).toContain('action: "markOrderPaid", orderIds: combinedOrderIds');
+    expect(ui).toContain('action: "applyDiscount", orderIds: combinedOrderIds');
+    expect(route).toContain("allocateFoodPayment");
+    expect(route).toContain("await db.transaction");
+  });
+
   it("HTML bill open skips QR data-URL; PDF/print still embed", () => {
     const branding = readFileSync("src/lib/loadBillBranding.ts", "utf8");
     expect(branding).toMatch(/embedQr/);
