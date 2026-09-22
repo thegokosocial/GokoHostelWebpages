@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { authenticateUser } from "@/lib/auth";
 import {
@@ -7,7 +7,9 @@ import {
   beds,
   bookingBedAssignments,
   bookings,
+  bookingCycleSnapshots,
   expenses,
+  bookingPaymentEvents,
   foodOrderItems,
   foodOrders,
   menuCategories,
@@ -91,6 +93,25 @@ function roomClassSql() {
   END`;
 }
 
+function roomClassForType(value: string) {
+  const roomType = value.toLowerCase();
+  if (roomType.includes("dorm") || roomType.includes("hostel") || roomType.includes("bed")) return "dorm/bed";
+  if (roomType.includes("single") || roomType.includes("-s-")) return "single";
+  if (roomType.includes("double") || roomType.includes("twin") || roomType.includes("-d-")) return "double";
+  return "other";
+}
+
+function nightCount(checkin: string, checkout: string, from: string, toExclusive: string) {
+  const overlapStart = Math.max(Date.parse(`${checkin}T00:00:00Z`), Date.parse(`${from}T00:00:00Z`));
+  const overlapEnd = Math.min(Date.parse(`${checkout}T00:00:00Z`), Date.parse(`${toExclusive}T00:00:00Z`));
+  return Math.max(0, Math.round((overlapEnd - overlapStart) / 86400000));
+}
+
+function hourInReportTimezone(timestamp: string) {
+  const formatted = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour: "2-digit", hourCycle: "h23" }).format(new Date(timestamp));
+  return Number(formatted);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -143,15 +164,19 @@ export async function POST(req: NextRequest) {
       stayByWeekday,
       channelRows,
       bookingPaymentRows,
+      postpaidOtaPaymentRows,
       bookingWindowRows,
       staySummary,
+      archivedStayRows,
       stayByDay,
       stayByRoomType,
       expectedRoomRevenue,
+      archivedExpectedRows,
       bookingFinanceRows,
       stayRefundRows,
       foodRefundRows,
       stayEvents,
+      archivedLifecycleRows,
       checkInByHour,
       checkOutByHour,
       foodSummary,
@@ -194,7 +219,12 @@ export async function POST(req: NextRequest) {
       }).from(bookings).where(and(...bookingWhere)).groupBy(sql`COALESCE(NULLIF(${bookings.platform}, ''), 'unknown')`).orderBy(sql`SUM(CASE WHEN ${bookings.status} != 'cancelled' THEN 1 ELSE 0 END) DESC`),
       db.select({
         payment: sql<string>`CASE
-          WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('paid', 'prepaid', 'online') THEN 'prepaid'
+          WHEN ${bookings.otaPaymentTerms} = 'prepaid' THEN 'ota_prepaid'
+          WHEN ${bookings.otaPaymentTerms} = 'pay_at_hotel' AND ${bookings.amountTotal} > 0
+            AND (${bookings.amountPaid} - ${bookings.amountRefunded}) >= ${bookings.amountTotal} THEN 'postpaid_fully_paid'
+          WHEN ${bookings.otaPaymentTerms} = 'pay_at_hotel' AND (${bookings.amountPaid} - ${bookings.amountRefunded}) > 0 THEN 'postpaid_partially_paid'
+          WHEN ${bookings.otaPaymentTerms} = 'pay_at_hotel' THEN 'postpaid_due'
+          WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('paid', 'prepaid', 'online') THEN 'prepaid_or_paid'
           WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('partial', 'partially_paid') THEN 'partial'
           WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('pay_at_property', 'postpaid', 'pending', 'unpaid') THEN 'postpaid'
           ELSE 'unknown'
@@ -202,21 +232,39 @@ export async function POST(req: NextRequest) {
         count: sql<number>`COUNT(*)`,
         value: sql<number>`COALESCE(SUM(${bookings.amountTotal}), 0)`,
       }).from(bookings).where(and(...bookingWhere, sql`${bookings.status} != 'cancelled'`)).groupBy(sql`CASE
-        WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('paid', 'prepaid', 'online') THEN 'prepaid'
+        WHEN ${bookings.otaPaymentTerms} = 'prepaid' THEN 'ota_prepaid'
+        WHEN ${bookings.otaPaymentTerms} = 'pay_at_hotel' AND ${bookings.amountTotal} > 0
+          AND (${bookings.amountPaid} - ${bookings.amountRefunded}) >= ${bookings.amountTotal} THEN 'postpaid_fully_paid'
+        WHEN ${bookings.otaPaymentTerms} = 'pay_at_hotel' AND (${bookings.amountPaid} - ${bookings.amountRefunded}) > 0 THEN 'postpaid_partially_paid'
+        WHEN ${bookings.otaPaymentTerms} = 'pay_at_hotel' THEN 'postpaid_due'
+        WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('paid', 'prepaid', 'online') THEN 'prepaid_or_paid'
         WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('partial', 'partially_paid') THEN 'partial'
         WHEN lower(COALESCE(${bookings.paymentStatus}, '')) IN ('pay_at_property', 'postpaid', 'pending', 'unpaid') THEN 'postpaid'
         ELSE 'unknown'
       END`).orderBy(sql`COUNT(*) DESC`),
+      db.select().from(bookingPaymentEvents).where(and(
+        gte(bookingPaymentEvents.businessDate, fromDate),
+        lt(bookingPaymentEvents.businessDate, stayToExclusive),
+        sql`${bookingPaymentEvents.eventType} IN ('collection', 'refund', 'correction')`,
+        eq(bookingPaymentEvents.isOpening, 0),
+        eq(bookingPaymentEvents.otaPaymentTerms, "pay_at_hotel"),
+        eq(bookingPaymentEvents.currency, "INR"),
+      )),
       db.select({ bucket: leadBucketSql(), count: sql<number>`COUNT(*)` })
         .from(bookings).where(and(...bookingWhere, sql`${bookings.status} != 'cancelled'`)).groupBy(leadBucketSql()).orderBy(sql`MIN(julianday(${bookings.checkinDate}) - julianday(date(${bookings.createdAt}, '+05:30'))) ASC`),
       db.select({
         stays: sql<number>`COUNT(*)`,
         guests: sql<number>`COALESCE(SUM(${bookings.persons}), 0)`,
         revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal} * (MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${stayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${fromDate})))) / MAX(1, julianday(${bookings.checkoutDate}) - julianday(${bookings.checkinDate}))), 0)`,
-        obtainedRevenue: sql<number>`COALESCE(SUM(${bookings.amountPaid}), 0)`,
+        obtainedRevenue: sql<number>`COALESCE(SUM(MAX(0, ${bookings.amountPaid} - ${bookings.amountRefunded})), 0)`,
         nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${stayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${fromDate})))), 0)`,
         leadDays: sql<number>`COALESCE(SUM(MAX(0, julianday(${bookings.checkinDate}) - julianday(date(${bookings.createdAt}, '+05:30')))), 0)`,
       }).from(bookings).where(and(...stayWhere, ACTIVE_STAY_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)),
+      db.select().from(bookingCycleSnapshots).where(and(
+        gte(bookingCycleSnapshots.checkinDate, fromDate), lt(bookingCycleSnapshots.checkinDate, stayToExclusive),
+        sql`${bookingCycleSnapshots.checkoutDate} > ${bookingCycleSnapshots.checkinDate}`,
+        sql`(${bookingCycleSnapshots.status} IN ('checked_in', 'checked_out') OR (${bookingCycleSnapshots.status} = 'cancelled' AND ${bookingCycleSnapshots.checkedInAt} != ''))`,
+      )),
       db.select({ date: bookings.checkinDate, arrivals: sql<number>`COUNT(*)`, guests: sql<number>`COALESCE(SUM(${bookings.persons}), 0)`, revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal}), 0)` })
         .from(bookings).where(and(...stayWhere, ACTIVE_STAY_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)).groupBy(bookings.checkinDate).orderBy(bookings.checkinDate),
       db.select({
@@ -232,7 +280,7 @@ export async function POST(req: NextRequest) {
         stays: sql<number>`COUNT(*)`,
         nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${monthEndExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${monthStart})))), 0)`,
         revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal} * (MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${monthEndExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${monthStart})))) / MAX(1, julianday(${bookings.checkoutDate}) - julianday(${bookings.checkinDate}))), 0)`,
-        obtainedRevenue: sql<number>`COALESCE(SUM(${bookings.amountPaid}), 0)`,
+        obtainedRevenue: sql<number>`COALESCE(SUM(MAX(0, ${bookings.amountPaid} - ${bookings.amountRefunded})), 0)`,
       }).from(bookings).where(and(
         lt(bookings.checkinDate, monthEndExclusive),
         sql`${bookings.checkoutDate} > ${monthStart}`,
@@ -240,8 +288,16 @@ export async function POST(req: NextRequest) {
         EXPECTED_ROOM_STATUSES,
         sql`${bookings.checkoutDate} > ${bookings.checkinDate}`,
       )),
+      db.select().from(bookingCycleSnapshots).where(and(
+        lt(bookingCycleSnapshots.checkinDate, monthEndExclusive),
+        sql`${bookingCycleSnapshots.checkoutDate} > ${monthStart}`,
+        sql`${bookingCycleSnapshots.checkoutDate} > ${bookingCycleSnapshots.checkinDate}`,
+        sql`(${bookingCycleSnapshots.status} IN ('checked_in', 'checked_out') OR (${bookingCycleSnapshots.status} = 'cancelled' AND ${bookingCycleSnapshots.checkedInAt} != ''))`,
+      )),
       db.select({ rawData: bookings.rawData, status: bookings.status }).from(bookings).where(and(...bookingWhere, sql`${bookings.status} != 'cancelled'`)),
-      db.select({ amount: bookings.amountRefunded }).from(bookings).where(and(gte(bookings.refundedAt, from), lt(bookings.refundedAt, to), sql`${bookings.amountRefunded} > 0`)),
+      db.select({ id: bookings.id, bookingCycle: bookings.bookingCycle, amount: bookings.amountRefunded, source: bookings.source, otaPaymentTerms: bookings.otaPaymentTerms }).from(bookings).where(and(
+        gte(bookings.refundedAt, from), lt(bookings.refundedAt, to), sql`${bookings.amountRefunded} > 0`,
+      )),
       db.select({ amount: guestReceipts.amount }).from(guestReceipts).where(and(
         gte(guestReceipts.businessDate, fromDate),
         lt(guestReceipts.businessDate, stayToExclusive),
@@ -250,6 +306,10 @@ export async function POST(req: NextRequest) {
         sql`${guestReceipts.amount} < 0`,
       )),
       db.select({ checkIns: sql<number>`SUM(CASE WHEN ${bookings.checkedInAt} >= ${from} AND ${bookings.checkedInAt} < ${to} THEN 1 ELSE 0 END)`, checkOuts: sql<number>`SUM(CASE WHEN ${bookings.checkedOutAt} >= ${from} AND ${bookings.checkedOutAt} < ${to} THEN 1 ELSE 0 END)` }).from(bookings),
+      db.select({ checkedInAt: bookingCycleSnapshots.checkedInAt, checkedOutAt: bookingCycleSnapshots.checkedOutAt }).from(bookingCycleSnapshots).where(sql`(
+        (${bookingCycleSnapshots.checkedInAt} >= ${from} AND ${bookingCycleSnapshots.checkedInAt} < ${to})
+        OR (${bookingCycleSnapshots.checkedOutAt} >= ${from} AND ${bookingCycleSnapshots.checkedOutAt} < ${to})
+      )`),
       db.select({ hour: sql<number>`CAST(strftime('%H', ${bookings.checkedInAt}, '+05:30') AS INTEGER)`, count: sql<number>`COUNT(*)` })
         .from(bookings).where(and(gte(bookings.checkedInAt, from), lt(bookings.checkedInAt, to))).groupBy(sql`strftime('%H', ${bookings.checkedInAt}, '+05:30')`).orderBy(sql`strftime('%H', ${bookings.checkedInAt}, '+05:30')`),
       db.select({ hour: sql<number>`CAST(strftime('%H', ${bookings.checkedOutAt}, '+05:30') AS INTEGER)`, count: sql<number>`COUNT(*)` })
@@ -274,6 +334,37 @@ export async function POST(req: NextRequest) {
       getBlockRows(),
     ]);
 
+    // Apply linked corrections to the source event's report period even if sync
+    // delivers the correction in a later batch than the original receipt.
+    const postpaidOtaMovementIds = postpaidOtaPaymentRows
+      .filter((row) => row.eventType === "collection" || row.eventType === "refund")
+      .map((row) => row.eventId);
+    const linkedPostpaidOtaCorrections = postpaidOtaMovementIds.length
+      ? await db.select().from(bookingPaymentEvents).where(and(
+        inArray(bookingPaymentEvents.correctsEventId, postpaidOtaMovementIds),
+        eq(bookingPaymentEvents.eventType, "correction"),
+      ))
+      : [];
+
+    const snapshotMetrics = (row: typeof bookingCycleSnapshots.$inferSelect, from: string, toExclusive: string) => {
+      const stayNights = Math.max(1, nightCount(row.checkinDate, row.checkoutDate, row.checkinDate, row.checkoutDate));
+      const nights = nightCount(row.checkinDate, row.checkoutDate, from, toExclusive);
+      return {
+        row, nights,
+        revenue: (row.amountTotalPaise / 100) * (nights / stayNights),
+        obtained: Math.max(0, row.amountPaidPaise - row.amountRefundedPaise) / 100,
+        leadDays: row.bookingCreatedAt
+          ? Math.max(0, (Date.parse(`${row.checkinDate}T00:00:00Z`) - Date.parse(`${dateOnly(row.bookingCreatedAt)}T00:00:00Z`)) / 86400000)
+          : 0,
+      };
+    };
+    const archivedStayMetrics = archivedStayRows.map((row) => snapshotMetrics(row, fromDate, stayToExclusive));
+    const archivedExpectedMetrics = archivedExpectedRows.map((row) => snapshotMetrics(row, monthStart, monthEndExclusive));
+    const archivedGuests = archivedStayMetrics.reduce((sum, item) => sum + item.row.persons, 0);
+    const archivedLeadDays = archivedStayMetrics.reduce((sum, item) => sum + item.leadDays, 0);
+    const archivedCheckIns = archivedLifecycleRows.filter((row) => row.checkedInAt >= from && row.checkedInAt < to).length;
+    const archivedCheckOuts = archivedLifecycleRows.filter((row) => row.checkedOutAt >= from && row.checkedOutAt < to).length;
+
     const dates = dateRange(fromDate, toDate);
     const bedIds = bedRows.filter((row) => !row.isBlocked).map((row) => row.id);
     const bedIdSet = new Set(bedIds);
@@ -287,8 +378,26 @@ export async function POST(req: NextRequest) {
 
     const bookingByDate = new Map(bookingByDay.map((row) => [dateOnly(String(row.date)), number(row.count)]));
     const arrivalsByDate = new Map(stayByDay.map((row) => [row.date, { arrivals: number(row.arrivals), guests: number(row.guests), revenue: number(row.revenue) }]));
+    for (const item of archivedStayMetrics) {
+      const date = item.row.checkinDate;
+      const current = arrivalsByDate.get(date) || { arrivals: 0, guests: 0, revenue: 0 };
+      current.arrivals += 1; current.guests += item.row.persons; current.revenue += item.row.amountTotalPaise / 100;
+      arrivalsByDate.set(date, current);
+    }
     const foodByDate = new Map(foodByDay.map((row) => [dateOnly(String(row.date)), { orders: number(row.orders), revenue: number(row.revenue) }]));
     const expensesByDate = new Map(expenseByDay.map((row) => [dateOnly(String(row.date)), number(row.total)]));
+    const checkInHours = new Map(checkInByHour.map((row) => [number(row.hour), number(row.count)]));
+    const checkOutHours = new Map(checkOutByHour.map((row) => [number(row.hour), number(row.count)]));
+    for (const row of archivedLifecycleRows) {
+      if (row.checkedInAt >= from && row.checkedInAt < to) {
+        const hour = hourInReportTimezone(row.checkedInAt); checkInHours.set(hour, (checkInHours.get(hour) || 0) + 1);
+      }
+      if (row.checkedOutAt >= from && row.checkedOutAt < to) {
+        const hour = hourInReportTimezone(row.checkedOutAt); checkOutHours.set(hour, (checkOutHours.get(hour) || 0) + 1);
+      }
+    }
+    const combinedCheckInHours = [...checkInHours.entries()].sort(([a], [b]) => a - b).map(([hour, count]) => ({ hour, count }));
+    const combinedCheckOutHours = [...checkOutHours.entries()].sort(([a], [b]) => a - b).map(([hour, count]) => ({ hour, count }));
     const trend = dates.map((date, index) => ({
       date,
       bookings: bookingByDate.get(date) || 0,
@@ -308,20 +417,55 @@ export async function POST(req: NextRequest) {
     const foodResult = foodSummary[0] || { orders: 0, gross: 0, discounts: 0, paid: 0, pending: 0 };
     const expenseResult = expenseSummary[0] || { expenses: 0, total: 0 };
     const expectedRoom = expectedRoomRevenue[0] || { stays: 0, nights: 0, revenue: 0, obtainedRevenue: 0 };
-    const bookedStayValue = number(stayResult.revenue);
+    const archivedBookedStayValue = archivedStayMetrics.reduce((sum, item) => sum + item.revenue, 0);
+    const archivedObtainedRoom = archivedStayMetrics.reduce((sum, item) => sum + item.obtained, 0);
+    const archivedStayNights = archivedStayMetrics.reduce((sum, item) => sum + item.nights, 0);
+    const expectedArchivedRevenue = archivedExpectedMetrics.reduce((sum, item) => sum + item.revenue, 0);
+    const expectedArchivedNights = archivedExpectedMetrics.reduce((sum, item) => sum + item.nights, 0);
+    const expectedArchivedObtained = archivedExpectedMetrics.reduce((sum, item) => sum + item.obtained, 0);
+    const paymentCorrections = new Map<string, (typeof postpaidOtaPaymentRows)[number][]>();
+    for (const correction of [...postpaidOtaPaymentRows.filter((row) => row.eventType === "correction"), ...linkedPostpaidOtaCorrections]) {
+      if (correction.correctsEventId) paymentCorrections.set(correction.correctsEventId, [...(paymentCorrections.get(correction.correctsEventId) || []), correction]);
+    }
+    const actualPostpaidOtaEvents = postpaidOtaPaymentRows
+      .filter((row) => row.eventType === "collection" || row.eventType === "refund")
+      .map((row) => {
+        const corrections = paymentCorrections.get(row.eventId) || [];
+        return {
+          ...row,
+          effectiveAmountPaise: Math.max(0, row.amountPaise - corrections.reduce((sum, event) => sum + Math.abs(event.amountPaise), 0)),
+          effectiveCashPaise: row.cashPaise + corrections.reduce((sum, event) => sum + event.cashPaise, 0),
+          effectiveOnlinePaise: row.onlinePaise + corrections.reduce((sum, event) => sum + event.onlinePaise, 0),
+        };
+      });
+    const postpaidOtaCollectedPaise = actualPostpaidOtaEvents
+      .filter((row) => row.eventType === "collection")
+      .reduce((sum, row) => sum + row.effectiveAmountPaise, 0);
+    const postpaidOtaRefundedPaise = actualPostpaidOtaEvents
+      .filter((row) => row.eventType === "refund")
+      .reduce((sum, row) => sum + row.effectiveAmountPaise, 0);
+    const postpaidOtaCashNetPaise = actualPostpaidOtaEvents.reduce((sum, row) => sum + row.effectiveCashPaise, 0);
+    const postpaidOtaOnlineNetPaise = actualPostpaidOtaEvents.reduce((sum, row) => sum + row.effectiveOnlinePaise, 0);
+    const datedPostpaidRefundCycles = new Set(actualPostpaidOtaEvents
+      .filter((row) => row.eventType === "refund" && row.effectiveAmountPaise > 0)
+      .map((row) => `${row.bookingId}:${row.bookingCycle}`));
+    const bookedStayValue = number(stayResult.revenue) + archivedBookedStayValue;
     const foodRevenue = number(foodResult.gross);
-    const obtainedRoomRevenue = number(stayResult.obtainedRevenue);
+    const obtainedRoomRevenue = number(stayResult.obtainedRevenue) + archivedObtainedRoom;
     const stayDiscounts = bookingFinanceRows.reduce((sum, row) => sum + (parseGokoWalkin(row.rawData)?.discount || 0), 0);
-    const stayRefunds = stayRefundRows.reduce((sum, row) => sum + number(row.amount), 0);
+    const stayRefunds = stayRefundRows
+      .filter((row) => !(row.source === "channel_manager" && row.otaPaymentTerms === "pay_at_hotel" && datedPostpaidRefundCycles.has(`${row.id}:${row.bookingCycle}`)))
+      .reduce((sum, row) => sum + number(row.amount), 0) + postpaidOtaRefundedPaise / 100;
     const foodRefunds = foodRefundRows.reduce((sum, row) => sum + Math.abs(number(row.amount)), 0);
     const availableBedNights = occupancyByDate.reduce((sum, row) => sum + row.availableBeds, 0);
     const occupiedBedNights = occupancyByDate.reduce((sum, row) => sum + row.occupiedBeds, 0);
     // Booking amounts are stored in rupees; food and expenses are stored in paise.
     // Keep stay KPIs in rupees and convert only the combined activity view to paise.
     const totalRevenue = (bookedStayValue * 100) + foodRevenue;
-    const stayCount = number(stayResult.stays);
-    const nights = number(stayResult.nights);
-    const averageLeadDays = stayCount ? number(stayResult.leadDays) / stayCount : 0;
+    const stayCount = number(stayResult.stays) + archivedStayMetrics.length;
+    const nights = number(stayResult.nights) + archivedStayNights;
+    const leadDayCount = number(stayResult.stays) + archivedStayMetrics.filter((item) => item.row.bookingCreatedAt).length;
+    const averageLeadDays = leadDayCount ? (number(stayResult.leadDays) + archivedLeadDays) / leadDayCount : 0;
     const adr = nights ? bookedStayValue / nights : 0;
     const revpar = availableBedNights ? bookedStayValue / availableBedNights : 0;
     const averageStayLength = stayCount ? nights / stayCount : 0;
@@ -335,19 +479,52 @@ export async function POST(req: NextRequest) {
       current.revenue += number(row.revenue);
       roomClassTotals.set(roomClass, current);
     }
+    const roomTypeTotals = new Map<string, { roomType: string; roomClass: string; stays: number; guests: number; nights: number; revenue: number }>();
+    for (const row of stayByRoomType) {
+      const roomType = String(row.roomType || "unspecified");
+      const roomClass = String(row.roomClass || "other");
+      const key = `${roomType}|${roomClass}`;
+      roomTypeTotals.set(key, { roomType, roomClass, stays: number(row.stays), guests: number(row.guests), nights: number(row.nights), revenue: number(row.revenue) });
+    }
+    for (const item of archivedStayMetrics) {
+      const roomType = item.row.roomType || "unspecified";
+      const roomClass = roomClassForType(roomType);
+      const key = `${roomType}|${roomClass}`;
+      const current = roomTypeTotals.get(key) || { roomType, roomClass, stays: 0, guests: 0, nights: 0, revenue: 0 };
+      current.stays += 1; current.guests += item.row.persons; current.nights += item.nights; current.revenue += item.revenue;
+      roomTypeTotals.set(key, current);
+      const classCurrent = roomClassTotals.get(roomClass) || { stays: 0, guests: 0, nights: 0, revenue: 0 };
+      classCurrent.stays += 1; classCurrent.guests += item.row.persons; classCurrent.nights += item.nights; classCurrent.revenue += item.revenue;
+      roomClassTotals.set(roomClass, classCurrent);
+    }
+    const stayByWeekdayTotals = new Map(stayByWeekday.map((row) => [number(row.weekday), number(row.count)]));
+    for (const item of archivedStayMetrics) {
+      const weekday = new Date(`${item.row.checkinDate}T00:00:00Z`).getUTCDay();
+      stayByWeekdayTotals.set(weekday, (stayByWeekdayTotals.get(weekday) || 0) + 1);
+    }
     const byRoomClass = [...roomClassTotals.entries()]
       .sort(([, a], [, b]) => b.stays - a.stays)
       .map(([roomClass, row]) => ({ roomClass, ...row, adr: row.nights ? row.revenue / row.nights : 0 }));
+    const combinedStayByRoomType = [...roomTypeTotals.values()].sort((a, b) => b.stays - a.stays);
 
     return NextResponse.json({
       range: { fromDate, toDate, days, timezone: "Asia/Kolkata" },
       summary: {
         bookings: number(bookingResult.total), plannedStays: stayCount,
-        actualCheckIns: number(stayEvents[0]?.checkIns), actualCheckOuts: number(stayEvents[0]?.checkOuts), guests: number(stayResult.guests),
-        cancellations: number(bookingResult.cancelled), noShows: number(bookingResult.noShow), completedBookings: number(stayEvents[0]?.checkIns), bookedStayValue, obtainedRoomRevenue, foodRevenue, totalRevenue,
+        actualCheckIns: number(stayEvents[0]?.checkIns) + archivedCheckIns, actualCheckOuts: number(stayEvents[0]?.checkOuts) + archivedCheckOuts, guests: number(stayResult.guests) + archivedGuests,
+        cancellations: number(bookingResult.cancelled), noShows: number(bookingResult.noShow), completedBookings: number(stayEvents[0]?.checkIns) + archivedCheckIns, bookedStayValue, obtainedRoomRevenue, foodRevenue, totalRevenue,
         expenses: number(expenseResult.total), activityBalance: totalRevenue - number(expenseResult.total), foodOrders: number(foodResult.orders), foodPaid: number(foodResult.paid), foodPending: number(foodResult.pending),
-        expectedRoomRevenue: number(expectedRoom.revenue), expectedRoomObtainedRevenue: number(expectedRoom.obtainedRevenue), expectedRoomStays: number(expectedRoom.stays), expectedRoomNights: number(expectedRoom.nights), expectedRoomMonth: monthStart.slice(0, 7), expectedRoomMonthDays: monthDays,
-        stayRefunds, foodRefunds, stayDiscounts, foodDiscounts: number(foodResult.discounts),
+        expectedRoomRevenue: number(expectedRoom.revenue) + expectedArchivedRevenue,
+        expectedRoomObtainedRevenue: number(expectedRoom.obtainedRevenue) + expectedArchivedObtained,
+        expectedRoomStays: number(expectedRoom.stays) + archivedExpectedMetrics.length,
+        expectedRoomNights: number(expectedRoom.nights) + expectedArchivedNights,
+        expectedRoomMonth: monthStart.slice(0, 7), expectedRoomMonthDays: monthDays,
+      stayRefunds, foodRefunds, stayDiscounts, foodDiscounts: number(foodResult.discounts),
+        postpaidOtaCollectionsPaise: postpaidOtaCollectedPaise,
+        postpaidOtaRefundsPaise: postpaidOtaRefundedPaise,
+        postpaidOtaNetPaise: postpaidOtaCollectedPaise - postpaidOtaRefundedPaise,
+        postpaidOtaCashNetPaise,
+        postpaidOtaOnlineNetPaise,
         averageDailyBookings: number(bookingResult.total) / days, averageDailyCompletedBookings: number(stayEvents[0]?.checkIns) / days, averageDailyRoomValue: obtainedRoomRevenue / days, averageDailyFoodSales: foodRevenue / days, averageDailyExpenses: number(expenseResult.total) / days,
         occupiedBedNights: bedIds.length ? occupiedBedNights : null, availableBedNights: bedIds.length ? availableBedNights : null,
         occupancy: availableBedNights ? (occupiedBedNights / availableBedNights) * 100 : null, adr, revpar, averageStayLength, averageLeadDays,
@@ -358,17 +535,17 @@ export async function POST(req: NextRequest) {
         byHour: bookingByHour.map((row) => ({ hour: number(row.hour), count: number(row.count) })),
         byWeekday: bookingByWeekday.map((row) => ({ weekday: number(row.weekday), count: number(row.count) })),
         byWeekdayHour: bookingByWeekdayHour.map((row) => ({ weekday: number(row.weekday), hour: number(row.hour), count: number(row.count) })),
-        stayByWeekday: stayByWeekday.map((row) => ({ weekday: number(row.weekday), count: number(row.count) })),
+        stayByWeekday: [...stayByWeekdayTotals.entries()].sort(([a], [b]) => a - b).map(([weekday, count]) => ({ weekday, count })),
         byChannel: channelRows.map((row) => ({ channel: row.channel || "unknown", count: number(row.count), revenue: number(row.revenue), guests: number(row.guests) })),
         byPayment: bookingPaymentRows.map((row) => ({ payment: row.payment, count: number(row.count), value: number(row.value) })),
         byBookingWindow: bookingWindowRows.map((row) => ({ bucket: row.bucket, count: number(row.count) })),
-        checkInsByHour: checkInByHour.map((row) => ({ hour: number(row.hour), count: number(row.count) })),
-        checkOutsByHour: checkOutByHour.map((row) => ({ hour: number(row.hour), count: number(row.count) })),
+        checkInsByHour: combinedCheckInHours,
+        checkOutsByHour: combinedCheckOutHours,
       },
       stays: {
-        stays: stayCount, guests: number(stayResult.guests), revenue: number(stayResult.revenue), nights, adr, revpar, averageStayLength, averageLeadDays,
+        stays: stayCount, guests: number(stayResult.guests) + archivedGuests, revenue: bookedStayValue, nights, adr, revpar, averageStayLength, averageLeadDays,
         byRoomClass,
-        byRoomType: stayByRoomType.map((row) => {
+        byRoomType: combinedStayByRoomType.map((row) => {
           const nights = number(row.nights);
           const revenue = number(row.revenue);
           return { roomType: row.roomType, roomClass: row.roomClass, stays: number(row.stays), guests: number(row.guests), nights, revenue, adr: nights ? revenue / nights : 0 };
@@ -401,6 +578,7 @@ export async function POST(req: NextRequest) {
         dailyAverages: "Daily values divided by the selected elapsed date range, including the end date",
         expectedRoomRevenue: "Booked room value from received/confirmed/completed bookings recorded by the report end date, prorated to the selected report month; cancelled and no-show bookings are excluded",
         obtainedRoomRevenue: "Amount paid so far on non-cancelled room bookings; room values are stored in rupees",
+        postpaidOtaPayments: "Goko-collected INR pay-at-property OTA collections by payment business date, including pre-arrival advances; stored in paise and separate from stay-date revenue",
         refundsAndDiscounts: "Refunds use issued/receipt date; discounts use the booking/order recorded range because separate discount-event timestamps are not stored",
       },
       generatedAt: new Date().toISOString(),

@@ -23,6 +23,10 @@ function rupees(amount: number) {
   return `₹${(amount || 0).toLocaleString("en-IN")}`;
 }
 
+function rupeesPrecise(amount: number) {
+  return `₹${(amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function AdminRoomRevenue({
   password,
   username,
@@ -165,6 +169,63 @@ export function AdminRoomRevenue({
               </div>
             </>
           )}
+
+          <section className="mt-10 border-t border-brand-mist pt-6">
+            <h4 className="font-display text-base font-bold text-brand-green-dark">Postpaid OTA payments received</h4>
+            <p className="mt-1 text-xs text-brand-green-dark/60">
+              By payment date · {fromDate} to {toDate}. Cash movement only; this is not earned room revenue and should not be added to the stay totals above.
+            </p>
+            {data?.paymentMovementSummary?.unresolvedTerminal > 0 && (
+              <p className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+                Cancelled/no-show payments unresolved in this range: {rupeesPrecise(data.paymentMovementSummary.unresolvedTerminal)}
+              </p>
+            )}
+            {data?.paymentMovementSummary?.overRefundedTerminal > 0 && (
+              <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                Cancelled/no-show refunds exceed recorded Goko collections by {rupeesPrecise(data.paymentMovementSummary.overRefundedTerminal)} in this range. Review synced payment events and reconcile the actual cash/online movements.
+              </p>
+            )}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ["Gross collected", data?.paymentMovementSummary?.grossCollected || 0],
+                ["Refunds", data?.paymentMovementSummary?.refunded || 0],
+                ["Net Goko movement", data?.paymentMovementSummary?.net || 0],
+                ["Unresolved", data?.paymentMovementSummary?.unresolvedTerminal || 0],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-xl border border-brand-mist bg-white dark:bg-card px-4 py-3">
+                  <p className="text-lg font-bold text-brand-green-dark">{rupeesPrecise(Number(value))}</p>
+                  <p className="text-xs text-brand-green-dark/60">{label}</p>
+                </div>
+              ))}
+            </div>
+            {(data?.paymentMovementRows || []).length > 0 ? (
+              <div className="isolate mt-3 min-w-0 max-w-full overflow-x-auto overflow-y-visible overscroll-x-contain rounded-2xl border border-brand-mist bg-white [touch-action:pan-x_pan-y] dark:bg-card shadow-card dark:shadow-none">
+                <table className="w-full min-w-[1000px] text-left text-sm">
+                  <thead className="bg-brand-sand/95"><tr>
+                    {["Payment date", "Guest / reference", "Type", "Cash", "Online", "Amount", "Booking state", "Note"].map((heading) => (
+                      <th key={heading} className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{heading}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {data.paymentMovementRows.map((event: any) => (
+                      <tr key={event.eventId} className="border-b border-brand-mist/60 last:border-b-0 hover:bg-brand-sand/30">
+                        <td className="whitespace-nowrap px-3 py-3">{event.businessDate}</td>
+                        <td className="px-3 py-3 font-medium text-brand-green-dark">{event.guestName}<div className="text-xs font-normal text-brand-green-dark/50">{event.bookingRef || "OTA booking"} · cycle {event.bookingCycle}{event.isAdvance ? " · advance" : ""}</div></td>
+                        <td className="whitespace-nowrap px-3 py-3">{event.eventType === "refund" ? "Refund" : "Collection"}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-emerald-700">{rupeesPrecise(event.cash)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-blue-700">{rupeesPrecise(event.online)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 font-semibold">{rupeesPrecise(event.amount)}</td>
+                        <td className="whitespace-nowrap px-3 py-3">{event.status}</td>
+                        <td className="px-3 py-3 text-brand-green-dark/70">{event.note || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-3 rounded-xl border border-dashed border-brand-mist px-4 py-6 text-center text-xs text-brand-green-dark/50">No journalled OTA payment movements in this payment-date range.</p>
+            )}
+          </section>
         </>
       )}
     </div>

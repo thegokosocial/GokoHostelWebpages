@@ -15,9 +15,10 @@ export function stayDueAtHotel(
   paymentStatus?: string | null,
   amountTotal: Amount = 0,
   amountPaid: Amount = 0,
+  amountRefunded: Amount = 0,
 ): number {
   if (isPrepaidStatus(paymentStatus)) return 0;
-  return Math.max(0, (amountTotal || 0) - (amountPaid || 0));
+  return Math.max(0, (amountTotal || 0) - ((amountPaid || 0) - (amountRefunded || 0)));
 }
 
 export function cashCollected(method?: string | null, amountPaid: Amount = 0, cashReceived: Amount = 0): number {

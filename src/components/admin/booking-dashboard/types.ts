@@ -5,6 +5,7 @@ export type BookingPlatform = "booking_com" | "makemytrip" | "goibibo" | "hostel
 
 export type DashboardBooking = {
   id: number;
+  bookingCycle: number;
   guestName: string;
   contact: string;
   email: string;
@@ -26,6 +27,8 @@ export type DashboardBooking = {
   amountTotal: number;
   amountPaid: number;
   paymentStatus: string;
+  otaPaymentTerms?: string | null;
+  otaCurrency?: string | null;
   paymentMethod?: string;
   cashReceived?: number;
   changeGiven?: number;

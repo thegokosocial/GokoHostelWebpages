@@ -8,9 +8,12 @@ npm run test:watch
 npm run lint
 npx tsc --noEmit      # required before push; Vitest missed `mode` used-before-assigned
 npm run build         # Next CI build — NOT the Worker
+npm run test:e2e      # Playwright admin smoke/navigation suite (requires local loopback)
 ```
 
 CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lint → `next build` → `npm audit --audit-level=high || true`. **Does not deploy.** Node 20.
+
+The Playwright suite in `e2e/admin-navigation.spec.ts` signs into a mocked admin session and exercises mobile navigation, desktop top-level pages, every Management tab, nested Food Settings tabs, and selected in-page controls. It does not use production credentials or mutate a live database.
 
 **Cloudflare Workers Builds** (dashboard, worker `goko-hostel-latest-webpage`) **does** ship: push to `main` → `npm run cf:build` → `npx wrangler deploy`. That build runs Next typecheck. `let mode: string` without an initializer in `push-inventory/route.ts` failed build `4e62b55a` (commit `5b466f0`) with `Variable 'mode' is used before being assigned`. Initialize (`= "full"`) so control-flow always assigns before the empty-updates return. Same `tsc` pass also needs `realignAssignments` dates narrowed (`if (moveDates && newCheckin && newCheckout)`) and calendar `onAction` as `Promise<boolean | void>`.
 
@@ -18,7 +21,7 @@ CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lin
 
 | File | Covers |
 |------|--------|
-| `rbac.test.ts` | Permission maps |
+| `rbac.test.ts` | Permission maps, including OTA collection vs refund/correction scopes and safe account choices for authorized payment/refund users |
 | `splits.test.ts` / `splits-wiring.test.ts` | Split math (incl. equal-with-Goko infer) + Pi/nav/edit wiring |
 | `stock-operations.test.ts` | Decrement / restore |
 | `data-cleanup.test.ts` | Daily-ledger uniqueness |
@@ -28,6 +31,7 @@ CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lin
 | `aiosell-operations.test.ts` | Webhook auth variants, book/modify/cancel combos, fetch reservation ingest, push-inventory modes (ranged / dirty / fullSync), push-rates + fetch + noshow + inv-restriction aggregation, Channel Manager CRUD. `pah` true/`false`/omitted → `pay_at_hotel`/`prepaid`/`unknown` |
 | `aiosell-inventory-sync.test.ts` | Real `getDateAwareAvailability` (incl. unassigned OTA + native website holds) / `heldBedsToUnits` / range snapshot second pass / `triggerInventoryPush` / `pushIfOtaChanged` (mocked D1 + Aiosell HTTP) |
 | `stay-payment.test.ts` | `stayDueAtHotel`, merge collect, Room Revenue occupancy, `RecordPaymentModal` overlay (no `left-1/2`) |
+| `booking-payment-journal.test.ts` | OTA postpaid paise math/eligibility, partial online advance + idempotency, balance conflict, cash tender/change, cancellation/no-show refund caps and atomic transitions, Admin correction/receipt reversal, cycle snapshots, disconnected over-refund preservation/warnings, and permission/terms separation on migrated SQLite |
 | `platform-receivables.test.ts` | Exact paise conversion, supplied Aiosell deduction extraction, expected OTA net, delta adjustments, and input validation |
 | `food-tab.test.ts` / `food-tab-db-workflows.test.ts` / `food-tab-api-workflows.test.ts` / `food-tab-ui-workflows.test.ts` | Self-checkin phone match; mocked `getPendingFoodTab` DB/API/UI checkout trees (live dashboard lookup, honest no-phone/lookup-failed confirms, Pay uses `orderIds`) |
 | `booking-dashboard.test.ts` / `pms-workflows.test.ts` / `booking-scenarios.test.ts` / `admin-retry.test.ts` | Calendar PMS + Aiosell HTTP log + stay permutations (1-night through multi-bed multi-night, webhook multi-room). `booking-dashboard`: `collectionCopy` Collect payment vs Payment done; `displayedStayPayment` prepaid Paid=total Balance=0; CheckInPopup skips Collected on prepaid; Check In / Cancel / No Show dialogs flex-center (no `left-1/2` + `modalVariants`); `checkIn` `collectPayment` uses `mergeStayCollect` + `paymentMethod`. `pms-workflows`: `bulkSetRates` + `channelId` does not `triggerRatePush`; modify occupancy 1→2 re-auto-assigns; 6 suite × occupancy 3 auto-assigns 6 beds (not 18) and omits `lastName: null`. `admin-retry`: `fetchWithRetry` JSON 500 opt-in. `booking-scenarios`: walk-in `%`/`amount` discount then `booking_tax_rate`; Booking Engine ignores discount |

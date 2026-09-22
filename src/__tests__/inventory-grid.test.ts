@@ -378,10 +378,12 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
 
   it("keeps inventory audit entries separate from room and general logs", () => {
     const audit = readFileSync("src/components/admin/ManagementAudit.tsx", "utf8");
+    const tabStyles = readFileSync("src/components/admin/managementSectionTabs.ts", "utf8");
     const checkins = readFileSync("src/app/api/admin/checkins/route.ts", "utf8");
     expect(audit).toContain('{ id: "inventory" as AuditSubTab, label: "Inventory" }');
-    expect(audit).toContain("max-w-full gap-1 overflow-x-auto");
-    expect(audit).toContain("shrink-0 whitespace-nowrap");
+    expect(audit).toContain('cn(managementSectionTabsClass, "max-w-full")');
+    expect(tabStyles).toContain('"flex flex-wrap gap-1 rounded-lg');
+    expect(tabStyles).toContain('"flex flex-1 items-center justify-center');
     expect(audit).toContain('action: "getInventoryAuditLog"');
     expect(audit).toContain('filePrefix="inventory-audit-log"');
     expect(checkins).toContain('getInventoryAuditLog: "canViewAudit"');

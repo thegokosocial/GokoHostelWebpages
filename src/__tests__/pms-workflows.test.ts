@@ -45,8 +45,13 @@ const { captured, queryMocks } = vi.hoisted(() => {
     },
   };
 });
+const archiveBookingCycle = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("@/db/queries", () => queryMocks);
+vi.mock("@/lib/bookingPaymentJournal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/bookingPaymentJournal")>()),
+  archiveBookingCycle,
+}));
 
 vi.mock("@/lib/auth", () => ({
   authenticateUser: vi.fn(),

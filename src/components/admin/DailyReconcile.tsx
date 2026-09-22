@@ -26,6 +26,7 @@ type AccountBalance = {
   totalIncome: number;
   manualIncome?: number;
   automaticGuestReceipts?: number;
+  bookingPaymentCash?: number;
   totalExpense: number;
   dayIncome?: number;
   dayExpense?: number;
@@ -61,6 +62,7 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
   const [loading, setLoading] = useState(false);
   const [savingKey, setSavingKey] = useState("");
   const [balances, setBalances] = useState<AccountBalance[]>([]);
+  const [bookingPaymentEvents, setBookingPaymentEvents] = useState<any[]>([]);
   const [actuals, setActuals] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [reconciled, setReconciled] = useState(false);
@@ -87,6 +89,7 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
       if (res.ok) {
         const d = await res.json();
         setBalances(d.balances || []);
+        setBookingPaymentEvents(d.bookingPaymentEvents || []);
         setReconciled(d.isReconciled || false);
         const initialActuals: Record<string, string> = {};
         const initialNotes: Record<string, string> = {};
@@ -298,6 +301,7 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
                       <p className="text-[10px] uppercase text-brand-green-dark/50">+ Income since close</p>
                       <p className="text-sm font-medium text-emerald-600">₹{(b.totalIncome / 100).toFixed(0)}</p>
                       {(b.automaticGuestReceipts || 0) !== 0 && <p className="text-[10px] text-blue-600">Guest online ₹{((b.automaticGuestReceipts || 0) / 100).toFixed(0)}</p>}
+                      {(b.bookingPaymentCash || 0) !== 0 && <p className="text-[10px] text-emerald-700">OTA booking cash ₹{((b.bookingPaymentCash || 0) / 100).toFixed(2)}</p>}
                       <p className="text-[10px] text-brand-green-dark/50">Selected date: ₹{((b.dayIncome || 0) / 100).toFixed(2)}</p>
                     </div>
                     <div>
@@ -374,6 +378,21 @@ export function DailyReconcile({ password, username, role, permissions }: { pass
               );
             })}
           </div>
+
+          {bookingPaymentEvents.length > 0 && (
+            <section className="rounded-xl border border-brand-mist bg-white p-4 dark:bg-card">
+              <h4 className="text-sm font-semibold text-brand-green-dark">OTA booking cash movements · {date}</h4>
+              <p className="mt-1 text-[10px] text-brand-green-dark/50">Included in Cash expected closing. Do not record these payments again as manual Stay Revenue.</p>
+              <div className="mt-3 space-y-2">
+                {bookingPaymentEvents.map((event) => (
+                  <div key={event.eventId} className="flex flex-wrap justify-between gap-2 border-b border-brand-mist/60 pb-2 text-xs last:border-0">
+                    <span className="font-medium text-brand-green-dark">{event.guestNameSnapshot} · {event.bookingRefSnapshot || `Booking #${event.bookingId}`} · cycle {event.bookingCycle}</span>
+                    <span className={event.cashPaise < 0 ? "text-red-600" : "text-emerald-700"}>{event.eventType === "refund" ? "Refund" : "Collection"} · {event.cashPaise < 0 ? "−" : "+"}₹{(Math.abs(event.cashPaise) / 100).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {balances.length === 0 && (
             <p className="py-8 text-center text-sm text-brand-green-dark/50">

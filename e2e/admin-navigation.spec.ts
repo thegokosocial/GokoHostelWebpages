@@ -138,3 +138,53 @@ test("in-page Management selectors keep their own selected state", async ({ page
   await community.click();
   await expect(community).toHaveAttribute("aria-selected", "true");
 });
+
+test("desktop navigation opens every top-level admin page", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await signInToManagement(page);
+
+  const sections = [
+    ["Dashboard", "dashboard"], ["Bookings", "bookings"], ["Beds", "beds"],
+    ["Timeline", "timeline"], ["Inventory", "inventory"], ["Records", "records"],
+    ["Food Orders", "foodOrders"], ["Accounts", "expenditure"], ["Splits", "splits"],
+    ["Reviews", "reviews"], ["Management", "management"],
+  ] as const;
+  for (const [label, section] of sections) {
+    await page.getByRole("button", { name: label, exact: true }).click();
+    // The default dashboard section is intentionally represented by an empty
+    // query, while every non-default section is encoded explicitly.
+    await expect(page).toHaveURL(section === "dashboard"
+      ? /\/admin(?:\?|$)/
+      : new RegExp(`section=${section}(?:&|$)`));
+  }
+});
+
+test("desktop Management navigation opens every admin tab", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await signInToManagement(page);
+
+  const tabs = [
+    ["Dorms", "dorms"], ["Users", "users"], ["Backup", "backup"], ["Audit", "audit"],
+    ["Logs", "logs"], ["Health & Stats", "health"], ["History", "history"], ["Rates", "rates"],
+    ["Website", "website"], ["Food Settings", "foodSettings"],
+    ["Bulk Upload", "bulkUpload"], ["QR Codes", "qrGenerator"],
+    ["Account Settings", "accountSettings"], ["Attendance", "attendance"], ["To Do", "tasks"],
+    ["Server Sync", "serverSync"], ["Channel Manager", "channelManager"],
+    ["Booking Settings", "bookingSettings"], ["Analytics", "analytics"], ["Links & QRs", "quickLinks"],
+  ] as const;
+  for (const [label, tab] of tabs) {
+    await page.getByRole("button", { name: label, exact: true }).click();
+    // Dorms is the default admin tab and therefore removes `tab` from the URL.
+    await expect(page).toHaveURL(tab === "dorms"
+      ? /section=management(?:&|$)/
+      : new RegExp(`section=management&tab=${tab}(?:&|$)`));
+  }
+
+  // Menu and Bill Settings are grouped under the Food Settings navigation item.
+  await page.getByRole("button", { name: "Food Settings", exact: true }).click();
+  await expect(page).toHaveURL(/section=management&tab=foodSettings(?:&|$)/);
+  for (const [label, tab] of [["Menu", "menu"], ["Bill Settings", "billSettings"]] as const) {
+    await page.getByRole("tab", { name: label, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`section=management&tab=${tab}(?:&|$)`));
+  }
+});

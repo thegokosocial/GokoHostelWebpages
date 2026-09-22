@@ -21,6 +21,7 @@ import {
   EditIcon,
   BanknoteIcon,
   RefreshCwIcon,
+  RotateCcwIcon,
   MessageCircleIcon,
   SendIcon,
   Trash2Icon,
@@ -73,6 +74,12 @@ export function BookingDetailPanel({
   const [busy, setBusy] = useState(false);
   const [showCheckinPopup, setShowCheckinPopup] = useState(false);
   const [showCollect, setShowCollect] = useState(false);
+  const [showOtaCollect, setShowOtaCollect] = useState(false);
+  const [otaCancelFlow, setOtaCancelFlow] = useState(false);
+  const [otaNoShowFlow, setOtaNoShowFlow] = useState(false);
+  const [otaRefundOpen, setOtaRefundOpen] = useState(false);
+  const [paymentEvents, setPaymentEvents] = useState<any[]>([]);
+  const [correctionTarget, setCorrectionTarget] = useState<any | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundRupees, setRefundRupees] = useState("0");
   const [refundPay, setRefundPay] = useState<{ amount: number } | null>(null);
@@ -102,6 +109,7 @@ export function BookingDetailPanel({
       if (res.ok) {
         const data = await res.json();
         setHistory(data.history || []);
+        setPaymentEvents(data.paymentEvents || []);
       }
     } catch {
       // silently fail for history
@@ -219,11 +227,11 @@ export function BookingDetailPanel({
   const discount = walkin
     ? walkinDiscountOnGross(gross, walkin)
     : (booking.source === "manual" ? Math.max(0, gross - booking.amountBeforeTax) : 0);
-  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid);
+  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded);
   const collection = collectionCopy(booking.paymentStatus, due);
   const dueAtHotel = due > 0;
   // Prepaid: Paid = total / Balance = ₹0. Check-in copies amountPaid as online; status stays prepaid.
-  const shownPay = displayedStayPayment(booking.paymentStatus, booking.amountTotal, booking.amountPaid);
+  const shownPay = displayedStayPayment(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded);
   const whatsAppNumber = bookingWhatsAppNumber(booking.contact || "");
   const propertyName = booking.property === "sunnys_paradise" ? "Sunny's Paradise" : "Goko Hostel";
   const bookingId = bookingWhatsAppReference(booking);
@@ -249,7 +257,24 @@ export function BookingDetailPanel({
     : (role === "admin" || role === "manager");
   const canCollectStay = due > 0
     && (booking.status === "checked_in" || booking.status === "checked_out")
+    && !(booking.source === "channel_manager" && booking.otaPaymentTerms === "pay_at_hotel" && booking.otaCurrency?.toUpperCase() === "INR" && hasPermission(role, permissions, "canRecordBookingPayments"))
     && (hasPermission(role, permissions, "canAddBooking") || hasPermission(role, permissions, "canCheckIn"));
+  const canCollectOta = due > 0
+    && booking.source === "channel_manager"
+    && booking.otaPaymentTerms === "pay_at_hotel"
+    && booking.otaCurrency?.toUpperCase() === "INR"
+    && ["received", "hold", "checked_in", "checked_out"].includes(booking.status)
+    && hasPermission(role, permissions, "canRecordBookingPayments");
+  const isOtaPostpaid = booking.source === "channel_manager" && booking.otaPaymentTerms === "pay_at_hotel" && booking.otaCurrency?.toUpperCase() === "INR";
+  const grossUnrefunded = Math.max(0, (booking.amountPaid || 0) - (booking.amountRefunded || 0));
+  const otaRefundOverage = isOtaPostpaid ? Math.max(0, (booking.amountRefunded || 0) - (booking.amountPaid || 0)) : 0;
+  const terminalPaymentState = booking.status === "cancelled" || booking.status === "no_show";
+  const otaRefundMaximum = terminalPaymentState ? grossUnrefunded : Math.max(0, grossUnrefunded - (booking.amountTotal || 0));
+  const otaCreditAvailable = isOtaPostpaid && !terminalPaymentState ? otaRefundMaximum : 0;
+  const canRecordOtaRefund = isOtaPostpaid
+    && otaRefundMaximum > 0
+    && hasPermission(role, permissions, "canDeleteBooking")
+    && ["received", "hold", "checked_in", "checked_out", "cancelled", "no_show"].includes(booking.status);
   const collectedHint = formatCurrency(booking.amountPaid || 0);
   const canEditBooking = (booking.source === "manual" || booking.source === "website")
     && hasPermission(role, permissions, "canAddBooking");
@@ -374,6 +399,9 @@ export function BookingDetailPanel({
                 highlight={dueAtHotel}
                 className={dueAtHotel ? "text-red-600 dark:text-red-400" : ""}
               />
+              {otaCreditAvailable > 0 && <InfoRow label="Refundable credit" value={formatCurrency(otaCreditAvailable)} className="text-amber-700 dark:text-amber-400" />}
+              {isOtaPostpaid && terminalPaymentState && grossUnrefunded > 0 && <InfoRow label="Goko funds held / unresolved" value={formatCurrency(grossUnrefunded)} className="text-amber-700 dark:text-amber-400" />}
+              {otaRefundOverage > 0 && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">Recorded refunds exceed Goko collections by {formatCurrency(otaRefundOverage)}. Review the synced payment events and reconcile the cash/online movements before recording another refund.</p>}
               {booking.paymentMethod && (booking.amountPaid || 0) > 0 && (
                 <div className="text-xs">
                   <PaymentDetailLabel
@@ -515,17 +543,40 @@ export function BookingDetailPanel({
                   <Loader2Icon className="size-3 animate-spin" />
                   Loading...
                 </div>
-              ) : history.length === 0 ? (
+              ) : history.length === 0 && paymentEvents.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No history</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  {paymentEvents.length > 0 && <div className="space-y-2">
+                    {paymentEvents.slice().reverse().map((event) => {
+                      const amount = `₹${(Math.abs(event.amountPaise || 0) / 100).toFixed(2)}`;
+                      const corrections = paymentEvents.filter((entry) => entry.eventType === "correction" && entry.correctsEventId === event.eventId);
+                      const correctedAmount = corrections.reduce((sum, entry) => sum + Math.abs(entry.amountPaise || 0), 0);
+                      const correctableAmountPaise = Math.min(
+                        Math.max(0, (event.amountPaise || 0) - correctedAmount),
+                        Math.max(0, Math.abs(event.cashPaise || 0) - corrections.reduce((sum, entry) => sum + Math.abs(entry.cashPaise || 0), 0))
+                          + Math.max(0, Math.abs(event.onlinePaise || 0) - corrections.reduce((sum, entry) => sum + Math.abs(entry.onlinePaise || 0), 0)),
+                      );
+                      const canCorrectEvent = role === "admin" && ["collection", "refund"].includes(event.eventType)
+                        && !event.isOpening && Boolean(event.businessDate) && !event.unknownPaise && event.bookingCycle === booking.bookingCycle
+                        && correctableAmountPaise > 0;
+                      const tender = event.unknownPaise > 0 ? "method not recorded"
+                        : event.cashPaise && event.onlinePaise ? `cash ₹${Math.abs(event.cashPaise) / 100} + online ₹${Math.abs(event.onlinePaise) / 100}`
+                          : event.cashPaise ? "cash" : event.onlinePaise ? "online" : "—";
+                      return <div key={event.eventId} className="border-l-2 border-emerald-500 pl-3 text-xs">
+                        <div className="font-medium text-foreground">{event.eventType === "refund" ? "Refund" : event.eventType === "correction" ? "Correction" : "Payment"} · {amount}</div>
+                        <p className="text-muted-foreground">{event.guestNameSnapshot} · {tender} · cycle {event.bookingCycle}{event.isOpening ? " · opening balance" : ""}</p>
+                        {event.note && <p className="text-muted-foreground">{event.note}</p>}
+                        <div className="mt-0.5 text-[10px] text-muted-foreground">{event.businessDate || "Date unknown"} · {event.actor}</div>
+                        {canCorrectEvent && <Button className="mt-1 h-7 px-2 text-[10px]" size="sm" variant="outline" onClick={() => setCorrectionTarget({ event, maxPaise: correctableAmountPaise })}>Correct mistaken entry</Button>}
+                      </div>;
+                    })}
+                  </div>}
                   {history.map((entry) => (
                     <div key={entry.id} className="border-l-2 border-border pl-3 text-xs">
                       <div className="font-medium text-foreground">{entry.action}</div>
                       {entry.details && <p className="text-muted-foreground">{entry.details}</p>}
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">
-                        {entry.performedBy} - {entry.performedAt}
-                      </div>
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">{entry.performedBy} - {entry.performedAt}</div>
                     </div>
                   ))}
                 </div>
@@ -574,17 +625,26 @@ export function BookingDetailPanel({
                 Collect
               </Button>
             )}
+            {canCollectOta && (
+              <Button size="sm" onClick={() => setShowOtaCollect(true)} disabled={busy}>
+                <CreditCardIcon className="size-3.5" />
+                Collect payment
+              </Button>
+            )}
             {(booking.status === "received" || booking.status === "hold") &&
               canCancelStay && (
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={() => setConfirmAction({
-                    action: "cancelBooking",
-                    title: "Cancel Booking",
-                    description: `Cancel booking for ${booking.guestName} in Goko? Beds will be released online; cancel the OTA reservation separately.`,
-                    variant: "destructive",
-                  })}
+                  onClick={() => {
+                    if (isOtaPostpaid && grossUnrefunded > 0) setOtaCancelFlow(true);
+                    else setConfirmAction({
+                      action: "cancelBooking",
+                      title: "Cancel Booking",
+                      description: `Cancel booking for ${booking.guestName} in Goko? Beds will be released online; cancel the OTA reservation separately.`,
+                      variant: "destructive",
+                    });
+                  }}
                   disabled={busy}
                 >
                   <BanIcon className="size-3.5" />
@@ -611,28 +671,40 @@ export function BookingDetailPanel({
               <Button
                 size="sm"
                 variant="destructive"
-                onClick={() => { setRefundRupees("0"); setRefundOpen(true); }}
+                onClick={() => {
+                  if (isOtaPostpaid && grossUnrefunded > 0) setOtaCancelFlow(true);
+                  else { setRefundRupees("0"); setRefundOpen(true); }
+                }}
                 disabled={busy}
               >
                 <BanIcon className="size-3.5" />
                 Cancel
               </Button>
             )}
-            {(booking.status === "received" || booking.status === "guest_declined")
+            {(["received", "hold", "guest_declined"].includes(booking.status))
               && (booking.status === "guest_declined" ? booking.checkinDate < getHostelToday() : booking.checkinDate <= getHostelToday())
               && hasPermission(role, permissions, "canDeleteBooking") && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setConfirmAction({
-                  action: "markNoShow",
-                  title: "Mark No Show",
-                  description: `Mark ${booking.guestName} as no-show?`,
-                  variant: "default",
-                })}
+                onClick={() => {
+                  if (isOtaPostpaid && grossUnrefunded > 0) setOtaNoShowFlow(true);
+                  else setConfirmAction({
+                    action: "markNoShow",
+                    title: "Mark No Show",
+                    description: `Mark ${booking.guestName} as no-show?`,
+                    variant: "default",
+                  });
+                }}
                 disabled={busy}
               >
                 No Show
+              </Button>
+            )}
+            {canRecordOtaRefund && (
+              <Button size="sm" variant="outline" onClick={() => setOtaRefundOpen(true)} disabled={busy}>
+                <RotateCcwIcon className="size-3.5" />
+                {terminalPaymentState ? "Record refund" : "Refund credit"}
               </Button>
             )}
             {canRefundWebsiteOrphan && (
@@ -722,8 +794,9 @@ export function BookingDetailPanel({
           password={password}
           username={username}
           onConfirm={async (collectPayment, extra) => {
-            setShowCheckinPopup(false);
-            await handleAction("checkIn", { collectPayment, ...extra });
+            const ok = await handleAction("checkIn", { collectPayment, ...extra });
+            if (ok) setShowCheckinPopup(false);
+            return ok;
           }}
           onCancel={() => setShowCheckinPopup(false)}
         />
@@ -736,11 +809,114 @@ export function BookingDetailPanel({
           amountUnit="rupees"
           zClass="z-[70]"
           password={password} username={username} receiptKind="room"
-          onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
-            setShowCollect(false);
-            await handleAction("collectStayPayment", { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId });
+          onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId, _amount, operationId) => {
+            const ok = await handleAction("collectStayPayment", { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId, operationId });
+            if (ok) setShowCollect(false);
+            return ok;
           }}
           onClose={() => setShowCollect(false)}
+        />
+      )}
+
+      {showOtaCollect && (
+        <RecordPaymentModal
+          totalAmount={due}
+          guestName={booking.guestName}
+          amountUnit="rupees"
+          allowPartial
+          zClass="z-[70]"
+          password={password}
+          username={username}
+          receiptKind="room"
+          onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, _receiptId, amountToApply, operationId, note) => {
+            const amountPaise = Math.round((amountToApply ?? due) * 100);
+            const cashPaise = method === "cash" ? amountPaise : method === "split" ? Math.round(cashReceived * 100) : 0;
+            const ok = await handleAction("collectOtaBookingPayment", {
+              operationId,
+              amountPaise,
+              cashPaise,
+              onlinePaise: amountPaise - cashPaise,
+              cashTenderPaise: method === "cash" ? Math.round(cashReceived * 100) : cashPaise,
+              changePaise: method === "cash" ? Math.round(changeGiven * 100) : 0,
+              onlineAccountId,
+              note,
+            });
+            if (ok) setShowOtaCollect(false);
+            return ok;
+          }}
+          onClose={() => setShowOtaCollect(false)}
+        />
+      )}
+
+      {(otaCancelFlow || otaNoShowFlow || otaRefundOpen) && (
+        <RecordPaymentModal
+          totalAmount={otaCancelFlow || otaNoShowFlow ? grossUnrefunded : otaRefundMaximum}
+          guestName={booking.guestName}
+          mode="refund"
+          amountUnit="rupees"
+          allowPartial
+          zClass="z-[70]"
+          password={password}
+          username={username}
+          receiptKind="room"
+          secondaryActionLabel={otaCancelFlow ? "Cancel without refund" : otaNoShowFlow ? "Mark no-show without refund" : undefined}
+          onSecondaryAction={otaCancelFlow || otaNoShowFlow ? async () => {
+            const action = otaCancelFlow ? "cancelBooking" : "markNoShow";
+            const ok = await handleAction(action);
+            if (ok) { setOtaCancelFlow(false); setOtaNoShowFlow(false); }
+            return ok;
+          } : undefined}
+          onConfirm={async (method, cashReceived, _change, onlineAccountId, _receiptId, amountToApply, operationId, note) => {
+            const amountPaise = Math.round((amountToApply || 0) * 100);
+            const cashPart = method === "cash" ? amountPaise : method === "split" ? Math.round(cashReceived * 100) : 0;
+            const common = {
+              operationId,
+              refundAmountPaise: amountPaise,
+              amountPaise,
+              cashPaise: cashPart,
+              onlinePaise: amountPaise - cashPart,
+              cashTenderPaise: cashPart,
+              changePaise: 0,
+              onlineAccountId,
+              note,
+            };
+            const action = otaCancelFlow ? "cancelBooking" : otaNoShowFlow ? "markNoShow" : "refundOtaBookingPayment";
+            const ok = await handleAction(action, common);
+            if (ok) { setOtaCancelFlow(false); setOtaNoShowFlow(false); setOtaRefundOpen(false); }
+            return ok;
+          }}
+          onClose={() => { setOtaCancelFlow(false); setOtaNoShowFlow(false); setOtaRefundOpen(false); }}
+        />
+      )}
+
+      {correctionTarget && (
+        <RecordPaymentModal
+          totalAmount={correctionTarget.maxPaise / 100}
+          guestName={booking.guestName}
+          mode="correction"
+          initialMethod={correctionTarget.event.cashPaise && correctionTarget.event.onlinePaise ? "split" : correctionTarget.event.onlinePaise ? "online" : "cash"}
+          amountUnit="rupees"
+          allowPartial
+          zClass="z-[75]"
+          password={password}
+          username={username}
+          receiptKind="room"
+          onConfirm={async (method, cashReceived, _change, onlineAccountId, _receiptId, amountToApply, operationId, note) => {
+            const amountPaise = Math.round((amountToApply || 0) * 100);
+            const cashPaise = method === "cash" ? amountPaise : method === "split" ? Math.round(cashReceived * 100) : 0;
+            const ok = await handleAction("correctOtaBookingPayment", {
+              operationId,
+              correctsEventId: correctionTarget.event.eventId,
+              amountPaise,
+              cashPaise,
+              onlinePaise: amountPaise - cashPaise,
+              onlineAccountId,
+              note,
+            });
+            if (ok) setCorrectionTarget(null);
+            return ok;
+          }}
+          onClose={() => setCorrectionTarget(null)}
         />
       )}
 

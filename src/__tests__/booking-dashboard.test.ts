@@ -883,8 +883,8 @@ describe("collectionCopy / check-in payment labels", () => {
 
   it("detail panel paints Balance red for hotel-due or unknown unpaid, not prepaid", () => {
     const panel = readFile("src/components/admin/booking-dashboard/BookingDetailPanel.tsx");
-    expect(panel).toContain("stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid)");
-    expect(panel).toContain("displayedStayPayment(booking.paymentStatus, booking.amountTotal, booking.amountPaid)");
+    expect(panel).toContain("stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded)");
+    expect(panel).toContain("displayedStayPayment(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded)");
     expect(panel).toContain("formatCurrency(shownPay.paid)");
     expect(panel).toContain("formatCurrency(shownPay.balance)");
     expect(panel).not.toContain('label="Paid" value={formatCurrency(booking.amountPaid)}');
@@ -904,7 +904,7 @@ describe("collectionCopy / check-in payment labels", () => {
 
   it("CheckInPopup skips Collected for prepaid and still offers it when due at hotel or unknown with balance", () => {
     const popup = readFile("src/components/admin/booking-dashboard/CheckInPopup.tsx");
-    expect(popup).toContain("stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid)");
+    expect(popup).toContain("stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded)");
     expect(popup).toContain("const offerCollect = due > 0");
     expect(popup).toContain("{offerCollect && (");
     expect(popup).toContain("Collected");

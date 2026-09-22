@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import type { Database } from "@/db";
 import * as schema from "@/db/schema";
 import { getRuntimeName, getBuildVersion } from "@/lib/runtime";
+import { rebuildBookingPaymentProjection } from "@/lib/bookingPaymentJournal";
 
 // --- Table Configuration ---
 
@@ -15,7 +16,7 @@ const SYNCED_TABLES_WITH_DELETE = [
 
 const SYNCED_TABLES_APPEND = [
   "bed_history", "food_order_items", "order_modifications", "salary_payments",
-  "daily_ledger", "qr_history", "guest_receipts",
+  "daily_ledger", "qr_history", "booking_cycle_snapshots", "booking_payment_events", "guest_receipts",
   "employee_attendance_history",
   "platform_receivable_entries", "platform_settlements", "platform_settlement_allocations",
 ] as const;
@@ -57,6 +58,8 @@ const TABLE_MAP: Record<string, any> = {
   daily_ledger: schema.dailyLedger,
   qr_history: schema.qrHistory,
   guest_receipts: schema.guestReceipts,
+  booking_cycle_snapshots: schema.bookingCycleSnapshots,
+  booking_payment_events: schema.bookingPaymentEvents,
   platform_payment_profiles: schema.platformPaymentProfiles,
   platform_receivable_entries: schema.platformReceivableEntries,
   platform_settlements: schema.platformSettlements,
@@ -81,6 +84,8 @@ const FK_REMAP: Record<string, Record<string, string>> = {
   expenses: { vendorId: "vendors", accountId: "accounts", taskId: "tasks" },
   tasks: { assigneeUserId: "users" },
   guest_receipts: { accountId: "accounts" },
+  booking_cycle_snapshots: { bookingId: "bookings" },
+  booking_payment_events: { bookingId: "bookings", accountId: "accounts" },
   platform_payment_profiles: { virtualAccountId: "accounts" },
   platform_receivable_entries: { bookingId: "bookings" },
   platform_settlements: { bankAccountId: "accounts" },
@@ -382,6 +387,10 @@ export async function applyPullRecords(
     }
   }
 
+  const paymentEventIds = payloads.filter((payload) => payload.table === "booking_payment_events")
+    .flatMap((payload) => payload.records.map((record) => record.syncId));
+  await rebuildSyncedPaymentCycles(db, paymentEventIds);
+
   return { applied, conflicts, idMappings };
 }
 
@@ -484,7 +493,25 @@ export async function applyPushRecords(
     }
   }
 
+  const paymentEventIds = bundles.flatMap((bundle) => [
+    ...(bundle.table === "booking_payment_events" ? bundle.records : []),
+    ...(bundle.children || []).filter((child) => child.table === "booking_payment_events").flatMap((child) => child.records),
+  ]).map((record) => record.syncId);
+  await rebuildSyncedPaymentCycles(db, paymentEventIds);
+
   return { applied, conflicts, idMappings };
+}
+
+async function rebuildSyncedPaymentCycles(db: Database, eventIds: string[]) {
+  const ids = [...new Set(eventIds.filter(Boolean))];
+  if (ids.length === 0) return;
+  const rows = await db.select({ bookingId: schema.bookingPaymentEvents.bookingId, bookingCycle: schema.bookingPaymentEvents.bookingCycle })
+    .from(schema.bookingPaymentEvents).where(inArray(schema.bookingPaymentEvents.syncId, ids));
+  const cycles = new Set(rows.map((row) => `${row.bookingId}:${row.bookingCycle}`));
+  for (const key of cycles) {
+    const [bookingId, bookingCycle] = key.split(":").map(Number);
+    await rebuildBookingPaymentProjection(bookingId, bookingCycle, db);
+  }
 }
 
 async function applyBundleRecords(
@@ -888,6 +915,28 @@ async function remapForeignKeys(
       // Do not fall back to "parent exists at this numeric id" — D1 and Pi
       // autoincrements have diverged (e.g. CF dorm 9 = EXECUTIVE, Pi dorm 9 = Dorm 1).
       remapped[column] = null;
+    }
+  }
+
+  // Booking receipt sourceId is polymorphic rather than declared as a database FK.
+  // New journal receipts can resolve it through the already-applied event; legacy
+  // receipts use the booking sync map so a reused numeric ID cannot point at another guest.
+  if (tableName === "guest_receipts" && remapped.sourceType === "booking") {
+    let resolvedByEvent = false;
+    if (typeof remapped.bookingEventId === "string" && remapped.bookingEventId) {
+      const event = await db.select({ bookingId: schema.bookingPaymentEvents.bookingId })
+        .from(schema.bookingPaymentEvents).where(eq(schema.bookingPaymentEvents.eventId, remapped.bookingEventId)).limit(1);
+      if (event[0]) {
+        remapped.sourceId = event[0].bookingId;
+        resolvedByEvent = true;
+      }
+    }
+    if (!Number.isInteger(remapped.sourceId) || remapped.sourceId < 0) remapped.sourceId = null;
+    if (!resolvedByEvent && remapped.sourceId != null) {
+      const mapping = await db.select({ localId: schema.syncIdMap.localId }).from(schema.syncIdMap).where(and(
+        eq(schema.syncIdMap.tableName, "bookings"), eq(schema.syncIdMap.remoteId, remapped.sourceId),
+      )).limit(1);
+      if (mapping[0]) remapped.sourceId = mapping[0].localId;
     }
   }
 

@@ -20,11 +20,11 @@ export function CheckInPopup({
   booking: DashboardBooking;
   password: string;
   username?: string;
-  onConfirm: (collectPayment: boolean, extra?: Record<string, unknown>) => Promise<void>;
+  onConfirm: (collectPayment: boolean, extra?: Record<string, unknown>) => Promise<boolean | void>;
   onCancel: () => void;
 }) {
   const [showPay, setShowPay] = useState(false);
-  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid);
+  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded);
   const collection = collectionCopy(booking.paymentStatus, due);
   const offerCollect = due > 0;
   const paymentDone = !!collection && !collection.due;
@@ -120,9 +120,10 @@ export function CheckInPopup({
           amountUnit="rupees"
           zClass="z-[70]"
           password={password} username={username} receiptKind="room"
-          onConfirm={(method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
-            setShowPay(false);
-            void onConfirm(true, { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId });
+          onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId, _amount, operationId) => {
+            const ok = await onConfirm(true, { paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId, operationId });
+            if (ok) setShowPay(false);
+            return ok;
           }}
           onClose={() => setShowPay(false)}
         />

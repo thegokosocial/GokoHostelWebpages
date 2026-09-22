@@ -58,6 +58,10 @@ const EXPENSES_PERMISSIONS: Record<string, ActionPerm> = {
 };
 
 const BOOKINGS_PERMISSIONS: Record<string, ActionPerm> = {
+  getRoomReceiptAccounts: ["canAddBooking", "canCheckIn", "canRecordBookingPayments", "canDeleteBooking"],
+  collectOtaBookingPayment: "canRecordBookingPayments",
+  refundOtaBookingPayment: "canDeleteBooking",
+  correctOtaBookingPayment: "admin_only",
   checkIn: ["canCheckIn", "canAddBooking"],
   collectStayPayment: ["canCheckIn", "canAddBooking"],
   checkOut: ["canCheckOut", "canAddBooking"],
@@ -313,6 +317,17 @@ describe("RBAC: Dual-key OR (fine-grained or today's coarse key)", () => {
     expect(checkPermission(role, { canCheckOut: true }, BOOKINGS_PERMISSIONS, "getPendingFoodTab")).toBe("allowed");
     expect(checkPermission(role, { canCheckIn: true }, BOOKINGS_PERMISSIONS, "checkOut")).toBe("forbidden");
     expect(checkPermission(role, { canCheckIn: true }, BOOKINGS_PERMISSIONS, "getPendingFoodTab")).toBe("forbidden");
+  });
+
+  it("OTA payment action keeps collection, refunds, corrections, and account choices separately gated", () => {
+    expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "collectOtaBookingPayment")).toBe("allowed");
+    expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "refundOtaBookingPayment")).toBe("forbidden");
+    expect(checkPermission(role, { canDeleteBooking: true }, BOOKINGS_PERMISSIONS, "refundOtaBookingPayment")).toBe("allowed");
+    expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "correctOtaBookingPayment")).toBe("admin_required");
+    expect(checkPermission(role, { canDeleteBooking: true }, BOOKINGS_PERMISSIONS, "getRoomReceiptAccounts")).toBe("allowed");
+    expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "getRoomReceiptAccounts")).toBe("allowed");
+    const route = readFileSync("src/app/api/admin/bookings/route.ts", "utf8");
+    expect(route).toContain('getRoomReceiptAccounts: ["canAddBooking", "canCheckIn", "canRecordBookingPayments", "canDeleteBooking"]');
   });
 });
 

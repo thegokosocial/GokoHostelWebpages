@@ -34,6 +34,7 @@ const q = vi.hoisted(() => ({
   shortenAssignedCheckout: vi.fn(),
   reopenWalkinCheckinsForBooking: vi.fn(),
 }));
+const archiveBookingCycle = vi.hoisted(() => vi.fn(async () => undefined));
 
 const triggerInventoryPush = vi.hoisted(() => vi.fn());
 const otaFingerprint = vi.hoisted(() => vi.fn());
@@ -41,6 +42,10 @@ const pushIfOtaChanged = vi.hoisted(() => vi.fn());
 const pushNoShow = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: q.authenticateUser }));
+vi.mock("@/lib/bookingPaymentJournal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/bookingPaymentJournal")>()),
+  archiveBookingCycle,
+}));
 vi.mock("@/lib/aiosellSync", () => ({
   triggerInventoryPush,
   triggerRatePush: vi.fn(),

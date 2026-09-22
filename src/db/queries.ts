@@ -615,6 +615,7 @@ export async function addBooking(data: {
   guestName: string; contact?: string; platform: string; bookingRef?: string;
   checkinDate: string; checkoutDate?: string; roomType?: string; persons?: number;
   paymentStatus?: string; specialRequests?: string; status?: string; source?: string;
+  otaPaymentTerms?: string | null; otaCurrency?: string | null;
   property?: string; rawData?: string;
   amountBeforeTax?: number; amountTax?: number; amountTotal?: number;
   amountPaid?: number; nightlyRate?: number; currency?: string;
@@ -635,6 +636,8 @@ export async function addBooking(data: {
     roomType: data.roomType || "",
     persons: data.persons || 1,
     paymentStatus: data.paymentStatus || "unknown",
+    otaPaymentTerms: data.otaPaymentTerms ?? null,
+    otaCurrency: data.otaCurrency ?? null,
     specialRequests: data.specialRequests || "",
     status: data.status || "received",
     source: data.source || "manual",

@@ -16,7 +16,9 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 **With soft-delete:** checkins, dorms, beds, bookings, menu_categories, menu_items, food_orders, accounts, vendors, employees, expenses, daily_income, users, tasks, platform_payment_profiles.
 
-**Append-only:** bed_history, food_order_items, order_modifications, salary_payments, daily_ledger, qr_history, guest_receipts, platform_receivable_entries, platform_settlements, platform_settlement_allocations. Website native checkout/payment tables and `gateway_settlement_allocations` are Cloudflare-only and omitted from Pi sync.
+**Append-only:** bed_history, food_order_items, order_modifications, salary_payments, daily_ledger, qr_history, booking_cycle_snapshots, booking_payment_events, guest_receipts, platform_receivable_entries, platform_settlements, platform_settlement_allocations. OTA payment events merge by stable event/sync identity rather than last-write-wins. After event sync and FK remapping, both runtimes rebuild the affected booking-cycle projections. Journal-backed receipts resolve their booking through the stable payment-event link; older booking receipts still use booking sync-ID mapping. Website native checkout/payment tables and `gateway_settlement_allocations` are Cloudflare-only and omitted from Pi sync.
+
+Payment events and cycle snapshots use the booking's existing `sync_id` to stay identical across runtimes. Before using OTA postpaid collection, ensure the booking has completed the normal Server Sync **Backfill Sync IDs** workflow and the identities are synchronized. A missing identity returns a recoverable conflict; the payment path does not invent a runtime-local ID. `0069_ota_postpaid_booking_payments.sql` seeds legacy payment openings only for rows with explicit pay-at-hotel terms, explicit INR, and an existing stable booking identity.
 
 **Settings keys only:** `image_validation`, `guest_min_age`, `guest_max_age`, `show_dob_in_records`, `log_level`, `food_tax_rate`, `booking_tax_rate`, `food_kitchen_hours`, `food_tab_limit`, `food_kitchen_busy`, `food_confirm_with_guest`, `food_kannada_labels`, `food_cafe_tables`, `primary_server`, `food_online_receipt_account_id`, `room_online_receipt_account_id`.
 
@@ -24,7 +26,7 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 **Never:** CMS `site_*`, **split_***, audit/system logs, api_stats, rate_scrapes, push, reviews, channel manager, inventory/rates/blocks, sync meta tables, **R2 objects**. Drive URLs on checkin and task rows *do* sync (files stay in Google). Task status/text works offline; attachment uploads require network access.
 
-Pi migrator stamps `0035_site_cms.sql`, `0041_splits.sql`, and `0064_food_bill_share_tokens.sql` without applying SQL (Cloudflare-only). It **does** apply `0042_booking_stay_payments.sql` (those columns live on synced `bookings`). Splits nav is hidden on Pi.
+Pi migrator stamps `0035_site_cms.sql`, `0041_splits.sql`, and `0064_food_bill_share_tokens.sql` without applying SQL (Cloudflare-only). It **does** apply `0042_booking_stay_payments.sql` and `0069_ota_postpaid_booking_payments.sql` (booking payment terms/currency, journal, and cycle snapshots are part of the synced booking finance path). Splits nav is hidden on Pi.
 
 Integer PKs remapped via `sync_id` UUID + `sync_id_map`. FK remap table in `syncEngine.ts`. Conflicts → `sync_conflicts`.
 

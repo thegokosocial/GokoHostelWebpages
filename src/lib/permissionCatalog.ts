@@ -26,6 +26,7 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
     label: "Bookings",
     options: [
       ["canAddBooking", "Add bookings"], ["canCheckIn", "Check in booking guests"],
+      ["canRecordBookingPayments", "Record OTA postpaid booking payments"],
       ["canCheckOut", "Check out booking guests"], ["canDeleteBooking", "Delete bookings"],
       ["canManageBookingTemplates", "Manage booking message templates"],
     ].map(([key, label]) => ({ key, label })),

@@ -42,6 +42,7 @@ const { captured, q } = vi.hoisted(() => {
     },
   };
 });
+const archiveBookingCycle = vi.hoisted(() => vi.fn(async () => undefined));
 
 const pushInventory = vi.hoisted(() => vi.fn());
 const pushRates = vi.hoisted(() => vi.fn());
@@ -55,6 +56,10 @@ const getDateAwareAvailabilityRange = vi.hoisted(() => vi.fn());
 const triggerInventoryPush = vi.hoisted(() => vi.fn());
 
 vi.mock("@/db/queries", () => q);
+vi.mock("@/lib/bookingPaymentJournal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/bookingPaymentJournal")>()),
+  archiveBookingCycle,
+}));
 vi.mock("@/lib/auth", () => ({
   authenticateUser: vi.fn(),
 }));

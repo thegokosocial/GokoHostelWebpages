@@ -7,6 +7,7 @@ import { autoAssignOnlineChannelBeds, channelAssignmentNeedsReseat, channelBedNe
 import { logPmsCall } from "@/lib/pmsLog";
 import { dispatchPush, notificationFirstName, notificationDate, notificationStayDates } from "@/lib/pushNotify";
 import { bookingAmountsFromRaw, recordPlatformAdjustment, subtractPlatformAmounts } from "@/lib/platformReceivables";
+import { archiveBookingCycle } from "@/lib/bookingPaymentJournal";
 
 const WEBHOOK_URL = "/api/aiosell/reservations";
 
@@ -230,6 +231,10 @@ function extractBookingFields(payload: ReservationPayload) {
     roomType: roomInfo,
     persons: channelPersonCount({ rooms: payload.rooms }),
     paymentStatus: channelPaymentStatus(payload.pah),
+    otaPaymentTerms: payload.pah === true ? "pay_at_hotel" : payload.pah === false ? "prepaid" : null,
+    otaCurrency: typeof payload.amount?.currency === "string" && payload.amount.currency.trim()
+      ? payload.amount.currency.trim().toUpperCase()
+      : null,
     specialRequests: payload.specialRequests || "",
     status: "received" as const,
     source: "channel_manager" as const,
@@ -341,6 +346,7 @@ async function handleNewBooking(payload: ReservationPayload) {
   const existing = await getBookingByRef(payload.bookingId);
   if (existing) {
     if (existing.status === "cancelled" || existing.status === "no_show") {
+      await archiveBookingCycle(existing);
       await updateBookingFull(existing.id, {
         ...extractBookingFields(payload),
         status: "received",
@@ -460,7 +466,8 @@ async function handleModifyBooking(payload: ReservationPayload) {
     } : {}),
     roomType: roomInfo || "",
     persons,
-    paymentStatus: existing.paymentOverride ? (existing.paymentStatus || "unknown") : (payload.pah !== undefined ? channelPaymentStatus(payload.pah) : (existing.paymentStatus || "unknown")),
+        paymentStatus: existing.paymentOverride ? (existing.paymentStatus || "unknown") : (payload.pah !== undefined ? channelPaymentStatus(payload.pah) : (existing.paymentStatus || "unknown")),
+    otaPaymentTerms: payload.pah === true ? "pay_at_hotel" : payload.pah === false ? "prepaid" : existing.otaPaymentTerms || null,
     paymentOverride: existing.paymentOverride || 0,
     specialRequests: payload.specialRequests || existing.specialRequests || "",
     status: existing.status,
@@ -469,6 +476,9 @@ async function handleModifyBooking(payload: ReservationPayload) {
     amountTax: payload.amount?.tax ?? existing.amountTax ?? 0,
     amountTotal: payload.amount?.amountAfterTax ?? existing.amountTotal ?? 0,
     currency: payload.amount?.currency || existing.currency || "INR",
+    otaCurrency: typeof payload.amount?.currency === "string" && payload.amount.currency.trim()
+      ? payload.amount.currency.trim().toUpperCase()
+      : existing.otaCurrency || null,
     email: guest?.email || existing.email || "",
     cmBookingId: payload.cmBookingId || existing.cmBookingId || "",
     ratePlan,

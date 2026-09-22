@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getDb } from "@/db";
-import { accounts } from "@/db/schema";
+import { accounts, bookingPaymentEvents } from "@/db/schema";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { otaFingerprint, pushIfOtaChanged, type InventorySyncResult } from "@/lib/aiosellSync";
@@ -33,6 +33,16 @@ import { generateGokoBookingId } from "@/lib/bookingReference";
 import { manualCreateStatus } from "@/lib/bookingStayStatus";
 import { isStayPayMethod, isPrepaidStatus, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
 import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
+import {
+  BookingPaymentError,
+  canCollectOtaPayment,
+  correctOtaBookingPayment,
+  getBookingPaymentEvents,
+  isOtaPostpaidBooking,
+  paiseToRupees,
+  recordOtaBookingPayment,
+  rupeesToPaise,
+} from "@/lib/bookingPaymentJournal";
 import { bookingAmountsFromRaw, recognizePlatformBooking, recordPlatformAdjustment } from "@/lib/platformReceivables";
 import { getPendingFoodTab } from "@/lib/foodTabDb";
 import { dispatchPush, notificationFirstName, notificationDate, notificationStayDates } from "@/lib/pushNotify";
@@ -273,8 +283,9 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   getUnassigned: "canViewBookings",
   checkAvailability: "canViewBookings",
   getAvailableBeds: "canViewBookings",
-  getRoomReceiptAccounts: ["canAddBooking", "canCheckIn"],
+  getRoomReceiptAccounts: ["canAddBooking", "canCheckIn", "canRecordBookingPayments", "canDeleteBooking"],
   getBookingHistory: "canViewBookings",
+  getBookingPaymentEvents: "canViewBookings",
   getBookingAuditLog: "canViewBookings",
   getWhatsAppTemplates: "canViewBookings",
   saveWhatsAppTemplates: ["canManageBookingTemplates", "canViewBookings"],
@@ -283,6 +294,9 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   assignBeds: "canAddBooking",
   checkIn: ["canCheckIn", "canAddBooking"],
   collectStayPayment: ["canCheckIn", "canAddBooking"],
+  collectOtaBookingPayment: "canRecordBookingPayments",
+  refundOtaBookingPayment: "canDeleteBooking",
+  correctOtaBookingPayment: "admin_only",
   checkOut: ["canCheckOut", "canAddBooking"],
   getPendingFoodTab: ["canCheckOut", "canAddBooking"],
   modifyCheckin: "canAddBooking",
@@ -336,12 +350,16 @@ export async function POST(req: NextRequest) {
     if (gate === "forbidden") {
       return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
     }
+    if (action === "collectOtaBookingPayment" && role !== "admin"
+      && actionAllowed(role, permissions, "canViewBookings") !== "allowed") {
+      return NextResponse.json({ error: "Booking view access is also required" }, { status: 403 });
+    }
 
     // --- View Actions ---
 
     if (action === "getRoomReceiptAccounts") {
       const [items, defaultId] = await Promise.all([
-        getDb().select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname })
+        getDb().select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, isActive: accounts.isActive })
           .from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))),
         getSetting("room_online_receipt_account_id"),
       ]);
@@ -367,7 +385,7 @@ export async function POST(req: NextRequest) {
       const bookings = result.bookings.map((b) => {
         const checkout = stayCheckout(b.checkinDate, b.checkoutDate);
         const nights = checkout ? diffDays(b.checkinDate, checkout) : 0;
-        return { ...b, nights, balance: (b.amountTotal ?? 0) - (b.amountPaid ?? 0) };
+        return { ...b, nights, balance: Math.max(0, (b.amountTotal ?? 0) - (b.amountPaid ?? 0) + (b.amountRefunded ?? 0)) };
       });
       return NextResponse.json({ ...result, bookings, role, permissions });
     }
@@ -415,7 +433,7 @@ export async function POST(req: NextRequest) {
         const checkout = stayCheckout(b.checkinDate, b.checkoutDate);
         const nights = checkout ? diffDays(b.checkinDate, checkout) : 0;
         // Ledger, not the detail card. Prepaid check-in copies amountPaid; until then this is the OTA total.
-        const balance = (b.amountTotal ?? 0) - (b.amountPaid ?? 0);
+        const balance = Math.max(0, (b.amountTotal ?? 0) - (b.amountPaid ?? 0) + (b.amountRefunded ?? 0));
         return { ...b, nights, balance };
       });
 
@@ -474,7 +492,7 @@ export async function POST(req: NextRequest) {
         booking: {
           ...detail.booking,
           nights,
-          balance: (detail.booking.amountTotal ?? 0) - (detail.booking.amountPaid ?? 0),
+          balance: Math.max(0, (detail.booking.amountTotal ?? 0) - (detail.booking.amountPaid ?? 0) + (detail.booking.amountRefunded ?? 0)),
         },
         assignments: assignedOnly.flatMap((assignment) => {
           const bed = bedById.get(assignment.bedId);
@@ -586,12 +604,27 @@ export async function POST(req: NextRequest) {
     if (action === "getBookingHistory") {
       const { bookingId } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
-      const history = await getBookingHistoryEntries(bookingId);
-      return NextResponse.json({ history });
+      const [history, paymentEvents] = await Promise.all([
+        getBookingHistoryEntries(bookingId),
+        getBookingPaymentEvents(Number(bookingId)),
+      ]);
+      return NextResponse.json({ history, paymentEvents });
+    }
+
+    if (action === "getBookingPaymentEvents") {
+      const bookingId = Number(body.bookingId);
+      if (!Number.isInteger(bookingId) || bookingId <= 0) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+      return NextResponse.json({ paymentEvents: await getBookingPaymentEvents(bookingId) });
     }
 
     if (action === "getBookingAuditLog") {
       const history = await getBookingAuditEntries(500, body.dateFrom, body.dateTo);
+      const eventRows = await getDb().select().from(bookingPaymentEvents)
+        .where(and(
+          gte(bookingPaymentEvents.createdAt, body.dateFrom ? `${body.dateFrom}T00:00:00` : "0001-01-01T00:00:00"),
+          ...(body.dateTo ? [lte(bookingPaymentEvents.createdAt, `${body.dateTo}T23:59:59.999`)] : []),
+        ))
+        .orderBy(desc(bookingPaymentEvents.createdAt)).limit(500);
       const entries = history.map((entry) => {
         const reference = entry.gokoBookingId || entry.bookingRef || `Booking #${entry.bookingId}`;
         const target = `${reference} · ${entry.guestName || "Unknown guest"}`;
@@ -608,7 +641,28 @@ export async function POST(req: NextRequest) {
           details: [entry.details, context].filter(Boolean).join(" · "),
         });
       });
-      return NextResponse.json({ entries });
+      const paymentEntries = eventRows.map((event) => {
+        const method = event.unknownPaise > 0 ? "method not recorded"
+          : event.cashPaise && event.onlinePaise ? "cash + online"
+            : event.cashPaise ? "cash" : event.onlinePaise ? "online" : "—";
+        const kind = event.eventType === "refund" ? "OTA payment refunded" : event.eventType === "correction" ? "OTA payment corrected" : "OTA payment collected";
+        const target = `${event.bookingRefSnapshot || `Booking #${event.bookingId}`} · ${event.guestNameSnapshot}`;
+        const stay = `${event.platformSnapshot} · Stay ${event.checkinDateSnapshot}${event.checkoutDateSnapshot ? ` → ${event.checkoutDateSnapshot}` : ""}`;
+        const details = [
+          `₹${(Math.abs(event.amountPaise) / 100).toFixed(2)} ${event.currency} · ${method} · cycle ${event.bookingCycle}`,
+          event.businessDate ? `Payment date ${event.businessDate}` : "Opening balance · date unknown",
+          event.note,
+        ].filter(Boolean).join(" · ");
+        return presentAuditEntry({
+          id: 1_000_000_000 + event.id,
+          timestamp: event.createdAt,
+          username: event.actor || "system",
+          action: kind,
+          target,
+          details: `${details} · ${stay}`,
+        });
+      });
+      return NextResponse.json({ entries: [...entries, ...paymentEntries].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 500) });
     }
 
     // --- Create ---
@@ -925,35 +979,60 @@ export async function POST(req: NextRequest) {
       };
 
       // Desk collect when due. Prepaid is never due; check-in records it as online stay revenue below.
-      const dueAtCheckIn = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid);
+      const dueAtCheckIn = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid, detail.booking.amountRefunded);
       let collectedAtCheckIn = false;
       let collectedMethod = "";
       let prepaidRecorded = 0;
+      let bookingUpdatedInJournal = false;
       let receiptData: { receiptId: string; kind: "stay"; accountId: number; amount: number; notes: string } | null = null;
       if (collectPayment && dueAtCheckIn > 0) {
-        const { paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId } = body;
+        const { paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId, operationId } = body;
         if (!isStayPayMethod(paymentMethod)) {
           return NextResponse.json({ error: "paymentMethod required (cash, online, or split)" }, { status: 400 });
         }
-        const merged = mergeStayCollect({
-          existingMethod: detail.booking.paymentMethod,
-          existingCashReceived: detail.booking.cashReceived,
-          existingPaid: detail.booking.amountPaid,
-          existingChangeGiven: detail.booking.changeGiven,
-          amountTotal: detail.booking.amountTotal ?? 0,
-          newMethod: paymentMethod,
-          newCashReceived: Number(cashReceived) || 0,
-          newChangeGiven: Number(changeGiven) || 0,
-        });
-        Object.assign(updateData, merged);
-        updateData.paymentOverride = 1;
-        const onlineAmount = paymentMethod === "online" ? dueAtCheckIn : paymentMethod === "split" ? Math.max(0, dueAtCheckIn - (Number(cashReceived) || 0)) : 0;
-        if (onlineAmount > 0) {
-          const accountId = await resolveReceiptAccount("room", onlineAccountId);
-          receiptData = { receiptId: receiptId || crypto.randomUUID(), kind: "stay", accountId, amount: Math.round(onlineAmount * 100), notes: `Stay payment for ${detail.booking.guestName}` };
+        if (isOtaPostpaidBooking(detail.booking)) {
+          const amountPaise = rupeesToPaise(dueAtCheckIn);
+          const cashPaise = paymentMethod === "cash" ? amountPaise : paymentMethod === "split" ? rupeesToPaise(Number(cashReceived) || 0) : 0;
+          const onlinePaise = amountPaise - cashPaise;
+          try {
+            await recordOtaBookingPayment({
+              booking: detail.booking,
+              eventId: String(operationId || receiptId || crypto.randomUUID()),
+              kind: "collection", amountPaise, cashPaise, onlinePaise,
+              cashTenderPaise: paymentMethod === "cash" ? rupeesToPaise(Number(cashReceived) || 0) : cashPaise,
+              changePaise: paymentMethod === "cash" ? rupeesToPaise(Number(changeGiven) || 0) : 0,
+              accountId: onlinePaise > 0 ? await resolveReceiptAccount("room", onlineAccountId) : null,
+              actor: actingUser,
+              statusUpdate: updateData,
+            });
+          } catch (error) {
+            if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+            throw error;
+          }
+          bookingUpdatedInJournal = true;
+          collectedAtCheckIn = true;
+          collectedMethod = paymentMethod;
+        } else {
+          const merged = mergeStayCollect({
+            existingMethod: detail.booking.paymentMethod,
+            existingCashReceived: detail.booking.cashReceived,
+            existingPaid: detail.booking.amountPaid,
+            existingChangeGiven: detail.booking.changeGiven,
+            amountTotal: detail.booking.amountTotal ?? 0,
+            newMethod: paymentMethod,
+            newCashReceived: Number(cashReceived) || 0,
+            newChangeGiven: Number(changeGiven) || 0,
+          });
+          Object.assign(updateData, merged);
+          updateData.paymentOverride = 1;
+          const onlineAmount = paymentMethod === "online" ? dueAtCheckIn : paymentMethod === "split" ? Math.max(0, dueAtCheckIn - (Number(cashReceived) || 0)) : 0;
+          if (onlineAmount > 0) {
+            const accountId = await resolveReceiptAccount("room", onlineAccountId);
+            receiptData = { receiptId: receiptId || crypto.randomUUID(), kind: "stay", accountId, amount: Math.round(onlineAmount * 100), notes: `Stay payment for ${detail.booking.guestName}` };
+          }
+          collectedAtCheckIn = true;
+          collectedMethod = merged.paymentMethod;
         }
-        collectedAtCheckIn = true;
-        collectedMethod = merged.paymentMethod;
       } else {
         const prepaid = prepaidCheckInWrite(
           detail.booking.paymentStatus,
@@ -966,7 +1045,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      await updateBookingFull(bookingId, updateData);
+      if (!bookingUpdatedInJournal) await updateBookingFull(bookingId, updateData);
       if (receiptData) await createGuestReceipt({ ...receiptData, sourceType: "booking", sourceId: bookingId, createdBy: actingUser });
       if (prepaidRecorded > 0) {
         try {
@@ -998,10 +1077,121 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === "collectOtaBookingPayment") {
+      const bookingId = Number(body.bookingId);
+      if (!Number.isInteger(bookingId) || bookingId <= 0) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+      const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (!canCollectOtaPayment(detail.booking)) {
+        return NextResponse.json({ error: "This booking is not eligible for a Goko postpaid payment" }, { status: 409 });
+      }
+      const amountPaise = Number(body.amountPaise);
+      const cashPaise = Number(body.cashPaise || 0);
+      const onlinePaise = Number(body.onlinePaise || 0);
+      try {
+        const result = await recordOtaBookingPayment({
+          booking: detail.booking,
+          eventId: String(body.operationId || ""),
+          kind: "collection",
+          amountPaise,
+          cashPaise,
+          onlinePaise,
+          cashTenderPaise: Number(body.cashTenderPaise || 0),
+          changePaise: Number(body.changePaise || 0),
+          accountId: body.onlineAccountId == null ? null : Number(body.onlineAccountId),
+          note: typeof body.note === "string" ? body.note : "",
+          actor: actingUser,
+        });
+        if (!result.duplicate) {
+          await addBookingHistoryEntry({
+            bookingId,
+            action: "OTA Payment Collected",
+            details: `₹${paiseToRupees(amountPaise).toFixed(2)} · ${cashPaise > 0 && onlinePaise > 0 ? "cash + online" : cashPaise > 0 ? "cash" : "online"}${body.note ? ` · ${String(body.note).trim()}` : ""}`,
+            performedBy: actingUser,
+          });
+        }
+        return NextResponse.json({
+          success: true,
+          duplicate: result.duplicate,
+          eventId: result.eventId,
+          booking: result.booking,
+          balance: Math.max(0, (result.booking.amountTotal || 0) - (result.booking.amountPaid || 0) + (result.booking.amountRefunded || 0)),
+        });
+      } catch (error) {
+        if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+        throw error;
+      }
+    }
+
+    if (action === "refundOtaBookingPayment") {
+      const bookingId = Number(body.bookingId);
+      if (!Number.isInteger(bookingId) || bookingId <= 0) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+      const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (!isOtaPostpaidBooking(detail.booking)) return NextResponse.json({ error: "Refund this booking through its existing payment workflow" }, { status: 409 });
+      const amountPaise = Number(body.amountPaise);
+      const cashPaise = Number(body.cashPaise || 0);
+      const onlinePaise = Number(body.onlinePaise || 0);
+      try {
+        const result = await recordOtaBookingPayment({
+          booking: detail.booking,
+          eventId: String(body.operationId || ""),
+          kind: "refund", amountPaise, cashPaise, onlinePaise,
+          cashTenderPaise: Number(body.cashTenderPaise || cashPaise),
+          changePaise: Number(body.changePaise || 0),
+          accountId: body.onlineAccountId == null ? null : Number(body.onlineAccountId),
+          note: typeof body.note === "string" ? body.note : "",
+          actor: actingUser,
+          allowedStatuses: ["received", "hold", "checked_in", "checked_out", "cancelled", "no_show"],
+        });
+        if (!result.duplicate) await addBookingHistoryEntry({
+          bookingId,
+          action: "OTA Payment Refunded",
+          details: `₹${paiseToRupees(amountPaise).toFixed(2)} · ${cashPaise > 0 && onlinePaise > 0 ? "cash + online" : cashPaise > 0 ? "cash" : "online"}${body.note ? ` · ${String(body.note).trim()}` : ""}`,
+          performedBy: actingUser,
+        });
+        return NextResponse.json({ success: true, duplicate: result.duplicate, eventId: result.eventId, booking: result.booking });
+      } catch (error) {
+        if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+        throw error;
+      }
+    }
+
+    if (action === "correctOtaBookingPayment") {
+      if (role !== "admin") return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+      const bookingId = Number(body.bookingId);
+      if (!Number.isInteger(bookingId) || bookingId <= 0) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+      const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (!isOtaPostpaidBooking(detail.booking)) return NextResponse.json({ error: "Only eligible OTA payment entries can be corrected" }, { status: 409 });
+      try {
+        const amountPaise = Number(body.amountPaise);
+        const cashPaise = Number(body.cashPaise || 0);
+        const onlinePaise = Number(body.onlinePaise || 0);
+        const result = await correctOtaBookingPayment({
+          booking: detail.booking,
+          eventId: String(body.operationId || ""),
+          correctsEventId: String(body.correctsEventId || ""),
+          amountPaise, cashPaise, onlinePaise,
+          note: typeof body.note === "string" ? body.note : "",
+          actor: actingUser,
+        });
+        if (!result.duplicate) await addBookingHistoryEntry({
+          bookingId, action: "OTA Payment Corrected",
+          details: `₹${(amountPaise / 100).toFixed(2)} · correction for ${String(body.correctsEventId)} · ${String(body.note).trim()}`,
+          performedBy: actingUser,
+        });
+        return NextResponse.json({ success: true, duplicate: result.duplicate, eventId: result.eventId, booking: result.booking });
+      } catch (error) {
+        if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+        throw error;
+      }
+    }
+
     // --- Collect stay payment (after Later, or remaining due) ---
 
     if (action === "collectStayPayment") {
-      const { bookingId, paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId } = body;
+      const { bookingId, paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId, operationId } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
       if (!isStayPayMethod(paymentMethod)) {
         return NextResponse.json({ error: "paymentMethod required (cash, online, or split)" }, { status: 400 });
@@ -1013,9 +1203,36 @@ export async function POST(req: NextRequest) {
       if (st !== "checked_in" && st !== "checked_out") {
         return NextResponse.json({ error: "Collect is only for checked-in or checked-out stays" }, { status: 409 });
       }
-      const due = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid);
+      const due = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid, detail.booking.amountRefunded);
       if (due <= 0) {
         return NextResponse.json({ error: "Nothing due" }, { status: 400 });
+      }
+
+      if (isOtaPostpaidBooking(detail.booking)) {
+        const amountPaise = rupeesToPaise(due);
+        const cashPaise = paymentMethod === "cash" ? amountPaise : paymentMethod === "split" ? rupeesToPaise(Number(cashReceived) || 0) : 0;
+        const onlinePaise = amountPaise - cashPaise;
+        try {
+          const result = await recordOtaBookingPayment({
+            booking: detail.booking,
+            eventId: String(operationId || receiptId || ""),
+            kind: "collection", amountPaise, cashPaise, onlinePaise,
+            cashTenderPaise: paymentMethod === "cash" ? rupeesToPaise(Number(cashReceived) || 0) : cashPaise,
+            changePaise: paymentMethod === "cash" ? rupeesToPaise(Number(changeGiven) || 0) : 0,
+            accountId: onlinePaise > 0 ? await resolveReceiptAccount("room", onlineAccountId) : null,
+            actor: actingUser,
+          });
+          if (!result.duplicate) await addBookingHistoryEntry({
+            bookingId,
+            action: "OTA Payment Collected",
+            details: `₹${paiseToRupees(amountPaise).toFixed(2)} · ${paymentMethod} by ${actingUser}`,
+            performedBy: actingUser,
+          });
+          return NextResponse.json({ success: true, duplicate: result.duplicate, eventId: result.eventId, booking: result.booking });
+        } catch (error) {
+          if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+          throw error;
+        }
       }
 
       const merged = mergeStayCollect({
@@ -1200,15 +1417,19 @@ export async function POST(req: NextRequest) {
     // --- Cancel Booking ---
 
     if (action === "cancelBooking") {
-      const { bookingId, assignmentIds, refundAmount, refundMethod, refundCash, onlineAccountId, receiptId } = body;
+      const { bookingId, assignmentIds, refundAmount, refundMethod, refundCash, onlineAccountId, receiptId, refundAmountPaise, cashPaise, onlinePaise, cashTenderPaise, changePaise, operationId, note } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
 
       const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
       const fullCancel = !(Array.isArray(assignmentIds) && assignmentIds.length > 0);
+      const existingRefundEvent = fullCancel && operationId
+        ? (await getDb().select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.eventId, String(operationId))).limit(1))[0]
+        : undefined;
       const assigned = (detail?.assignments ?? []).filter((a) => a.status === "assigned");
       const lead = role === "admin" || role === "manager";
       if (fullCancel && assigned.length === 0) {
-        if (!lead) {
+        if (!lead && !existingRefundEvent) {
           return NextResponse.json({ error: "Admin or manager access required" }, { status: 403 });
         }
       } else if (role !== "admin" && !permissions.canDeleteBooking) {
@@ -1243,7 +1464,31 @@ export async function POST(req: NextRequest) {
           cancelledBy: actingUser,
         };
         let refundNote = "";
-        if (detail?.booking.status === "checked_in") {
+        let journalRefund: { duplicate: boolean } | null = null;
+        if (isOtaPostpaidBooking(detail.booking) && Number(refundAmountPaise) > 0) {
+          try {
+            const result = await recordOtaBookingPayment({
+              booking: detail.booking,
+              eventId: String(operationId || ""),
+              kind: "refund",
+              amountPaise: Number(refundAmountPaise),
+              cashPaise: Number(cashPaise || 0),
+              onlinePaise: Number(onlinePaise || 0),
+              cashTenderPaise: Number(cashTenderPaise || cashPaise || 0),
+              changePaise: Number(changePaise || 0),
+              accountId: onlineAccountId == null ? null : Number(onlineAccountId),
+              note: typeof note === "string" ? note : "",
+              actor: actingUser,
+              allowedStatuses: ["received", "hold", "checked_in"],
+              statusUpdate: cancelUpdate,
+            });
+            journalRefund = { duplicate: result.duplicate };
+            refundNote = `, refund ₹${paiseToRupees(Number(refundAmountPaise)).toFixed(2)}`;
+          } catch (error) {
+            if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+            throw error;
+          }
+        } else if (detail.booking.status === "checked_in") {
           if (isPrepaidStatus(detail.booking.paymentStatus) && Number(refundAmount) > 0) {
             return NextResponse.json({ error: "OTA-prepaid refunds must be recorded against the platform receivable after the OTA confirms the refund; no bank refund is created here." }, { status: 409 });
           }
@@ -1268,10 +1513,12 @@ export async function POST(req: NextRequest) {
             }
           }
         }
-        const cancelled = await transitionBookingStatus(bookingId, ["received", "hold", "checked_in"], cancelUpdate);
-        if (!cancelled) return NextResponse.json({ error: "Booking was already closed or changed by another user" }, { status: 409 });
+        if (!journalRefund) {
+          const cancelled = await transitionBookingStatus(bookingId, ["received", "hold", "checked_in"], cancelUpdate);
+          if (!cancelled) return NextResponse.json({ error: "Booking was already closed or changed by another user" }, { status: 409 });
+        }
         await unassignBookingBeds(bookingId);
-        await addBookingHistoryEntry({
+        if (!journalRefund?.duplicate) await addBookingHistoryEntry({
           bookingId,
           action: "Cancelled",
           details: `Full cancellation by ${actingUser}${refundNote}`,
@@ -1454,15 +1701,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "markNoShow") {
-      const { bookingId } = body;
+      const { bookingId, refundAmountPaise, cashPaise, onlinePaise, cashTenderPaise, changePaise, onlineAccountId, operationId, note } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
 
       const detail = await getBookingDetail(bookingId);
       if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
       const status = detail.booking.status || "received";
-      if (status !== "received" && status !== "guest_declined") return NextResponse.json({ error: "Only open or guest-declined bookings can be marked no-show" }, { status: 409 });
+      const existingRefundEvent = operationId
+        ? (await getDb().select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.eventId, String(operationId))).limit(1))[0]
+        : undefined;
+      const retryingCommittedNoShow = status === "no_show" && existingRefundEvent?.bookingId === Number(bookingId)
+        && existingRefundEvent.bookingCycle === detail.booking.bookingCycle && existingRefundEvent.eventType === "refund";
+      if (!retryingCommittedNoShow && status !== "received" && status !== "hold" && status !== "guest_declined") {
+        return NextResponse.json({ error: "Only open, held, or guest-declined bookings can be marked no-show" }, { status: 409 });
+      }
       const today = todayIST();
-      if (detail.booking.checkinDate > today || (status === "guest_declined" && detail.booking.checkinDate >= today)) {
+      if (!retryingCommittedNoShow && (detail.booking.checkinDate > today || (status === "guest_declined" && detail.booking.checkinDate >= today))) {
         return NextResponse.json({ error: "A guest-declined booking can be marked no-show only after its check-in date" }, { status: 409 });
       }
 
@@ -1470,12 +1724,40 @@ export async function POST(req: NextRequest) {
       const dormIds = await affectedDormIds(detail);
       const before = await otaFingerprint(dormIds, dates);
 
-      const claimed = await transitionBookingStatus(bookingId, ["received", "guest_declined"], { status: "no_show" });
-      if (!claimed) return NextResponse.json({ error: "Booking was already changed by another user" }, { status: 409 });
+      let journalRefund: { duplicate: boolean } | null = null;
+      if (Number(refundAmountPaise) > 0) {
+        if (!isOtaPostpaidBooking(detail.booking)) {
+          return NextResponse.json({ error: "Only Goko-collected OTA postpaid payments can be refunded here" }, { status: 409 });
+        }
+        try {
+          const result = await recordOtaBookingPayment({
+            booking: detail.booking,
+            eventId: String(operationId || ""),
+            kind: "refund", amountPaise: Number(refundAmountPaise),
+            cashPaise: Number(cashPaise || 0), onlinePaise: Number(onlinePaise || 0),
+            cashTenderPaise: Number(cashTenderPaise || cashPaise || 0), changePaise: Number(changePaise || 0),
+            accountId: onlineAccountId == null ? null : Number(onlineAccountId),
+            note: typeof note === "string" ? note : "",
+            actor: actingUser,
+            allowedStatuses: retryingCommittedNoShow ? ["no_show"] : [status],
+            statusUpdate: { status: "no_show" },
+          });
+          journalRefund = { duplicate: result.duplicate };
+          if (!result.duplicate) await addBookingHistoryEntry({
+            bookingId, action: "OTA Payment Refunded", details: `₹${paiseToRupees(Number(refundAmountPaise)).toFixed(2)} · refund recorded with no-show by ${actingUser}${note ? ` · ${String(note).trim()}` : ""}`, performedBy: actingUser,
+          });
+        } catch (error) {
+          if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+          throw error;
+        }
+      } else {
+        const claimed = await transitionBookingStatus(bookingId, ["received", "hold", "guest_declined"], { status: "no_show" });
+        if (!claimed) return NextResponse.json({ error: "Booking was already changed by another user" }, { status: 409 });
+      }
       await unassignBookingBeds(bookingId);
       const noShowWarning = await syncBookingNoShow(bookingId, detail.booking);
 
-      await addBookingHistoryEntry({
+      if (!journalRefund?.duplicate) await addBookingHistoryEntry({
         bookingId,
         action: "Marked No-Show",
         details: `Marked as no-show by ${actingUser}`,

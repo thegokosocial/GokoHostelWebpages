@@ -800,7 +800,7 @@ export async function POST(req: NextRequest) {
           ? allBookings.filter((booking) => !["cancelled", "no_show"].includes(booking.status) && normalizedName(booking.guestName) === name && datesOverlap(booking.checkinDate, booking.checkoutDate || addCalendarDays(booking.checkinDate, 1), b.checkinDate, b.expectedCheckout))
           : [];
         const linkedBooking = linkedByCheckin || (phoneMatches.length === 1 ? phoneMatches[0] : null) || (nameMatches.length === 1 ? nameMatches[0] : null);
-        const roomDue = linkedBooking ? stayDueAtHotel(linkedBooking.paymentStatus, linkedBooking.amountTotal, linkedBooking.amountPaid) : null;
+        const roomDue = linkedBooking ? stayDueAtHotel(linkedBooking.paymentStatus, linkedBooking.amountTotal, linkedBooking.amountPaid, linkedBooking.amountRefunded) : null;
         const plannedBedLabels = linkedBooking
           ? currentAssignments
             .filter((assignment) => assignment.bookingId === linkedBooking.id && datesOverlap(assignment.checkinDate, assignment.checkoutDate, b.checkinDate, b.expectedCheckout))
@@ -871,6 +871,7 @@ export async function POST(req: NextRequest) {
           checkoutDate: bookings.checkoutDate,
           amountTotal: bookings.amountTotal,
           amountPaid: bookings.amountPaid,
+          amountRefunded: bookings.amountRefunded,
           paymentStatus: bookings.paymentStatus,
         }).from(bookings).where(or(
           eq(bookings.status, "checked_in"),
@@ -901,7 +902,7 @@ export async function POST(req: NextRequest) {
       ]);
       const unpaidStays = inHouse
         .map((b) => {
-          const due = stayDueAtHotel(b.paymentStatus, b.amountTotal, b.amountPaid);
+          const due = stayDueAtHotel(b.paymentStatus, b.amountTotal, b.amountPaid, b.amountRefunded);
           return { ...b, due };
         })
         .filter((b) => b.due > 0);

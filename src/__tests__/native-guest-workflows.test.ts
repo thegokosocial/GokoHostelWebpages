@@ -160,7 +160,7 @@ beforeEach(() => {
       amount_refunded INTEGER NOT NULL DEFAULT 0, refund_method TEXT NOT NULL DEFAULT '',
       refund_cash INTEGER NOT NULL DEFAULT 0, refunded_at TEXT NOT NULL DEFAULT '',
       refunded_by TEXT NOT NULL DEFAULT '', booking_cycle INTEGER NOT NULL DEFAULT 1,
-      nightly_rate INTEGER DEFAULT 0, currency TEXT DEFAULT 'INR', email TEXT DEFAULT '',
+      nightly_rate INTEGER DEFAULT 0, currency TEXT DEFAULT 'INR', ota_payment_terms TEXT, ota_currency TEXT, email TEXT DEFAULT '',
       cm_booking_id TEXT DEFAULT '', goko_booking_id TEXT DEFAULT '', rate_plan TEXT DEFAULT '',
       hold_expires_at TEXT DEFAULT '', cancelled_at TEXT DEFAULT '', cancelled_by TEXT DEFAULT '',
       checked_in_at TEXT DEFAULT '', checked_in_by TEXT DEFAULT '', checked_out_at TEXT DEFAULT '',

@@ -836,7 +836,7 @@ describe("Bookings calendar and rates workflows", () => {
     const res = await POST(req({ password: "x", action: "markNoShow", bookingId: 42 }));
 
     expect(res.status).toBe(200);
-    expect(q.transitionBookingStatus).toHaveBeenCalledWith(42, ["received", "guest_declined"], { status: "no_show" });
+    expect(q.transitionBookingStatus).toHaveBeenCalledWith(42, ["received", "hold", "guest_declined"], { status: "no_show" });
     expect(q.pushNoShow).toHaveBeenCalledWith(expect.objectContaining({ pmsId: "PMS" }), "BK-DECLINED");
   });
 

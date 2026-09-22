@@ -78,6 +78,12 @@ Accounts tab cloned from Food Revenue. `getRoomRevenue` (`canViewFoodBills`): st
 
 Goko till = `amountPaid` (never invent OTA prepaid as collected). Cash/online split via `payment_method` + `cash_received` (`cashCollected` / `onlineCollected` in `src/lib/stayPayment.ts`). Cash method uses `amountPaid`, not tender. Paid rows with empty method → summary **Collected (no method)**. Refunds (`amount_refunded`) reduce net Room Revenue and do **not** reduce `amountPaid`. Room Revenue does **not** auto-post `daily_income`.
 
+For eligible OTA postpaid INR bookings, the append-only `booking_payment_events` journal supplies collection/refund tender values by booking cycle, avoiding double-counting the booking's compatibility `amountPaid` projection. Stay totals remain selected by **check-in date**. The separate **Postpaid OTA payments received** section is selected by payment business date and shows collection, refund, net Goko movement, cash/online split, and unresolved cancelled/no-show advances; it is a cash-movement report, not earned room revenue. Corrections are excluded as actual movement but offset the reconciliation balance. Future occupied-stay totals include net collections/refunds, including advances; payment itself does not change subtotal, tax, or billed total. Archived cycle snapshots preserve future OTA rebook history, but older cycles overwritten before rollout cannot be reconstructed.
+
+Cash collections/refunds feed Cash Reconcile directly from journal cash portions exactly once. Online collection/refund portions create linked positive/negative `guest_receipts` in the selected active non-virtual account and therefore flow through online account activity/reconciliation. Do not add these same payments as manual Stay Revenue or Daily Ledger income. Legacy opening balances have unknown actual dates and are not shown in the payment-date movement section.
+
+When sync merges real refunds from disconnected replicas that exceed the Goko collection total, the booking detail and Room Revenue show a review warning and preserve the negative net instead of dropping a real refund. Check the event/tender history and reconcile the actual cash/bank movements before posting further refunds.
+
 ---
 
 ## Salary

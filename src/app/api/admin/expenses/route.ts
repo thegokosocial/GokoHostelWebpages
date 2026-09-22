@@ -11,8 +11,8 @@ import {
   getMonthKey,
 } from "@/db/queries";
 import { getDb } from "@/db";
-import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations } from "@/db/schema";
-import { eq, and, sql, desc, inArray, isNull, lt } from "drizzle-orm";
+import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, bookingPaymentEvents, bookingCycleSnapshots, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations } from "@/db/schema";
+import { eq, and, sql, desc, inArray, isNull, lt, gte, lte } from "drizzle-orm";
 import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
 import { isOfflineMode, isPiRuntime } from "@/lib/runtime";
 import { authenticateUser } from "@/lib/auth";
@@ -26,6 +26,7 @@ import { todayIST } from "@/lib/utils";
 import { defaultAccountingDateRange, isValidAccountingDateRange, resolveActivityAnchor } from "@/lib/accountingDates";
 import { gatewayExpectedNetPaise } from "@/lib/platformReceivables";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
+import { bookingEventMethod, paiseToRupees } from "@/lib/bookingPaymentJournal";
 
 function extractDriveFileId(link: string): string | null {
   const match = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -121,13 +122,13 @@ export async function POST(req: NextRequest) {
             SELECT 'receipt-' || gr.id AS id, gr.business_date AS date, gr.kind,
               CASE
                 WHEN gr.source_type = 'food_order' THEN 'Food payment · ' || COALESCE(NULLIF(fo.guest_name, ''), 'guest')
-                WHEN gr.source_type = 'booking' AND gr.kind = 'stay' THEN 'Stay payment · ' || COALESCE(NULLIF(b.guest_name, ''), gr.notes)
+                WHEN gr.source_type = 'booking' THEN CASE WHEN gr.kind = 'refund' THEN 'Stay refund · ' ELSE 'Stay payment · ' END || COALESCE(NULLIF(gr.guest_name_snapshot, ''), NULLIF(b.guest_name, ''), gr.notes)
                 ELSE gr.notes
               END AS description,
               gr.amount,
               CASE
                 WHEN gr.source_type = 'food_order' THEN COALESCE(NULLIF(fo.order_number, ''), CAST(gr.source_id AS TEXT))
-                WHEN gr.source_type = 'booking' THEN COALESCE(NULLIF(b.goko_booking_id, ''), NULLIF(b.booking_ref, ''), gr.receipt_id)
+                WHEN gr.source_type = 'booking' THEN COALESCE(NULLIF(gr.booking_ref_snapshot, ''), NULLIF(b.goko_booking_id, ''), NULLIF(b.booking_ref, ''), gr.receipt_id)
                 ELSE gr.receipt_id
               END AS reference,
               COALESCE(gr.created_by, '') AS addedBy
@@ -583,14 +584,58 @@ export async function POST(req: NextRequest) {
         }
 
         const db = getDb();
-        const rows = await db.select().from(bookings)
-          .where(and(
+        const [rows, archivedCycles, movementEvents] = await Promise.all([
+          db.select().from(bookings).where(and(
             sql`${bookings.checkinDate} >= ${fromDate}`,
             sql`${bookings.checkinDate} <= ${toDate}`,
-          ))
-          .orderBy(desc(bookings.checkinDate));
+          )).orderBy(desc(bookings.checkinDate)),
+          db.select().from(bookingCycleSnapshots).where(and(
+            gte(bookingCycleSnapshots.checkinDate, fromDate), lte(bookingCycleSnapshots.checkinDate, toDate),
+          )),
+          db.select().from(bookingPaymentEvents).where(and(
+            gte(bookingPaymentEvents.businessDate, fromDate),
+            lte(bookingPaymentEvents.businessDate, toDate),
+            eq(bookingPaymentEvents.otaPaymentTerms, "pay_at_hotel"),
+            eq(bookingPaymentEvents.currency, "INR"),
+            eq(bookingPaymentEvents.isOpening, 0),
+            inArray(bookingPaymentEvents.eventType, ["collection", "refund", "correction"]),
+          )).orderBy(desc(bookingPaymentEvents.businessDate), desc(bookingPaymentEvents.id)),
+        ]);
 
-        const stays = rows.filter((b) => occupiedForRoomRevenue(b.status, b.checkedInAt));
+        // Load every correction for an in-range source event so sync or a later
+        // audit correction cannot leave the original movement overstated.
+        const movementBookingIds = [...new Set(movementEvents.map((event) => event.bookingId))];
+        const bookingIds = [...new Set([...rows.map((b) => b.id), ...archivedCycles.map((b) => b.bookingId), ...movementBookingIds])];
+        const allPaymentEvents = bookingIds.length
+          ? await db.select().from(bookingPaymentEvents).where(and(
+            inArray(bookingPaymentEvents.bookingId, bookingIds),
+            eq(bookingPaymentEvents.otaPaymentTerms, "pay_at_hotel"),
+            eq(bookingPaymentEvents.currency, "INR"),
+          ))
+          : [];
+        const cycleEvents = new Map<string, typeof allPaymentEvents>();
+        for (const event of allPaymentEvents) {
+          const key = `${event.bookingId}:${event.bookingCycle}`;
+          cycleEvents.set(key, [...(cycleEvents.get(key) || []), event]);
+        }
+
+        const stays = [
+          ...rows.filter((b) => occupiedForRoomRevenue(b.status, b.checkedInAt)).map((b) => ({
+            id: b.id, bookingCycle: b.bookingCycle, guestName: b.guestName, contact: b.contact || "",
+            checkinDate: b.checkinDate, checkoutDate: b.checkoutDate || "", status: b.status,
+            amountTotal: b.amountTotal || 0, amountPaid: b.amountPaid || 0, amountRefunded: b.amountRefunded || 0,
+            paymentStatus: b.paymentStatus || "", paymentMethod: b.paymentMethod || "", cashReceived: b.cashReceived || 0,
+            refundMethod: b.refundMethod || "", refundCash: b.refundCash || 0,
+          })),
+          ...archivedCycles.filter((b) => occupiedForRoomRevenue(b.status, b.checkedInAt)).map((b) => ({
+            id: b.bookingId, bookingCycle: b.bookingCycle, guestName: b.guestName, contact: b.contact || "",
+            checkinDate: b.checkinDate, checkoutDate: b.checkoutDate || "", status: b.status,
+            amountTotal: paiseToRupees(b.amountTotalPaise), amountPaid: paiseToRupees(b.amountPaidPaise), amountRefunded: paiseToRupees(b.amountRefundedPaise),
+            paymentStatus: b.paymentStatus,
+            paymentMethod: b.paymentMethod, cashReceived: paiseToRupees(b.cashReceivedPaise),
+            refundMethod: b.refundMethod, refundCash: paiseToRupees(b.refundCashPaise),
+          })),
+        ].sort((a, b) => b.checkinDate.localeCompare(a.checkinDate));
 
         let billed = 0;
         let gokoCollected = 0;
@@ -604,22 +649,49 @@ export async function POST(req: NextRequest) {
         let refunded = 0;
 
         const guestBreakdown = stays.map((b) => {
+          const events = cycleEvents.get(`${b.id}:${b.bookingCycle}`) || [];
+          const hasJournal = events.length > 0;
+          const collections = events.filter((event) => event.eventType === "collection");
+          const refundsForStay = events.filter((event) => event.eventType === "refund");
+          const corrections = events.filter((event) => event.eventType === "correction");
+          const eventById = new Map(events.map((event) => [event.eventId, event]));
+          const correctionFor = (type: string) => corrections.filter((event) => eventById.get(event.correctsEventId || "")?.eventType === type);
+          const correctedCollections = correctionFor("collection");
+          const correctedRefunds = correctionFor("refund");
+          const paidPaise = collections.reduce((sum, event) => sum + event.amountPaise, 0)
+            + correctedCollections.reduce((sum, event) => sum + event.amountPaise, 0);
+          const refundedPaise = refundsForStay.reduce((sum, event) => sum + event.amountPaise, 0)
+            + correctedRefunds.reduce((sum, event) => sum + event.amountPaise, 0);
+          const paid = hasJournal ? paiseToRupees(Math.max(0, paidPaise)) : b.amountPaid;
+          const refundedAmount = hasJournal ? paiseToRupees(Math.max(0, refundedPaise)) : b.amountRefunded;
+          const collectionCashPaise = collections.reduce((sum, event) => sum + event.cashPaise, 0)
+            + correctedCollections.reduce((sum, event) => sum + event.cashPaise, 0);
+          const collectionOnlinePaise = collections.reduce((sum, event) => sum + event.onlinePaise, 0)
+            + correctedCollections.reduce((sum, event) => sum + event.onlinePaise, 0);
+          const refundCashPaise = refundsForStay.reduce((sum, event) => sum + event.cashPaise, 0)
+            + correctedRefunds.reduce((sum, event) => sum + event.cashPaise, 0);
+          const refundOnlinePaise = refundsForStay.reduce((sum, event) => sum + event.onlinePaise, 0)
+            + correctedRefunds.reduce((sum, event) => sum + event.onlinePaise, 0);
+          const method = hasJournal
+            ? (collections.some((event) => event.unknownPaise > 0) ? "" : bookingEventMethod({
+              cashPaise: Math.max(0, collectionCashPaise),
+              onlinePaise: Math.max(0, collectionOnlinePaise),
+              unknownPaise: collections.reduce((sum, event) => sum + event.unknownPaise, 0),
+            }))
+            : b.paymentMethod;
+          const cIn = hasJournal ? paiseToRupees(Math.max(0, collectionCashPaise)) : cashCollected(method, paid, b.cashReceived);
+          const oIn = hasJournal ? paiseToRupees(Math.max(0, collectionOnlinePaise)) : onlineCollected(method, paid, b.cashReceived);
+          const cOut = hasJournal ? paiseToRupees(Math.max(0, -refundCashPaise)) : cashRefunded(b.refundMethod, refundedAmount, b.refundCash);
+          const oOut = hasJournal ? paiseToRupees(Math.max(0, -refundOnlinePaise)) : onlineRefunded(b.refundMethod, refundedAmount, b.refundCash);
           billed += b.amountTotal || 0;
-          gokoCollected += b.amountPaid || 0;
-          refunded += b.amountRefunded || 0;
-          const due = stayDueAtHotel(b.paymentStatus, b.amountTotal, b.amountPaid);
+          gokoCollected += paid;
+          refunded += refundedAmount;
+          const due = stayDueAtHotel(b.paymentStatus, b.amountTotal, paid, refundedAmount);
           unpaid += due;
-          if (isPrepaidStatus((b.paymentStatus || "")) && (b.amountPaid || 0) <= 0) prepaid += b.amountTotal || 0;
-
-          const method = b.paymentMethod || "";
-          const cIn = cashCollected(method, b.amountPaid, b.cashReceived);
-          const oIn = onlineCollected(method, b.amountPaid, b.cashReceived);
+          if (isPrepaidStatus(b.paymentStatus) && paid <= 0) prepaid += b.amountTotal || 0;
           cashIn += cIn;
           onlineIn += oIn;
-          if ((b.amountPaid || 0) > 0 && !method) unspecifiedCollected += b.amountPaid || 0;
-
-          const cOut = cashRefunded(b.refundMethod, b.amountRefunded, b.refundCash);
-          const oOut = onlineRefunded(b.refundMethod, b.amountRefunded, b.refundCash);
+          if (paid > 0 && !method) unspecifiedCollected += paid;
           cashOut += cOut;
           onlineOut += oOut;
 
@@ -635,12 +707,79 @@ export async function POST(req: NextRequest) {
             cashIn: cIn,
             onlineIn: oIn,
             unpaid: due,
-            refundMethod: b.refundMethod || "—",
+            refundMethod: hasJournal ? (cOut > 0 && oOut > 0 ? "split" : cOut > 0 ? "cash" : oOut > 0 ? "online" : "—") : b.refundMethod || "—",
             cashOut: cOut,
             onlineOut: oOut,
             prepaid: (b.paymentStatus || "").toLowerCase() === "prepaid",
           };
         });
+
+        const [liveMovementBookings, movementSnapshots] = await Promise.all([
+          movementBookingIds.length ? db.select({ id: bookings.id, bookingCycle: bookings.bookingCycle, status: bookings.status })
+            .from(bookings).where(inArray(bookings.id, movementBookingIds)) : Promise.resolve([]),
+          movementBookingIds.length ? db.select({ bookingId: bookingCycleSnapshots.bookingId, bookingCycle: bookingCycleSnapshots.bookingCycle, status: bookingCycleSnapshots.status })
+            .from(bookingCycleSnapshots).where(inArray(bookingCycleSnapshots.bookingId, movementBookingIds)) : Promise.resolve([]),
+        ]);
+        const movementStatuses = new Map<string, string>();
+        for (const booking of liveMovementBookings) movementStatuses.set(`${booking.id}:${booking.bookingCycle}`, booking.status);
+        for (const snapshot of movementSnapshots) movementStatuses.set(`${snapshot.bookingId}:${snapshot.bookingCycle}`, snapshot.status);
+        const movementSums = { gross: 0, refunds: 0, cashIn: 0, onlineIn: 0, cashOut: 0, onlineOut: 0, unresolved: 0, overRefunded: 0 };
+        const correctionsByEvent = new Map<string, typeof movementEvents>();
+        for (const correction of allPaymentEvents.filter((event) => event.eventType === "correction")) {
+          if (!correction.correctsEventId) continue;
+          correctionsByEvent.set(correction.correctsEventId, [...(correctionsByEvent.get(correction.correctsEventId) || []), correction]);
+        }
+        const movementRows = movementEvents.filter((event) => event.eventType === "collection" || event.eventType === "refund").map((event) => {
+          const corrections = correctionsByEvent.get(event.eventId) || [];
+          const amountPaise = Math.max(0, event.amountPaise - corrections.reduce((sum, correction) => sum + Math.abs(correction.amountPaise), 0));
+          const cashPaise = event.cashPaise + corrections.reduce((sum, correction) => sum + correction.cashPaise, 0);
+          const onlinePaise = event.onlinePaise + corrections.reduce((sum, correction) => sum + correction.onlinePaise, 0);
+          const status = movementStatuses.get(`${event.bookingId}:${event.bookingCycle}`) || "unknown";
+          const amount = amountPaise;
+          if (amount === 0) return null;
+          if (event.eventType === "collection") {
+            movementSums.gross += amount;
+            movementSums.cashIn += Math.max(0, cashPaise);
+            movementSums.onlineIn += Math.max(0, onlinePaise);
+          } else {
+            movementSums.refunds += amount;
+            movementSums.cashOut += Math.abs(Math.min(0, cashPaise));
+            movementSums.onlineOut += Math.abs(Math.min(0, onlinePaise));
+          }
+          return {
+            eventId: event.eventId,
+            businessDate: event.businessDate,
+            guestName: event.guestNameSnapshot,
+            bookingRef: event.bookingRefSnapshot,
+            checkinDate: event.checkinDateSnapshot,
+            checkoutDate: event.checkoutDateSnapshot,
+            bookingCycle: event.bookingCycle,
+            status,
+            eventType: event.eventType,
+            isAdvance: event.eventType === "collection" && Boolean(event.checkinDateSnapshot && event.businessDate && event.businessDate < event.checkinDateSnapshot),
+            cash: paiseToRupees(Math.abs(cashPaise)),
+            online: paiseToRupees(Math.abs(onlinePaise)),
+            amount: paiseToRupees(amount),
+            note: event.note,
+          };
+        }).filter(Boolean);
+        const selectedMovementCycles = new Set(movementEvents
+          .filter((event) => event.eventType === "collection" || event.eventType === "refund")
+          .map((event) => `${event.bookingId}:${event.bookingCycle}`));
+        for (const key of selectedMovementCycles) {
+          const status = movementStatuses.get(key) || "unknown";
+          if (status !== "cancelled" && status !== "no_show") continue;
+          const events = (cycleEvents.get(key) || []).filter((event) => event.isOpening === 0);
+          const correctedAmount = (type: "collection" | "refund") => events
+            .filter((event) => event.eventType === type)
+            .reduce((sum, event) => sum + event.amountPaise + events
+              .filter((correction) => correction.eventType === "correction" && correction.correctsEventId === event.eventId)
+              .reduce((correctionSum, correction) => correctionSum + correction.amountPaise, 0), 0);
+          const collected = correctedAmount("collection");
+          const refunded = correctedAmount("refund");
+          movementSums.unresolved += Math.max(0, collected - refunded);
+          movementSums.overRefunded += Math.max(0, refunded - collected);
+        }
 
         return NextResponse.json({
           role,
@@ -660,6 +799,18 @@ export async function POST(req: NextRequest) {
             netGoko: gokoCollected - refunded,
           },
           guestBreakdown,
+          paymentMovementSummary: {
+            grossCollected: paiseToRupees(movementSums.gross),
+            refunded: paiseToRupees(movementSums.refunds),
+            net: paiseToRupees(movementSums.gross - movementSums.refunds),
+            cashCollected: paiseToRupees(movementSums.cashIn),
+            onlineCollected: paiseToRupees(movementSums.onlineIn),
+            cashRefunded: paiseToRupees(movementSums.cashOut),
+            onlineRefunded: paiseToRupees(movementSums.onlineOut),
+            unresolvedTerminal: paiseToRupees(movementSums.unresolved),
+            overRefundedTerminal: paiseToRupees(movementSums.overRefunded),
+          },
+          paymentMovementRows: movementRows,
         });
       }
 
@@ -831,6 +982,11 @@ export async function POST(req: NextRequest) {
           db.select().from(guestReceipts).where(sql`${guestReceipts.businessDate} >= ${minStart} AND ${guestReceipts.businessDate} <= ${date}`),
           db.select().from(expenses).where(and(sql`${expenses.expenseDate} >= ${minStart} AND ${expenses.expenseDate} <= ${date}`, isNull(expenses.deletedAt))),
         ]);
+        const bookingCashEvents = await db.select().from(bookingPaymentEvents).where(and(
+          gte(bookingPaymentEvents.businessDate, minStart),
+          lte(bookingPaymentEvents.businessDate, date),
+          sql`${bookingPaymentEvents.cashPaise} != 0`,
+        ));
 
         // Build balance for each account + cash
         const balances = [
@@ -851,10 +1007,16 @@ export async function POST(req: NextRequest) {
           };
           const manualIncome = incomeEntries.filter((i) => i.accountId === acc.accountId && afterBase({ date: i.date })).reduce((s, i) => s + i.amount, 0);
           const receiptIncome = automaticReceipts.filter((r) => r.accountId === acc.accountId && afterBase({ businessDate: r.businessDate })).reduce((s, r) => s + r.amount, 0);
-          const totalIncome = manualIncome + receiptIncome;
+          const bookingPaymentCash = acc.accountId === null
+            ? bookingCashEvents.filter((event) => afterBase({ businessDate: event.businessDate || "" })).reduce((sum, event) => sum + event.cashPaise, 0)
+            : 0;
+          const totalIncome = manualIncome + receiptIncome + bookingPaymentCash;
           const totalExpense = dayExpenses.filter((e) => e.accountId === acc.accountId && afterBase({ date: e.expenseDate })).reduce((s, e) => s + e.amount, 0);
           const dayIncome = incomeEntries.filter((i) => i.accountId === acc.accountId && i.date === date).reduce((s, i) => s + i.amount, 0);
           const dayReceiptIncome = automaticReceipts.filter((r) => r.accountId === acc.accountId && r.businessDate === date).reduce((s, r) => s + r.amount, 0);
+          const dayBookingPaymentCash = acc.accountId === null
+            ? bookingCashEvents.filter((event) => event.businessDate === date).reduce((sum, event) => sum + event.cashPaise, 0)
+            : 0;
           const dayExpenseTotal = dayExpenses.filter((e) => e.accountId === acc.accountId && e.expenseDate === date).reduce((s, e) => s + e.amount, 0);
 
           const expectedClosing = openingBalance + totalIncome - totalExpense;
@@ -866,8 +1028,9 @@ export async function POST(req: NextRequest) {
             totalIncome,
             manualIncome,
             automaticGuestReceipts: receiptIncome,
+            bookingPaymentCash,
             totalExpense,
-            dayIncome: dayIncome + dayReceiptIncome,
+            dayIncome: dayIncome + dayReceiptIncome + dayBookingPaymentCash,
             dayExpense: dayExpenseTotal,
             asOfDate: date,
             expectedClosing,
@@ -884,7 +1047,12 @@ export async function POST(req: NextRequest) {
         const reconciledBy = ledgerEntries[0]?.reconciledBy || "";
         const reconciledAt = ledgerEntries[0]?.reconciledAt || "";
 
-        return NextResponse.json({ balances, automaticReceipts: automaticReceipts.filter((receipt) => receipt.businessDate === date), isReconciled, notes, reconciledBy, reconciledAt });
+        return NextResponse.json({
+          balances,
+          automaticReceipts: automaticReceipts.filter((receipt) => receipt.businessDate === date),
+          bookingPaymentEvents: bookingCashEvents.filter((event) => event.businessDate === date),
+          isReconciled, notes, reconciledBy, reconciledAt,
+        });
       }
 
       case "saveReconciliation": {
