@@ -32,9 +32,9 @@ import { foodTaxPercent } from "@/lib/foodLookup";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { password, action, ...rest } = body;
+    const { password, scope, action, ...rest } = body;
 
-    const auth = await authenticateKitchen(password);
+    const auth = await authenticateKitchen(password, scope === "admin" ? "admin" : "kitchen");
     if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

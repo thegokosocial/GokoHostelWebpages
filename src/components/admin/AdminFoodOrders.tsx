@@ -209,7 +209,7 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
 
       {tab === "active" && (
         <div className="-mx-4 -mb-4 sm:-mx-6 sm:-mb-6 lg:-mx-8 lg:-mb-8">
-          <KitchenDashboard password={password} onLogout={() => {}} />
+          <KitchenDashboard password={password} authScope="admin" onLogout={() => {}} />
         </div>
       )}
       {tab === "place" && <PlaceOrder apiCall={apiCall} prefillGuest={prefillGuest} onPrefillConsumed={clearPrefillGuest} onOrderPlaced={() => setTab("summary")} />}

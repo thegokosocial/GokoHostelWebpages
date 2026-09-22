@@ -94,6 +94,7 @@ interface KitchenCategory {
 interface KitchenDashboardProps {
   password: string;
   onLogout: () => void;
+  authScope?: "admin" | "kitchen";
 }
 
 type MobileTab = "new" | "preparing" | "ready";
@@ -130,7 +131,7 @@ const REJECT_REASONS = [
   "Other",
 ];
 
-export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) {
+export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: KitchenDashboardProps) {
   const { showError } = useAdminToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -177,7 +178,7 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
       const res = await fetch("/api/food/kitchen", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, action, ...extra }),
+        body: JSON.stringify({ password, scope: authScope, action, ...extra }),
       });
       if (res.status === 401) {
         onLogout();
@@ -185,7 +186,7 @@ export function KitchenDashboard({ password, onLogout }: KitchenDashboardProps) 
       }
       return res.json();
     },
-    [password, onLogout]
+    [password, authScope, onLogout]
   );
 
   const fetchOrders = useCallback(async () => {

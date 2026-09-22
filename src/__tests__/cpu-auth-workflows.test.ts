@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getAllUsers, getUserByUsername } = vi.hoisted(() => ({
+const { getAllUsers, getUserByUsername, getAuthSession } = vi.hoisted(() => ({
   getAllUsers: vi.fn(),
   getUserByUsername: vi.fn(),
+  getAuthSession: vi.fn(),
 }));
 
 vi.mock("@/db/queries", () => ({ getAllUsers, getUserByUsername }));
+vi.mock("@/lib/authSession", () => ({ getAuthSession }));
 
 import { authenticateKitchen, hashPassword } from "@/lib/auth";
 
@@ -15,6 +17,7 @@ describe("authenticateKitchen workflows", () => {
   beforeEach(() => {
     getAllUsers.mockReset();
     getUserByUsername.mockReset();
+    getAuthSession.mockReset();
     delete process.env.ADMIN_PASSWORD;
     delete process.env.MANAGER_PASSWORD;
   });
@@ -24,10 +27,13 @@ describe("authenticateKitchen workflows", () => {
     process.env.MANAGER_PASSWORD = env.manager;
   });
 
-  it("rejects empty password without hashing or listing users", async () => {
+  it("uses the requested session scope for empty-password authentication", async () => {
     const digest = vi.spyOn(crypto.subtle, "digest");
-    expect(await authenticateKitchen("")).toBeNull();
-    expect(await authenticateKitchen(undefined as unknown as string)).toBeNull();
+    getAuthSession.mockResolvedValue({ role: "staff", displayName: "Cook" });
+    expect(await authenticateKitchen("")).toEqual({ role: "staff", displayName: "Cook" });
+    expect(await authenticateKitchen("", "admin")).toEqual({ role: "staff", displayName: "Cook" });
+    expect(getAuthSession).toHaveBeenNthCalledWith(1, "kitchen");
+    expect(getAuthSession).toHaveBeenNthCalledWith(2, "admin");
     expect(getAllUsers).not.toHaveBeenCalled();
     expect(digest).not.toHaveBeenCalled();
     digest.mockRestore();

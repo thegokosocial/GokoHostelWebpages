@@ -96,6 +96,13 @@ describe("Kitchen listOrders workflows", () => {
     expect(kitchenMocks.getActiveFoodOrders).not.toHaveBeenCalled();
   });
 
+  it("authenticates the embedded admin kitchen with the admin session scope", async () => {
+    kitchenMocks.authenticateKitchen.mockResolvedValue(null);
+    const res = await POST(req({ password: "", scope: "admin", action: "listOrders" }));
+    expect(res.status).toBe(401);
+    expect(kitchenMocks.authenticateKitchen).toHaveBeenCalledWith("", "admin");
+  });
+
   it("short-circuits tags on an empty ticket list and reports not busy", async () => {
     kitchenMocks.getActiveFoodOrders.mockResolvedValue([]);
     kitchenMocks.getFoodOrderItemsBatch.mockResolvedValue(new Map());

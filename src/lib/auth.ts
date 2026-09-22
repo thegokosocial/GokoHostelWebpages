@@ -94,8 +94,8 @@ export async function authenticateSimple(password: string, username?: string): P
   return result !== null;
 }
 
-export async function authenticateKitchen(password: string): Promise<KitchenAuthResult | null> {
-  if (!password) return getAuthSession("kitchen");
+export async function authenticateKitchen(password: string, scope: "admin" | "kitchen" = "kitchen"): Promise<KitchenAuthResult | null> {
+  if (!password) return getAuthSession(scope);
 
   if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) return { role: "admin", displayName: "Admin" };
   if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD) return { role: "manager", displayName: "Manager" };

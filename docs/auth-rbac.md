@@ -38,7 +38,7 @@ sequenceDiagram
 
 DB users retain the JSON `permissions` object. New password hashes use a versioned per-user salted PBKDF2-SHA-256 KDF with 100,000 iterations (the Cloudflare Workers WebCrypto ceiling); legacy hashes migrate after successful login.
 
-Kitchen (`authenticateKitchen`): env admin **or** env manager **or any DB user hash** (no username). Access uses the same session cookie with `scope=kitchen`; passwords are not stored in browser storage.
+Kitchen (`authenticateKitchen`): env admin **or** env manager **or any DB user hash** (no username). Standalone `/kitchen` access uses the `scope=kitchen` session cookie; the embedded Admin → Food Orders → Active Orders view uses the already-authenticated `scope=admin` session and remains behind the `canViewFoodOrders` page/tab gate. Passwords are not stored in browser storage.
 
 ---
 

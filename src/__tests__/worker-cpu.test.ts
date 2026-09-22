@@ -60,6 +60,10 @@ describe("Workers CPU: zero-regression API paths", () => {
     const dashboard = readFile("src/components/kitchen/KitchenDashboard.tsx");
     expect(dashboard).toContain("setInterval(tick, 5000)");
     expect(dashboard).toContain("if (!document.hidden) fetchOrders()");
+    expect(dashboard).toContain('authScope = "kitchen"');
+    expect(dashboard).toContain("scope: authScope");
+    expect(readFile("src/components/admin/AdminFoodOrders.tsx")).toContain('authScope="admin"');
+    expect(route).toContain('authenticateKitchen(password, scope === "admin" ? "admin" : "kitchen")');
   });
 
   it("lets any authenticated user hit the login auth action before RBAC", () => {
