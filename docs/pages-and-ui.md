@@ -42,7 +42,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); shared `GuestFoodBillCard`; back → previous page |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
 | `/review/[token]` | Rating funnel | token |
-| `/admin` | PMS SPA | direct username/password form; password every API call; phone/tablet section navigation is a scroll-contained modal drawer with a blurred glass surface (X, section choice, or blank drawer area closes it); Management tab dropdown options layer above their dismiss surface but remain below global navigation; long task, attendance, and payroll dialogs scroll within the viewport; public order-history sheets use dynamic viewport sizing |
+| `/admin` | PMS SPA | direct username/password form creates an HttpOnly session; authenticated API calls use that session (legacy password fields remain only for compatibility); phone/tablet section navigation is a scroll-contained modal drawer with a blurred glass surface (X, section choice, or blank drawer area closes it); Management tab dropdown options layer above their dismiss surface but remain below global navigation; long task, attendance, and payroll dialogs scroll within the viewport; public order-history sheets use dynamic viewport sizing |
 
 ---
 

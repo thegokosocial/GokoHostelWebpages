@@ -4,6 +4,15 @@ import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import * as ts from "typescript";
 
+const { authenticateSimple } = vi.hoisted(() => ({ authenticateSimple: vi.fn() }));
+const { sendPushToAll } = vi.hoisted(() => ({ sendPushToAll: vi.fn() }));
+
+vi.mock("@/lib/auth", () => ({ authenticateSimple }));
+vi.mock("@/lib/pushNotify", () => ({ sendPushToAll }));
+vi.mock("@/lib/runtime", () => ({ isOfflineMode: () => false }));
+
+import { POST as pushPost } from "@/app/api/push/route";
+
 // Execute the actual callbacks without introducing a DOM/test-renderer dependency.
 const source = ts.createSourceFile("PwaInstallBanner.tsx", readFileSync(new URL("../components/admin/PwaInstallBanner.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 function settings(action: string, overrides: Record<string, unknown> = {}) {
@@ -32,6 +41,27 @@ function settings(action: string, overrides: Record<string, unknown> = {}) {
 }
 
 describe("notification settings workflows", () => {
+  it("accepts a current session after the client clears the login password", async () => {
+    authenticateSimple.mockResolvedValue(true);
+    sendPushToAll.mockResolvedValue({ delivered: 1 });
+    const response = await pushPost({ json: async () => ({ action: "test", password: "", username: "admin" }) } as never);
+
+    expect(response.status).toBe(200);
+    expect(authenticateSimple).toHaveBeenCalledWith("", "admin");
+    expect(sendPushToAll).toHaveBeenCalledTimes(1);
+    authenticateSimple.mockReset();
+    sendPushToAll.mockReset();
+  });
+
+  it("still rejects push actions without a valid session or credentials", async () => {
+    authenticateSimple.mockResolvedValue(false);
+    const response = await pushPost({ json: async () => ({ action: "test", password: "" }) } as never);
+
+    expect(response.status).toBe(401);
+    expect(sendPushToAll).not.toHaveBeenCalled();
+    authenticateSimple.mockReset();
+  });
+
   it("keeps explicit useful content and event routing in every API push producer", () => {
     const root = resolve(__dirname, "../app/api");
     let count = 0;

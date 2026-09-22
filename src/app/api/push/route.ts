@@ -26,8 +26,12 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action, password, username, ...rest } = body;
+    const authPassword = typeof password === "string" ? password : "";
+    const authUsername = typeof username === "string" ? username : undefined;
 
-    if (!password || !await authenticate(password, username)) {
+    // Admin clients clear the password after login; authenticateSimple falls
+    // back to the current HttpOnly session when the password is empty.
+    if (!await authenticate(authPassword, authUsername)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
