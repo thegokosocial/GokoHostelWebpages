@@ -29,6 +29,8 @@ High-risk coverage priorities are auth/RBAC, bookings and payments, guest bookin
 
 The Playwright suites sign into mocked sessions or use public pages with deterministic API behavior. They do not use production credentials or mutate a live database. `e2e/admin-navigation.spec.ts` covers mobile navigation, desktop top-level pages, every Management tab, nested Food Settings tabs, and selected in-page controls. `e2e/public-navigation.spec.ts` smoke-tests the public marketing route set and a representative homepage navigation link.
 
+`src/__tests__/admin-surface-contract.test.ts` is the Admin inventory guard: it checks that every top-level Admin section is permission-mapped and rendered, every Management tab has an access gate and render branch, every Admin API route authenticates, and every Admin route is listed in `docs/api-map.md`. Use [admin-regression-matrix.md](admin-regression-matrix.md) to select focused behavior tests when adding or changing a page/action; the contract test is a drift detector, not a substitute for success, validation, authorization, duplicate, and failure tests for each mutation.
+
 **Cloudflare Workers Builds** (dashboard, worker `goko-hostel-latest-webpage`) **does** ship: push to `main` → `npm run cf:build` → `npx wrangler deploy`. That build runs Next typecheck. `let mode: string` without an initializer in `push-inventory/route.ts` failed build `4e62b55a` (commit `5b466f0`) with `Variable 'mode' is used before being assigned`. Initialize (`= "full"`) so control-flow always assigns before the empty-updates return. Same `tsc` pass also needs `realignAssignments` dates narrowed (`if (moveDates && newCheckin && newCheckout)`) and calendar `onAction` as `Promise<boolean | void>`.
 
 ## Test files (`src/__tests__/`)

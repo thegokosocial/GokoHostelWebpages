@@ -2,15 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { qrHistory } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { authenticateSimple } from "@/lib/auth";
+import { actionAllowed } from "@/lib/actionPermissions";
+import { authenticateUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { password, action, username } = body;
 
-    if (!await authenticateSimple(password, username)) {
+    const auth = await authenticateUser(password, username);
+    if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (actionAllowed(auth.role, auth.permissions, "canUseQRGenerator") !== "allowed") {
+      return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
     }
 
     const db = getDb();
