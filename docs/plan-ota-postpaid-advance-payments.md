@@ -190,7 +190,7 @@ Update the shared permission catalog and keep `docs/pages-and-ui.md`, `docs/auth
 
 Validation on 2026-09-22:
 
-- `npx vitest run` — passed, 127 files / 1,888 tests.
+- `npx vitest run` — passed, 127 files / 1,890 tests.
 - `npm run test:e2e` — passed, 6 Playwright browser workflows, including all top-level admin sections and Management tabs.
 - `npx tsc --noEmit` — passed.
 - `SQLITE_PATH=:memory: node --import tsx scripts/migrate-pi.ts` — passed through all 70 migrations, including 0069.

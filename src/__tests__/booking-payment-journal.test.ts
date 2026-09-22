@@ -308,6 +308,28 @@ describe("OTA postpaid booking payment journal", () => {
     })).rejects.toThrow("Refund exceeds");
   });
 
+  it("recalculates the remaining collection after an OTA total increase", async () => {
+    const booking = await addBooking();
+    const accountId = await addAccount();
+    const advance = await recordOtaBookingPayment({
+      booking, eventId: "modify-total-advance", kind: "collection", amountPaise: 15000,
+      cashPaise: 0, onlinePaise: 15000, accountId, actor: "frontdesk",
+    });
+    await db.update(bookings).set({ amountTotal: 600, amountBeforeTax: 571.43, amountTax: 28.57 }).where(eq(bookings.id, booking.id));
+
+    const remaining = await recordOtaBookingPayment({
+      booking: advance.booking, eventId: "modify-total-remainder", kind: "collection", amountPaise: 45000,
+      cashPaise: 45000, onlinePaise: 0, cashTenderPaise: 45000, actor: "frontdesk",
+    });
+    expect(remaining.booking.amountPaid).toBe(600);
+    expect(remaining.booking.amountRefunded).toBe(0);
+    expect(remaining.booking.paymentStatus).toBe("paid");
+    await expect(recordOtaBookingPayment({
+      booking: remaining.booking, eventId: "modify-total-overcollect", kind: "collection", amountPaise: 1,
+      cashPaise: 1, onlinePaise: 0, cashTenderPaise: 1, actor: "frontdesk",
+    })).rejects.toThrow("exceeds the current balance");
+  });
+
   it("rejects unsupported statuses, currencies, terms, and non-OTA sources", async () => {
     for (const overrides of [
       { status: "cancelled" }, { otaCurrency: null }, { otaPaymentTerms: "prepaid" }, { source: "manual" },

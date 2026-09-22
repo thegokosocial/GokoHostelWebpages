@@ -359,6 +359,63 @@ describe("Round 3 edges: closed-stay modify / duplicate book / cancelled rebook"
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
+  it("modifies postpaid dates, occupancy, and total without overwriting an advance projection", async () => {
+    q.getBookingByRef.mockResolvedValue(existingRow({
+      status: "received",
+      checkinDate: "2026-09-05",
+      checkoutDate: "2026-09-08",
+      roomType: "executive",
+      persons: 1,
+      paymentStatus: "pay_at_hotel",
+      otaPaymentTerms: "pay_at_hotel",
+      otaCurrency: "INR",
+      paymentOverride: 1,
+      amountTotal: 11100,
+      amountPaid: 150,
+      amountRefunded: 0,
+    }));
+    q.getBookingDetail.mockResolvedValue({ booking: { status: "received" }, assignments: [] });
+    q.getAvailableBedsForRange.mockResolvedValue(online(8, [7], "Executive"));
+
+    const res = await reservationsPOST(webhookReq(bookPayload({
+      action: "modify",
+      pah: true,
+      checkin: "2026-09-06",
+      checkout: "2026-09-10",
+      rooms: [{
+        roomCode: "executive",
+        occupancy: { adults: 2, children: 0 },
+        prices: [
+          { date: "2026-09-06", sellRate: 3500 },
+          { date: "2026-09-07", sellRate: 3500 },
+          { date: "2026-09-08", sellRate: 3500 },
+          { date: "2026-09-09", sellRate: 3500 },
+        ],
+      }],
+      amount: { amountAfterTax: 14000, amountBeforeTax: 13333.33, tax: 666.67, currency: "INR" },
+    })));
+
+    expect(res.status).toBe(200);
+    const patch = q.updateBookingFull.mock.calls[0][1];
+    expect(patch).toMatchObject({
+      checkinDate: "2026-09-06",
+      checkoutDate: "2026-09-10",
+      persons: 2,
+      roomType: "executive",
+      amountTotal: 14000,
+      amountBeforeTax: 13333.33,
+      amountTax: 666.67,
+      otaPaymentTerms: "pay_at_hotel",
+      otaCurrency: "INR",
+      paymentStatus: "pay_at_hotel",
+      paymentOverride: 1,
+    });
+    expect(patch).not.toHaveProperty("amountPaid");
+    expect(patch).not.toHaveProperty("amountRefunded");
+    expect(patch.amountTotal - 150 + 0).toBe(13850);
+    expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "Modified from Channel" }));
+  });
+
   it("duplicate live received book does not overwrite", async () => {
     q.getBookingByRef.mockResolvedValue(existingRow({ status: "received" }));
     const res = await reservationsPOST(webhookReq(bookPayload()));
