@@ -106,8 +106,12 @@ describe("Payment History", () => {
     expect(summary).toContain('orders={billOrders.map((o) => ({');
     expect(summary).toContain('paymentDue={actualGroupPending}');
     expect(summary).toContain('aria-label={`Edit payment for ${order.orderNumber}`}');
+    expect(summary).toContain('<BanknoteIcon className="h-3.5 w-3.5" />');
     expect(summary).toContain('{item.quantity}× {item.itemName}');
     expect(summary).toContain('aria-label={`Edit items for ${order.orderNumber}`}');
+    expect(summary).toContain('<UtensilsIcon className="h-3.5 w-3.5" />');
+    expect(summary).toContain('title="Edit food items"');
+    expect(source).toContain('<BanknoteIcon className="h-3 w-3" /> Edit Payment');
     expect(summary).toContain('setDrawerView("orders"); setEditingOrderId(order.id)');
     expect(summary).toContain('const canEditOrderItems = hasPermission');
     expect(summary).toContain('Payment History');

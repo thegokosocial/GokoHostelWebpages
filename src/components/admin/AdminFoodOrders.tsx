@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn, localDateStr } from "@/lib/utils";
-import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, TagIcon, AlertTriangleIcon, ReceiptIcon, MessageCircleIcon } from "lucide-react";
+import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, UtensilsIcon, TagIcon, AlertTriangleIcon, ReceiptIcon, MessageCircleIcon } from "lucide-react";
 import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicket, type BillItem } from "@/lib/thermalPrint";
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
 import { loadBillBranding } from "@/lib/loadBillBranding";
@@ -1596,7 +1596,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           <span className="font-mono text-brand-green-dark/70">{order.orderNumber} · ₹{(order.total / 100).toFixed(0)}</span>
                           <div className="flex items-center gap-1">
                             {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && order.paymentStatus === "paid" ? (
-                              <button type="button" aria-label={`Edit payment for ${order.orderNumber}`} title="Edit payment" onClick={() => setPaymentEditOrder(order)} className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"><PencilIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" aria-label={`Edit payment for ${order.orderNumber}`} title="Edit payment" onClick={() => setPaymentEditOrder(order)} className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"><BanknoteIcon className="h-3.5 w-3.5" /></button>
                             ) : <span className="font-medium text-orange-600">Unpaid</span>}
                             {canEditOrderItems && (
                               <button
@@ -1606,7 +1606,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                 onClick={() => { setDrawerView("orders"); setEditingOrderId(order.id); setVoidingItemId(null); }}
                                 className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"
                               >
-                                <PencilIcon className="h-3.5 w-3.5" />
+                                <UtensilsIcon className="h-3.5 w-3.5" />
                               </button>
                             )}
                           </div>
@@ -1688,9 +1688,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                 ? "bg-brand-green/10 text-brand-green"
                                 : "text-brand-green-dark/40 hover:text-brand-green-dark/70 hover:bg-brand-sand"
                             )}
-                            title="Edit order"
+                            title="Edit food items"
                           >
-                            <PencilIcon className="h-3.5 w-3.5" />
+                            <UtensilsIcon className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>
@@ -3054,7 +3054,7 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
                                 disabled={busy}
                                 className="flex items-center gap-1 rounded-md border border-brand-mist px-2.5 py-1 text-xs font-medium text-brand-green-dark/70 hover:bg-brand-sand disabled:opacity-50"
                               >
-                                <PencilIcon className="h-3 w-3" /> Edit Payment
+                                <BanknoteIcon className="h-3 w-3" /> Edit Payment
                               </button>
                               <button
                                 type="button"
