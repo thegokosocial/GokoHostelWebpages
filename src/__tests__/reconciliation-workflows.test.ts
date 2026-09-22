@@ -4,6 +4,14 @@ import { actionAllowed } from "@/lib/actionPermissions";
 import { isValidReconciliationDate, parseReconciliationTarget, reconciliationPermission, summarizeReconciliation } from "@/lib/reconciliation";
 
 describe("reconciliation targets", () => {
+  it("accepts today and past valid dates but rejects future or impossible dates", () => {
+    expect(isValidReconciliationDate("2026-09-21", "2026-09-21")).toBe(true);
+    expect(isValidReconciliationDate("2026-09-20", "2026-09-21")).toBe(true);
+    expect(isValidReconciliationDate("2026-09-22", "2026-09-21")).toBe(false);
+    expect(isValidReconciliationDate("2026-02-30", "2026-09-21")).toBe(false);
+    expect(isValidReconciliationDate("2026/09/21", "2026-09-21")).toBe(false);
+  });
+
   it("accepts only canonical cash and positive online account targets", () => {
     expect(parseReconciliationTarget({ type: "cash" })).toEqual({ type: "cash", accountId: null });
     expect(parseReconciliationTarget({ type: "online", accountId: 7 })).toEqual({ type: "online", accountId: 7 });

@@ -138,7 +138,7 @@ Do not count OTA-prepaid receivable recognition as a Goko payment in the new met
 
 ## Workflow scenarios and expected outcomes
 
-These acceptance scenarios describe the intended behavior. The focused journal suite now exercises 13 payment, eligibility, reconciliation, lifecycle, correction, and cycle-snapshot cases; the repository checks below verify the application build, full regression suite, and configured browser workflows. They do not simulate production traffic or a live disconnected Pi/Cloudflare pair.
+These acceptance scenarios describe the intended behavior. The focused journal suite now exercises 14 payment, eligibility, reconciliation, lifecycle, correction, and cycle-snapshot cases; the repository checks below verify the application build, full regression suite, and configured browser workflows. They do not simulate production traffic or a live disconnected Pi/Cloudflare pair.
 
 | Scenario | Expected result |
 |---|---|
@@ -190,7 +190,7 @@ Update the shared permission catalog and keep `docs/pages-and-ui.md`, `docs/auth
 
 Validation on 2026-09-22:
 
-- `npx vitest run` — passed, 127 files / 1,890 tests.
+- `npx vitest run` — passed, 128 files / 1,895 tests.
 - `npm run test:e2e` — passed, 6 Playwright browser workflows, including all top-level admin sections and Management tabs.
 - `npx tsc --noEmit` — passed.
 - `SQLITE_PATH=:memory: node --import tsx scripts/migrate-pi.ts` — passed through all 70 migrations, including 0069.
