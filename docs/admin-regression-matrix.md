@@ -2,7 +2,7 @@
 
 **Git-safe.**
 
-This is the maintainer map for expanding Admin regression coverage. The surface contract test catches missing inventory/auth/docs wiring; domain suites below hold the behavior assertions. Every new Admin page, API action, permission, or workflow must add a focused test to the closest domain suite in the same change.
+This is the maintainer map for expanding Admin regression coverage. The surface contract test catches missing inventory/auth/docs wiring, and `admin-route-smoke.test.ts` automatically exercises every discovered POST route/action through the authentication boundary. Domain suites below hold the behavior assertions. Every new Admin page, API action, permission, or workflow must add a focused success/validation/failure test to the closest domain suite in the same change.
 
 | Admin surface | Main API/domain | Existing coverage | Required regression cases when changed |
 |---|---|---|---|
