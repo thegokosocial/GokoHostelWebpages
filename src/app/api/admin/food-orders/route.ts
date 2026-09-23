@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
       getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
       createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
       updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
+      cancelUnpaidOrder: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       saveOrderEdits: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
@@ -237,6 +238,33 @@ export async function POST(req: NextRequest) {
           action: "food_order_status",
           target: `order:${orderId}`,
           details: `Status → ${finalStatus}${finalStatus !== status ? " (inventory auto-skip)" : ""}${cancelledReason ? ` (${cancelledReason})` : ""}`,
+        });
+        return NextResponse.json({ success: true, role });
+      }
+
+      case "cancelUnpaidOrder": {
+        const { orderId, cancelledReason } = rest;
+        if (!Number.isInteger(orderId)) return NextResponse.json({ error: "orderId required" }, { status: 400 });
+        const currentOrder = await getFoodOrderById(orderId);
+        if (!currentOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+        if (currentOrder.status === "cancelled") return NextResponse.json({ error: "Order is already cancelled" }, { status: 409 });
+        if (foodAmountPaid(currentOrder) > 0) return NextResponse.json({ error: "Paid or partially paid orders cannot be cancelled" }, { status: 409 });
+
+        await updateFoodOrderStatus(orderId, "cancelled", cancelledReason || "Cancelled by admin");
+        await restoreStock(orderId);
+        await addOrderModification({
+          orderId,
+          action: "order_cancelled",
+          oldValue: currentOrder.status,
+          newValue: "cancelled",
+          reason: cancelledReason || "Cancelled by admin",
+          modifiedBy: actorName,
+        });
+        await addAuditEntry({
+          username: actorName,
+          action: "food_order_status",
+          target: `order:${orderId}`,
+          details: `Unpaid order cancelled${cancelledReason ? ` (${cancelledReason})` : ""}`,
         });
         return NextResponse.json({ success: true, role });
       }
@@ -926,8 +954,9 @@ export async function POST(req: NextRequest) {
           totalDiscount = Math.max(0, Math.min(discountableTotal, Math.abs(Number(discountAmount))));
         }
 
-        const db = getDb();
-        await db.transaction(async (tx: any) => {
+        const db = getDb() as any;
+        const buildDiscountWrites = (client: any) => {
+          const writes: any[] = [];
           let discountAssigned = 0;
           for (let oi = 0; oi < orderData.length; oi++) {
             const od = orderData[oi];
@@ -941,7 +970,7 @@ export async function POST(req: NextRequest) {
             const current = existingOrders.find((order) => order?.id === od.id);
             const paymentUpdate = paymentForEditedTotal(current || null, newTotal);
             if (paymentUpdate.error) throw Object.assign(new Error(paymentUpdate.error), { status: 409 });
-            await tx.update(foodOrders).set(syncUpdate({
+            writes.push(client.update(foodOrders).set(syncUpdate({
               discount: orderDiscount,
               discountReason,
               discountBy: actorName,
@@ -951,8 +980,8 @@ export async function POST(req: NextRequest) {
               amountPaid: paymentUpdate.amountPaid,
               paymentStatus: paymentUpdate.paymentStatus,
               updatedAt: new Date().toISOString(),
-            })).where(eq(foodOrders.id, od.id));
-            await tx.insert(orderModifications).values(syncInsert({
+            })).where(eq(foodOrders.id, od.id)));
+            writes.push(client.insert(orderModifications).values(syncInsert({
               orderId: od.id,
               action: "discount",
               oldValue: `₹${(od.grossSubtotal / 100).toFixed(0)}`,
@@ -960,16 +989,24 @@ export async function POST(req: NextRequest) {
               reason: `${discountReason ? `${discountReason} ` : ""}(discount ₹${(orderDiscount / 100).toFixed(0)})`,
               modifiedBy: actorName,
               createdAt: new Date().toISOString(),
-            }));
+            })));
           }
-          await tx.insert(auditLog).values({
+          writes.push(client.insert(auditLog).values({
             timestamp: new Date().toISOString(),
             username: actorName,
             action: "food_discount",
             target: `orders:${orderIds.join(",")}`,
             details: `Discount ₹${(totalDiscount / 100).toFixed(0)} on discountable ₹${(discountableTotal / 100).toFixed(0)} of gross ₹${(grossTotal / 100).toFixed(0)}${discountReason ? `. Reason: ${discountReason}` : ""}`,
+          }));
+          return writes;
+        };
+        if (typeof db.batch === "function") {
+          await db.batch(buildDiscountWrites(db));
+        } else {
+          await db.transaction(async (tx: any) => {
+            for (const write of buildDiscountWrites(tx)) await write;
           });
-        });
+        }
         return NextResponse.json({ success: true, role });
       }
 
@@ -988,8 +1025,9 @@ export async function POST(req: NextRequest) {
         const existingOrders = await Promise.all(removeOrderIds.map((orderId: number) => getFoodOrderById(orderId)));
         if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
         const rmItemsByOrder = await getFoodOrderItemsBatch(removeOrderIds);
-        const db = getDb();
-        await db.transaction(async (tx: any) => {
+        const db = getDb() as any;
+        const buildRemoveDiscountWrites = (client: any) => {
+          const writes: any[] = [];
           for (const oid of removeOrderIds) {
             const items = rmItemsByOrder.get(oid) || [];
             const activeItems = items.filter((i) => i.status !== "voided");
@@ -999,7 +1037,7 @@ export async function POST(req: NextRequest) {
             const current = existingOrders.find((order) => order?.id === oid);
             const paymentUpdate = paymentForEditedTotal(current || null, newTotal);
             if (paymentUpdate.error) throw Object.assign(new Error(paymentUpdate.error), { status: 409 });
-            await tx.update(foodOrders).set(syncUpdate({
+            writes.push(client.update(foodOrders).set(syncUpdate({
               discount: 0,
               discountReason: "",
               discountBy: "",
@@ -1009,8 +1047,8 @@ export async function POST(req: NextRequest) {
               amountPaid: paymentUpdate.amountPaid,
               paymentStatus: paymentUpdate.paymentStatus,
               updatedAt: new Date().toISOString(),
-            })).where(eq(foodOrders.id, oid));
-            await tx.insert(orderModifications).values(syncInsert({
+            })).where(eq(foodOrders.id, oid)));
+            writes.push(client.insert(orderModifications).values(syncInsert({
               orderId: oid,
               action: "discount",
               oldValue: "discount applied",
@@ -1018,16 +1056,24 @@ export async function POST(req: NextRequest) {
               reason: "Discount removed",
               modifiedBy: actorName,
               createdAt: new Date().toISOString(),
-            }));
+            })));
           }
-          await tx.insert(auditLog).values({
+          writes.push(client.insert(auditLog).values({
             timestamp: new Date().toISOString(),
             username: actorName,
             action: "food_discount_removed",
             target: `orders:${removeOrderIds.join(",")}`,
             details: `Discount removed from ${removeOrderIds.length} order(s)`,
+          }));
+          return writes;
+        };
+        if (typeof db.batch === "function") {
+          await db.batch(buildRemoveDiscountWrites(db));
+        } else {
+          await db.transaction(async (tx: any) => {
+            for (const write of buildRemoveDiscountWrites(tx)) await write;
           });
-        });
+        }
         return NextResponse.json({ success: true, role });
       }
 

@@ -742,31 +742,33 @@ export async function saveBookingContactMethods(
   requested: Array<{ id?: number; type: "phone" | "email"; value: string; label?: string }>,
   performedBy: string,
 ) {
-  const db = getDb();
-  return db.transaction(async (tx) => {
-    const existing = await tx.select().from(bookingContactMethods).where(and(eq(bookingContactMethods.bookingId, bookingId), sql`${bookingContactMethods.deletedAt} IS NULL`));
-    const existingById = new Map(existing.map((row) => [row.id, row]));
-    const seen = new Set<string>();
-    const prepared = requested.map((item, index) => {
-      if (item.type !== "phone" && item.type !== "email") throw new Error("Contact type is invalid");
-      const value = item.value.trim();
-      const normalizedValue = normalizeBookingContact(item.type, value);
-      const key = `${item.type}:${normalizedValue}`;
-      if (seen.has(key)) throw new Error("Duplicate contact values are not allowed");
-      seen.add(key);
-      const row = item.id ? existingById.get(item.id) : undefined;
-      if (item.id && !row) throw new Error("Contact row was not found; reload and try again");
-      if (row?.origin === "pms" && (row.value !== value || row.label !== (item.label || ""))) throw new Error("PMS contacts cannot be edited");
-      return { item, row, value, normalizedValue, label: (item.label || "").trim().slice(0, 80), position: index };
-    });
-    for (const type of ["phone", "email"] as const) {
-      if (prepared.filter((row) => row.item.type === type).length > 5) throw new Error(`Maximum 5 ${type}s allowed`);
-    }
-    const requestedIds = new Set(prepared.filter((row) => row.row).map((row) => row.row!.id));
-    const changes: string[] = [];
+  const db = getDb() as any;
+  const existing: BookingContactMethod[] = await db.select().from(bookingContactMethods).where(and(eq(bookingContactMethods.bookingId, bookingId), sql`${bookingContactMethods.deletedAt} IS NULL`));
+  const existingById = new Map<number, BookingContactMethod>(existing.map((row) => [row.id, row]));
+  const seen = new Set<string>();
+  const prepared = requested.map((item, index) => {
+    if (item.type !== "phone" && item.type !== "email") throw new Error("Contact type is invalid");
+    const value = item.value.trim();
+    const normalizedValue = normalizeBookingContact(item.type, value);
+    const key = `${item.type}:${normalizedValue}`;
+    if (seen.has(key)) throw new Error("Duplicate contact values are not allowed");
+    seen.add(key);
+    const row = item.id ? existingById.get(item.id) : undefined;
+    if (item.id && !row) throw new Error("Contact row was not found; reload and try again");
+    if (row?.origin === "pms" && (row.value !== value || row.label !== (item.label || ""))) throw new Error("PMS contacts cannot be edited");
+    return { item, row, value, normalizedValue, label: (item.label || "").trim().slice(0, 80), position: index };
+  });
+  for (const type of ["phone", "email"] as const) {
+    if (prepared.filter((row) => row.item.type === type).length > 5) throw new Error(`Maximum 5 ${type}s allowed`);
+  }
+  const requestedIds = new Set(prepared.filter((row) => row.row).map((row) => row.row!.id));
+  const changes: string[] = [];
+  const now = new Date().toISOString();
+  const buildWrites = (client: any) => {
+    const writes: any[] = [];
     for (const row of existing) {
       if (row.origin === "custom" && !requestedIds.has(row.id)) {
-        await tx.update(bookingContactMethods).set(syncUpdate({ deletedAt: new Date().toISOString() })).where(eq(bookingContactMethods.id, row.id));
+        writes.push(client.update(bookingContactMethods).set(syncUpdate({ deletedAt: now })).where(eq(bookingContactMethods.id, row.id)));
         changes.push(`Deleted ${row.type} ${row.label || "contact"}`);
       }
     }
@@ -774,17 +776,26 @@ export async function saveBookingContactMethods(
       if (row.row) {
         if (row.row.origin === "pms") continue;
         if (row.row.value !== row.value || row.row.label !== row.label || row.row.position !== row.position) {
-          await tx.update(bookingContactMethods).set(syncUpdate({ value: row.value, normalizedValue: row.normalizedValue, label: row.label, position: row.position })).where(eq(bookingContactMethods.id, row.row.id));
+          writes.push(client.update(bookingContactMethods).set(syncUpdate({ value: row.value, normalizedValue: row.normalizedValue, label: row.label, position: row.position })).where(eq(bookingContactMethods.id, row.row.id)));
           changes.push(`Updated ${row.item.type} ${row.label || "contact"}`);
         }
       } else {
-        await tx.insert(bookingContactMethods).values(syncInsert({ bookingId, type: row.item.type, value: row.value, normalizedValue: row.normalizedValue, label: row.label, origin: "custom", isPrimary: 0, position: row.position }));
+        writes.push(client.insert(bookingContactMethods).values(syncInsert({ bookingId, type: row.item.type, value: row.value, normalizedValue: row.normalizedValue, label: row.label, origin: "custom", isPrimary: 0, position: row.position })));
         changes.push(`Added ${row.item.type} ${row.label || "contact"}`);
       }
     }
-    if (changes.length) await tx.insert(bookingHistory).values({ bookingId, action: "Booking Contacts Changed", details: changes.join("; "), performedBy, performedAt: new Date().toISOString() });
-    return { changes };
-  });
+    if (changes.length) writes.push(client.insert(bookingHistory).values({ bookingId, action: "Booking Contacts Changed", details: changes.join("; "), performedBy, performedAt: now }));
+    return writes;
+  };
+  if (typeof db.batch === "function") {
+    const writes = buildWrites(db);
+    if (writes.length) await db.batch(writes);
+  } else {
+    await db.transaction(async (tx: any) => {
+      for (const write of buildWrites(tx)) await write;
+    });
+  }
+  return { changes };
 }
 
 export async function updateBookingStatus(id: number, status: string) {

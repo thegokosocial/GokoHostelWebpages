@@ -37,7 +37,7 @@ const FOOD_ORDERS_PERMISSIONS: Record<string, ActionPerm> = {
   getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
   getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
   getCombinedBillOptions: ["canGenerateFoodBills", "canViewFoodOrders"], getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
-  updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
+  updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], cancelUnpaidOrder: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
   voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   saveOrderEdits: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],

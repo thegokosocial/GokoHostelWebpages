@@ -85,3 +85,4 @@ Cloudflare production builds also run `npm run db:verify:prod` before compiling.
 Error-handling changes must cover the shared API error contract, HTTP status/code mapping, request-ID propagation, safe diagnostic redaction, retry classification, and representative route/UI failures. Preserve legacy `error` fields and verify that non-idempotent mutations are not retried by default.
 
 Rate scrape: `scrape-rates.yml` workflow_dispatch only. Needs GitHub secrets `API_URL`, `API_PASSWORD`.
+Food-order regression coverage must include batch quantity edits across multiple lines, paid/partial refund behavior, the unpaid-only red-X cancellation confirmation, and server rejection of paid/partial whole-order cancellation.

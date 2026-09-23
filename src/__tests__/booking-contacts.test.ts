@@ -21,6 +21,14 @@ describe("booking contact methods", () => {
     expect(queries).toContain("Duplicate contact values are not allowed");
   });
 
+  it("uses D1 batch writes instead of BEGIN for the save path", () => {
+    const savePath = queries.match(/export async function saveBookingContactMethods[\s\S]*?\n}\n\nexport async function updateBookingStatus/)?.[0] || "";
+    expect(savePath).toContain('typeof db.batch === "function"');
+    expect(savePath).toContain("await db.batch(writes)");
+    expect(savePath).toContain("await db.transaction(async (tx: any)");
+    expect(savePath).not.toMatch(/return db\.transaction\(async \(tx\)/);
+  });
+
   it("renders per-number actions and section-level save/cancel editing", () => {
     expect(panel).toContain("Edit guest contacts");
     expect(panel).toContain("saveBookingContacts");

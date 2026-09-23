@@ -440,11 +440,11 @@ describe("food-tab UI checkout workflows", () => {
     expect(source).toContain("data-testid={`food-order-badges-${order.id}`}");
   });
 
-  it("8e. Quantity edits use modification wording and can be saved without a reason", () => {
+  it("8e. Quantity edits use one batch modification popup and can be saved without a reason", () => {
     const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
-    expect(source).toContain('`Modify "${item.itemName}" (${item.quantity} → ${pendingQtyChange.newQty})`');
-    expect(source).toContain('isModification={pendingQtyChange?.itemId === item.id}');
-    expect(source).toContain('isModification ? "Save modification" : "Cancel Item"');
+    expect(source).toContain("BatchModificationPopup");
+    expect(source).toContain("pendingQtyChanges");
+    expect(source).toContain('Save modification');
     expect(source).toContain('disabled={busy}');
     expect(source).not.toContain('disabled={busy || !selectedReason}');
   });

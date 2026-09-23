@@ -312,6 +312,49 @@ describe("admin market-pricing workflows", () => {
     expect(q.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "food_order_status", target: "order:10", details: expect.stringContaining("Guest cancelled") }));
   });
 
+  it("cancels an unpaid order through the explicit order-cancel action", async () => {
+    const response = await POST(actionReq("cancelUnpaidOrder", { orderId: 10, cancelledReason: "Cancelled by admin" }));
+
+    expect(response.status).toBe(200);
+    expect(q.updateFoodOrderStatus).toHaveBeenCalledWith(10, "cancelled", "Cancelled by admin");
+    expect(q.restoreStock).toHaveBeenCalledWith(10);
+    expect(q.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({
+      orderId: 10, action: "order_cancelled", newValue: "cancelled", reason: "Cancelled by admin",
+    }));
+    expect(q.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "food_order_status", target: "order:10" }));
+  });
+
+  it("rejects whole-order cancellation when any payment was collected", async () => {
+    q.getFoodOrderById.mockResolvedValue({ ...order, total: 1000, amountPaid: 500, paymentStatus: "partial" });
+
+    const response = await POST(actionReq("cancelUnpaidOrder", { orderId: 10 }));
+
+    expect(response.status).toBe(409);
+    expect(q.updateFoodOrderStatus).not.toHaveBeenCalled();
+    expect(q.restoreStock).not.toHaveBeenCalled();
+    expect(q.addOrderModification).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat stock restoration for an already cancelled order", async () => {
+    q.getFoodOrderById.mockResolvedValue({ ...order, status: "cancelled" });
+
+    const response = await POST(actionReq("cancelUnpaidOrder", { orderId: 10 }));
+
+    expect(response.status).toBe(409);
+    expect(q.updateFoodOrderStatus).not.toHaveBeenCalled();
+    expect(q.restoreStock).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate when the order to cancel is missing", async () => {
+    q.getFoodOrderById.mockResolvedValue(null);
+
+    const response = await POST(actionReq("cancelUnpaidOrder", { orderId: 404 }));
+
+    expect(response.status).toBe(404);
+    expect(q.updateFoodOrderStatus).not.toHaveBeenCalled();
+    expect(q.restoreStock).not.toHaveBeenCalled();
+  });
+
   it("rejects non-positive final prices", async () => {
     const response = await POST(req({ orderId: 10, orderItemId: 20, price: 0 }));
     expect(response.status).toBe(400);

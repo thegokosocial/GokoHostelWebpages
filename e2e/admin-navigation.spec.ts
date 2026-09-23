@@ -192,16 +192,17 @@ test("Food Orders browser workflow stages a served quantity modification and sav
 
   await orderCard.getByRole("button", { name: "+" }).click();
 
-  await expect(orderCard).toContainText('Modify "Shampoo" (2 → 3)?');
+  await expect(orderCard).toContainText("Modify order quantities?");
+  await expect(orderCard).toContainText("Shampoo: 2 → 3");
   await expect(orderCard.getByRole("button", { name: "Save modification" })).toBeEnabled();
   await orderCard.getByRole("button", { name: "Save modification" }).click();
   await expect(orderCard.getByText("3", { exact: true })).toBeVisible();
   await orderCard.getByRole("button", { name: "+" }).click();
-  await expect(orderCard).toContainText('Modify "Shampoo" (3 → 4)?');
+  await expect(orderCard).toContainText("Shampoo: 3 → 4");
   await orderCard.getByRole("button", { name: "Save modification" }).click();
   await expect(orderCard.getByText("4", { exact: true })).toBeVisible();
   await orderCard.getByRole("button", { name: "−" }).click();
-  await expect(orderCard).toContainText('Modify "Shampoo" (4 → 3)?');
+  await expect(orderCard).toContainText("Shampoo: 4 → 3");
   await orderCard.getByRole("button", { name: "Save modification" }).click();
   await expect(orderCard.getByText("3", { exact: true })).toBeVisible();
   await expect(orderCard).toContainText("Shampoo");
@@ -215,7 +216,7 @@ test("Food Orders browser workflow stages a served quantity modification and sav
 });
 
 test("Food Orders mobile edit controls stay in the action row", async ({ page }) => {
-  await mockFoodOrderWorkflow(page, []);
+  await mockFoodOrderWorkflow(page, [], { amountPaid: 400, paymentStatus: "paid", paymentMethod: "cash" });
   await page.setViewportSize({ width: 390, height: 844 });
   await signInToManagement(page);
 
@@ -225,14 +226,90 @@ test("Food Orders mobile edit controls stay in the action row", async ({ page })
   const drawer = page.locator(".fixed.inset-0.z-50");
   const orderCard = drawer.locator('[data-order-id="10"]');
   const actions = orderCard.getByTestId("food-order-actions-10");
+  const editActions = orderCard.getByTestId("food-order-edit-actions-10");
+  const paymentEdit = editActions.getByRole("button", { name: "Edit payment for D265-10" });
   const edit = orderCard.getByRole("button", { name: "Edit food items for D265-10" });
 
   await expect(actions).toBeVisible();
   await expect(actions).toContainText("23 Sep");
+  await expect(editActions).toBeVisible();
+  await expect(paymentEdit).toBeVisible();
+  await expect(editActions.getByRole("button", { name: "Edit food items for D265-10" })).toBeVisible();
   await edit.click();
   await expect(actions).toBeVisible();
   await expect(actions.getByRole("button", { name: "Edit food items for D265-10" })).toBeDisabled();
   await expect(orderCard.getByRole("button", { name: "Cancel editing" })).toBeVisible();
+});
+
+test("Food Orders batch served edit lists every item and saves once", async ({ page }) => {
+  const requests: Array<Record<string, unknown>> = [];
+  await mockFoodOrderWorkflow(page, requests, {
+    items: [
+      { id: 20, menuItemId: 4, itemName: "Carts", itemPrice: 300, quantity: 1, lineTotal: 300, status: "active", pricingStatus: "fixed", notes: "" },
+      { id: 21, menuItemId: 5, itemName: "Staff Food", itemPrice: 150, quantity: 1, lineTotal: 150, status: "active", pricingStatus: "fixed", notes: "" },
+      { id: 22, menuItemId: 6, itemName: "Chicken Kebab", itemPrice: 220, quantity: 1, lineTotal: 220, status: "active", pricingStatus: "fixed", notes: "" },
+    ],
+    subtotal: 670,
+    total: 670,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.locator("#admin-mobile-navigation").getByRole("button", { name: "Food Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Pawan test" }).click();
+
+  const orderCard = page.locator('[data-order-id="10"]');
+  await orderCard.getByRole("button", { name: "Edit food items for D265-10" }).click();
+  await orderCard.getByRole("button", { name: "+" }).nth(0).click();
+  await orderCard.getByRole("button", { name: "+" }).nth(1).click();
+  await orderCard.getByRole("button", { name: "+" }).nth(2).click();
+  await expect(orderCard).toContainText("Carts: 1 → 2");
+  await expect(orderCard).toContainText("Staff Food: 1 → 2");
+  await expect(orderCard).toContainText("Chicken Kebab: 1 → 2");
+  await orderCard.getByRole("button", { name: "Guest complaint" }).click();
+  await orderCard.getByRole("button", { name: "Save modification" }).click();
+  await orderCard.getByRole("button", { name: "Save changes" }).click();
+
+  await expect.poll(() => requests.filter((body) => body.action === "saveOrderEdits")).toHaveLength(1);
+  expect(requests.find((body) => body.action === "saveOrderEdits")).toMatchObject({
+    orderId: 10,
+    changes: expect.arrayContaining([
+      { itemId: 20, quantity: 2, reason: "Guest complaint" },
+      { itemId: 21, quantity: 2, reason: "Guest complaint" },
+      { itemId: 22, quantity: 2, reason: "Guest complaint" },
+    ]),
+  });
+});
+
+test("Food Orders shows unpaid cancel confirmation beside edit", async ({ page }) => {
+  const requests: Array<Record<string, unknown>> = [];
+  await mockFoodOrderWorkflow(page, requests);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.locator("#admin-mobile-navigation").getByRole("button", { name: "Food Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Pawan test" }).click();
+
+  const orderCard = page.locator('[data-order-id="10"]');
+  const cancel = orderCard.getByRole("button", { name: "Cancel order D265-10" });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(orderCard).toContainText("Cancel order D265-10 for Pawan test?");
+  await orderCard.getByRole("button", { name: "No" }).click();
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await orderCard.getByRole("button", { name: "Yes, cancel order" }).click();
+  await expect.poll(() => requests.filter((body) => body.action === "cancelUnpaidOrder")).toHaveLength(1);
+});
+
+test("Food Orders hides whole-order cancellation for paid orders", async ({ page }) => {
+  await mockFoodOrderWorkflow(page, [], { amountPaid: 400, paymentStatus: "paid", paymentMethod: "cash" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.locator("#admin-mobile-navigation").getByRole("button", { name: "Food Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Pawan test" }).click();
+  await expect(page.locator('[data-order-id="10"]').getByRole("button", { name: "Cancel order D265-10" })).toBeHidden();
 });
 
 for (const paymentState of [
@@ -252,7 +329,8 @@ for (const paymentState of [
     await orderCard.getByRole("button", { name: "Edit food items for D265-10" }).click();
     await expect(orderCard.getByRole("button", { name: "Cancel editing" })).toBeVisible();
     await orderCard.getByRole("button", { name: "+" }).click();
-    await expect(orderCard).toContainText('Modify "Shampoo" (2 → 3)?');
+    await expect(orderCard).toContainText("Modify order quantities?");
+    await expect(orderCard).toContainText("Shampoo: 2 → 3");
     await orderCard.getByRole("button", { name: "Save modification" }).click();
     await orderCard.getByRole("button", { name: "Save changes" }).click();
 

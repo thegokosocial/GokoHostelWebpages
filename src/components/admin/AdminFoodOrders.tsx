@@ -837,7 +837,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [voidingItemId, setVoidingItemId] = useState<number | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [voidedItemReasons, setVoidedItemReasons] = useState<Record<number, string>>({});
-  const [pendingQtyChange, setPendingQtyChange] = useState<{ orderId: number; itemId: number; newQty: number } | null>(null);
+  const [pendingQtyChanges, setPendingQtyChanges] = useState<Record<number, Record<number, { fromQty: number; newQty: number }>>>({});
+  const [pendingQtyOrderId, setPendingQtyOrderId] = useState<number | null>(null);
+  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
   const [draftEdits, setDraftEdits] = useState<Record<number, Record<number, DraftOrderChange>>>({});
   const [refundForEdit, setRefundForEdit] = useState<RefundForEdit | null>(null);
   const [modHistoryOrderId, setModHistoryOrderId] = useState<number | null>(null);
@@ -1160,28 +1162,72 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     stageOrderChange(orderId, itemId, { quantity: 0, reason });
     setVoidedItemReasons((prev) => ({ ...prev, [itemId]: reason }));
     setVoidingItemId(null);
-    setPendingQtyChange(null);
+    const remainingChanges = { ...(pendingQtyChanges[orderId] || {}) };
+    delete remainingChanges[itemId];
+    setPendingQtyChanges((prev) => {
+      const next = { ...prev };
+      if (Object.keys(remainingChanges).length > 0) next[orderId] = remainingChanges;
+      else delete next[orderId];
+      return next;
+    });
+    setPendingQtyOrderId(Object.keys(remainingChanges).length > 0 ? orderId : null);
   };
 
-  const handleQuantityChange = async (orderId: number, itemId: number, newQuantity: number, orderStatus?: string) => {
+  const handleQuantityChange = async (orderId: number, itemId: number, currentQuantity: number, newQuantity: number, orderStatus?: string) => {
     if (newQuantity <= 0) {
+      const remainingChanges = { ...(pendingQtyChanges[orderId] || {}) };
+      delete remainingChanges[itemId];
+      setPendingQtyChanges((prev) => {
+        const next = { ...prev };
+        if (Object.keys(remainingChanges).length > 0) next[orderId] = remainingChanges;
+        else delete next[orderId];
+        return next;
+      });
+      setPendingQtyOrderId(Object.keys(remainingChanges).length > 0 ? orderId : null);
       setVoidingItemId(itemId);
       return;
     }
     if (orderStatus === "served") {
-      setPendingQtyChange({ orderId, itemId, newQty: newQuantity });
-      setVoidingItemId(itemId);
+      setPendingQtyChanges((prev) => ({
+        ...prev,
+        [orderId]: {
+          ...(prev[orderId] || {}),
+          [itemId]: { fromQty: prev[orderId]?.[itemId]?.fromQty ?? currentQuantity, newQty: newQuantity },
+        },
+      }));
+      setPendingQtyOrderId(orderId);
       return;
     }
     stageOrderChange(orderId, itemId, { quantity: newQuantity });
   };
 
   const handleServedQtyChange = async (reason: string) => {
-    if (!pendingQtyChange) return;
-    const { orderId, itemId, newQty } = pendingQtyChange;
-    stageOrderChange(orderId, itemId, { quantity: newQty, reason });
-    setPendingQtyChange(null);
+    if (pendingQtyOrderId === null) return;
+    for (const [itemId, change] of Object.entries(pendingQtyChanges[pendingQtyOrderId] || {})) {
+      stageOrderChange(pendingQtyOrderId, Number(itemId), { quantity: change.newQty, reason });
+    }
+    setPendingQtyChanges((prev) => { const next = { ...prev }; delete next[pendingQtyOrderId]; return next; });
+    setPendingQtyOrderId(null);
     setVoidingItemId(null);
+  };
+
+  const handleCancelUnpaidOrder = async (order: Order) => {
+    setActionBusy(`cancel_order_${order.id}`);
+    try {
+      const res = await apiCall({ action: "cancelUnpaidOrder", orderId: order.id, cancelledReason: "Cancelled by admin" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError("Cancel order", data.error || "Could not cancel order");
+        return;
+      }
+      setCancelOrderId(null);
+      if (selectedGroup) await refreshAfterEdit(selectedGroup);
+      showSuccess("Order cancelled");
+    } catch (error) {
+      showError("Cancel order", error instanceof Error ? error.message : "Could not cancel order");
+    } finally {
+      setActionBusy(null);
+    }
   };
 
   const handleSetItemPrice = async (orderId: number, itemId: number, priceRupees: number, label: string) => {
@@ -1699,10 +1745,17 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         notes: change.label !== undefined ? change.label : item.notes,
                       };
                     });
-                    const draftGross = effectiveItems.filter((item) => item.status !== "voided").reduce((sum, item) => sum + item.lineTotal, 0);
+                    const pendingChanges = pendingQtyChanges[order.id] || {};
+                    const displayItems = effectiveItems.map((item) => pendingChanges[item.id]
+                      ? { ...item, quantity: pendingChanges[item.id].newQty, lineTotal: pendingChanges[item.id].newQty * item.itemPrice }
+                      : item);
+                    const canCancelOrder = order.status !== "cancelled" && foodAmountPaid(order) === 0 && order.items.some((item) => item.status !== "voided");
+                    const draftGross = displayItems.filter((item) => item.status !== "voided").reduce((sum, item) => sum + item.lineTotal, 0);
                     const draftSubtotal = Math.max(0, draftGross - Math.min(order.discount || 0, draftGross));
                     const inferredTaxRate = order.subtotal > 0 ? (order.tax / order.subtotal) * 100 : 0;
-                    const draftTotal = hasDraft ? draftSubtotal + Math.round((draftSubtotal * inferredTaxRate) / 100) : order.total;
+                    const draftTotal = (hasDraft || Object.keys(pendingChanges).length > 0)
+                      ? draftSubtotal + Math.round((draftSubtotal * inferredTaxRate) / 100)
+                      : order.total;
                     return (
                     <div
                       key={order.id}
@@ -1730,53 +1783,66 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                             {new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}{" "}
                             {new Date(order.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
                           </span>
-                          {btSupported && order.status !== "cancelled" && order.status !== "served" && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const items = order.items.filter(i => i.status !== "voided").map(i => ({ name: i.itemName, quantity: i.quantity }));
-                                if (items.length === 0) return;
-                                try {
-                                  await printOrderTicket({ orderNumber: order.orderNumber, guestName: selectedGroup.guestName, guestType: selectedGroup.guestType === "hostel" ? "hostel" : "walkin", roomInfo: selectedGroup.roomInfo || undefined, items, specialInstructions: order.specialInstructions || undefined, createdAt: order.createdAt });
-                                } catch (err: any) { showError("Print failed", err.message || "Unknown error"); }
-                              }}
-                              className="rounded p-1 text-orange-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950 transition-colors"
-                              title="Print kitchen ticket"
-                            >
-                              <PrinterIcon className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && foodAmountPaid(order) > 0 && (
-                            <button
-                              type="button"
-                              aria-label={`Edit payment for ${order.orderNumber}`}
-                              title="Edit payment"
-                              onClick={() => setPaymentEditOrder(order)}
-                              className="rounded p-1 text-blue-500 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950"
-                            >
-                              <BanknoteIcon className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            aria-label={`Edit food items for ${order.orderNumber}`}
-                            aria-pressed={isEditing}
-                            onClick={() => { if (!isEditing) { setEditingOrderId(order.id); setVoidingItemId(null); } }}
-                            disabled={isEditing}
-                            className={cn(
-                              "rounded p-1 transition-colors",
-                              isEditing
-                                ? "cursor-default bg-brand-green/10 text-brand-green"
-                                : "text-brand-green-dark/40 hover:text-brand-green-dark/70 hover:bg-brand-sand"
+                          <div data-testid={`food-order-edit-actions-${order.id}`} className="flex shrink-0 items-center gap-1">
+                            {btSupported && order.status !== "cancelled" && order.status !== "served" && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const items = order.items.filter(i => i.status !== "voided").map(i => ({ name: i.itemName, quantity: i.quantity }));
+                                  if (items.length === 0) return;
+                                  try {
+                                    await printOrderTicket({ orderNumber: order.orderNumber, guestName: selectedGroup.guestName, guestType: selectedGroup.guestType === "hostel" ? "hostel" : "walkin", roomInfo: selectedGroup.roomInfo || undefined, items, specialInstructions: order.specialInstructions || undefined, createdAt: order.createdAt });
+                                  } catch (err: any) { showError("Print failed", err.message || "Unknown error"); }
+                                }}
+                                className="rounded p-1 text-orange-400 transition-colors hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-950"
+                                title="Print kitchen ticket"
+                              >
+                                <PrinterIcon className="h-3.5 w-3.5" />
+                              </button>
                             )}
-                            title="Edit food items"
-                          >
-                            <UtensilsIcon className="h-3.5 w-3.5" />
-                          </button>
+                            {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && foodAmountPaid(order) > 0 && (
+                              <button
+                                type="button"
+                                aria-label={`Edit payment for ${order.orderNumber}`}
+                                title="Edit payment"
+                                onClick={() => setPaymentEditOrder(order)}
+                                className="rounded p-1 text-blue-500 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950"
+                              >
+                                <BanknoteIcon className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {canCancelOrder && (
+                              <button
+                                type="button"
+                                aria-label={`Cancel order ${order.orderNumber}`}
+                                title="Cancel unpaid order"
+                                onClick={() => setCancelOrderId(order.id)}
+                                className="rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
+                              >
+                                <XIcon className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              aria-label={`Edit food items for ${order.orderNumber}`}
+                              aria-pressed={isEditing}
+                              onClick={() => { if (!isEditing) { setEditingOrderId(order.id); setVoidingItemId(null); } }}
+                              disabled={isEditing}
+                              className={cn(
+                                "rounded p-1 transition-colors",
+                                isEditing
+                                  ? "cursor-default bg-brand-green/10 text-brand-green"
+                                  : "text-brand-green-dark/40 hover:text-brand-green-dark/70 hover:bg-brand-sand"
+                              )}
+                              title="Edit food items"
+                            >
+                              <UtensilsIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                       <div className="mt-1.5 space-y-0.5">
-                        {effectiveItems.map((item) => {
+                        {displayItems.map((item) => {
                           const isVoided = item.status === "voided";
                           const isItemEditing = isEditing && !isVoided;
                           const spPending = !isVoided && item.pricingStatus === "pending";
@@ -1801,14 +1867,14 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                 <div className="flex items-center gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => handleQuantityChange(order.id, item.id, nextFoodOrderQuantity(item.quantity, draft[item.id], -1), order.status)}
+                                    onClick={() => handleQuantityChange(order.id, item.id, item.quantity, order.status === "served" ? Math.max(0, item.quantity - 1) : nextFoodOrderQuantity(item.quantity, draft[item.id], -1), order.status)}
                                     disabled={actionBusy === `qty_${item.id}`}
                                     className="flex h-5 w-5 items-center justify-center rounded border border-brand-mist text-brand-green-dark/60 hover:bg-gray-100 dark:hover:bg-[#1c1c1c] disabled:opacity-50"
                                   >−</button>
                                   <span className="w-5 text-center font-medium text-brand-green-dark">{item.quantity}</span>
                                   <button
                                     type="button"
-                                    onClick={() => handleQuantityChange(order.id, item.id, nextFoodOrderQuantity(item.quantity, draft[item.id], 1), order.status)}
+                                    onClick={() => handleQuantityChange(order.id, item.id, item.quantity, order.status === "served" ? item.quantity + 1 : nextFoodOrderQuantity(item.quantity, draft[item.id], 1), order.status)}
                                     disabled={actionBusy === `qty_${item.id}`}
                                     className="flex h-5 w-5 items-center justify-center rounded border border-brand-mist text-brand-green-dark/60 hover:bg-gray-100 dark:hover:bg-[#1c1c1c] disabled:opacity-50"
                                   >+</button>
@@ -1847,18 +1913,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                 ) : <span className="ml-2 flex-shrink-0 text-brand-green-dark/60">₹{(item.lineTotal / 100).toFixed(0)}</span>}
                               </div>
                             )}
-                            {voidingItemId === item.id && (
+                            {voidingItemId === item.id && (pendingQtyOrderId !== order.id || !pendingChanges[item.id]) && (
                               <VoidReasonPopup
-                                itemName={pendingQtyChange?.itemId === item.id ? `Modify "${item.itemName}" (${item.quantity} → ${pendingQtyChange.newQty})` : item.itemName}
-                                isModification={pendingQtyChange?.itemId === item.id}
-                                onVoid={(reason) => {
-                                  if (pendingQtyChange?.itemId === item.id) {
-                                    handleServedQtyChange(reason);
-                                  } else {
-                                    handleVoidItem(order.id, item.id, reason);
-                                  }
-                                }}
-                                onCancel={() => { setVoidingItemId(null); setPendingQtyChange(null); }}
+                                itemName={item.itemName}
+                                onVoid={(reason) => handleVoidItem(order.id, item.id, reason)}
+                                onCancel={() => setVoidingItemId(null)}
                                 busy={actionBusy === `void_${item.id}` || actionBusy === `qty_${item.id}`}
                               />
                             )}
@@ -1866,6 +1925,29 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           );
                         })}
                       </div>
+                      {pendingQtyOrderId === order.id && Object.keys(pendingChanges).length > 0 && (
+                        <BatchModificationPopup
+                          changes={Object.entries(pendingChanges).map(([itemId, change]) => ({
+                            itemName: order.items.find((item) => item.id === Number(itemId))?.itemName || "Item",
+                            fromQty: change.fromQty,
+                            newQty: change.newQty,
+                          }))}
+                          onSave={handleServedQtyChange}
+                          onCancel={() => {
+                            setPendingQtyChanges((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+                            setPendingQtyOrderId(null);
+                          }}
+                          busy={actionBusy === `save_${order.id}`}
+                        />
+                      )}
+                      {cancelOrderId === order.id && (
+                        <OrderCancelConfirmation
+                          order={order}
+                          busy={actionBusy === `cancel_order_${order.id}`}
+                          onConfirm={() => void handleCancelUnpaidOrder(order)}
+                          onCancel={() => setCancelOrderId(null)}
+                        />
+                      )}
                       <div className="mt-1 flex items-center justify-between">
                         <span className="text-[10px] text-brand-green-dark/40">by {order.createdBy || "guest"}</span>
                         <span className="text-sm font-semibold text-brand-green-dark">₹{(draftTotal / 100).toFixed(0)}</span>
@@ -1884,7 +1966,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                               setDraftEdits((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
                               setEditingOrderId(null);
                               setVoidingItemId(null);
-                              setPendingQtyChange(null);
+                              setPendingQtyChanges((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+                              setPendingQtyOrderId(null);
                             }}
                             disabled={actionBusy === `save_${order.id}`}
                             className="rounded border border-brand-mist px-2.5 py-1 text-[11px] font-medium text-brand-green-dark/70 hover:bg-brand-sand disabled:opacity-50"
@@ -2117,6 +2200,63 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 // ─── Void Reason Popup ───────────────────────────────────────────────────────
 
 const VOID_REASONS = ["Burnt", "Wrong order", "Guest complaint", "Quality issue", "Out of stock", "Other"];
+
+function BatchModificationPopup({ changes, onSave, onCancel, busy }: {
+  changes: Array<{ itemName: string; fromQty: number; newQty: number }>;
+  onSave: (reason: string) => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  const [selectedReason, setSelectedReason] = useState<string>("");
+  const [customNotes, setCustomNotes] = useState("");
+  const finalReason = selectedReason === "Other"
+    ? customNotes.trim() || "Other"
+    : selectedReason + (customNotes.trim() ? ` — ${customNotes.trim()}` : "");
+
+  return (
+    <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2.5 dark:border-red-800 dark:bg-red-950 space-y-2">
+      <p className="text-xs font-medium text-red-700 dark:text-red-400">Modify order quantities?</p>
+      <div className="space-y-0.5 text-xs text-red-800 dark:text-red-300">
+        {changes.map((change) => <p key={change.itemName}>{change.itemName}: {change.fromQty} → {change.newQty}</p>)}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {VOID_REASONS.map((reason) => (
+          <button key={reason} type="button" onClick={() => setSelectedReason(reason)} className={cn(
+            "rounded-full px-2 py-0.5 text-xs transition-colors",
+            selectedReason === reason ? "bg-red-500 text-white" : "border border-red-200 bg-white text-red-600 hover:bg-red-100 dark:border-red-800 dark:bg-card dark:text-red-400"
+          )}>{reason}</button>
+        ))}
+      </div>
+      <input className="w-full rounded border border-red-200 bg-white px-2 py-1 text-xs dark:border-red-800 dark:bg-card" placeholder="Additional notes (optional)" value={customNotes} onChange={(event) => setCustomNotes(event.target.value)} />
+      <div className="flex gap-1.5">
+        <button type="button" onClick={() => onSave(finalReason)} disabled={busy} className="rounded-md bg-red-500 px-3 py-1 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50">{busy ? "Saving…" : "Save modification"}</button>
+        <button type="button" onClick={onCancel} disabled={busy} className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-400">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function OrderCancelConfirmation({ order, onConfirm, onCancel, busy }: {
+  order: Order;
+  onConfirm: () => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="mt-2 rounded-lg border border-red-300 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950">
+      <p className="text-sm font-semibold text-red-800 dark:text-red-300">Cancel order {order.orderNumber} for {order.guestName}?</p>
+      <div className="mt-1 text-xs text-red-700 dark:text-red-400">
+        {order.items.filter((item) => item.status !== "voided").map((item) => <p key={item.id}>{item.quantity}× {item.itemName}</p>)}
+        <p className="mt-1 font-semibold">Total: ₹{(order.total / 100).toFixed(0)}</p>
+      </div>
+      <p className="mt-2 text-xs text-red-700 dark:text-red-400">This will cancel the unpaid order and restore its inventory.</p>
+      <div className="mt-2 flex gap-2">
+        <button type="button" onClick={onConfirm} disabled={busy} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">{busy ? "Cancelling…" : "Yes, cancel order"}</button>
+        <button type="button" onClick={onCancel} disabled={busy} className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-300">No</button>
+      </div>
+    </div>
+  );
+}
 
 function VoidReasonPopup({ itemName, isModification = false, onVoid, onCancel, busy }: {
   itemName: string;
