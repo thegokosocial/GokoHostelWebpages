@@ -43,6 +43,60 @@ async function mockAdminApi(page: Page) {
   });
 }
 
+async function mockFoodOrderWorkflow(page: Page, requests: Array<Record<string, unknown>>) {
+  await page.route("**/api/admin/food-orders", async (route) => {
+    const body = JSON.parse(route.request().postData() || "{}") as Record<string, unknown>;
+    requests.push(body);
+    const action = body.action;
+    const order = {
+      id: 10,
+      orderNumber: "D265-10",
+      guestType: "walkin",
+      checkinId: null,
+      guestName: "Pawan test",
+      guestPhone: "123454321",
+      roomInfo: "",
+      specialInstructions: "",
+      subtotal: 400,
+      tax: 0,
+      total: 400,
+      amountPaid: 0,
+      amountRefunded: 0,
+      status: "served",
+      paymentStatus: "pending",
+      paymentMethod: "",
+      paidBy: "",
+      cashReceived: 0,
+      changeGiven: 0,
+      discount: 0,
+      discountReason: "",
+      discountBy: "",
+      cancelledReason: "",
+      createdBy: "admin",
+      createdAt: "2026-09-23T06:00:00.000Z",
+      updatedAt: "2026-09-23T06:00:00.000Z",
+      hasModifications: false,
+      items: [{ id: 20, menuItemId: 4, itemName: "Shampoo", itemPrice: 200, quantity: 2, lineTotal: 400, status: "active", pricingStatus: "fixed", notes: "" }],
+    };
+    const response = action === "getGuestsWithTabs"
+      ? { guests: [] }
+      : action === "getWalkinOrders"
+        ? { orders: [order] }
+        : action === "listOrders" && body.status === "all_history"
+          ? { orders: [] }
+          : action === "listOrders"
+            ? { orders: [] }
+            : action === "getMenu"
+              ? { categories: [], items: [], paymentHistoryDays: 7 }
+              : action === "saveOrderEdits"
+                ? { success: true, duplicate: false, total: 400, refundAmount: 0 }
+                : action === "getOrderModifications"
+                  ? { modifications: [] }
+                  : {};
+    await route.fulfill({ json: response });
+  });
+}
+
 async function signInToManagement(page: Page) {
   await page.goto("/admin?section=management&tab=history");
   await page.locator("#admin-user").fill("e2e-admin");
@@ -111,6 +165,36 @@ test("desktop Management tabs still switch directly", async ({ page }) => {
 
   await page.getByRole("button", { name: "Rates", exact: true }).click();
   await expect(page).toHaveURL(/tab=rates/);
+});
+
+test("Food Orders browser workflow stages a served quantity modification and saves it without a reason", async ({ page }) => {
+  const requests: Array<Record<string, unknown>> = [];
+  await mockFoodOrderWorkflow(page, requests);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToManagement(page);
+
+  await page.getByRole("button", { name: "Food Orders", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Order Summary/ })).toBeVisible();
+  await page.getByRole("button", { name: "Pawan test" }).click();
+
+  const drawer = page.locator(".fixed.inset-0.z-50");
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "Edit food items for D265-10" }).click();
+  const orderCard = drawer.locator('[data-order-id="10"]');
+  await orderCard.getByRole("button", { name: "+" }).click();
+
+  await expect(orderCard).toContainText('Modify "Shampoo" (2 → 3)?');
+  await expect(orderCard.getByRole("button", { name: "Save modification" })).toBeEnabled();
+  await orderCard.getByRole("button", { name: "Save modification" }).click();
+  await expect(orderCard.getByText("3", { exact: true })).toBeVisible();
+  await expect(orderCard).toContainText("Shampoo");
+  await orderCard.getByRole("button", { name: "Save changes" }).click();
+
+  await expect.poll(() => requests.filter((body) => body.action === "saveOrderEdits")).toHaveLength(1);
+  expect(requests.find((body) => body.action === "saveOrderEdits")).toMatchObject({
+    orderId: 10,
+    changes: [{ itemId: 20, quantity: 3, reason: "" }],
+  });
 });
 
 test("in-page Management selectors keep their own selected state", async ({ page }) => {
