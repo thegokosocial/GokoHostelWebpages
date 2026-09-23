@@ -7,6 +7,8 @@ const q = vi.hoisted(() => ({
   addOrderModification: vi.fn(), addAuditEntry: vi.fn(), updateFoodOrderPayment: vi.fn(), updateFoodOrderStatus: vi.fn(),
   updateFoodOrderItemQuantity: vi.fn(), deleteFoodOrderItem: vi.fn(), addStock: vi.fn(), decrementStock: vi.fn(),
   restoreStock: vi.fn(),
+  createFoodOrder: vi.fn(), addFoodOrderItems: vi.fn(), getNextOrderNumber: vi.fn(), getMenuItemById: vi.fn(),
+  dispatchPush: vi.fn(), notificationFoodBody: vi.fn(),
   latestReceiptAccount: vi.fn(), createGuestReceipt: vi.fn(), resolveReceiptAccount: vi.fn(),
   getFoodOrderItemsBatch: vi.fn(),
   getDb: vi.fn(),
@@ -22,9 +24,12 @@ vi.mock("@/db/queries", () => ({
   updateFoodOrderItemQuantity: q.updateFoodOrderItemQuantity, deleteFoodOrderItem: q.deleteFoodOrderItem,
   addStock: q.addStock, decrementStock: q.decrementStock, restoreStock: q.restoreStock,
   getFoodOrderItemsBatch: q.getFoodOrderItemsBatch,
+  createFoodOrder: q.createFoodOrder, addFoodOrderItems: q.addFoodOrderItems,
+  getNextOrderNumber: q.getNextOrderNumber, getMenuItemById: q.getMenuItemById,
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
 vi.mock("@/lib/guestReceipts", () => ({ latestReceiptAccount: q.latestReceiptAccount, createGuestReceipt: q.createGuestReceipt, receiptBusinessDate: vi.fn(() => "2026-09-22"), resolveReceiptAccount: q.resolveReceiptAccount }));
+vi.mock("@/lib/pushNotify", () => ({ dispatchPush: q.dispatchPush, notificationFoodBody: q.notificationFoodBody }));
 
 import { POST } from "@/app/api/admin/food-orders/route";
 
@@ -59,6 +64,9 @@ beforeEach(() => {
   q.latestReceiptAccount.mockResolvedValue(null);
   q.resolveReceiptAccount.mockResolvedValue(7);
   q.createGuestReceipt.mockResolvedValue(undefined);
+  q.addFoodOrderItems.mockResolvedValue(undefined);
+  q.dispatchPush.mockResolvedValue(undefined);
+  q.notificationFoodBody.mockReturnValue("New food order");
   q.getFoodOrderItemsBatch.mockResolvedValue(new Map());
   q.updateFoodOrderItemQuantity.mockImplementation(async (id: number, quantity: number, price: number) => Object.assign(pendingItem, { quantity, lineTotal: quantity * price }));
   q.getDb.mockReturnValue({
@@ -68,6 +76,42 @@ beforeEach(() => {
 });
 
 describe("admin market-pricing workflows", () => {
+  it("places Order More for a guest whose previous order is fully paid", async () => {
+    q.getMenuItemById.mockResolvedValue({
+      id: 41,
+      name: "Soap",
+      price: 500,
+      priceOnRequest: 0,
+      trackInventory: 0,
+      stockQuantity: 0,
+    });
+    q.getNextOrderNumber.mockResolvedValue("D266-11");
+    q.createFoodOrder.mockResolvedValue([{ id: 99, orderNumber: "D266-11" }]);
+
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Pawan test",
+      guestPhone: "123454321",
+      items: [{ menuItemId: 41, quantity: 1 }],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, orderId: 99, orderNumber: "D266-11", total: 525 });
+    expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({
+      guestName: "Pawan test",
+      total: 525,
+      paymentStatus: "pending",
+      createdBy: "Admin",
+    }));
+    expect(q.addFoodOrderItems).toHaveBeenCalledWith([expect.objectContaining({
+      orderId: 99,
+      itemName: "Soap",
+      quantity: 1,
+      lineTotal: 500,
+    })]);
+    expect(q.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "food_order_placed", target: "order:99" }));
+  });
+
   it("finalizes a pending line using quantity and recalculates totals", async () => {
     const response = await POST(req({ orderId: 10, orderItemId: 20, price: 45000 }));
     expect(response.status).toBe(200);
