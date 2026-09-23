@@ -14,7 +14,7 @@ import { DateRangeSelector } from "./DateRangeSelector";
 import { getDateRange, getHostelToday, rangeCoveringStay, STATUS_LABELS } from "./utils";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "../AdminLoading";
-import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm } from "./types";
+import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm, BookingContactMethod } from "./types";
 import type { Role } from "../types";
 import { hasPermission } from "../types";
 import { fetchWithRetry } from "@/components/admin/useAdminApi";
@@ -86,7 +86,7 @@ export function BookingDashboard({
   const [dorms, setDorms] = useState<CalendarDorm[]>([]);
   const [unassignedBookings, setUnassignedBookings] = useState<DashboardBooking[]>([]);
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
-  const [externalDetail, setExternalDetail] = useState<{ booking: DashboardBooking; assignments: BedAssignment[] } | null>(null);
+  const [externalDetail, setExternalDetail] = useState<{ booking: DashboardBooking; assignments: BedAssignment[]; contactMethods: BookingContactMethod[] } | null>(null);
   const openingInitialBookingId = useRef<number | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [initialCheckin, setInitialCheckin] = useState<CheckinBookingPrefill | null>(null);
@@ -104,13 +104,6 @@ export function BookingDashboard({
   );
 
   const openBooking = useCallback(async (bookingId: number) => {
-    const visible = bookings.find((booking) => booking.id === bookingId)
-      ?? allBookings.find((booking) => booking.id === bookingId);
-    if (visible) {
-      setExternalDetail(null);
-      setSelectedBookingId(bookingId);
-      return;
-    }
     try {
       const res = await apiCall({ action: "getDetail", bookingId });
       if (!res.ok) {
@@ -119,7 +112,7 @@ export function BookingDashboard({
         return;
       }
       const detail = await res.json();
-      setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [] });
+      setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [], contactMethods: detail.contactMethods || [] });
       setSelectedBookingId(bookingId);
     } catch {
       showError("Network error loading booking details");
@@ -297,7 +290,7 @@ export function BookingDashboard({
             const detailRes = await apiCall({ action: "getDetail", bookingId });
             if (detailRes.ok) {
               const detail = await detailRes.json();
-              setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [] });
+              setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [], contactMethods: detail.contactMethods || [] });
             }
           }
           return true;
@@ -579,6 +572,7 @@ export function BookingDashboard({
         <BookingDetailPanel
           booking={selectedBooking}
           assignments={externalDetail?.booking.id === selectedBooking.id ? externalDetail.assignments : assignments.filter((a) => a.bookingId === selectedBooking.id)}
+          contactMethods={externalDetail?.booking.id === selectedBooking.id ? externalDetail.contactMethods : []}
           onClose={() => { setSelectedBookingId(null); setExternalDetail(null); }}
           onAction={handleBookingAction}
           role={role}

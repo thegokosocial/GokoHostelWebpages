@@ -19,11 +19,12 @@ import {
   checkBedAvailability, getAvailableBedsForRange, validateBedsForRange, assignBedToBooking, unassignBookingBeds,
   unassignBookingBedsByBedIds,
   cancelBedAssignments, addBookingHistoryEntry, getBookingHistoryEntries, getBookingAuditEntries,
-  addBooking, updateBookingFull, transitionBookingStatus, getAllDorms, getAllBeds, getBedById,
+  addBooking, updateBookingFull, transitionBookingStatus, getAllDorms, getAllBeds, getBedById, saveBookingContactMethods,
   getChannelConfig, getSetting, setSetting,
   getRoomTypeMappings, getRatePlanMappings, getAllDailyRates,
   deactivateBedBlocksByBedIds, shortenAssignedCheckout,
   getCheckinById, updateCheckin, getBookingByRef,
+  syncBookingContactSnapshot,
   reopenWalkinCheckinsForBooking, hardDeleteBookingCascade, bookingHasPlatformFinance, findWalkinCheckinsByBookingRefs,
   addAuditEntry,
 } from "@/db/queries";
@@ -285,6 +286,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   getAvailableBeds: "canViewBookings",
   getRoomReceiptAccounts: ["canAddBooking", "canCheckIn", "canRecordBookingPayments", "canDeleteBooking"],
   getBookingHistory: "canViewBookings",
+  saveBookingContacts: "canManageBookingContacts",
   getBookingPaymentEvents: "canViewBookings",
   getBookingAuditLog: "canViewBookings",
   getWhatsAppTemplates: "canViewBookings",
@@ -609,6 +611,30 @@ export async function POST(req: NextRequest) {
         getBookingPaymentEvents(Number(bookingId)),
       ]);
       return NextResponse.json({ history, paymentEvents });
+    }
+
+    if (action === "saveBookingContacts") {
+      const bookingId = Number(body.bookingId);
+      if (!Number.isInteger(bookingId) || bookingId <= 0 || !Array.isArray(body.contacts)) {
+        return NextResponse.json({ error: "bookingId and contacts[] required" }, { status: 400 });
+      }
+      const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      const contacts = body.contacts.map((item: any) => ({
+        id: item?.id === undefined || item?.id === null || item?.id === "" ? undefined : Number(item.id),
+        type: item?.type,
+        value: item?.value,
+        label: item?.label,
+      }));
+      if (contacts.some((item: any) => (!Number.isInteger(item.id) && item.id !== undefined) || typeof item.type !== "string" || typeof item.value !== "string" || (item.label !== undefined && typeof item.label !== "string"))) {
+        return NextResponse.json({ error: "Invalid contact row" }, { status: 400 });
+      }
+      try {
+        const result = await saveBookingContactMethods(bookingId, contacts, actingUser);
+        return NextResponse.json({ success: true, ...result });
+      } catch (error: any) {
+        return NextResponse.json({ error: error?.message || "Could not save booking contacts" }, { status: 400 });
+      }
     }
 
     if (action === "getBookingPaymentEvents") {
@@ -2070,6 +2096,7 @@ export async function POST(req: NextRequest) {
     if (action === "editReservation") {
       const { bookingId, guestName, contact, email, specialRequests, persons, checkinDate: requestedCheckin, checkoutDate: requestedCheckout, nightlyRate, amountBeforeTax, amountTax, amountTotal, amountPaid, paymentAdjustment, paymentMethod, cashReceived, changeGiven, refundMethod, refundCash, onlineAccountId, receiptId, addBedIds, removeBedIds, taxMode } = body;
       if (!bookingId) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
+      if (contact !== undefined || email !== undefined) return NextResponse.json({ error: "Use Guest Contact to manage phone numbers and email addresses" }, { status: 400 });
 
       const detail = await getBookingDetail(bookingId);
       if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
@@ -2119,16 +2146,6 @@ export async function POST(req: NextRequest) {
         if (typeof guestName !== "string" || !guestName.trim()) return NextResponse.json({ error: "Guest name is required" }, { status: 400 });
         updates.guestName = guestName.trim();
         if (updates.guestName !== detail.booking.guestName) changes.push(`Guest name → ${updates.guestName}`);
-      }
-      if (contact !== undefined) {
-        if (typeof contact !== "string") return NextResponse.json({ error: "Contact must be text" }, { status: 400 });
-        updates.contact = contact.trim();
-        if (updates.contact !== (detail.booking.contact || "")) changes.push("Contact updated");
-      }
-      if (email !== undefined) {
-        if (typeof email !== "string") return NextResponse.json({ error: "Email must be text" }, { status: 400 });
-        updates.email = email.trim();
-        if (updates.email !== (detail.booking.email || "")) changes.push("Email updated");
       }
       if (specialRequests !== undefined) {
         if (typeof specialRequests !== "string") return NextResponse.json({ error: "Special requests must be text" }, { status: 400 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getChannelConfig, addBooking, updateBookingFull, getBookingByRef, unassignBookingBeds, addBookingHistoryEntry, getBookingDetail, checkBedAvailability, assignBedToBooking, getRoomTypeMappings, getAvailableBedsForRange } from "@/db/queries";
+import { syncBookingContactSnapshot } from "@/db/queries";
 import { triggerInventoryPush } from "@/lib/aiosellSync";
 import { parseReservationPayload, type ReservationPayload } from "@/lib/aiosell";
 import { occupiedNights, exclusiveEndDate } from "@/lib/inventoryAvailability";
@@ -364,6 +365,8 @@ async function handleNewBooking(payload: ReservationPayload) {
         cancelledAt: "",
         cancelledBy: "",
       });
+      const rebookFields = extractBookingFields(payload);
+      await syncBookingContactSnapshot(existing.id, "channel_manager", rebookFields.contact || "", rebookFields.email || "", "channel_manager");
       await unassignBookingBeds(existing.id);
       await addBookingHistoryEntry({
         bookingId: existing.id,
@@ -418,7 +421,7 @@ async function handleModifyBooking(payload: ReservationPayload) {
 
   const guest = payload.guest;
   const guestName = guest ? channelGuestName(guest, existing.guestName) : existing.guestName;
-  const contact = guest?.phone || guest?.email || existing.contact;
+  const contact = guest?.phone || existing.contact;
   const roomInfo = payload.rooms?.map((r) => r.roomCode).join(", ") || existing.roomType;
   const persons = channelPersonCount({ rooms: payload.rooms, persons: existing.persons });
   const ratePlan = payload.rooms?.[0]?.rateplanCode || existing.ratePlan || "";
@@ -484,6 +487,7 @@ async function handleModifyBooking(payload: ReservationPayload) {
     ratePlan,
     nightlyRate,
   });
+  await syncBookingContactSnapshot(existing.id, "channel_manager", guest?.phone || "", guest?.email || "", "channel_manager");
 
   await addBookingHistoryEntry({
     bookingId: existing.id,

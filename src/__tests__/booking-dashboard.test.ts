@@ -310,7 +310,7 @@ describe("Dashboard booking activity", () => {
     expect(dashboard).toContain('onNavigate("bookings", { bookingId: booking.id })');
     expect(bookingDashboard).toContain('action: "getDetail", bookingId');
     expect(bookingDashboard).toContain('externalDetail?.booking.id === selectedBookingId');
-    expect(bookingDashboard).toContain('setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [] })');
+    expect(bookingDashboard).toContain('setExternalDetail({ booking: detail.booking, assignments: detail.assignments || [], contactMethods: detail.contactMethods || [] })');
   });
 
   it("keeps today's check-ins and checkouts in bounded scrollable lists like today's bookings", () => {

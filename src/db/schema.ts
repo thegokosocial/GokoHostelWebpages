@@ -416,6 +416,25 @@ export const bookings = sqliteTable("bookings", {
   index("idx_bookings_goko_id").on(table.gokoBookingId),
 ]);
 
+export const bookingContactMethods = sqliteTable("booking_contact_methods", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  bookingId: integer("booking_id").notNull().references(() => bookings.id),
+  type: text("type").notNull(),
+  value: text("value").notNull(),
+  normalizedValue: text("normalized_value").notNull(),
+  label: text("label").notNull().default(""),
+  origin: text("origin").notNull().default("custom"),
+  isPrimary: integer("is_primary").notNull().default(0),
+  position: integer("position").notNull().default(0),
+  deletedAt: text("deleted_at"),
+  ...syncColumns,
+}, (table) => [
+  index("idx_booking_contacts_booking").on(table.bookingId, table.deletedAt),
+  uniqueIndex("idx_booking_contacts_value").on(table.bookingId, table.type, table.normalizedValue, table.deletedAt),
+  check("booking_contact_type", sql`${table.type} IN ('phone','email')`),
+  check("booking_contact_origin", sql`${table.origin} IN ('pms','custom')`),
+]);
+
 /** Append-only Goko-collected payments for OTA postpaid stays. Amounts are paise. */
 export const bookingPaymentEvents = sqliteTable("booking_payment_events", {
   id: integer("id").primaryKey({ autoIncrement: true }),

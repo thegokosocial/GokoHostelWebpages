@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, bookingContactMethods, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -13,6 +13,7 @@ import { INVENTORY_AUDIT_ACTION_PREFIXES } from "@/lib/inventoryAudit";
 import type { AuditReferenceMaps } from "@/lib/auditPresentation";
 import { uniqueInBatches, collectInBatches } from "@/lib/dbBatch";
 import { foodDue } from "@/lib/foodPaymentBalance";
+import { normalizePhone } from "@/lib/phoneUtils";
 
 // --- Check-ins ---
 
@@ -665,7 +666,125 @@ export async function addBooking(data: {
     checkedOutAt: data.checkedOutAt || "",
     checkedOutBy: data.checkedOutBy || "",
   })).returning({ id: bookings.id });
-  return rows[0]?.id ?? null;
+  const id = rows[0]?.id ?? null;
+  if (id) await syncBookingContactSnapshot(id, data.source || "manual", data.contact || "", data.email || "", "system");
+  return id;
+}
+
+export type BookingContactMethod = typeof bookingContactMethods.$inferSelect;
+
+function normalizeBookingContact(type: "phone" | "email", value: string): string {
+  if (type === "phone") {
+    const normalized = normalizePhone(value);
+    if (!normalized) throw new Error("Enter a valid phone number");
+    return normalized;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new Error("Enter a valid email address");
+  return normalized;
+}
+
+export async function getBookingContactMethods(bookingId: number) {
+  try {
+    return await getDb().select().from(bookingContactMethods).where(and(eq(bookingContactMethods.bookingId, bookingId), sql`${bookingContactMethods.deletedAt} IS NULL`))
+      .orderBy(bookingContactMethods.type, bookingContactMethods.position, bookingContactMethods.id);
+  } catch (error) {
+    if (/no such table|no such column/i.test(error instanceof Error ? error.message : String(error))) return [];
+    throw error;
+  }
+}
+
+/** Mirrors source/legacy booking fields without ever changing staff-added rows. */
+export async function syncBookingContactSnapshot(
+  bookingId: number,
+  source: string,
+  contact: string,
+  email: string,
+  actor = "system",
+) {
+  const db = getDb();
+  try {
+    await db.select({ id: bookingContactMethods.id }).from(bookingContactMethods).limit(1);
+  } catch (error) {
+    if (/no such table|no such column/i.test(error instanceof Error ? error.message : String(error))) return;
+    throw error;
+  }
+  const origin = ["channel_manager", "email"].includes(source) ? "pms" : "custom";
+  const values = [
+    { type: "phone" as const, value: contact.trim() },
+    { type: "email" as const, value: email.trim() },
+  ];
+  for (const item of values) {
+    const existing = (await db.select().from(bookingContactMethods).where(and(
+      eq(bookingContactMethods.bookingId, bookingId), eq(bookingContactMethods.type, item.type),
+      eq(bookingContactMethods.origin, origin), eq(bookingContactMethods.isPrimary, 1),
+      sql`${bookingContactMethods.deletedAt} IS NULL`,
+    )).limit(1))[0];
+    if (!item.value) {
+      if (origin === "pms" && existing) {
+        await db.update(bookingContactMethods).set(syncUpdate({ deletedAt: new Date().toISOString() })).where(eq(bookingContactMethods.id, existing.id));
+        await addBookingHistoryEntry({ bookingId, action: "Booking Contact Updated", details: `${item.type} PMS value cleared`, performedBy: actor });
+      }
+      continue;
+    }
+    const normalized = normalizeBookingContact(item.type, item.value);
+    if (!existing) {
+      await db.insert(bookingContactMethods).values(syncInsert({ bookingId, type: item.type, value: item.value, normalizedValue: normalized, label: "", origin, isPrimary: 1, position: 0 }));
+    } else if (origin === "pms" && (existing.value !== item.value || existing.normalizedValue !== normalized)) {
+      await db.update(bookingContactMethods).set(syncUpdate({ value: item.value, normalizedValue: normalized })).where(eq(bookingContactMethods.id, existing.id));
+      await addBookingHistoryEntry({ bookingId, action: "Booking Contact Updated", details: `${item.type} PMS value refreshed`, performedBy: actor });
+    }
+  }
+}
+
+export async function saveBookingContactMethods(
+  bookingId: number,
+  requested: Array<{ id?: number; type: "phone" | "email"; value: string; label?: string }>,
+  performedBy: string,
+) {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    const existing = await tx.select().from(bookingContactMethods).where(and(eq(bookingContactMethods.bookingId, bookingId), sql`${bookingContactMethods.deletedAt} IS NULL`));
+    const existingById = new Map(existing.map((row) => [row.id, row]));
+    const seen = new Set<string>();
+    const prepared = requested.map((item, index) => {
+      if (item.type !== "phone" && item.type !== "email") throw new Error("Contact type is invalid");
+      const value = item.value.trim();
+      const normalizedValue = normalizeBookingContact(item.type, value);
+      const key = `${item.type}:${normalizedValue}`;
+      if (seen.has(key)) throw new Error("Duplicate contact values are not allowed");
+      seen.add(key);
+      const row = item.id ? existingById.get(item.id) : undefined;
+      if (item.id && !row) throw new Error("Contact row was not found; reload and try again");
+      if (row?.origin === "pms" && (row.value !== value || row.label !== (item.label || ""))) throw new Error("PMS contacts cannot be edited");
+      return { item, row, value, normalizedValue, label: (item.label || "").trim().slice(0, 80), position: index };
+    });
+    for (const type of ["phone", "email"] as const) {
+      if (prepared.filter((row) => row.item.type === type).length > 5) throw new Error(`Maximum 5 ${type}s allowed`);
+    }
+    const requestedIds = new Set(prepared.filter((row) => row.row).map((row) => row.row!.id));
+    const changes: string[] = [];
+    for (const row of existing) {
+      if (row.origin === "custom" && !requestedIds.has(row.id)) {
+        await tx.update(bookingContactMethods).set(syncUpdate({ deletedAt: new Date().toISOString() })).where(eq(bookingContactMethods.id, row.id));
+        changes.push(`Deleted ${row.type} ${row.label || "contact"}`);
+      }
+    }
+    for (const row of prepared) {
+      if (row.row) {
+        if (row.row.origin === "pms") continue;
+        if (row.row.value !== row.value || row.row.label !== row.label || row.row.position !== row.position) {
+          await tx.update(bookingContactMethods).set(syncUpdate({ value: row.value, normalizedValue: row.normalizedValue, label: row.label, position: row.position })).where(eq(bookingContactMethods.id, row.row.id));
+          changes.push(`Updated ${row.item.type} ${row.label || "contact"}`);
+        }
+      } else {
+        await tx.insert(bookingContactMethods).values(syncInsert({ bookingId, type: row.item.type, value: row.value, normalizedValue: row.normalizedValue, label: row.label, origin: "custom", isPrimary: 0, position: row.position }));
+        changes.push(`Added ${row.item.type} ${row.label || "contact"}`);
+      }
+    }
+    if (changes.length) await tx.insert(bookingHistory).values({ bookingId, action: "Booking Contacts Changed", details: changes.join("; "), performedBy, performedAt: new Date().toISOString() });
+    return { changes };
+  });
 }
 
 export async function updateBookingStatus(id: number, status: string) {
@@ -685,6 +804,12 @@ export async function hardDeleteBookingCascade(bookingId: number): Promise<{ rec
     .from(guestReceipts)
     .where(and(eq(guestReceipts.sourceType, "booking"), eq(guestReceipts.sourceId, bookingId)));
   await db.delete(bookingBedAssignments).where(eq(bookingBedAssignments.bookingId, bookingId));
+  try {
+    await db.delete(bookingContactMethods).where(eq(bookingContactMethods.bookingId, bookingId));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/no such table/i.test(message)) throw error;
+  }
   await db.delete(bookingHistory).where(eq(bookingHistory.bookingId, bookingId));
   await db.delete(guestReceipts).where(and(eq(guestReceipts.sourceType, "booking"), eq(guestReceipts.sourceId, bookingId)));
   try {
@@ -2103,6 +2228,7 @@ export async function getBookingDetail(bookingId: number) {
     const booking = bookingRows[0];
     const assignmentRows = await db.select().from(bookingBedAssignments).where(eq(bookingBedAssignments.bookingId, bookingId));
     const historyRows = await db.select().from(bookingHistory).where(eq(bookingHistory.bookingId, bookingId)).orderBy(desc(bookingHistory.id));
+    const contactRows = await getBookingContactMethods(bookingId);
 
     let linkedBookings: typeof bookingRows = [];
     if (booking.gokoBookingId) {
@@ -2111,7 +2237,7 @@ export async function getBookingDetail(bookingId: number) {
       );
     }
 
-    return { booking, assignments: assignmentRows, history: historyRows, linkedBookings };
+    return { booking, assignments: assignmentRows, history: historyRows, contactMethods: contactRows, linkedBookings };
   });
 }
 

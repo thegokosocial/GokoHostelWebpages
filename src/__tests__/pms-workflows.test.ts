@@ -42,6 +42,7 @@ const { captured, queryMocks } = vi.hoisted(() => {
       getAvailabilitySnapshot: vi.fn(),
       getUnassignedOtaHoldsForRange: vi.fn(),
       addAuditEntry: vi.fn(),
+      syncBookingContactSnapshot: vi.fn(),
     },
   };
 });

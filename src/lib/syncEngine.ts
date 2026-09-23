@@ -11,7 +11,7 @@ import { collectInBatches } from "@/lib/dbBatch";
 const SYNCED_TABLES_WITH_DELETE = [
   "checkins", "dorms", "beds", "bookings", "menu_categories", "menu_items",
   "food_orders", "accounts", "vendors", "employees", "users", "tasks", "expenses", "daily_income",
-  "employee_attendance", "employee_leave_policy", "employee_compensation_history",
+  "employee_attendance", "employee_leave_policy", "employee_compensation_history", "booking_contact_methods",
   "platform_payment_profiles",
 ] as const;
 
@@ -38,6 +38,7 @@ const TABLE_MAP: Record<string, any> = {
   dorms: schema.dorms,
   beds: schema.beds,
   bookings: schema.bookings,
+  booking_contact_methods: schema.bookingContactMethods,
   menu_categories: schema.menuCategories,
   menu_items: schema.menuItems,
   food_orders: schema.foodOrders,
@@ -87,6 +88,7 @@ const FK_REMAP: Record<string, Record<string, string>> = {
   guest_receipts: { accountId: "accounts" },
   booking_cycle_snapshots: { bookingId: "bookings" },
   booking_payment_events: { bookingId: "bookings", accountId: "accounts" },
+  booking_contact_methods: { bookingId: "bookings" },
   platform_payment_profiles: { virtualAccountId: "accounts" },
   platform_receivable_entries: { bookingId: "bookings" },
   platform_settlements: { bankAccountId: "accounts" },

@@ -41,7 +41,7 @@ import { fetchWithRetry } from "@/components/admin/useAdminApi";
 import { canLookupFoodTab, foodTabUncheckedMessage, unpaidFoodCheckoutMessage } from "@/lib/foodTab";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { hasPermission, type Role } from "../types";
-import type { DashboardBooking, BedAssignment, BookingHistoryEntry } from "./types";
+import type { DashboardBooking, BedAssignment, BookingHistoryEntry, BookingContactMethod } from "./types";
 import { bookingWhatsAppNumber, bookingWhatsAppReference, fillBookingWhatsAppTemplate, type BookingWhatsAppTemplate } from "@/lib/bookingWhatsApp";
 import { EditBookingModal } from "./EditBookingModal";
 import { useStaffWhatsApp } from "../StaffWhatsAppProvider";
@@ -49,6 +49,7 @@ import { useStaffWhatsApp } from "../StaffWhatsAppProvider";
 export function BookingDetailPanel({
   booking,
   assignments,
+  contactMethods,
   onClose,
   onAction,
   role,
@@ -59,6 +60,7 @@ export function BookingDetailPanel({
 }: {
   booking: DashboardBooking;
   assignments: BedAssignment[];
+  contactMethods: BookingContactMethod[];
   onClose: () => void;
   onAction: (action: string, bookingId: number, extra?: Record<string, unknown>) => Promise<boolean | void>;
   role: Role;
@@ -84,6 +86,9 @@ export function BookingDetailPanel({
   const [refundRupees, setRefundRupees] = useState("0");
   const [refundPay, setRefundPay] = useState<{ amount: number } | null>(null);
   const [showWhatsAppTemplates, setShowWhatsAppTemplates] = useState(false);
+  const [whatsAppContact, setWhatsAppContact] = useState("");
+  const [editingContacts, setEditingContacts] = useState(false);
+  const [contactDraft, setContactDraft] = useState<Array<Partial<BookingContactMethod> & { value: string; label: string; type: "phone" | "email" }>>([]);
   const [showEditBooking, setShowEditBooking] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
     action: string;
@@ -232,7 +237,6 @@ export function BookingDetailPanel({
   const dueAtHotel = due > 0;
   // Prepaid: Paid = total / Balance = ₹0. Check-in copies amountPaid as online; status stays prepaid.
   const shownPay = displayedStayPayment(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded);
-  const whatsAppNumber = bookingWhatsAppNumber(booking.contact || "");
   const propertyName = booking.property === "sunnys_paradise" ? "Sunny's Paradise" : "Goko Hostel";
   const bookingId = bookingWhatsAppReference(booking);
   const balanceText = booking.currency && booking.currency !== "INR"
@@ -248,9 +252,28 @@ export function BookingDetailPanel({
       "{BALANCE}": balanceText,
       "{PROPERTY_NAME}": propertyName,
     });
-    prepareWhatsApp(booking.contact || "", message, "bookings", true);
+    prepareWhatsApp(whatsAppContact, message, "bookings", true);
     setShowWhatsAppTemplates(false);
   };
+  const beginContactEdit = () => {
+    setContactDraft(contactMethods.map((method) => ({ ...method, value: method.value, label: method.label || "" })));
+    setEditingContacts(true);
+  };
+  const addContactDraft = (type: "phone" | "email") => {
+    if (contactDraft.filter((row) => row.type === type).length >= 5) return;
+    setContactDraft((rows) => [...rows, { type, value: "", label: "", origin: "custom" }]);
+  };
+  const saveContacts = async () => {
+    const ok = await runAction("saveBookingContacts", booking.id, {
+      contacts: contactDraft.map((row) => ({ id: row.id, type: row.type, value: row.value, label: row.label })),
+    });
+    if (ok) setEditingContacts(false);
+  };
+  const visibleContacts = contactMethods.length > 0 ? contactMethods : [
+    ...(booking.contact ? [{ id: -1, bookingId: booking.id, type: "phone" as const, value: booking.contact, normalizedValue: "", label: "", origin: booking.source === "channel_manager" ? "pms" as const : "custom" as const, isPrimary: 1, position: 0 }] : []),
+    ...(booking.email ? [{ id: -2, bookingId: booking.id, type: "email" as const, value: booking.email, normalizedValue: "", label: "", origin: booking.source === "channel_manager" ? "pms" as const : "custom" as const, isPrimary: 1, position: 0 }] : []),
+  ];
+  const canManageContacts = hasPermission(role, permissions, "canManageBookingContacts");
   const hasAssignedBed = assignments.some((a) => a.status === "assigned");
   const canCancelStay = hasAssignedBed
     ? hasPermission(role, permissions, "canDeleteBooking")
@@ -490,33 +513,49 @@ export function BookingDetailPanel({
             )}
 
             {/* Guest Contact */}
-            <Section icon={UserIcon} title="Guest Contact">
-              <div className="space-y-1.5">
-                {booking.contact && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <PhoneIcon className="size-3 text-muted-foreground" />
-                    <span className="text-foreground">{booking.contact}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="ml-auto text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30"
-                      onClick={() => setShowWhatsAppTemplates(true)}
-                      disabled={!whatsAppNumber}
-                      title={whatsAppNumber ? "Send WhatsApp message" : "A valid phone number is required"}
-                    >
-                      <MessageCircleIcon className="size-4" />
-                      <span className="sr-only">Send WhatsApp message</span>
-                    </Button>
+            <Section icon={UserIcon} title="Guest Contact" action={canManageContacts && !editingContacts ? (
+              <Button type="button" variant="ghost" size="icon-sm" onClick={beginContactEdit} title="Edit guest contacts">
+                <EditIcon className="size-4" /><span className="sr-only">Edit guest contacts</span>
+              </Button>
+            ) : undefined}>
+              {editingContacts ? (
+                <div className="space-y-2">
+                  {contactDraft.map((row, index) => {
+                    const locked = row.origin === "pms";
+                    return (
+                      <div key={row.id ?? `new-${index}`} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg border border-border p-2">
+                        {row.type === "phone" ? <PhoneIcon className="size-3 text-muted-foreground" /> : <MailIcon className="size-3 text-muted-foreground" />}
+                        <div className="min-w-0 space-y-1">
+                          <input className="w-full rounded border border-border bg-background px-2 py-1 text-xs" value={row.value} disabled={locked} aria-label={`${row.type} value`} onChange={(event) => setContactDraft((rows) => rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))} />
+                          <input className="w-full rounded border border-border bg-background px-2 py-1 text-[11px]" value={row.label || ""} disabled={locked} placeholder="Optional label" aria-label={`${row.type} label`} onChange={(event) => setContactDraft((rows) => rows.map((item, i) => i === index ? { ...item, label: event.target.value } : item))} />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {locked ? <span className="text-[10px] font-semibold text-muted-foreground">PMS</span> : <Button type="button" variant="ghost" size="icon-sm" title="Delete contact" onClick={() => setContactDraft((rows) => rows.filter((_, i) => i !== index))}><Trash2Icon className="size-3.5 text-red-600" /><span className="sr-only">Delete contact</span></Button>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => addContactDraft("phone")} disabled={contactDraft.filter((row) => row.type === "phone").length >= 5}>+ Phone</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => addContactDraft("email")} disabled={contactDraft.filter((row) => row.type === "email").length >= 5}>+ Email</Button>
                   </div>
-                )}
-                {booking.email && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <MailIcon className="size-3 text-muted-foreground" />
-                    <span className="text-foreground">{booking.email}</span>
-                  </div>
-                )}
-              </div>
+                  <div className="flex justify-end gap-2 border-t border-border pt-2"><Button type="button" variant="outline" size="sm" onClick={() => setEditingContacts(false)}>Cancel</Button><Button type="button" size="sm" onClick={() => void saveContacts()}>Save</Button></div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {visibleContacts.length === 0 ? <p className="text-xs text-muted-foreground">No phone or email recorded.</p> : visibleContacts.map((method) => {
+                    const whatsAppNumber = method.type === "phone" ? bookingWhatsAppNumber(method.value) : "";
+                    return <div key={method.id} className="flex items-center gap-2 text-xs">
+                      {method.type === "phone" ? <PhoneIcon className="size-3 text-muted-foreground" /> : <MailIcon className="size-3 text-muted-foreground" />}
+                      <span className="min-w-0 text-foreground">{method.value}</span>
+                      {method.origin === "pms" && <span className="text-[10px] font-semibold text-muted-foreground">PMS</span>}
+                      {method.label && <span className="truncate text-[10px] text-muted-foreground">({method.label})</span>}
+                      {method.type === "email" && <a className="ml-auto text-emerald-700 hover:underline" href={`mailto:${encodeURIComponent(method.value)}`} title="Email guest"><SendIcon className="size-3.5" /><span className="sr-only">Email guest</span></a>}
+                      {method.type === "phone" && <Button type="button" variant="ghost" size="icon-sm" className="ml-auto text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30" onClick={() => { setWhatsAppContact(method.value); setShowWhatsAppTemplates(true); }} disabled={!whatsAppNumber} title={whatsAppNumber ? "Send WhatsApp message" : "A valid phone number is required"}><MessageCircleIcon className="size-4" /><span className="sr-only">Send WhatsApp message</span></Button>}
+                    </div>;
+                  })}
+                </div>
+              )}
             </Section>
 
             {/* Special Requests */}
@@ -1027,10 +1066,12 @@ export function BookingDetailPanel({
 function Section({
   icon: Icon,
   title,
+  action,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -1038,6 +1079,7 @@ function Section({
       <div className="mb-2 flex items-center gap-1.5">
         <Icon className="size-3.5 text-muted-foreground" />
         <h4 className="text-xs font-semibold text-foreground">{title}</h4>
+        {action && <div className="ml-auto">{action}</div>}
       </div>
       {children}
     </div>

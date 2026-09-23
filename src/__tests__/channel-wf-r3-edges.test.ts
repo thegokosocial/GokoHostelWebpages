@@ -33,6 +33,7 @@ const q = vi.hoisted(() => ({
   deactivateBedBlocksByBedIds: vi.fn(),
   shortenAssignedCheckout: vi.fn(),
   reopenWalkinCheckinsForBooking: vi.fn(),
+  syncBookingContactSnapshot: vi.fn(),
 }));
 const archiveBookingCycle = vi.hoisted(() => vi.fn(async () => undefined));
 
@@ -88,6 +89,7 @@ vi.mock("@/db/queries", () => ({
   deactivateBedBlocksByBedIds: q.deactivateBedBlocksByBedIds,
   shortenAssignedCheckout: q.shortenAssignedCheckout,
   reopenWalkinCheckinsForBooking: q.reopenWalkinCheckinsForBooking,
+  syncBookingContactSnapshot: q.syncBookingContactSnapshot,
 }));
 
 import { POST as reservationsPOST, ingestFetchedReservations } from "@/app/api/aiosell/reservations/route";

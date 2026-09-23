@@ -39,6 +39,7 @@ const { captured, q } = vi.hoisted(() => {
       clearDirtyInventory: vi.fn(),
       clearAllDirtyInventory: vi.fn(),
       markRatesSynced: vi.fn(),
+      syncBookingContactSnapshot: vi.fn(),
     },
   };
 });

@@ -86,6 +86,18 @@ export type BookingHistoryEntry = {
   performedAt: string;
 };
 
+export type BookingContactMethod = {
+  id: number;
+  bookingId: number;
+  type: "phone" | "email";
+  value: string;
+  normalizedValue: string;
+  label: string;
+  origin: "pms" | "custom";
+  isPrimary: number;
+  position: number;
+};
+
 export type CalendarDorm = {
   id: number;
   name: string;

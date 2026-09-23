@@ -14,6 +14,7 @@ const q = vi.hoisted(() => ({
   assignBedToBooking: vi.fn(),
   getRoomTypeMappings: vi.fn(),
   getAvailableBedsForRange: vi.fn(),
+  syncBookingContactSnapshot: vi.fn(),
 }));
 
 const triggerInventoryPush = vi.hoisted(() => vi.fn());

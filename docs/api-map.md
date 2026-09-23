@@ -179,3 +179,5 @@ Both `/book` and gated `/book/preview` call the same availability endpoint for c
 - `POST /api/guest-booking/lookup`: OTP request/verify. On successful verify for a booking with a `native_booking_checkouts` row, mints a new `guestAccessToken`, updates `guest_access_hash`, and returns `{ booking, guestAccessToken, currency, manageUrl }`. Without a checkout row, returns the minimized booking blob only (no token). Same-origin, 4 KiB, cloud only.
 
 Landmines: release hold before assign (0059); never trust client bed IDs or subtotals; store `guestAccessToken` in sessionStorage (confirmation URL is reference-only). See [guest-booking-ui.md](guest-booking-ui.md).
+
+Booking contact methods: `getDetail` returns active `contactMethods`; `saveBookingContacts` requires `canManageBookingContacts` and atomically adds, edits, or deletes up to five phones and five emails. Phone/email duplicates are rejected after normalization, PMS-origin rows cannot be changed or deleted, and actual changes create booking-history audit entries. Contact methods are synchronized booking data and are not used as fallback identity or food-tab lookup values.

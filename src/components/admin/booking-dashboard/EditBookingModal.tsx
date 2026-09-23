@@ -40,8 +40,6 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     : (oldBasis > 0 ? Math.max(0, Math.round(oldBasis / (oldNights * oldBeds))) : 0);
 
   const [guestName, setGuestName] = useState(booking.guestName);
-  const [contact, setContact] = useState(booking.contact || "");
-  const [email, setEmail] = useState(booking.email || "");
   const [checkinDate, setCheckinDate] = useState(booking.checkinDate);
   const [checkoutDate, setCheckoutDate] = useState(booking.checkoutDate || addCalendarDays(booking.checkinDate, 1));
   const [persons, setPersons] = useState(String(booking.persons || 1));
@@ -189,7 +187,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     setSaving(true);
     const nightlyRateChanged = Number(nightlyRate) !== Number(booking.nightlyRate ?? 0);
     const ok = await onAction("editReservation", booking.id, {
-      guestName: guestName.trim(), contact: contact.trim(), email: email.trim(), specialRequests: specialRequests.trim(),
+      guestName: guestName.trim(), specialRequests: specialRequests.trim(),
       persons: Number(persons), checkinDate, checkoutDate,
       ...(nightlyRateChanged || Number(booking.nightlyRate ?? 0) === 0 ? { nightlyRate: Number(nightlyRate) } : {}),
       addBedIds: selectedAddUnits.flatMap((unit) => unit.bedIds), removeBedIds,
@@ -225,8 +223,6 @@ export function EditBookingModal({ booking, assignments, password, username, onA
         <div className="max-h-[calc(100dvh-8rem)] space-y-4 overflow-y-auto p-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-xs font-medium sm:col-span-2">Guest name *<input className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={guestName} onChange={(e) => setGuestName(e.target.value)} /></label>
-            <label className="text-xs font-medium">Phone<input className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={contact} onChange={(e) => setContact(e.target.value)} /></label>
-            <label className="text-xs font-medium">Email<input type="email" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
             <div className="sm:col-span-2">
               <DateRangePicker
                 presentation="inline"

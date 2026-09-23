@@ -88,7 +88,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Check-in:** `canAddCheckin`, `canAssignBed`, `canCheckout`, `canMarkClean`, `canEditRecords`, `canDeleteRecords`
 
-**Booking:** `canAddBooking`, `canCheckIn`, `canCheckOut`, `canDeleteBooking`, `canRecordBookingPayments`, `canManageBookingTemplates`
+**Booking:** `canAddBooking`, `canCheckIn`, `canCheckOut`, `canDeleteBooking`, `canRecordBookingPayments`, `canManageBookingContacts`, `canManageBookingTemplates`
 
 **Food:** `canViewFoodOrders`, `canViewFoodTabs`, `canPlaceOrders`, `canEditFoodOrders`, `canVoidFoodOrders`, `canMarkPaid`, `canApplyFoodDiscounts`, `canGenerateFoodBills`, `canManageInventory`, `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageFoodSettings`. The food payment modal may call `getFoodReceiptAccounts` with an empty password after login; it authenticates through the existing admin session cookie and still requires `canMarkPaid` (or admin bypass).
 
@@ -103,7 +103,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 **Tools:** `canUseQRGenerator`, `canManageAttendance`, `canViewQuickLinks`, `canManageTasks`
 
 `canManageInventory` gates the **Inventory** admin tab and `/api/admin/inventory`, plus stock controls inside Menu. Menu viewing and administration use the dedicated menu permissions above.
-`canCheckIn` / `canCheckOut` are grantable calendar controls. The booking API remains backward-compatible with `canAddBooking`.
+`canCheckIn` / `canCheckOut` are grantable calendar controls. The booking API remains backward-compatible with `canAddBooking`. `canManageBookingContacts` permits staff to add, edit, and delete custom phone/email rows on any booking; PMS-origin rows are immutable, and this permission does not change food-tab, check-in identity, review, or payment lookup behavior.
 Obsolete keys and their planned cleanup are tracked in [permission-debt.md](permission-debt.md).
 
 Menu deletion permissions are unchanged: `canManageMenuItems` archives an item and `canManageMenuCategories` archives a category and its items. Archiving preserves historical orders; it does not grant permission to delete order history.
