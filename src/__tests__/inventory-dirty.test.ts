@@ -21,7 +21,7 @@ describe("clearDirtyInventory", () => {
   it("deletes large dirty sets in bind-safe batches", async () => {
     await clearDirtyInventory(Array.from({ length: 101 }, (_, index) => index + 1));
 
-    expect(dbMocks.delete).toHaveBeenCalledTimes(3);
-    expect(dbMocks.where).toHaveBeenCalledTimes(3);
+    expect(dbMocks.delete).toHaveBeenCalledTimes(5);
+    expect(dbMocks.where).toHaveBeenCalledTimes(5);
   });
 });

@@ -27,6 +27,7 @@ import { defaultAccountingDateRange, isValidAccountingDateRange, resolveActivity
 import { gatewayExpectedNetPaise } from "@/lib/platformReceivables";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { bookingEventMethod, paiseToRupees } from "@/lib/bookingPaymentJournal";
+import { collectInBatches } from "@/lib/dbBatch";
 
 function extractDriveFileId(link: string): string | null {
   const match = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -167,9 +168,9 @@ export async function POST(req: NextRequest) {
           ]);
           const keys = new Set(profiles.map((profile) => profile.platformKey));
           const platformRows = receivables.filter((row) => keys.has(row.platformKey));
-          const matchingSettlements = keys.size ? await db.select().from(platformSettlements).where(and(inArray(platformSettlements.platformKey, [...keys]), sql`${platformSettlements.payoutDate} <= ${toDate}`)) : [];
+          const matchingSettlements = keys.size ? await collectInBatches([...keys], (batch) => db.select().from(platformSettlements).where(and(inArray(platformSettlements.platformKey, batch), sql`${platformSettlements.payoutDate} <= ${toDate}`))) : [];
           const settlementIds = matchingSettlements.map((row) => row.id);
-          const allocations = settlementIds.length ? await db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.settlementId, settlementIds)) : [];
+          const allocations = settlementIds.length ? await collectInBatches(settlementIds, (batch) => db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.settlementId, batch))) : [];
           const settlementDates = new Map(matchingSettlements.map((row) => [row.id, row.payoutDate]));
           const events = platformRows.filter((row) => row.recognitionDate >= fromDate).map((row) => ({ id: `receivable-${row.id}`, date: row.recognitionDate, kind: "receivable", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: row.expectedNetPaise, reference: row.eventKey, addedBy: row.createdBy || "System" }))
             .concat(allocations.map((row) => ({ id: `allocation-${row.id}`, date: settlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "payout allocation", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: -row.allocatedPaise, reference: String(row.settlementId), addedBy: row.createdBy || "System" })));
@@ -184,9 +185,9 @@ export async function POST(req: NextRequest) {
               .leftJoin(bookings, eq(nativeBookingCheckouts.bookingId, bookings.id))
               .where(and(eq(nativeBookingPayments.captured, 1), eq(nativeBookingCheckouts.environment, "live"), sql`${nativeBookingPayments.verifiedAt} <= ${toDate + "T23:59:59"}`));
             const paymentIds = paymentRows.map((payment) => payment.id);
-            const webAllocations = paymentIds.length ? await db.select().from(gatewaySettlementAllocations).where(inArray(gatewaySettlementAllocations.paymentId, paymentIds)) : [];
+            const webAllocations = paymentIds.length ? await collectInBatches(paymentIds, (batch) => db.select().from(gatewaySettlementAllocations).where(inArray(gatewaySettlementAllocations.paymentId, batch))) : [];
             const webSettlementIds = [...new Set(webAllocations.map((row) => row.settlementId))];
-            const webSettlements = webSettlementIds.length ? await db.select().from(platformSettlements).where(inArray(platformSettlements.id, webSettlementIds)) : [];
+            const webSettlements = webSettlementIds.length ? await collectInBatches(webSettlementIds, (batch) => db.select().from(platformSettlements).where(inArray(platformSettlements.id, batch))) : [];
             const webSettlementDates = new Map(webSettlements.map((row) => [row.id, row.payoutDate]));
             const effectiveWebAllocations = webAllocations.filter((row) => (webSettlementDates.get(row.settlementId) || "") <= toDate);
             for (const payment of paymentRows) {
@@ -556,9 +557,9 @@ export async function POST(req: NextRequest) {
           .filter((id) => !isNaN(id));
 
         if (checkinIds.length > 0) {
-          const checkinRows = await db.select({ id: checkins.id, contact: checkins.contact })
+          const checkinRows = await collectInBatches(checkinIds, (batch) => db.select({ id: checkins.id, contact: checkins.contact })
             .from(checkins)
-            .where(inArray(checkins.id, checkinIds));
+            .where(inArray(checkins.id, batch)));
           for (const row of checkinRows) {
             const entry = guestMap.get(`checkin:${row.id}`);
             if (entry && !entry.guestPhone && row.contact) {
@@ -607,11 +608,11 @@ export async function POST(req: NextRequest) {
         const movementBookingIds = [...new Set(movementEvents.map((event) => event.bookingId))];
         const bookingIds = [...new Set([...rows.map((b) => b.id), ...archivedCycles.map((b) => b.bookingId), ...movementBookingIds])];
         const allPaymentEvents = bookingIds.length
-          ? await db.select().from(bookingPaymentEvents).where(and(
-            inArray(bookingPaymentEvents.bookingId, bookingIds),
+          ? await collectInBatches(bookingIds, (batch) => db.select().from(bookingPaymentEvents).where(and(
+            inArray(bookingPaymentEvents.bookingId, batch),
             eq(bookingPaymentEvents.otaPaymentTerms, "pay_at_hotel"),
             eq(bookingPaymentEvents.currency, "INR"),
-          ))
+          )))
           : [];
         const cycleEvents = new Map<string, typeof allPaymentEvents>();
         for (const event of allPaymentEvents) {
@@ -715,10 +716,10 @@ export async function POST(req: NextRequest) {
         });
 
         const [liveMovementBookings, movementSnapshots] = await Promise.all([
-          movementBookingIds.length ? db.select({ id: bookings.id, bookingCycle: bookings.bookingCycle, status: bookings.status })
-            .from(bookings).where(inArray(bookings.id, movementBookingIds)) : Promise.resolve([]),
-          movementBookingIds.length ? db.select({ bookingId: bookingCycleSnapshots.bookingId, bookingCycle: bookingCycleSnapshots.bookingCycle, status: bookingCycleSnapshots.status })
-            .from(bookingCycleSnapshots).where(inArray(bookingCycleSnapshots.bookingId, movementBookingIds)) : Promise.resolve([]),
+          movementBookingIds.length ? collectInBatches(movementBookingIds, (batch) => db.select({ id: bookings.id, bookingCycle: bookings.bookingCycle, status: bookings.status })
+            .from(bookings).where(inArray(bookings.id, batch))) : Promise.resolve([]),
+          movementBookingIds.length ? collectInBatches(movementBookingIds, (batch) => db.select({ bookingId: bookingCycleSnapshots.bookingId, bookingCycle: bookingCycleSnapshots.bookingCycle, status: bookingCycleSnapshots.status })
+            .from(bookingCycleSnapshots).where(inArray(bookingCycleSnapshots.bookingId, batch))) : Promise.resolve([]),
         ]);
         const movementStatuses = new Map<string, string>();
         for (const booking of liveMovementBookings) movementStatuses.set(`${booking.id}:${booking.bookingCycle}`, booking.status);
@@ -830,7 +831,7 @@ export async function POST(req: NextRequest) {
         const vendorIds = dayExpenses.filter((e) => e.vendorId).map((e) => e.vendorId!);
         let vendorMap: Record<number, string> = {};
         if (vendorIds.length > 0) {
-          const vendorRows = await db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(inArray(vendors.id, vendorIds));
+          const vendorRows = await collectInBatches(vendorIds, (batch) => db.select({ id: vendors.id, name: vendors.name }).from(vendors).where(inArray(vendors.id, batch)));
           for (const v of vendorRows) vendorMap[v.id] = v.name;
         }
 

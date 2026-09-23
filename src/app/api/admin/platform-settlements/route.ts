@@ -5,6 +5,7 @@ import { accounts, bookings, platformSettlements, nativeBookingCheckouts, native
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed } from "@/lib/actionPermissions";
 import { isPiRuntime } from "@/lib/runtime";
+import { collectInBatches } from "@/lib/dbBatch";
 import {
   allocatePlatformSettlement,
   allocatePlatformSettlementBatch,
@@ -105,13 +106,13 @@ export async function POST(req: NextRequest) {
         const settlementId = Number(rest.settlementId);
         const settlement = await db.select().from(platformSettlements).where(eq(platformSettlements.id, settlementId)).limit(1);
         if (!settlement[0] || settlement[0].platformKey !== "razorpay-website") return NextResponse.json({ error: "Choose a Razorpay website payout" }, { status: 400 });
-        const paymentIds = website.map((item: any) => String(item.paymentId || ""));
+        const paymentIds: string[] = website.map((item: any) => String(item.paymentId || ""));
         if (new Set(paymentIds).size !== paymentIds.length || paymentIds.some((id: string) => !id)) return NextResponse.json({ error: "Website payment selections must be unique" }, { status: 400 });
-        const payments = await db.select({ payment: nativeBookingPayments, environment: nativeBookingCheckouts.environment })
+        const payments = await collectInBatches(paymentIds, (batch) => db.select({ payment: nativeBookingPayments, environment: nativeBookingCheckouts.environment })
           .from(nativeBookingPayments).innerJoin(nativeBookingCheckouts, eq(nativeBookingPayments.checkoutId, nativeBookingCheckouts.id))
-          .where(inArray(nativeBookingPayments.id, paymentIds));
+          .where(inArray(nativeBookingPayments.id, batch)));
         const prior = await db.select().from(gatewaySettlementAllocations).where(eq(gatewaySettlementAllocations.settlementId, settlementId));
-        const existing = await db.select().from(gatewaySettlementAllocations).where(inArray(gatewaySettlementAllocations.paymentId, paymentIds));
+        const existing = await collectInBatches(paymentIds, (batch) => db.select().from(gatewaySettlementAllocations).where(inArray(gatewaySettlementAllocations.paymentId, batch)));
         const requested = website.reduce((sum: number, item: any) => sum + Number(item.allocatedPaise), 0);
         const payoutUsed = prior.reduce((sum, row) => sum + row.allocatedPaise, 0);
         if (!Number.isSafeInteger(requested) || requested <= 0 || payoutUsed + requested > settlement[0].actualAmountPaise) return NextResponse.json({ error: "Allocations exceed the payout balance" }, { status: 400 });

@@ -4,6 +4,7 @@ import type { Database } from "@/db";
 import * as schema from "@/db/schema";
 import { getRuntimeName, getBuildVersion } from "@/lib/runtime";
 import { rebuildBookingPaymentProjection } from "@/lib/bookingPaymentJournal";
+import { collectInBatches } from "@/lib/dbBatch";
 
 // --- Table Configuration ---
 
@@ -505,8 +506,8 @@ export async function applyPushRecords(
 async function rebuildSyncedPaymentCycles(db: Database, eventIds: string[]) {
   const ids = [...new Set(eventIds.filter(Boolean))];
   if (ids.length === 0) return;
-  const rows = await db.select({ bookingId: schema.bookingPaymentEvents.bookingId, bookingCycle: schema.bookingPaymentEvents.bookingCycle })
-    .from(schema.bookingPaymentEvents).where(inArray(schema.bookingPaymentEvents.syncId, ids));
+  const rows = await collectInBatches(ids, (batch) => db.select({ bookingId: schema.bookingPaymentEvents.bookingId, bookingCycle: schema.bookingPaymentEvents.bookingCycle })
+    .from(schema.bookingPaymentEvents).where(inArray(schema.bookingPaymentEvents.syncId, batch)));
   const cycles = new Set(rows.map((row) => `${row.bookingId}:${row.bookingCycle}`));
   for (const key of cycles) {
     const [bookingId, bookingCycle] = key.split(":").map(Number);

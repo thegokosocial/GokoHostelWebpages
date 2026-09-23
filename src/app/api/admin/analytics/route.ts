@@ -18,6 +18,7 @@ import {
 } from "@/db/schema";
 import { todayIST } from "@/lib/utils";
 import { parseGokoWalkin } from "@/lib/bookingPricing";
+import { collectInBatches } from "@/lib/dbBatch";
 
 const ACTIVE_STAY_STATUSES = sql`${bookings.status} IN ('confirmed', 'checked_in', 'checked_out')`;
 const EXPECTED_ROOM_STATUSES = sql`${bookings.status} IN ('received', 'confirmed', 'checked_in', 'checked_out')`;
@@ -340,10 +341,10 @@ export async function POST(req: NextRequest) {
       .filter((row) => row.eventType === "collection" || row.eventType === "refund")
       .map((row) => row.eventId);
     const linkedPostpaidOtaCorrections = postpaidOtaMovementIds.length
-      ? await db.select().from(bookingPaymentEvents).where(and(
-        inArray(bookingPaymentEvents.correctsEventId, postpaidOtaMovementIds),
+      ? await collectInBatches(postpaidOtaMovementIds, (batch) => db.select().from(bookingPaymentEvents).where(and(
+        inArray(bookingPaymentEvents.correctsEventId, batch),
         eq(bookingPaymentEvents.eventType, "correction"),
-      ))
+      )))
       : [];
 
     const snapshotMetrics = (row: typeof bookingCycleSnapshots.$inferSelect, from: string, toExclusive: string) => {

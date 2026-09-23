@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { gatewayPreviewAttempts as attempts, gatewayPreviewPayments as payments, gatewayPreviewRefunds as refunds, gatewayPreviewWebhooks as hooks } from "@/db/schema";
 import { isPiRuntime } from "@/lib/runtime";
+import { collectInBatches } from "@/lib/dbBatch";
 import {
   RazorpayError, testRazorpayCredentials, createRazorpayTestOrder, findRazorpayTestOrders,
   fetchRazorpayTestPayment, fetchRazorpayTestOrderPayments, createRazorpayTestRefund,
@@ -203,7 +204,7 @@ async function enrichFailedPayments(rows: (typeof payments.$inferSelect)[]) {
 export async function previewSnapshot(id: string) {
   const attempt = await getAttempt(id);
   const paymentRows = await enrichFailedPayments(await getDb().select().from(payments).where(eq(payments.attemptId, id)));
-  const refundRows = paymentRows.length ? await getDb().select().from(refunds).where(inArray(refunds.paymentId, paymentRows.map((p) => p.id))) : [];
+  const refundRows = paymentRows.length ? await collectInBatches(paymentRows.map((p) => p.id), (batch) => getDb().select().from(refunds).where(inArray(refunds.paymentId, batch))) : [];
   return { attempt, payments: paymentRows, refunds: refundRows, environment: "test" as const,
     nativeCheckoutReady: false as const,
     checkout: attempt.state === "created" && attempt.orderId && !attempt.checkoutStartedAt && paymentRows.length === 0 && process.env.RAZORPAY_TEST_PREVIEW_ENABLED === "true"

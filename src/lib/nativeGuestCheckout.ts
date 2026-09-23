@@ -41,6 +41,7 @@ import {
 import { mergeWebsiteCheckoutRaw, parseWebsiteCheckout } from "@/lib/websiteCheckoutSnapshot";
 import { todayIST } from "@/lib/utils";
 import { ensurePlatformProfile } from "@/lib/platformReceivables";
+import { collectInBatches } from "@/lib/dbBatch";
 
 type Checkout = typeof checkouts.$inferSelect;
 const timestamp = () => new Date().toISOString();
@@ -345,7 +346,7 @@ async function requireGuestAccess(reference: string, guestAccessToken: string) {
   if (!rows.length) throw new GuestCheckoutError("Booking not found", 404);
   const bookingIds = [...new Set(rows.map((r) => r.bookingId).filter((id): id is number => id != null))];
   if (!bookingIds.length) throw new GuestCheckoutError("Booking not found", 404);
-  const bookingRows = await db.select().from(bookings).where(inArray(bookings.id, bookingIds));
+  const bookingRows = await collectInBatches(bookingIds, (batch) => db.select().from(bookings).where(inArray(bookings.id, batch)));
   const booking = bookingRows.find((b) => b.gokoBookingId === reference || b.bookingRef === reference);
   if (!booking) throw new GuestCheckoutError("Booking not found", 404);
   const forBooking = rows.filter((r) => r.bookingId === booking.id);
@@ -1280,13 +1281,13 @@ async function refundAmendDelta(row: Checkout, bookingId: number, refundPaise: n
   const db = getDb();
   const cos = await db.select().from(checkouts).where(eq(checkouts.bookingId, bookingId));
   const capturedRows = cos.length
-    ? await db.select().from(payments).where(and(
-      inArray(payments.checkoutId, cos.map((c) => c.id)),
+    ? await collectInBatches(cos.map((c) => c.id), (batch) => db.select().from(payments).where(and(
+      inArray(payments.checkoutId, batch),
       eq(payments.captured, 1),
-    ))
+    )))
     : [];
   if (!capturedRows.length) return 0;
-  const refundRows = await db.select().from(refunds).where(inArray(refunds.paymentId, capturedRows.map((p) => p.id)));
+  const refundRows = await collectInBatches(capturedRows.map((p) => p.id), (batch) => db.select().from(refunds).where(inArray(refunds.paymentId, batch)));
   const processed = refundRows.filter((r) => r.state === "processed").reduce((s, r) => s + r.amountPaise, 0);
   const reserved = refundRows.filter((r) => ["submitting", "unknown", "pending"].includes(r.state))
     .reduce((s, r) => s + r.amountPaise, 0);
@@ -1553,12 +1554,12 @@ export async function cancelGuestBooking(reference: string, guestAccessToken: st
   const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
   const checkoutIds = all.map((c) => c.id);
   const capturedRows = checkoutIds.length
-    ? await getDb().select().from(payments)
-      .where(and(inArray(payments.checkoutId, checkoutIds), eq(payments.captured, 1)))
+    ? await collectInBatches(checkoutIds, (batch) => getDb().select().from(payments)
+      .where(and(inArray(payments.checkoutId, batch), eq(payments.captured, 1))))
     : [];
   const capturedPaise = capturedRows.reduce((s, p) => s + p.amountPaise, 0);
   const refundRows = capturedRows.length
-    ? await getDb().select().from(refunds).where(inArray(refunds.paymentId, capturedRows.map((p) => p.id)))
+    ? await collectInBatches(capturedRows.map((p) => p.id), (batch) => getDb().select().from(refunds).where(inArray(refunds.paymentId, batch)))
     : [];
   const processedRefundPaise = refundRows.filter((r) => r.state === "processed").reduce((s, r) => s + r.amountPaise, 0);
   const reservedRefundPaise = refundRows.filter((r) => ["submitting", "unknown", "pending"].includes(r.state))
@@ -1780,15 +1781,15 @@ export async function refundWebsiteOrphanCapture(bookingId: number, performedBy:
 
   const cos = await getDb().select().from(checkouts).where(eq(checkouts.bookingId, bookingId));
   if (!cos.length) throw new GuestCheckoutError("No website checkout found for this booking", 404);
-  const capturedRows = await getDb().select().from(payments).where(and(
-    inArray(payments.checkoutId, cos.map((c) => c.id)),
+  const capturedRows = await collectInBatches(cos.map((c) => c.id), (batch) => getDb().select().from(payments).where(and(
+    inArray(payments.checkoutId, batch),
     eq(payments.captured, 1),
-  ));
+  )));
   if (!capturedRows.length) {
     throw new GuestCheckoutError("No captured Razorpay payment found — check dashboard with Order ID on this booking", 400);
   }
-  const refundRows = await getDb().select().from(refunds)
-    .where(inArray(refunds.paymentId, capturedRows.map((p) => p.id)));
+  const refundRows = await collectInBatches(capturedRows.map((p) => p.id), (batch) => getDb().select().from(refunds)
+    .where(inArray(refunds.paymentId, batch)));
   const processed = refundRows.filter((r) => r.state === "processed").reduce((s, r) => s + r.amountPaise, 0);
   const reserved = refundRows.filter((r) => ["submitting", "unknown", "pending"].includes(r.state))
     .reduce((s, r) => s + r.amountPaise, 0);
@@ -1946,13 +1947,13 @@ export async function listWebsiteCheckoutAttempts(filters: WebsiteCheckoutAttemp
 
   const ids = rows.map((r) => r.id);
   const payRows = ids.length
-    ? await db.select({
+    ? await collectInBatches(ids, (batch) => db.select({
       checkoutId: payments.checkoutId,
       id: payments.id,
       captured: payments.captured,
       status: payments.status,
       amountPaise: payments.amountPaise,
-    }).from(payments).where(inArray(payments.checkoutId, ids))
+    }).from(payments).where(inArray(payments.checkoutId, batch)))
     : [];
   const byCheckout = new Map<string, typeof payRows>();
   for (const p of payRows) {

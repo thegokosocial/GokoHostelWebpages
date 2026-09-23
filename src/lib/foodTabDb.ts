@@ -7,6 +7,7 @@ import {
   EMPTY_FOOD_TAB,
   type PendingFoodTab,
 } from "@/lib/foodTab";
+import { collectInBatches } from "@/lib/dbBatch";
 
 export async function activeCheckinIdsForContact(contact: string): Promise<number[]> {
   const n = normalizePhone(contact);
@@ -35,16 +36,16 @@ export async function getPendingFoodTab(opts: {
 
   const idList = [...ids];
   const db = getDb();
-  const rows = await db.select({
+  const rows = await collectInBatches(idList, (batch) => db.select({
     id: foodOrders.id,
     checkinId: foodOrders.checkinId,
     total: foodOrders.total,
   }).from(foodOrders)
     .where(and(
-      inArray(foodOrders.checkinId, idList),
+      inArray(foodOrders.checkinId, batch),
       inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
       sql`${foodOrders.status} != 'cancelled'`,
-    ));
+    )));
 
   let pendingTab = 0;
   const orderIds: number[] = [];

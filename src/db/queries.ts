@@ -11,20 +11,7 @@ import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import { INVENTORY_AUDIT_ACTION_PREFIXES } from "@/lib/inventoryAudit";
 import type { AuditReferenceMaps } from "@/lib/auditPresentation";
-
-// Keep bulk IN queries below D1/SQLite's bound-parameter limit. Kitchen and
-// admin screens can load many orders at once, while callers still receive a
-// single combined result.
-const D1_IN_BATCH_SIZE = 50;
-
-function uniqueInBatches(ids: number[]): number[][] {
-  const uniqueIds = [...new Set(ids)];
-  const batches: number[][] = [];
-  for (let index = 0; index < uniqueIds.length; index += D1_IN_BATCH_SIZE) {
-    batches.push(uniqueIds.slice(index, index + D1_IN_BATCH_SIZE));
-  }
-  return batches;
-}
+import { uniqueInBatches, collectInBatches } from "@/lib/dbBatch";
 
 // --- Check-ins ---
 
@@ -736,12 +723,12 @@ export async function findWalkinCheckinsByBookingRefs(refs: string[]) {
   const cleaned = [...new Set(refs.map((r) => String(r || "").trim()).filter(Boolean))];
   if (cleaned.length === 0) return [];
   const db = getDb();
-  return db.select().from(checkins).where(
+  return collectInBatches(cleaned, (batch) => db.select().from(checkins).where(
     and(
       or(eq(checkins.bookingPlatform, "Walk-in"), eq(checkins.bookingPlatform, "Offline booking"))!,
-      or(inArray(checkins.bookingId, cleaned), inArray(checkins.bookingLinkedRef, cleaned))!,
+      or(inArray(checkins.bookingId, batch), inArray(checkins.bookingLinkedRef, batch))!,
     ),
-  );
+  ));
 }
 
 /** Reopen Walk-in/Offline check-ins that were marked created/linked for this booking's refs. */
@@ -1004,14 +991,14 @@ export async function deleteMenuCategory(id: number) {
 export async function getMenuItemCategoryExemptions(menuItemIds: number[]): Promise<Map<number, boolean>> {
   if (menuItemIds.length === 0) return new Map();
   const db = getDb();
-  const rows = await db
+  const rows = await collectInBatches(menuItemIds, (batch) => db
     .select({
       menuItemId: menuItems.id,
       discountExempt: menuCategories.discountExempt,
     })
     .from(menuItems)
     .innerJoin(menuCategories, eq(menuItems.categoryId, menuCategories.id))
-    .where(inArray(menuItems.id, menuItemIds));
+    .where(inArray(menuItems.id, batch)));
   const result = new Map<number, boolean>();
   for (const r of rows) {
     result.set(r.menuItemId, r.discountExempt === 1);
@@ -1366,13 +1353,14 @@ export async function getGuestTabTotal(checkinId: number): Promise<number> {
 export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
   const db = getDb();
   if (checkinIds.length === 0) return [];
-  return db.select().from(foodOrders)
+  const rows = await collectInBatches(checkinIds, (batch) => db.select().from(foodOrders)
     .where(and(
-      inArray(foodOrders.checkinId, checkinIds),
+      inArray(foodOrders.checkinId, batch),
       inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
       sql`${foodOrders.status} != 'cancelled'`,
     ))
-    .orderBy(foodOrders.createdAt);
+    .orderBy(foodOrders.createdAt));
+  return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 // --- Food bill share tokens (Cloudflare-only) ---
@@ -2037,7 +2025,7 @@ export async function getBookingCalendarData(startDate: string, endDate: string)
     const have = new Set(bookingRows.map((b) => b.id));
     const missing = [...new Set(assignments.map((a) => a.bookingId))].filter((id) => !have.has(id));
     if (missing.length > 0) {
-      const extra = await db.select().from(bookings).where(inArray(bookings.id, missing));
+      const extra = await collectInBatches(missing, (batch) => db.select().from(bookings).where(inArray(bookings.id, batch)));
       bookingRows = bookingRows.concat(extra);
     }
 
@@ -2437,13 +2425,15 @@ export async function unassignBookingBeds(bookingId: number) {
 export async function unassignBookingBedsByBedIds(bookingId: number, bedIds: number[]) {
   if (bedIds.length === 0) return;
   const db = getDb();
-  return db.update(bookingBedAssignments)
-    .set({ status: "unassigned" })
-    .where(and(
-      eq(bookingBedAssignments.bookingId, bookingId),
-      eq(bookingBedAssignments.status, "assigned"),
-      inArray(bookingBedAssignments.bedId, bedIds),
-    ));
+  for (const batch of uniqueInBatches(bedIds)) {
+    await db.update(bookingBedAssignments)
+      .set({ status: "unassigned" })
+      .where(and(
+        eq(bookingBedAssignments.bookingId, bookingId),
+        eq(bookingBedAssignments.status, "assigned"),
+        inArray(bookingBedAssignments.bedId, batch),
+      ));
+  }
 }
 
 export async function shortenAssignedCheckout(bookingId: number, newCheckout: string) {
@@ -2456,15 +2446,19 @@ export async function shortenAssignedCheckout(bookingId: number, newCheckout: st
 export async function cancelBedAssignments(assignmentIds: number[], bookingId?: number) {
   if (assignmentIds.length === 0) return false;
   const db = getDb();
-  const rows = await db.update(bookingBedAssignments)
-    .set({ status: "cancelled" })
-    .where(and(
-      inArray(bookingBedAssignments.id, assignmentIds),
-      eq(bookingBedAssignments.status, "assigned"),
-      ...(bookingId ? [eq(bookingBedAssignments.bookingId, bookingId)] : []),
-    ))
-    .returning({ id: bookingBedAssignments.id });
-  return rows.length > 0;
+  let cancelled = 0;
+  for (const batch of uniqueInBatches(assignmentIds)) {
+    const rows = await db.update(bookingBedAssignments)
+      .set({ status: "cancelled" })
+      .where(and(
+        inArray(bookingBedAssignments.id, batch),
+        eq(bookingBedAssignments.status, "assigned"),
+        ...(bookingId ? [eq(bookingBedAssignments.bookingId, bookingId)] : []),
+      ))
+      .returning({ id: bookingBedAssignments.id });
+    cancelled += rows.length;
+  }
+  return cancelled > 0;
 }
 
 export async function addBookingHistoryEntry(data: {
@@ -2615,19 +2609,22 @@ export async function deactivateBedBlock(blockId: number, unblockedBy: string) {
 }
 
 export async function deactivateBedBlocksByBedIds(bedIds: number[], startDate: string, endDate: string, unblockedBy: string) {
+  if (bedIds.length === 0) return;
   const db = getDb();
-  return db.update(bedBlocks).set({
-    isActive: 0,
-    unblockedBy,
-    unblockedAt: new Date().toISOString(),
-  }).where(
-    and(
-      inArray(bedBlocks.bedId, bedIds),
-      eq(bedBlocks.isActive, 1),
-      sql`${bedBlocks.startDate} < ${endDate}`,
-      sql`${bedBlocks.endDate} > ${startDate}`
-    )
-  );
+  for (const batch of uniqueInBatches(bedIds)) {
+    await db.update(bedBlocks).set({
+      isActive: 0,
+      unblockedBy,
+      unblockedAt: new Date().toISOString(),
+    }).where(
+      and(
+        inArray(bedBlocks.bedId, batch),
+        eq(bedBlocks.isActive, 1),
+        sql`${bedBlocks.startDate} < ${endDate}`,
+        sql`${bedBlocks.endDate} > ${startDate}`
+      )
+    );
+  }
 }
 
 export async function getInventoryOverrides(dormId: number, startDate: string, endDate: string) {
@@ -2856,8 +2853,8 @@ export async function clearDirtyInventory(ids: number[]) {
   // Keep the IN list below SQLite/D1's bind-variable limit. A full 30-day
   // sync can otherwise push hundreds of rows and fail after Aiosell accepted
   // the inventory update, leaving the same dirty rows queued forever.
-  for (let start = 0; start < ids.length; start += 50) {
-    await db.delete(inventoryDirty).where(inArray(inventoryDirty.id, ids.slice(start, start + 50)));
+  for (const batch of uniqueInBatches(ids)) {
+    await db.delete(inventoryDirty).where(inArray(inventoryDirty.id, batch));
   }
 }
 

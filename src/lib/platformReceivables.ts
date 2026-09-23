@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { syncInsert } from "@/db/syncMeta";
 import { createGuestReceipt, requireActiveReceiptAccount } from "@/lib/guestReceipts";
+import { collectInBatches } from "@/lib/dbBatch";
 
 export type PlatformAmounts = {
   grossPaise: number;
@@ -351,10 +352,10 @@ export async function getPlatformReceivableSummary() {
     byKey.set(key, { ...entry, allocatedPaise, outstandingPaise: 0 });
   }
   const bookingIds = [...new Set([...byKey.values()].map((row) => row.bookingId))];
-  const bookingRows = bookingIds.length ? await db.select({
+  const bookingRows = bookingIds.length ? await collectInBatches(bookingIds, (batch) => db.select({
     id: bookings.id, guestName: bookings.guestName, bookingRef: bookings.bookingRef, gokoBookingId: bookings.gokoBookingId,
     checkinDate: bookings.checkinDate, checkoutDate: bookings.checkoutDate, platform: bookings.platform,
-  }).from(bookings).where(inArray(bookings.id, bookingIds)) : [];
+  }).from(bookings).where(inArray(bookings.id, batch))) : [];
   const bookingMap = new Map(bookingRows.map((row) => [row.id, row]));
   return [...byKey.values()].map((row) => ({
     ...row,
@@ -409,9 +410,9 @@ export async function allocatePlatformSettlementBatch(data: {
   if (used + requested > settlement[0].actualAmountPaise) throw new Error("Allocation exceeds payout amount");
   const bookingIds = [...new Set(data.allocations.map((item) => item.bookingId))];
   const [bookingRows, receivableRows, allocationRows] = await Promise.all([
-    db.select().from(bookings).where(inArray(bookings.id, bookingIds)),
-    db.select().from(platformReceivableEntries).where(inArray(platformReceivableEntries.bookingId, bookingIds)),
-    db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.bookingId, bookingIds)),
+    collectInBatches(bookingIds, (batch) => db.select().from(bookings).where(inArray(bookings.id, batch))),
+    collectInBatches(bookingIds, (batch) => db.select().from(platformReceivableEntries).where(inArray(platformReceivableEntries.bookingId, batch))),
+    collectInBatches(bookingIds, (batch) => db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.bookingId, batch))),
   ]);
   const bookingsById = new Map(bookingRows.map((row) => [row.id, row]));
   const insertionRows = data.allocations.map((item) => {

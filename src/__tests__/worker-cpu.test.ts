@@ -50,6 +50,7 @@ describe("Workers CPU: zero-regression API paths", () => {
     expect(tagsFn!).toContain("if (ids.length === 0) return map");
     expect(tagsFn!).toContain("uniqueInBatches(ids)");
     expect(tagsFn!).toContain("inArray(menuItems.id, batch)");
+    expect(readFile("src/lib/dbBatch.ts")).toContain("D1_IN_BATCH_SIZE = 25");
   });
 
   it("keeps sold-out panel on getMenuItems and does not slow the kitchen poll", () => {

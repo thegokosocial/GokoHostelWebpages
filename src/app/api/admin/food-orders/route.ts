@@ -42,6 +42,7 @@ import { getDb } from "@/db";
 import { auditLog, foodOrders, foodOrderItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
 import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
 import { createGuestReceipt, latestReceiptAccount, receiptBusinessDate, resolveReceiptAccount } from "@/lib/guestReceipts";
+import { collectInBatches } from "@/lib/dbBatch";
 import { syncInsert, syncUpdate } from "@/db/syncMeta";
 import { allocateFoodPayment, type FoodPaymentMethod } from "@/lib/foodPaymentAllocation";
 import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
         count: sql<number>`COUNT(*)`,
       }).from(orderModifications);
       const modCounts = orderIds
-        ? await q.where(inArray(orderModifications.orderId, orderIds)).groupBy(orderModifications.orderId)
+        ? await collectInBatches(orderIds, async (batch) => q.where(inArray(orderModifications.orderId, batch)).groupBy(orderModifications.orderId))
         : await q.groupBy(orderModifications.orderId);
       return new Map(modCounts.map((r) => [r.orderId, r.count]));
     }
@@ -402,7 +403,7 @@ export async function POST(req: NextRequest) {
           : undefined;
         const db = getDb() as any;
         const assertCurrentOrders = async (client: any) => {
-          const currentRows = await client.select().from(foodOrders).where(inArray(foodOrders.id, orderIds));
+          const currentRows = await collectInBatches(orderIds, (batch) => client.select().from(foodOrders).where(inArray(foodOrders.id, batch)));
           if (currentRows.length !== orderIds.length || currentRows.some((order: any) => order.status === "cancelled" || order.paymentStatus === "paid")) {
             throw Object.assign(new Error("A selected order changed before payment was recorded"), { status: 409 });
           }
@@ -832,16 +833,17 @@ export async function POST(req: NextRequest) {
         const [allBeds, checkinRows, tabOrderRows] = await Promise.all([
           checkinIds.length > 0 ? getAllBeds() : Promise.resolve([]),
           checkinIds.length > 0
-            ? db.select().from(checkins).where(inArray(checkins.id, checkinIds))
+            ? collectInBatches(checkinIds, (batch) => db.select().from(checkins).where(inArray(checkins.id, batch)))
             : Promise.resolve([]),
           checkinIds.length > 0
-            ? db.select({ id: foodOrders.id, checkinId: foodOrders.checkinId })
+            ? collectInBatches(checkinIds, (batch) => db.select({ id: foodOrders.id, checkinId: foodOrders.checkinId })
                 .from(foodOrders)
                 .where(and(
-                  inArray(foodOrders.checkinId, checkinIds),
+                  inArray(foodOrders.checkinId, batch),
                   inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
                   sql`${foodOrders.status} != 'cancelled'`,
                 ))
+                )
             : Promise.resolve([]),
         ]);
         const checkinMap = new Map(checkinRows.map((c) => [c.id, c]));
@@ -923,10 +925,10 @@ export async function POST(req: NextRequest) {
         const missingPhoneIds = guests.filter((g) => !g.guestPhone).map((g) => g.checkinId);
         if (missingPhoneIds.length > 0) {
           const db = getDb();
-          const rows = await db
+          const rows = await collectInBatches(missingPhoneIds, (batch) => db
             .select({ id: checkins.id, contact: checkins.contact })
             .from(checkins)
-            .where(inArray(checkins.id, missingPhoneIds));
+            .where(inArray(checkins.id, batch)));
           const contactById = new Map(rows.map((r) => [r.id, normalizePhone(r.contact || "")]));
           for (const g of guests) {
             if (!g.guestPhone) g.guestPhone = contactById.get(g.checkinId) || "";

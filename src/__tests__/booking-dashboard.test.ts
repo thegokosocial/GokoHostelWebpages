@@ -353,7 +353,7 @@ describe("Booking Calendar: inclusive last night", () => {
     expect(fn).toContain("checkinDate} <= ${endDate}");
     expect(fn).toContain("checkoutDate} > ${startDate}");
     expect(fn).toContain("checkoutDate} > ${bookingBedAssignments.checkinDate}");
-    expect(fn).toContain("inArray(bookings.id, missing)");
+    expect(fn).toContain("inArray(bookings.id, batch)");
     expect(fn).not.toMatch(/checkinDate\} < \$\{endDate\}/);
     expect(fn).toContain("assignments.map((a) => a.bookingId)");
   });

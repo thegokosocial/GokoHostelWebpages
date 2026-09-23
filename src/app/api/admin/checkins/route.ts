@@ -38,6 +38,7 @@ import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignm
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 import { apiErrorBody, getRequestId } from "@/lib/apiError";
 import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
+import { collectInBatches, uniqueInBatches } from "@/lib/dbBatch";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
   const token = process.env.GITHUB_TOKEN;
@@ -751,17 +752,17 @@ export async function POST(req: NextRequest) {
       )];
       const tabByCheckin = new Map<number, { pendingTab: number; paidTotal: number; totalOrders: number; pendingOrders: number }>();
       if (uniqueCheckinIds.length > 0) {
-        const tabRows = await dashboardDb.select({
+        const tabRows = await collectInBatches(uniqueCheckinIds, (batch) => dashboardDb.select({
           checkinId: foodOrders.checkinId,
           paymentStatus: foodOrders.paymentStatus,
           total: sql<number>`COALESCE(SUM(${foodOrders.total}), 0)`,
           count: sql<number>`COUNT(*)`,
         }).from(foodOrders)
           .where(and(
-            inArray(foodOrders.checkinId, uniqueCheckinIds),
+            inArray(foodOrders.checkinId, batch),
             sql`${foodOrders.status} != 'cancelled'`,
           ))
-          .groupBy(foodOrders.checkinId, foodOrders.paymentStatus);
+          .groupBy(foodOrders.checkinId, foodOrders.paymentStatus));
         for (const row of tabRows) {
           if (row.checkinId == null) continue;
           const acc = tabByCheckin.get(row.checkinId) || { pendingTab: 0, paidTotal: 0, totalOrders: 0, pendingOrders: 0 };
@@ -1089,16 +1090,18 @@ export async function POST(req: NextRequest) {
               eq(checkins.id, bed.checkinId),
               eq(checkins.status, "active"),
             )).limit(1)).map((row) => row.id)
-            : (await db.select({ id: checkins.id }).from(checkins).where(and(
-              inArray(checkins.id, await activeCheckinIdsForContact(bed.guestContact || "")),
+            : (await collectInBatches(await activeCheckinIdsForContact(bed.guestContact || ""), (batch) => db.select({ id: checkins.id }).from(checkins).where(and(
+              inArray(checkins.id, batch),
               eq(checkins.name, bed.guestName || ""),
               eq(checkins.status, "active"),
-            )).limit(1000)).map((row) => row.id);
+            )).limit(1000))).map((row) => row.id);
           if (ids.length > 0) {
-            await db.update(checkins).set({ status: "checked_out", checkedOutAt: new Date().toISOString() }).where(
-              and(inArray(checkins.id, ids), eq(checkins.status, "active"))
-            );
-            const guestRows = await db.select().from(checkins).where(inArray(checkins.id, ids)).limit(1);
+            for (const batch of uniqueInBatches(ids)) {
+              await db.update(checkins).set({ status: "checked_out", checkedOutAt: new Date().toISOString() }).where(
+                and(inArray(checkins.id, batch), eq(checkins.status, "active"))
+              );
+            }
+            const guestRows = await collectInBatches(ids, (batch) => db.select().from(checkins).where(inArray(checkins.id, batch)).limit(1));
             if (guestRows.length > 0) {
               const guest = guestRows[0];
               const existing = await getReviewRequestByCheckinId(guest.id);

@@ -9,6 +9,7 @@ import {
   splitSettlements,
 } from "./schema";
 import type { ExpenseEvent, SettlementEvent, ShareInput } from "@/lib/splits";
+import { collectInBatches } from "@/lib/dbBatch";
 
 export type SplitMemberRow = typeof splitMembers.$inferSelect;
 export type SplitGroupRow = typeof splitGroups.$inferSelect;
@@ -198,7 +199,7 @@ export async function hardDeleteSplitExpense(id: number) {
 export async function getSharesForExpenses(expenseIds: number[]) {
   if (expenseIds.length === 0) return [];
   const db = getDb();
-  return db.select().from(splitExpenseShares).where(inArray(splitExpenseShares.expenseId, expenseIds));
+  return collectInBatches(expenseIds, (batch) => db.select().from(splitExpenseShares).where(inArray(splitExpenseShares.expenseId, batch)));
 }
 
 export async function insertShares(expenseId: number, shares: ShareInput[]) {

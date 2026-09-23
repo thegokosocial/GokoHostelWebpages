@@ -6,6 +6,7 @@ import {
 import { addBookingHistoryEntry, getAllBeds, transitionBookingStatus } from "@/db/queries";
 import { otaFingerprint, pushIfOtaChanged } from "@/lib/aiosellSync";
 import { occupiedNights } from "@/lib/inventoryAvailability";
+import { collectInBatches } from "@/lib/dbBatch";
 
 const PAID_OR_TERMINAL = new Set([
   "captured", "fulfilled", "captured_unfulfilled", "cancelled",
@@ -41,10 +42,10 @@ export async function cancelAbandonedWebsiteHolds(limit = 20): Promise<number> {
   const nights = new Set<string>();
   let before = "";
   if (holdIdsToRelease.length > 0) {
-    const activeHolds = await db.select().from(holds).where(and(
+    const activeHolds = await collectInBatches(holdIdsToRelease, (batch) => db.select().from(holds).where(and(
       eq(holds.state, "held"),
-      inArray(holds.id, holdIdsToRelease),
-    ));
+      inArray(holds.id, batch),
+    )));
     if (activeHolds.length > 0) {
       try {
         const allBeds = await getAllBeds();
