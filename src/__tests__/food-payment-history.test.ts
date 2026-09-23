@@ -101,18 +101,19 @@ describe("Payment History", () => {
     expect(summary).toContain('border-l-green-400');
     expect(summary).toContain('const unpaid = selectedGroupOrders.filter((o) => foodDue(o) > 0)');
     expect(source).toContain('hasPermission(role, permissions, "canViewFoodOrders")');
-    expect(summary).toContain('<OrderPaymentBadge paymentStatus={order.paymentStatus} />');
+    expect(summary).toContain('<OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />');
     expect(source).toContain('partial ? "Partial" : "Unpaid"');
     expect(summary).toContain('orders={billOrders.map((o) => ({');
     expect(summary).toContain('paymentDue={actualGroupPending}');
     expect(summary).toContain('aria-label={`Edit payment for ${order.orderNumber}`}');
     expect(summary).toContain('<BanknoteIcon className="h-3.5 w-3.5" />');
     expect(summary).toContain('{item.quantity}× {item.itemName}');
-    expect(summary).toContain('aria-label={`Edit items for ${order.orderNumber}`}');
+    expect(summary).toContain('aria-label={`Edit food items for ${order.orderNumber}`}');
     expect(summary).toContain('<UtensilsIcon className="h-3.5 w-3.5" />');
     expect(summary).toContain('title="Edit food items"');
     expect(source).toContain('<BanknoteIcon className="h-3 w-3" /> Edit Payment');
-    expect(summary).toContain('setDrawerView("orders"); setEditingOrderId(order.id)');
+    expect(summary).toContain('setDrawerView("orders");');
+    expect(summary).toContain('setEditingOrderId(isEditing ? null : order.id)');
     expect(summary).toContain('scrollIntoView({ behavior: "smooth", block: "center" })');
     expect(summary).toContain('data-order-id={order.id}');
     expect(summary).toContain('>Editing</span>');
@@ -127,7 +128,10 @@ describe("Payment History", () => {
     expect(source).toContain("function paymentForEditedTotal");
     expect(source).toContain("foodAmountPaid(order)");
     expect(source).toContain("requiresPaymentAdjustment: true");
-    expect(source).toContain('amountPaid: foodPaymentState(order.total, foodAmountPaid(order) + allocation.total');
+    expect(source).toContain('amountPaid: Math.max(0, Number(order.amountPaid) || 0) + allocation.total');
+    expect(source).toContain('amountRefunded');
+    const billCard = readFileSync("src/components/food/GuestFoodBillCard.tsx", "utf8");
+    expect(billCard).toContain("foodAmountPaid(o)");
   });
 
   it("keeps payment and food-edit actions distinct and guarded by their permissions", () => {
@@ -136,7 +140,7 @@ describe("Payment History", () => {
     expect(summary).toContain('hasPermission(role || "staff", permissions || {}, "canMarkPaid")');
     expect(summary).toContain('hasPermission(role || "staff", permissions || {}, "canEditFoodOrders")');
     expect(summary).toContain('title="Edit payment"');
-    expect(summary).toContain('title="Edit order items"');
+    expect(summary).toContain('title="Edit food items"');
     expect(summary).toContain("setVoidingItemId(null)");
     expect(summary).toContain("setPaymentEditOrder(null)");
   });

@@ -12,6 +12,7 @@ import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUD
 import { INVENTORY_AUDIT_ACTION_PREFIXES } from "@/lib/inventoryAudit";
 import type { AuditReferenceMaps } from "@/lib/auditPresentation";
 import { uniqueInBatches, collectInBatches } from "@/lib/dbBatch";
+import { foodDue } from "@/lib/foodPaymentBalance";
 
 // --- Check-ins ---
 
@@ -1259,13 +1260,13 @@ export async function updateFoodOrderPayment(id: number, data: {
 
 export async function getGuestFoodTab(checkinId: number) {
   const db = getDb();
-  return db.select().from(foodOrders)
+  const rows = await db.select().from(foodOrders)
     .where(and(
       eq(foodOrders.checkinId, checkinId),
-      inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
       sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt);
+  return rows.filter((order) => foodDue(order) > 0);
 }
 
 export async function getGuestAllFoodOrders(checkinId: number) {
@@ -1339,15 +1340,12 @@ export async function getOrderModifications(orderId: number) {
 
 export async function getGuestTabTotal(checkinId: number): Promise<number> {
   const db = getDb();
-  const rows = await db.select({
-    total: sql<number>`COALESCE(SUM(${foodOrders.total} - ${foodOrders.amountPaid}), 0)`
-  }).from(foodOrders)
+  const rows = await db.select().from(foodOrders)
     .where(and(
       eq(foodOrders.checkinId, checkinId),
-      inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
       sql`${foodOrders.status} != 'cancelled'`,
     ));
-  return rows[0]?.total || 0;
+  return rows.reduce((sum, order) => sum + foodDue(order), 0);
 }
 
 export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
@@ -1356,11 +1354,10 @@ export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
   const rows = await collectInBatches(checkinIds, (batch) => db.select().from(foodOrders)
     .where(and(
       inArray(foodOrders.checkinId, batch),
-      inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
       sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt));
-  return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return rows.filter((order) => foodDue(order) > 0).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 // --- Food bill share tokens (Cloudflare-only) ---

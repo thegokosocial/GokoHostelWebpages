@@ -88,8 +88,9 @@ export function billPaymentStatusLabel(paymentStatus: string | null | undefined)
 /** Return only the currently payable quantity of an order. */
 export function payableBillItems<
   T extends { quantity: number; lineTotal: number; itemPrice?: number; price?: number; status?: string },
->(items: T[], amountPaid: number, total: number): T[] {
-  let paidRemaining = Math.min(Math.max(0, amountPaid || 0), Math.max(0, total || 0));
+>(items: T[], amountPaid: number, total: number, amountRefunded = 0): T[] {
+  const netPaid = Math.max(0, (amountPaid || 0) - (amountRefunded || 0));
+  let paidRemaining = Math.min(netPaid, Math.max(0, total || 0));
   const result: T[] = [];
   for (const item of items) {
     if (item.status === "voided" || item.quantity <= 0 || item.lineTotal <= 0) continue;

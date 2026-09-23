@@ -547,6 +547,11 @@ export const foodOrders = sqliteTable("food_orders", {
   status: text("status").notNull().default("placed"),
   paymentStatus: text("payment_status").notNull().default("pending"),
   amountPaid: integer("amount_paid").notNull().default(0),
+  amountRefunded: integer("amount_refunded").notNull().default(0),
+  refundMethod: text("refund_method").notNull().default(""),
+  refundCash: integer("refund_cash").notNull().default(0),
+  refundedAt: text("refunded_at").notNull().default(""),
+  refundedBy: text("refunded_by").notNull().default(""),
   paymentMethod: text("payment_method").default(""),
   paidBy: text("paid_by").default(""),
   cashReceived: integer("cash_received").default(0),
@@ -610,6 +615,38 @@ export const orderModifications = sqliteTable("order_modifications", {
   ...syncColumns,
 }, (table) => [
   index("idx_order_mods_order").on(table.orderId),
+]);
+
+/** Idempotent, atomic batches of food-order edits. The request body is retained
+ * so a safe retry can return success without applying the batch twice. */
+export const foodOrderEditBatches = sqliteTable("food_order_edit_batches", {
+  operationId: text("operation_id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => foodOrders.id),
+  requestJson: text("request_json").notNull(),
+  actor: text("actor").notNull(),
+  createdAt: text("created_at").notNull(),
+  ...syncColumns,
+}, (table) => [
+  index("idx_food_order_edit_batches_order").on(table.orderId, table.createdAt),
+]);
+
+/** Append-only manual food payment/refund journal. Amounts are paise. */
+export const foodPaymentEvents = sqliteTable("food_payment_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  eventId: text("event_id").notNull().unique(),
+  orderId: integer("order_id").notNull().references(() => foodOrders.id),
+  eventType: text("event_type").notNull(), // refund | correction
+  amountPaise: integer("amount_paise").notNull(),
+  cashPaise: integer("cash_paise").notNull().default(0),
+  onlinePaise: integer("online_paise").notNull().default(0),
+  accountId: integer("account_id").references(() => accounts.id),
+  note: text("note").notNull().default(""),
+  actor: text("actor").notNull(),
+  createdAt: text("created_at").notNull(),
+  ...syncColumns,
+}, (table) => [
+  index("idx_food_payment_events_order").on(table.orderId, table.createdAt),
+  index("idx_food_payment_events_account_date").on(table.accountId, table.createdAt),
 ]);
 
 // --- QR Code History ---

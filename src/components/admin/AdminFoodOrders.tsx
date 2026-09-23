@@ -9,7 +9,7 @@ import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicke
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
 import { loadBillBranding } from "@/lib/loadBillBranding";
 import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/food/GuestFoodBillCard";
-import { DEFAULT_BILL_BRANDING, type BillBranding } from "@/lib/foodBillFormat";
+import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/lib/foodBillFormat";
 import { buildBillWhatsAppHref } from "@/lib/billShare";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
@@ -20,7 +20,7 @@ import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/Recor
 import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
-import { foodAmountPaid, foodDue } from "@/lib/foodPaymentBalance";
+import { foodAmountPaid, foodDue, foodPaymentStatus } from "@/lib/foodPaymentBalance";
 
 async function withBillBranding(
   password: string,
@@ -67,6 +67,7 @@ export interface Order {
   tax: number;
   total: number;
   amountPaid?: number;
+  amountRefunded?: number;
   status: string;
   paymentStatus: string;
   paymentMethod: string;
@@ -94,6 +95,24 @@ export interface OrderModification {
   createdAt: string;
 }
 
+type DraftOrderChange = { quantity?: number; price?: number; label?: string; reason?: string };
+type RefundForEdit = {
+  orderId: number;
+  changes: Array<{ itemId: number; quantity?: number; price?: number; label?: string; reason?: string }>;
+  amountPaise: number;
+  operationId: string;
+};
+type RefundPaymentInput = {
+  amountPaise: number;
+  method: string;
+  cashReceived?: number;
+  onlineAccountId?: number;
+  receiptId?: string;
+  note?: string;
+  operationId?: string;
+  editOperationId?: string;
+};
+
 interface Guest {
   id: number;
   name: string;
@@ -113,6 +132,18 @@ interface GuestWithTab {
   orderCount: number;
   latestOrderTime: string;
   hasModifications?: boolean;
+}
+
+interface CombinedGuestOption {
+  checkinId: number | null;
+  key: string;
+  guestType: "hostel" | "walkin";
+  name: string;
+  contact: string;
+  bedInfo: string;
+  orderIds: number[];
+  tabTotal: number;
+  orderCount: number;
 }
 
 interface MenuItem {
@@ -806,6 +837,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [voidedItemReasons, setVoidedItemReasons] = useState<Record<number, string>>({});
   const [pendingQtyChange, setPendingQtyChange] = useState<{ orderId: number; itemId: number; newQty: number } | null>(null);
+  const [draftEdits, setDraftEdits] = useState<Record<number, Record<number, DraftOrderChange>>>({});
+  const [refundForEdit, setRefundForEdit] = useState<RefundForEdit | null>(null);
   const [modHistoryOrderId, setModHistoryOrderId] = useState<number | null>(null);
   const [modHistoryData, setModHistoryData] = useState<OrderModification[]>([]);
   const [modHistoryLoading, setModHistoryLoading] = useState(false);
@@ -868,7 +901,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         if (!paidRes.ok) break;
         const data = await paidRes.json();
         const page = (data.orders || []) as Order[];
-        paidOrders.push(...page.filter((o) => o.paymentStatus === "paid" && o.status !== "cancelled"));
+        paidOrders.push(...page.filter((o) => foodPaymentStatus(o) === "paid" && o.status !== "cancelled"));
         if (page.length < 200) break;
         paidOffset += page.length;
       }
@@ -1115,18 +1148,18 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     finally { setModHistoryLoading(false); }
   };
 
-  const handleVoidItem = async (orderId: number, itemId: number, reason: string) => {
-    setActionBusy(`void_${itemId}`);
-    try {
-      const res = await apiCall({ action: "voidItem", orderId, orderItemId: itemId, reason });
-      if (res.ok) {
-        setVoidedItemReasons((prev) => ({ ...prev, [itemId]: reason }));
-        setVoidingItemId(null);
-        if (selectedGroup) await refreshAfterEdit(selectedGroup);
-      }
-    } finally {
-      setActionBusy(null);
-    }
+  const stageOrderChange = (orderId: number, itemId: number, change: DraftOrderChange) => {
+    setDraftEdits((prev) => ({
+      ...prev,
+      [orderId]: { ...(prev[orderId] || {}), [itemId]: { ...(prev[orderId]?.[itemId] || {}), ...change } },
+    }));
+  };
+
+  const handleVoidItem = (orderId: number, itemId: number, reason: string) => {
+    stageOrderChange(orderId, itemId, { quantity: 0, reason });
+    setVoidedItemReasons((prev) => ({ ...prev, [itemId]: reason }));
+    setVoidingItemId(null);
+    setPendingQtyChange(null);
   };
 
   const handleQuantityChange = async (orderId: number, itemId: number, newQuantity: number, orderStatus?: string) => {
@@ -1139,52 +1172,60 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       setVoidingItemId(itemId);
       return;
     }
-    setActionBusy(`qty_${itemId}`);
-    try {
-      const res = await apiCall({ action: "updateItemQuantity", orderId, orderItemId: itemId, newQuantity });
-      if (res.ok) {
-        if (selectedGroup) await refreshAfterEdit(selectedGroup);
-      }
-    } finally {
-      setActionBusy(null);
-    }
+    stageOrderChange(orderId, itemId, { quantity: newQuantity });
   };
 
   const handleServedQtyChange = async (reason: string) => {
     if (!pendingQtyChange) return;
     const { orderId, itemId, newQty } = pendingQtyChange;
-    setActionBusy(`qty_${itemId}`);
-    try {
-      const res = await apiCall({ action: "updateItemQuantity", orderId, orderItemId: itemId, newQuantity: newQty, reason });
-      if (res.ok) {
-        setPendingQtyChange(null);
-        setVoidingItemId(null);
-        if (selectedGroup) await refreshAfterEdit(selectedGroup);
-      }
-    } finally {
-      setActionBusy(null);
-    }
+    stageOrderChange(orderId, itemId, { quantity: newQty, reason });
+    setPendingQtyChange(null);
+    setVoidingItemId(null);
   };
 
   const handleSetItemPrice = async (orderId: number, itemId: number, priceRupees: number, label: string) => {
     if (!Number.isFinite(priceRupees) || priceRupees <= 0) { showError("Enter a valid positive price"); return; }
-    setActionBusy(`price_${itemId}`);
+    stageOrderChange(orderId, itemId, { price: Math.round(priceRupees * 100), label: label.trim() });
+    setPriceModalItem(null);
+    setSpBillWarning(false);
+    showSuccess("Price staged — save the order to apply it");
+  };
+
+  const handleSaveOrderEdits = async (order: Order, refund?: RefundPaymentInput) => {
+    const changes = Object.entries(draftEdits[order.id] || {}).map(([itemId, change]) => ({ itemId: Number(itemId), ...change }));
+    if (changes.length === 0) return true;
+    const operationId = refund?.editOperationId || refund?.operationId || crypto.randomUUID();
+    setActionBusy(`save_${order.id}`);
     try {
       const res = await apiCall({
-        action: "setFoodOrderItemPrice",
-        orderId,
-        orderItemId: itemId,
-        price: Math.round(priceRupees * 100),
-        label: label.trim(),
+        action: "saveOrderEdits", orderId: order.id, changes, operationId,
+        refund: refund ? {
+          operationId: refund.operationId || crypto.randomUUID(), amountPaise: refund.amountPaise,
+          method: refund.method, cashReceived: refund.cashReceived, onlineAccountId: refund.onlineAccountId,
+          receiptId: refund.receiptId, note: refund.note,
+        } : undefined,
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setPriceModalItem(null);
+        setDraftEdits((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+        setRefundForEdit(null);
+        setEditingOrderId(null);
         if (selectedGroup) await refreshAfterEdit(selectedGroup);
-        showSuccess("Final price saved");
-        setSpBillWarning(false);
+        showSuccess(refund ? "Order saved and refund recorded" : "Order edits saved");
+        return true;
       }
-      else { const data = await res.json().catch(() => ({})); showError(data.error || "Could not save price"); }
-    } finally { setActionBusy(null); }
+      if (res.status === 409 && data.requiresRefund && Number(data.refundAmount) > 0) {
+        setRefundForEdit({ orderId: order.id, changes, amountPaise: Number(data.refundAmount), operationId });
+        return false;
+      }
+      showError("Save order edits", data.error || "Could not save order edits");
+      return false;
+    } catch (error) {
+      showError("Save order edits", error instanceof Error ? error.message : "Could not save order edits");
+      return false;
+    } finally {
+      setActionBusy(null);
+    }
   };
 
   const actualGroupTotal = selectedGroupOrders.length > 0
@@ -1283,7 +1324,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
   const handlePrintGroup = async (group: SummaryGroup) => {
     const groupOrders = getGroupOrders(group);
-    const orders = groupOrders.some((o) => foodDue(o) > 0)
+    const unpaidOnly = groupOrders.some((o) => foodDue(o) > 0);
+    const orders = unpaidOnly
       ? groupOrders.filter((o) => foodDue(o) > 0)
       : groupOrders;
     if (orders.length === 0) return;
@@ -1292,7 +1334,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       const exemptCatIdsPrint = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
       const miCatMapPrint = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
       const allItems: BillItem[] = orders.flatMap(o =>
-        o.items.filter(i => i.status !== "voided").map(i => ({
+        (unpaidOnly ? payableBillItems(o.items, foodAmountPaid(o), o.total) : o.items.filter(i => i.status !== "voided")).map(i => ({
           name: i.itemName,
           quantity: i.quantity,
           price: i.itemPrice,
@@ -1300,13 +1342,14 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           status: i.status,
         }))
       );
-      const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
-      const tax = orders.reduce((s, o) => s + o.tax, 0);
-      const total = orders.reduce((s, o) => s + o.total, 0);
-      const discount = orders.reduce((s, o) => s + (o.discount || 0), 0);
+      const subtotal = unpaidOnly ? allItems.reduce((s, item) => s + item.lineTotal, 0) : orders.reduce((s, o) => s + o.subtotal, 0);
+      const total = unpaidOnly ? orders.reduce((s, o) => s + foodDue(o), 0) : orders.reduce((s, o) => s + o.total, 0);
+      const tax = unpaidOnly ? Math.max(0, total - subtotal) : orders.reduce((s, o) => s + o.tax, 0);
+      const discount = unpaidOnly ? 0 : orders.reduce((s, o) => s + (o.discount || 0), 0);
       let printExempt = 0;
       for (const o of orders) {
-        for (const item of o.items) {
+        const items = unpaidOnly ? payableBillItems(o.items, foodAmountPaid(o), o.total) : o.items;
+        for (const item of items) {
           if (item.status === "voided") continue;
           const catId = miCatMapPrint.get(item.menuItemId);
           if (catId !== undefined && exemptCatIdsPrint.has(catId)) printExempt += item.lineTotal;
@@ -1522,6 +1565,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     roomInfo: selectedGroup.roomInfo || o.roomInfo,
                     paymentStatus: o.paymentStatus,
                     amountPaid: foodAmountPaid(o),
+                    amountRefunded: 0,
                     paymentMethod: o.paymentMethod,
                     createdAt: o.createdAt,
                     subtotal: o.subtotal,
@@ -1612,39 +1656,6 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     </>
                   }
                 />
-                <div className="mt-3 space-y-1.5 rounded-lg border border-brand-mist p-2">
-                    {selectedGroupOrders.map((order) => (
-                      <div key={order.id} className="rounded-md border border-brand-mist/70 px-2 py-1.5 text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-brand-green-dark/70">{order.orderNumber} · ₹{(order.total / 100).toFixed(0)}</span>
-                          <div className="flex items-center gap-1">
-                            {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && foodAmountPaid(order) > 0 ? (
-                              <button type="button" aria-label={`Edit payment for ${order.orderNumber}`} title="Edit payment" onClick={() => setPaymentEditOrder(order)} className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"><BanknoteIcon className="h-3.5 w-3.5" /></button>
-                            ) : <span className="font-medium text-orange-600">Unpaid</span>}
-                            {canEditOrderItems && (
-                              <button
-                                type="button"
-                                aria-label={`Edit items for ${order.orderNumber}`}
-                                title="Edit order items"
-                                onClick={() => { setDrawerView("orders"); setEditingOrderId(order.id); setVoidingItemId(null); }}
-                                className="rounded p-1 text-brand-green-dark/50 hover:bg-brand-sand hover:text-brand-green-dark"
-                              >
-                                <UtensilsIcon className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="mt-1 space-y-0.5 text-brand-green-dark/60">
-                          {order.items.filter((item) => item.status !== "voided").map((item) => (
-                            <div key={item.id} className="flex items-center justify-between gap-2">
-                              <span className="min-w-0 truncate">{item.quantity}× {item.itemName}</span>
-                              <span className="shrink-0">₹{(item.lineTotal / 100).toFixed(0)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
               </div>
             ) : (
             <>
@@ -1670,6 +1681,27 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                 <>
                   {selectedGroupOrders.map((order) => {
                     const isEditing = editingOrderId === order.id;
+                    const draft = draftEdits[order.id] || {};
+                    const hasDraft = Object.keys(draft).length > 0;
+                    const effectiveItems = order.items.map((item) => {
+                      const change = draft[item.id];
+                      if (!change) return item;
+                      const quantity = change.quantity ?? item.quantity;
+                      const itemPrice = change.price ?? item.itemPrice;
+                      return {
+                        ...item,
+                        quantity,
+                        itemPrice,
+                        lineTotal: quantity * itemPrice,
+                        status: quantity === 0 ? "voided" : item.status,
+                        pricingStatus: change.price !== undefined ? "fixed" : item.pricingStatus,
+                        notes: change.label !== undefined ? change.label : item.notes,
+                      };
+                    });
+                    const draftGross = effectiveItems.filter((item) => item.status !== "voided").reduce((sum, item) => sum + item.lineTotal, 0);
+                    const draftSubtotal = Math.max(0, draftGross - Math.min(order.discount || 0, draftGross));
+                    const inferredTaxRate = order.subtotal > 0 ? (order.tax / order.subtotal) * 100 : 0;
+                    const draftTotal = hasDraft ? draftSubtotal + Math.round((draftSubtotal * inferredTaxRate) / 100) : order.total;
                     return (
                     <div
                       key={order.id}
@@ -1687,7 +1719,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           <span className="font-mono text-xs font-bold text-brand-green">{order.orderNumber}</span>
                           {isEditing && <span className="rounded-full bg-brand-green px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
                           <StatusBadge status={order.status} />
-                          <OrderPaymentBadge paymentStatus={order.paymentStatus} />
+                          <OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />
                           {order.hasModifications && (
                             <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">Modified</span>
                           )}
@@ -1713,8 +1745,20 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                               <PrinterIcon className="h-3.5 w-3.5" />
                             </button>
                           )}
+                          {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && foodAmountPaid(order) > 0 && (
+                            <button
+                              type="button"
+                              aria-label={`Edit payment for ${order.orderNumber}`}
+                              title="Edit payment"
+                              onClick={() => setPaymentEditOrder(order)}
+                              className="rounded p-1 text-blue-500 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950"
+                            >
+                              <BanknoteIcon className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
+                            aria-label={`Edit food items for ${order.orderNumber}`}
                             onClick={() => { setEditingOrderId(isEditing ? null : order.id); setVoidingItemId(null); }}
                             className={cn(
                               "rounded p-1 transition-colors",
@@ -1729,7 +1773,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         </div>
                       </div>
                       <div className="mt-1.5 space-y-0.5">
-                        {order.items.map((item) => {
+                        {effectiveItems.map((item) => {
                           const isVoided = item.status === "voided";
                           const isItemEditing = isEditing && !isVoided;
                           const spPending = !isVoided && item.pricingStatus === "pending";
@@ -1820,12 +1864,28 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                       </div>
                       <div className="mt-1 flex items-center justify-between">
                         <span className="text-[10px] text-brand-green-dark/40">by {order.createdBy || "guest"}</span>
-                        <span className="text-sm font-semibold text-brand-green-dark">₹{(order.total / 100).toFixed(0)}</span>
+                        <span className="text-sm font-semibold text-brand-green-dark">₹{(draftTotal / 100).toFixed(0)}</span>
                       </div>
                       {order.discount > 0 && (
                         <div className="flex items-center justify-between text-[10px] text-green-600">
                           <span>Discount{order.discountBy ? ` by ${order.discountBy}` : ""}</span>
                           <span>-₹{(order.discount / 100).toFixed(0)}</span>
+                        </div>
+                      )}
+                      {isEditing && hasDraft && (
+                        <div className="mt-2 flex items-center justify-end gap-2 border-t border-brand-mist pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setDraftEdits((prev) => { const next = { ...prev }; delete next[order.id]; return next; })}
+                            disabled={actionBusy === `save_${order.id}`}
+                            className="rounded border border-brand-mist px-2.5 py-1 text-[11px] font-medium text-brand-green-dark/70 hover:bg-brand-sand disabled:opacity-50"
+                          >Cancel changes</button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveOrderEdits(order)}
+                            disabled={actionBusy === `save_${order.id}`}
+                            className="rounded bg-brand-green px-3 py-1 text-[11px] font-semibold text-white hover:bg-brand-green/90 disabled:opacity-50"
+                          >{actionBusy === `save_${order.id}` ? "Saving…" : "Save changes"}</button>
                         </div>
                       )}
                       {order.hasModifications && (
@@ -1945,6 +2005,34 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           onClose={() => setPaymentEditOrder(null)}
         />
       )}
+
+      {refundForEdit && (() => {
+        const order = selectedGroupOrders.find((candidate) => candidate.id === refundForEdit.orderId);
+        if (!order) return null;
+        return (
+          <RecordPaymentModal
+            totalAmount={refundForEdit.amountPaise}
+            guestName={order.guestName}
+            mode="refund"
+            password={password}
+            username={username}
+            receiptKind="food"
+            onConfirm={async (method, cashReceived, _changeGiven, onlineAccountId, receiptId, amountToApply, refundOperationId, note) => {
+              return handleSaveOrderEdits(order, {
+                editOperationId: refundForEdit.operationId,
+                operationId: refundOperationId || crypto.randomUUID(),
+                amountPaise: Number(amountToApply) || refundForEdit.amountPaise,
+                method,
+                cashReceived,
+                onlineAccountId,
+                receiptId,
+                note,
+              });
+            }}
+            onClose={() => setRefundForEdit(null)}
+          />
+        );
+      })()}
 
       {/* Discount Modal */}
       {discountModalGroup && (() => {
@@ -2083,8 +2171,8 @@ function VoidReasonPopup({ itemName, onVoid, onCancel, busy }: {
 
 function CombinedBill({ apiCall, password, username, role, permissions }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string; role: Role; permissions: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
-  const [guests, setGuests] = useState<GuestWithTab[]>([]);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [guests, setGuests] = useState<CombinedGuestOption[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<{ guests: any[]; grandTotal: number } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -2104,7 +2192,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   useEffect(() => {
     (async () => {
       const [res, menuRes] = await Promise.all([
-        apiCall({ action: "getGuestsWithTabs" }),
+        apiCall({ action: "getCombinedBillOptions" }),
         apiCall({ action: "getMenu" }),
       ]);
       if (res.ok) {
@@ -2120,7 +2208,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
     })();
   }, [apiCall]);
 
-  const toggleGuest = (id: number) => {
+  const toggleGuest = (id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
     setPreview(null);
   };
@@ -2137,8 +2225,13 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
     if (selectedIds.length === 0) return;
     setLoadingPreview(true);
     try {
+      const selected = guests.filter((guest) => selectedIds.includes(String(guest.key ?? guest.checkinId)));
       const [res] = await Promise.all([
-        apiCall({ action: "getCombinedBill", checkinIds: selectedIds }),
+        apiCall({
+          action: "getCombinedBill",
+          checkinIds: selected.filter((guest) => guest.checkinId).map((guest) => guest.checkinId),
+          orderIds: selected.flatMap((guest) => guest.checkinId ? [] : (guest.orderIds || [])),
+        }),
         ensureBillBranding(),
       ]);
       const data = await res.json().catch(() => ({}));
@@ -2158,7 +2251,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       || (g.orders || []).find((o: any) => o.guestPhone)?.guestPhone
       || guests.find((x) => x.checkinId === g.checkinId)?.contact
       || "";
-    const key = String(g.checkinId);
+    const key = String(g.key ?? g.checkinId);
     setWhatsAppBusyKey(key);
     try {
       const normalized = normalizePhone(phone);
@@ -2166,7 +2259,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
         showError("WhatsApp", "No phone number for this guest");
         return;
       }
-      const res = await apiCall({ action: "createBillShareLink", phone: normalized, checkinId: g.checkinId });
+      const res = await apiCall({ action: "createBillShareLink", phone: normalized, checkinId: g.checkinId || undefined });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         showError("WhatsApp", data.error || "Could not create bill link");
@@ -2190,11 +2283,12 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       const cpExemptCats = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
       const cpMiCatMap = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
       let cpExempt = 0;
-      let cpGross = 0;
+      let cpSubtotal = 0;
       for (const g of preview.guests as any[]) {
         for (const o of (g.orders || []) as any[]) {
-          cpGross += ((o.subtotal || 0) + (o.discount || 0));
-          for (const i of (o.items || []) as any[]) {
+          const items = payableBillItems((o.items || []) as any[], foodAmountPaid(o), o.total);
+          cpSubtotal += items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
+          for (const i of items) {
             if (i.status === "voided") continue;
             const catId = cpMiCatMap.get(i.menuItemId);
             if (catId !== undefined && cpExemptCats.has(catId)) cpExempt += (i.lineTotal || 0);
@@ -2203,9 +2297,9 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       }
       const guestData = preview.guests.map((g: any) => ({
         name: g.guestName as string,
-        total: (g.subtotal ?? 0) as number,
+        total: (g.amountDue ?? g.subtotal ?? 0) as number,
         items: ((g.orders || []) as any[]).flatMap((o: any) =>
-          ((o.items || []) as any[]).filter((i: any) => i.status !== "voided").map((i: any) => ({
+          payableBillItems((o.items || []) as any[], foodAmountPaid(o), o.total).map((i: any) => ({
             name: (i.itemName || i.name || "") as string,
             quantity: (i.quantity || 0) as number,
             price: (i.itemPrice || i.price || 0) as number,
@@ -2213,11 +2307,9 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
           }))
         ),
       }));
-      const cpOrders = preview.guests.flatMap((g: any) => g.orders || []);
-      const cpSub = cpOrders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0);
-      const cpTax = cpOrders.reduce((s: number, o: any) => s + (o.tax || 0), 0);
+      const cpTax = Math.max(0, preview.grandTotal - cpSubtotal);
       const { branding } = await withBillBranding(password, username, showError, { embedQr: true });
-      await printCombinedBill(guestData, preview.grandTotal, foodTaxRateFromAmounts(cpSub, cpTax), undefined, cpGross - cpExempt, cpExempt, branding, cpTax);
+      await printCombinedBill(guestData, preview.grandTotal, foodTaxRateFromAmounts(cpSubtotal, cpTax), undefined, cpSubtotal - cpExempt, cpExempt, branding, cpTax);
       showSuccess("Combined bill printed successfully!");
     } catch (err: any) {
       showError("Print failed", err.message || "Unknown error");
@@ -2242,7 +2334,12 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
 
   const reloadCombinedPreview = async () => {
     if (selectedIds.length === 0) return;
-    const res = await apiCall({ action: "getCombinedBill", checkinIds: selectedIds });
+    const selected = guests.filter((guest) => selectedIds.includes(String(guest.key ?? guest.checkinId)));
+    const res = await apiCall({
+      action: "getCombinedBill",
+      checkinIds: selected.filter((guest) => guest.checkinId).map((guest) => guest.checkinId),
+      orderIds: selected.flatMap((guest) => guest.checkinId ? [] : (guest.orderIds || [])),
+    });
     const data = await res.json().catch(() => ({}));
     if (res.ok) setPreview(data);
     else { setPreview(null); showError("Combined Bill", data.error || "Could not reload combined bill"); }
@@ -2259,7 +2356,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       setSelectedIds([]);
       setPreview(null);
       showSuccess("Combined payment recorded");
-      const guestsRes = await apiCall({ action: "getGuestsWithTabs" });
+      const guestsRes = await apiCall({ action: "getCombinedBillOptions" });
       if (guestsRes.ok) setGuests((await guestsRes.json()).guests || []);
     } finally { setActionBusy(false); }
   };
@@ -2290,16 +2387,16 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
           <p className="mb-2 text-sm text-brand-green-dark/70">Select guests to combine:</p>
           <div className="space-y-1.5">
             {guests.map((g) => (
-              <label key={g.checkinId} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-brand-sand/50">
+              <label key={g.key ?? g.checkinId} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-brand-sand/50">
                 <input
                   type="checkbox"
-                  checked={selectedIds.includes(g.checkinId)}
-                  onChange={() => toggleGuest(g.checkinId)}
+                  checked={selectedIds.includes(String(g.key ?? g.checkinId))}
+                  onChange={() => toggleGuest(String(g.key ?? g.checkinId))}
                   className="h-4 w-4 rounded border-brand-mist text-brand-green"
                 />
                 <div className="flex-1">
                   <span className="text-sm font-medium text-brand-green-dark">{g.name}</span>
-                  <span className="ml-2 rounded-full bg-green-100 dark:bg-green-900/50 px-2 py-0.5 text-xs text-green-700 dark:text-green-400">Goko Guest</span>
+                  <span className={cn("ml-2 rounded-full px-2 py-0.5 text-xs", g.guestType === "walkin" ? "bg-gray-200 text-gray-600" : "bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400")}>{g.guestType === "walkin" ? "Walk-in" : "Goko Guest"}</span>
                   {g.bedInfo && <span className="ml-2 text-xs text-brand-green-dark/50">{g.bedInfo}</span>}
                 </div>
                 <span className="text-sm font-medium text-brand-green">₹{(g.tabTotal / 100).toFixed(0)}</span>
@@ -2327,11 +2424,13 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
             const orders = (g.orders || []) as any[];
             return (
               <GuestFoodBillCard
-                key={g.checkinId}
+                key={g.key ?? g.checkinId}
                 orders={orders.map((o) => ({
                   guestName: g.guestName,
                   roomInfo: g.roomInfo || o.roomInfo,
                   paymentStatus: o.paymentStatus,
+                  amountPaid: foodAmountPaid(o),
+                  amountRefunded: 0,
                   paymentMethod: o.paymentMethod,
                   createdAt: o.createdAt,
                   subtotal: o.subtotal,
@@ -2355,10 +2454,10 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
                   <button
                     type="button"
                     onClick={() => void shareGuestBill(g)}
-                    disabled={whatsAppBusyKey === String(g.checkinId)}
+                    disabled={whatsAppBusyKey === String(g.key ?? g.checkinId)}
                     className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
                   >
-                    {whatsAppBusyKey === String(g.checkinId) ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
+                    {whatsAppBusyKey === String(g.key ?? g.checkinId) ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
                     WhatsApp {g.guestName.split(" ")[0]}
                   </button>
                 }
@@ -2390,20 +2489,19 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
                   const exemptCatIds2 = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
                   const miCatMap2 = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
                   let combExemptSub = 0;
-                  let combGrossSub = 0;
+                  let combSub = 0;
                   for (const g of preview.guests as any[]) {
                     for (const o of (g.orders || []) as any[]) {
-                      combGrossSub += ((o.subtotal || 0) + (o.discount || 0));
-                      for (const i of (o.items || []) as any[]) {
+                      const items = payableBillItems((o.items || []) as any[], foodAmountPaid(o), o.total);
+                      combSub += items.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
+                      for (const i of items) {
                         if (i.status === "voided") continue;
                         const catId = miCatMap2.get(i.menuItemId);
                         if (catId !== undefined && exemptCatIds2.has(catId)) combExemptSub += (i.lineTotal || 0);
                       }
                     }
                   }
-                  const combOrders = (preview.guests as any[]).flatMap((g: any) => g.orders || []);
-                  const combSub = combOrders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0);
-                  const combTax = combOrders.reduce((s: number, o: any) => s + (o.tax || 0), 0);
+                  const combTax = Math.max(0, preview.grandTotal - combSub);
                   const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError, { embedQr: true });
                   const combinedData: CombinedBillData = {
                     guests: preview.guests.map((g: any) => ({
@@ -2413,28 +2511,28 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
                       orders: ((g.orders || []) as any[]).map((o: any) => ({
                         orderNumber: o.orderNumber as string,
                         createdAt: o.createdAt as string,
-                        items: ((o.items || []) as any[]).filter((i: any) => i.status !== "voided").map((i: any) => ({
+                        items: payableBillItems((o.items || []) as any[], foodAmountPaid(o), o.total).map((i: any) => ({
                           itemName: (i.itemName || i.name || "") as string,
                           quantity: (i.quantity || 0) as number,
                           itemPrice: (i.itemPrice || i.price || 0) as number,
                           lineTotal: (i.lineTotal || 0) as number,
                           status: (i.status || "active") as string,
                         })),
-                        subtotal: (o.subtotal || 0) as number,
-                        tax: (o.tax || 0) as number,
-                        total: (o.total || 0) as number,
+                        subtotal: payableBillItems((o.items || []) as any[], foodAmountPaid(o), o.total).reduce((sum: number, i: any) => sum + i.lineTotal, 0),
+                        tax: Math.max(0, foodDue(o) - payableBillItems((o.items || []) as any[], foodAmountPaid(o), o.total).reduce((sum: number, i: any) => sum + i.lineTotal, 0)),
+                        total: foodDue(o),
                         specialInstructions: o.specialInstructions || undefined,
                       })),
-                      guestSubtotal: (g.subtotal || 0) as number,
-                      guestTax: (g.tax || 0) as number,
-                      guestTotal: (g.subtotal || 0) as number,
+                      guestSubtotal: (g.amountDue || g.subtotal || 0) as number,
+                      guestTax: 0,
+                      guestTotal: (g.amountDue || g.subtotal || 0) as number,
                     })),
                     grandSubtotal: combSub,
                     grandTax: combTax,
                     grandTotal: preview.grandTotal,
                     taxRate: foodTaxRateFromAmounts(combSub, combTax),
                     billDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
-                    discountableSubtotal: combGrossSub - combExemptSub,
+                    discountableSubtotal: combSub - combExemptSub,
                     exemptSubtotal: combExemptSub,
                     branding,
                     paymentQrDataUrl,
@@ -2647,7 +2745,7 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         }
         const data = await paidRes.json();
         const page = (data.orders || []) as Order[];
-        orders.push(...page.filter((order) => order.paymentStatus === "paid" && order.status !== "cancelled"));
+        orders.push(...page.filter((order) => foodPaymentStatus(order) === "paid" && order.status !== "cancelled"));
         if (page.length < paidQuery.limit) break;
         paidOffset += page.length;
       }
@@ -2686,8 +2784,8 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
       const nonCancelled = effectiveOrders.filter(o => o.status !== "cancelled");
       const paidAmt = nonCancelled.reduce((s, o) => s + foodAmountPaid(o), 0);
       const pendingAmt = nonCancelled.reduce((s, o) => s + foodDue(o), 0);
-      const cashAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && o.paymentMethod === "cash").reduce((s, o) => s + o.total, 0);
-      const onlineAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && (o.paymentMethod === "online" || o.paymentMethod === "split")).reduce((s, o) => s + o.total, 0);
+      const cashAmt = nonCancelled.filter(o => foodPaymentStatus(o) === "paid" && o.paymentMethod === "cash").reduce((s, o) => s + foodAmountPaid(o), 0);
+      const onlineAmt = nonCancelled.filter(o => foodPaymentStatus(o) === "paid" && (o.paymentMethod === "online" || o.paymentMethod === "split")).reduce((s, o) => s + foodAmountPaid(o), 0);
       const totalAmt = nonCancelled.reduce((s, o) => s + o.total, 0);
       result.push({
         key: `hostel_${checkinId}`,
@@ -2712,8 +2810,8 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
       const nonCancelled = effectiveOrders.filter(o => o.status !== "cancelled");
       const paidAmt = nonCancelled.reduce((s, o) => s + foodAmountPaid(o), 0);
       const pendingAmt = nonCancelled.reduce((s, o) => s + foodDue(o), 0);
-      const cashAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && o.paymentMethod === "cash").reduce((s, o) => s + o.total, 0);
-      const onlineAmt = nonCancelled.filter(o => o.paymentStatus === "paid" && (o.paymentMethod === "online" || o.paymentMethod === "split")).reduce((s, o) => s + o.total, 0);
+      const cashAmt = nonCancelled.filter(o => foodPaymentStatus(o) === "paid" && o.paymentMethod === "cash").reduce((s, o) => s + foodAmountPaid(o), 0);
+      const onlineAmt = nonCancelled.filter(o => foodPaymentStatus(o) === "paid" && (o.paymentMethod === "online" || o.paymentMethod === "split")).reduce((s, o) => s + foodAmountPaid(o), 0);
       const totalAmt = nonCancelled.reduce((s, o) => s + o.total, 0);
       const isTableGroup = groupKey.startsWith("table_");
       result.push({
@@ -3054,12 +3152,12 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
               ) : (
                 <>
                   {selectedOrders.map((order) => (
-                    <div key={order.id} className={cn("rounded-lg border p-3", order.paymentStatus === "paid" ? "border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-950/30" : "border-brand-mist")}>
+                    <div key={order.id} className={cn("rounded-lg border p-3", foodPaymentStatus(order) === "paid" ? "border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-950/30" : "border-brand-mist")}>
                       <div className="flex flex-wrap items-center justify-between gap-1">
                         <div className="flex flex-wrap items-center gap-1">
                           <span className="font-mono text-xs font-bold text-brand-green">{order.orderNumber}</span>
                           <StatusBadge status={order.status} />
-                          <PaymentBadge status={order.paymentStatus} />
+                          <PaymentBadge status={foodPaymentStatus(order)} />
                           {order.hasModifications && (
                             <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">Modified</span>
                           )}
@@ -3080,10 +3178,10 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
                       {/* Payment details */}
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 border-t border-brand-mist/50 pt-2 text-xs">
                         <span>
-                          {order.paymentStatus === "paid" && order.paymentMethod ? (
+                          {foodPaymentStatus(order) === "paid" && order.paymentMethod ? (
                             <PaymentDetailLabel method={order.paymentMethod} total={order.total} cashReceived={order.cashReceived} changeGiven={order.changeGiven} />
                           ) : (
-                            <PaymentBadge status={order.paymentStatus} />
+                            <PaymentBadge status={foodPaymentStatus(order)} />
                           )}
                         </span>
                         <span className="text-brand-green-dark/40">
@@ -3259,7 +3357,7 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
     } finally { setLoading(false); }
   }, [apiCall, getDateRange, showError]);
 
-  useEffect(() => { if (range !== "custom") loadHistory(); }, [range]);
+  useEffect(() => { if (range !== "custom") loadHistory(); }, [range, loadHistory]);
 
   useEffect(() => {
     (async () => {
@@ -3395,7 +3493,7 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
                     <div key={o.id} className="flex flex-wrap items-center justify-between gap-1 rounded bg-brand-sand/30 px-2 py-1 text-xs">
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono font-bold text-brand-green">{o.orderNumber}</span>
-                        <PaymentBadge status={o.paymentStatus} />
+                        <PaymentBadge status={foodPaymentStatus(o)} />
                       </div>
                       <div className="flex items-center gap-2 text-brand-green-dark/50">
                         <span>{new Date(o.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}</span>
@@ -3586,8 +3684,8 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
                   <span className="min-w-0 truncate text-sm text-brand-green-dark">{order.guestName}</span>
                   {order.guestType === "walkin" && <span className="rounded-full bg-gray-200 dark:bg-[#2a2a2a] px-2 py-0.5 text-xs text-gray-600 dark:text-gray-400">Walk-in</span>}
                   {order.guestType === "hostel" && <span className="rounded-full bg-green-100 dark:bg-green-900/50 px-2 py-0.5 text-xs text-green-700 dark:text-green-400">Goko Guest</span>}
-                  <PaymentBadge status={order.paymentStatus} />
-                  {order.paymentStatus === "paid" && order.paymentMethod && (
+                  <PaymentBadge status={foodPaymentStatus(order)} />
+                  {foodPaymentStatus(order) === "paid" && order.paymentMethod && (
                     <span className="text-xs text-brand-green-dark/40">({order.paymentMethod === "cash" ? "Cash" : order.paymentMethod === "online" ? "Online" : order.paymentMethod === "split" ? "Split" : order.paymentMethod})</span>
                   )}
                 </div>
@@ -3614,13 +3712,13 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
                   ))}
                   <div className="flex flex-wrap justify-between gap-x-3 border-t border-brand-mist pt-1 text-xs">
                     <span>Payment:{" "}
-                      {order.paymentStatus === "paid" && order.paymentMethod
+                      {foodPaymentStatus(order) === "paid" && order.paymentMethod
                         ? <PaymentDetailLabel method={order.paymentMethod} total={order.total} cashReceived={order.cashReceived} changeGiven={order.changeGiven} />
-                        : <PaymentBadge status={order.paymentStatus} />
+                        : <PaymentBadge status={foodPaymentStatus(order)} />
                       }
                     </span>
                     <span>
-                      {order.paymentStatus === "paid" && order.paidBy
+                      {foodPaymentStatus(order) === "paid" && order.paidBy
                         ? <>Paid by: {order.paidBy}</>
                         : <>By: {order.createdBy}</>
                       }
@@ -3771,7 +3869,7 @@ export function OrderHistory({ apiCall, password, username }: { apiCall: (body: 
                           paymentStatus: order.paymentStatus,
                           paymentMethod: order.paymentMethod || undefined,
                           branding,
-                          paymentQrDataUrl: order.paymentStatus === "paid" ? undefined : paymentQrDataUrl,
+                          paymentQrDataUrl: foodPaymentStatus(order) === "paid" ? undefined : paymentQrDataUrl,
                         });
                       }}
                       className="flex items-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"

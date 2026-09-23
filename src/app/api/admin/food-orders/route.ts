@@ -17,7 +17,6 @@ import {
   getGuestFoodTab,
   getGuestTabTotal,
   getGuestAllFoodOrders,
-  getFoodOrdersByCheckinIds,
   getActiveCheckins,
   getRecentlyCheckedOutGuests,
   getAllBeds,
@@ -39,7 +38,7 @@ import { normalizePhone } from "@/lib/phoneUtils";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { getDb } from "@/db";
-import { auditLog, foodOrders, foodOrderItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
+import { auditLog, foodOrders, foodOrderItems, foodOrderEditBatches, foodPaymentEvents, menuItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
 import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
 import { createGuestReceipt, latestReceiptAccount, receiptBusinessDate, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { collectInBatches } from "@/lib/dbBatch";
@@ -69,11 +68,13 @@ export async function POST(req: NextRequest) {
       getOrderModifications: "canViewFoodOrders", getActiveGuests: "canViewFoodOrders",
       getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
       getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
+      getCombinedBillOptions: ["canGenerateFoodBills", "canViewFoodOrders"],
       getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
       createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
       updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
       voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
+      saveOrderEdits: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
       markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
       applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
@@ -108,7 +109,10 @@ export async function POST(req: NextRequest) {
       }
       const state = foodPaymentState(total, paid, order.paymentStatus === "on_tab");
       return {
-        amountPaid: state.amountPaid,
+        // amountPaid is gross collected money. Refunds are tracked separately;
+        // foodAmountPaid() exposes the net balance used by bills and due checks.
+        amountPaid: Math.max(0, Number(order.amountPaid ?? (order.paymentStatus === "paid" ? order.total : 0)) || 0),
+        amountRefunded: Math.max(0, Number((order as any).amountRefunded) || 0),
         paymentStatus: state.paymentStatus,
         paymentMethod: order.paymentMethod,
         paidBy: state.amountPaid > 0 ? order.paidBy : "",
@@ -404,7 +408,7 @@ export async function POST(req: NextRequest) {
         const db = getDb() as any;
         const assertCurrentOrders = async (client: any) => {
           const currentRows = await collectInBatches(orderIds, (batch) => client.select().from(foodOrders).where(inArray(foodOrders.id, batch)));
-          if (currentRows.length !== orderIds.length || currentRows.some((order: any) => order.status === "cancelled" || order.paymentStatus === "paid")) {
+          if (currentRows.length !== orderIds.length || currentRows.some((order: any) => order.status === "cancelled" || foodDue(order) <= 0)) {
             throw Object.assign(new Error("A selected order changed before payment was recorded"), { status: 409 });
           }
         };
@@ -413,7 +417,7 @@ export async function POST(req: NextRequest) {
           for (const allocation of allocations) {
             const order = existingOrders.find((candidate) => candidate.id === allocation.orderId)!;
             writes.push(client.update(foodOrders).set(syncUpdate({
-              amountPaid: foodPaymentState(order.total, foodAmountPaid(order) + allocation.total, order.paymentStatus === "on_tab").amountPaid,
+              amountPaid: Math.max(0, Number(order.amountPaid) || 0) + allocation.total,
               paymentStatus: foodPaymentState(order.total, foodAmountPaid(order) + allocation.total, order.paymentStatus === "on_tab").paymentStatus,
               paymentMethod: allocation.paymentMethod,
               paidBy: actorName,
@@ -460,6 +464,218 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, role });
       }
 
+      case "saveOrderEdits": {
+        const { orderId, changes, operationId, refund } = rest;
+        if (!Number.isInteger(orderId) || orderId <= 0) {
+          return NextResponse.json({ error: "orderId required" }, { status: 400 });
+        }
+        if (!Array.isArray(changes) || changes.length === 0) {
+          return NextResponse.json({ error: "At least one edit is required" }, { status: 400 });
+        }
+        if (typeof operationId !== "string" || operationId.length < 8 || operationId.length > 180) {
+          return NextResponse.json({ error: "A valid edit operation ID is required" }, { status: 400 });
+        }
+
+        const db = getDb();
+        const requestedJson = JSON.stringify({ orderId, changes, refund: refund || null });
+        const initialOrder = await getFoodOrderById(orderId);
+        if (!initialOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+        if (initialOrder.status === "cancelled") return NextResponse.json({ error: "This order cannot be edited" }, { status: 400 });
+
+        const refundAmount = refund ? Number(refund.amountPaise) : 0;
+        if (refund && (!Number.isSafeInteger(refundAmount) || refundAmount <= 0)) {
+          return NextResponse.json({ error: "A positive refund amount is required" }, { status: 400 });
+        }
+        if (refund && (typeof refund.operationId !== "string" || refund.operationId.length < 8 || refund.operationId.length > 180)) {
+          return NextResponse.json({ error: "A valid refund operation ID is required" }, { status: 400 });
+        }
+        const refundMethod = refund?.method;
+        if (refund && !["cash", "online", "split"].includes(refundMethod)) {
+          return NextResponse.json({ error: "Refund method must be cash, online, or split" }, { status: 400 });
+        }
+        const refundCash = refundMethod === "cash"
+          ? refundAmount
+          : refundMethod === "split" ? Number(refund.cashReceived) || 0 : 0;
+        const refundOnline = refundAmount - refundCash;
+        if (refund && (!Number.isSafeInteger(refundCash) || refundCash < 0 || refundCash > refundAmount
+          || refundCash + refundOnline !== refundAmount || (refundMethod === "split" && (refundCash <= 0 || refundOnline <= 0)))) {
+          return NextResponse.json({ error: "Refund tender must add up to the refund amount" }, { status: 400 });
+        }
+        const refundAccountId = refundOnline > 0
+          ? await resolveReceiptAccount("food", refund?.onlineAccountId)
+          : null;
+
+        const taxRate = foodTaxPercent(await getSetting("food_tax_rate"));
+        const now = new Date().toISOString();
+
+        const result = await db.transaction(async (tx: any) => {
+          const previousBatch = await tx.select().from(foodOrderEditBatches)
+            .where(eq(foodOrderEditBatches.operationId, operationId)).limit(1);
+          if (previousBatch[0]) {
+            if (previousBatch[0].requestJson !== requestedJson || previousBatch[0].orderId !== orderId) {
+              throw Object.assign(new Error("This edit operation ID was already used for a different request"), { status: 409 });
+            }
+            return { duplicate: true, order: initialOrder };
+          }
+
+          const currentRows = await tx.select().from(foodOrders).where(eq(foodOrders.id, orderId)).limit(1);
+          const current = currentRows[0];
+          if (!current || current.status === "cancelled") throw Object.assign(new Error("Order changed or can no longer be edited"), { status: 409 });
+          const currentItems = await tx.select().from(foodOrderItems).where(eq(foodOrderItems.orderId, orderId));
+          const byId = new Map(currentItems.map((item: any) => [item.id, item]));
+          const seen = new Set<number>();
+          const normalizedChanges: Array<{ item: any; quantity: number; price: number; label: string; reason: string; oldQuantity: number; oldPrice: number; removed: boolean }> = [];
+
+          for (const raw of changes) {
+            const itemId = Number(raw?.itemId);
+            if (!Number.isInteger(itemId) || seen.has(itemId)) throw Object.assign(new Error("Each order item may be edited only once"), { status: 400 });
+            seen.add(itemId);
+            const item: any = byId.get(itemId);
+            if (!item || item.orderId !== orderId) throw Object.assign(new Error("Order item not found"), { status: 404 });
+            if (item.status === "voided") throw Object.assign(new Error("A cancelled item cannot be edited"), { status: 400 });
+            const quantity = raw.quantity === undefined ? item.quantity : Number(raw.quantity);
+            if (!Number.isInteger(quantity) || quantity < 0) throw Object.assign(new Error("Quantity must be a non-negative whole number"), { status: 400 });
+            let price = item.itemPrice;
+            let label = item.notes || "";
+            if (raw.price !== undefined) {
+              price = Number(raw.price);
+              if (!Number.isInteger(price) || price <= 0 || item.pricingStatus !== "pending") {
+                throw Object.assign(new Error("Only pending prices can be finalized"), { status: 400 });
+              }
+              label = typeof raw.label === "string" ? raw.label.trim().slice(0, 24) : "";
+            }
+            normalizedChanges.push({
+              item, quantity, price, label,
+              reason: typeof raw.reason === "string" ? raw.reason.trim().slice(0, 240) : "",
+              oldQuantity: item.quantity, oldPrice: item.itemPrice, removed: quantity === 0,
+            });
+          }
+
+          const projectedItems = currentItems
+            .filter((item: any) => item.status !== "voided")
+            .map((item: any) => {
+              const change = normalizedChanges.find((c) => c.item.id === item.id);
+              if (!change || change.removed) return change?.removed ? null : item;
+              return { ...item, quantity: change.quantity, itemPrice: change.price, lineTotal: change.quantity * change.price };
+            })
+            .filter(Boolean);
+          const projectedGross = projectedItems.reduce((sum: number, item: any) => sum + item.lineTotal, 0);
+          const exemptions = await getMenuItemCategoryExemptions(projectedItems.map((item: any) => item.menuItemId));
+          const discountable = projectedItems
+            .filter((item: any) => !exemptions.get(item.menuItemId))
+            .reduce((sum: number, item: any) => sum + item.lineTotal, 0);
+          const discount = Math.min(current.discount || 0, discountable);
+          const subtotal = projectedGross - discount;
+          const tax = Math.round((subtotal * taxRate) / 100);
+          const total = subtotal + tax;
+          const currentPaid = foodAmountPaid(current);
+
+          if (total < currentPaid && refundAmount !== currentPaid - total) {
+            throw Object.assign(new Error(`This edit requires a refund of ₹${((currentPaid - total) / 100).toFixed(2)} before it can be saved.`), {
+              status: 409, requiresRefund: true, refundAmount: currentPaid - total,
+            });
+          }
+          if (total >= currentPaid && refundAmount > 0) {
+            throw Object.assign(new Error("The selected refund is no longer required. Reload the order and try again."), { status: 409 });
+          }
+          if (refundAmount > currentPaid) throw Object.assign(new Error("Refund exceeds the amount collected for this order"), { status: 409 });
+
+          await tx.insert(foodOrderEditBatches).values(syncInsert({
+            operationId, orderId, requestJson: requestedJson, actor: actorName, createdAt: now,
+          }));
+
+          for (const change of normalizedChanges) {
+            const { item } = change;
+            const delta = change.quantity - item.quantity;
+            if (change.removed) {
+              await tx.update(foodOrderItems).set(syncUpdate({ status: "voided", updatedAt: now })).where(eq(foodOrderItems.id, item.id));
+              await tx.insert(orderModifications).values(syncInsert({
+                orderId, action: "item_removed", itemId: item.id, oldValue: String(item.quantity), newValue: "0",
+                reason: change.reason || "Quantity reduced to zero", modifiedBy: actorName, createdAt: now,
+              }));
+            } else {
+              const itemUpdate: Record<string, unknown> = { quantity: change.quantity, lineTotal: change.quantity * change.price };
+              if (change.price !== item.itemPrice) {
+                itemUpdate.itemPrice = change.price;
+                itemUpdate.pricingStatus = "fixed";
+                itemUpdate.notes = change.label;
+                await tx.insert(orderModifications).values(syncInsert({
+                  orderId, action: "price_finalized", itemId: item.id, oldValue: String(item.itemPrice), newValue: String(change.price),
+                  reason: change.label ? `Final market price · ${change.label}` : "Final market price", modifiedBy: actorName, createdAt: now,
+                }));
+              }
+              await tx.update(foodOrderItems).set(syncUpdate({ ...itemUpdate, updatedAt: now })).where(eq(foodOrderItems.id, item.id));
+              if (delta !== 0) {
+                await tx.insert(orderModifications).values(syncInsert({
+                  orderId, action: "quantity_changed", itemId: item.id, oldValue: String(item.quantity), newValue: String(change.quantity),
+                  reason: change.reason, modifiedBy: actorName, createdAt: now,
+                }));
+              }
+            }
+            if (delta !== 0) {
+              const menu = await tx.select({ trackInventory: menuItems.trackInventory }).from(menuItems).where(eq(menuItems.id, item.menuItemId)).limit(1);
+              if (menu[0]?.trackInventory) {
+                if (delta > 0) {
+                  await tx.update(menuItems).set({
+                    stockQuantity: sql`MAX(0, ${menuItems.stockQuantity} - ${delta})`,
+                    isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} - ${delta} <= 0 THEN 0 ELSE ${menuItems.isAvailable} END`,
+                  }).where(eq(menuItems.id, item.menuItemId));
+                } else {
+                  await tx.update(menuItems).set({ stockQuantity: sql`${menuItems.stockQuantity} + ${Math.abs(delta)}`, isAvailable: 1 })
+                    .where(eq(menuItems.id, item.menuItemId));
+                }
+              }
+            }
+          }
+
+          const netPaid = Math.max(0, currentPaid - refundAmount);
+          const state = foodPaymentState(total, netPaid, current.paymentStatus === "on_tab");
+          const nextRefunded = Math.max(0, Number((current as any).amountRefunded) || 0) + refundAmount;
+          const orderUpdate: Record<string, unknown> = {
+            subtotal, tax, total, discount,
+            amountPaid: Math.max(0, Number(current.amountPaid) || 0),
+            amountRefunded: nextRefunded,
+            paymentStatus: state.paymentStatus,
+            paymentMethod: state.amountPaid > 0 ? current.paymentMethod : "",
+            paidBy: state.amountPaid > 0 ? current.paidBy : "",
+            cashReceived: state.amountPaid > 0 ? current.cashReceived || 0 : 0,
+            changeGiven: state.amountPaid > 0 ? current.changeGiven || 0 : 0,
+            updatedAt: now,
+          };
+          if (refundAmount > 0) {
+            orderUpdate.refundMethod = refundMethod;
+            orderUpdate.refundCash = (Number((current as any).refundCash) || 0) + refundCash;
+            orderUpdate.refundedAt = now;
+            orderUpdate.refundedBy = actorName;
+          }
+          const updated = await tx.update(foodOrders).set(syncUpdate(orderUpdate)).where(and(eq(foodOrders.id, orderId), eq(foodOrders.updatedAt, current.updatedAt))).returning({ id: foodOrders.id });
+          if (!updated[0]) throw Object.assign(new Error("Order changed while it was being edited. Reload and try again."), { status: 409 });
+
+          if (refundAmount > 0) {
+            await tx.insert(foodPaymentEvents).values(syncInsert({
+              eventId: String(refund.operationId), orderId, eventType: "refund", amountPaise: refundAmount,
+              cashPaise: refundCash, onlinePaise: refundOnline, accountId: refundAccountId,
+              note: typeof refund.note === "string" ? refund.note.trim().slice(0, 240) : "Manual refund for food-order edit",
+              actor: actorName, createdAt: now,
+            }));
+            if (refundOnline > 0 && refundAccountId) {
+              await tx.insert(guestReceipts).values(syncInsert({
+                receiptId: String(refund.receiptId || refund.operationId), sourceType: "food_order", sourceId: orderId,
+                kind: "refund", accountId: refundAccountId, amount: -refundOnline, businessDate: receiptBusinessDate(),
+                notes: `Food order ${current.orderNumber} manual refund`, createdBy: actorName, createdAt: now,
+              }));
+            }
+          }
+          await tx.insert(auditLog).values({
+            timestamp: now, username: actorName, action: refundAmount > 0 ? "food_order_edited_refunded" : "food_order_edited",
+            target: `order:${orderId}`, details: `Saved ${normalizedChanges.length} food-order edit${normalizedChanges.length === 1 ? "" : "s"}${refundAmount > 0 ? ` and refunded ₹${(refundAmount / 100).toFixed(2)} via ${refundMethod}` : ""}`,
+          });
+          return { duplicate: false, orderId, subtotal, tax, total, refundAmount };
+        });
+
+        return NextResponse.json({ success: true, role, ...result });
+      }
+
       case "voidItem": {
         const { orderId, orderItemId, reason } = rest;
         if (!orderId || !orderItemId) return NextResponse.json({ error: "orderId and orderItemId required" }, { status: 400 });
@@ -468,6 +684,20 @@ export async function POST(req: NextRequest) {
         const itemRows = await db.select().from(foodOrderItems).where(eq(foodOrderItems.id, orderItemId)).limit(1);
         const item = itemRows[0];
         if (!item || item.orderId !== orderId) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+
+        const activeItems = await db.select().from(foodOrderItems)
+          .where(and(eq(foodOrderItems.orderId, orderId), sql`${foodOrderItems.status} != 'voided'`, sql`${foodOrderItems.id} != ${orderItemId}`));
+        const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
+        const currentOrder = await getFoodOrderById(orderId);
+        const exemptions = await getMenuItemCategoryExemptions(activeItems.map((i) => i.menuItemId));
+        const discountableSubtotal = activeItems.filter((i) => !exemptions.get(i.menuItemId)).reduce((sum, i) => sum + i.lineTotal, 0);
+        const existingDiscount = Math.min(currentOrder?.discount || 0, discountableSubtotal);
+        const newSubtotal = grossSubtotal - existingDiscount;
+        const voidTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
+        const newTax = Math.round((newSubtotal * voidTaxRate) / 100);
+        const newTotal = newSubtotal + newTax;
+        const paymentUpdate = paymentForEditedTotal(currentOrder, newTotal);
+        if (paymentUpdate.error) return NextResponse.json({ error: paymentUpdate.error, requiresPaymentAdjustment: true }, { status: 409 });
 
         await db.update(foodOrderItems).set({ status: "voided" }).where(eq(foodOrderItems.id, orderItemId));
         await addStock(item.menuItemId, item.quantity);
@@ -480,20 +710,6 @@ export async function POST(req: NextRequest) {
           reason: reason || "",
           modifiedBy: actorName,
         });
-
-        const activeItems = await db.select().from(foodOrderItems)
-          .where(and(eq(foodOrderItems.orderId, orderId), sql`${foodOrderItems.status} != 'voided'`));
-        const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
-        const currentOrder = await getFoodOrderById(orderId);
-        const exemptions = await getMenuItemCategoryExemptions(activeItems.map((i) => i.menuItemId));
-        const discountableSubtotal = activeItems.filter((i) => !exemptions.get(i.menuItemId)).reduce((sum, i) => sum + i.lineTotal, 0);
-        const existingDiscount = Math.min(currentOrder?.discount || 0, discountableSubtotal);
-        const newSubtotal = grossSubtotal - existingDiscount;
-        const voidTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
-        const newTax = Math.round((newSubtotal * voidTaxRate) / 100);
-        const newTotal = newSubtotal + newTax;
-        const paymentUpdate = paymentForEditedTotal(currentOrder, newTotal);
-        if (paymentUpdate.error) return NextResponse.json({ error: paymentUpdate.error, requiresPaymentAdjustment: true }, { status: 409 });
         await updateFoodOrder(orderId, { subtotal: newSubtotal, tax: newTax, total: newTotal, discount: existingDiscount, ...paymentUpdate });
 
         await addAuditEntry({
@@ -518,22 +734,25 @@ export async function POST(req: NextRequest) {
         if (order.status === "cancelled") return NextResponse.json({ error: "This order cannot be repriced" }, { status: 400 });
         const customLabel = typeof label === "string" ? label.trim().slice(0, 24) : "";
         const oldPrice = item.itemPrice;
-        await getDb().update(foodOrderItems).set({
-          itemPrice: finalPrice,
-          lineTotal: finalPrice * item.quantity,
-          pricingStatus: "fixed",
-          notes: customLabel,
-        }).where(eq(foodOrderItems.id, orderItemId));
         const activeItems = (await getFoodOrderItems(orderId)).filter((i) => i.status !== "voided");
-        const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
-        const exemptions = await getMenuItemCategoryExemptions(activeItems.map((i) => i.menuItemId));
-        const discountableSubtotal = activeItems.filter((i) => !exemptions.get(i.menuItemId)).reduce((sum, i) => sum + i.lineTotal, 0);
+        const projectedItems = activeItems.map((line) => line.id === orderItemId
+          ? { ...line, itemPrice: finalPrice, lineTotal: finalPrice * line.quantity }
+          : line);
+        const grossSubtotal = projectedItems.reduce((sum, i) => sum + i.lineTotal, 0);
+        const exemptions = await getMenuItemCategoryExemptions(projectedItems.map((i) => i.menuItemId));
+        const discountableSubtotal = projectedItems.filter((i) => !exemptions.get(i.menuItemId)).reduce((sum, i) => sum + i.lineTotal, 0);
         const discount = Math.min(order.discount || 0, discountableSubtotal);
         const subtotal = grossSubtotal - discount;
         const tax = Math.round((subtotal * foodTaxPercent(await getSetting("food_tax_rate"))) / 100);
         const total = subtotal + tax;
         const paymentUpdate = paymentForEditedTotal(order, total);
         if (paymentUpdate.error) return NextResponse.json({ error: paymentUpdate.error, requiresPaymentAdjustment: true }, { status: 409 });
+        await getDb().update(foodOrderItems).set({
+          itemPrice: finalPrice,
+          lineTotal: finalPrice * item.quantity,
+          pricingStatus: "fixed",
+          notes: customLabel,
+        }).where(eq(foodOrderItems.id, orderItemId));
         await updateFoodOrder(orderId, { subtotal, tax, total, discount, ...paymentUpdate });
         await addOrderModification({
           orderId,
@@ -817,20 +1036,22 @@ export async function POST(req: NextRequest) {
 
       case "getGuestsWithTabs": {
         const db = getDb();
-        const tabOrders = await db.select({
-          checkinId: foodOrders.checkinId,
-          tabTotal: sql<number>`SUM(${foodOrders.total})`,
-          orderCount: sql<number>`COUNT(*)`,
-          latestOrderTime: sql<string>`MAX(${foodOrders.createdAt})`,
-        }).from(foodOrders)
-          .where(and(
-            inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
-            sql`${foodOrders.status} != 'cancelled'`,
-          ))
-          .groupBy(foodOrders.checkinId);
+        const tabOrderRows = (await db.select().from(foodOrders)
+          .where(sql`${foodOrders.status} != 'cancelled'`))
+          .filter((order) => order.checkinId != null && foodDue(order) > 0);
+        const tabByCheckin = new Map<number, { tabTotal: number; orderCount: number; latestOrderTime: string }>();
+        for (const order of tabOrderRows) {
+          const id = order.checkinId as number;
+          const current = tabByCheckin.get(id) || { tabTotal: 0, orderCount: 0, latestOrderTime: "" };
+          current.tabTotal += foodDue(order);
+          current.orderCount += 1;
+          if (order.createdAt > current.latestOrderTime) current.latestOrderTime = order.createdAt;
+          tabByCheckin.set(id, current);
+        }
+        const tabOrders = [...tabByCheckin.entries()].map(([checkinId, summary]) => ({ checkinId, ...summary }));
 
         const checkinIds = tabOrders.map((r) => r.checkinId).filter((id): id is number => id != null);
-        const [allBeds, checkinRows, tabOrderRows] = await Promise.all([
+        const [allBeds, checkinRows, tabOrderIdRows] = await Promise.all([
           checkinIds.length > 0 ? getAllBeds() : Promise.resolve([]),
           checkinIds.length > 0
             ? collectInBatches(checkinIds, (batch) => db.select().from(checkins).where(inArray(checkins.id, batch)))
@@ -840,7 +1061,6 @@ export async function POST(req: NextRequest) {
                 .from(foodOrders)
                 .where(and(
                   inArray(foodOrders.checkinId, batch),
-                  inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
                   sql`${foodOrders.status} != 'cancelled'`,
                 ))
                 )
@@ -848,10 +1068,14 @@ export async function POST(req: NextRequest) {
         ]);
         const checkinMap = new Map(checkinRows.map((c) => [c.id, c]));
 
-        const allTabOrderIds = tabOrderRows.map((r) => r.id);
+        const payableTabOrderIds = new Set(tabOrderRows.map((order) => order.id));
+        const allTabOrderIds = tabOrderIdRows
+          .filter((row) => payableTabOrderIds.has(row.id))
+          .map((r) => r.id);
         const modCountMap = await getModCountMap(allTabOrderIds);
         const checkinHasMods = new Map<number, boolean>();
-        for (const row of tabOrderRows) {
+        for (const row of tabOrderIdRows) {
+          if (!payableTabOrderIds.has(row.id)) continue;
           if (row.checkinId && (modCountMap.get(row.id) || 0) > 0) {
             checkinHasMods.set(row.checkinId, true);
           }
@@ -881,17 +1105,77 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ role, guests: guestsWithTabs });
       }
 
-      case "getCombinedBill": {
-        const { checkinIds } = rest;
-        if (!checkinIds || !Array.isArray(checkinIds) || checkinIds.length === 0) {
-          return NextResponse.json({ error: "checkinIds required" }, { status: 400 });
+      case "getCombinedBillOptions": {
+        const db = getDb();
+        const rows = await db.select().from(foodOrders).where(and(
+          sql`${foodOrders.status} != 'cancelled'`,
+        )).orderBy(desc(foodOrders.createdAt));
+        const orders = rows.filter((order) => foodDue(order) > 0);
+        const checkinIds = [...new Set(orders.map((o) => o.checkinId).filter((id): id is number => id != null))];
+        const [checkinRows, beds] = await Promise.all([
+          checkinIds.length ? collectInBatches(checkinIds, (batch) => db.select().from(checkins).where(inArray(checkins.id, batch))) : Promise.resolve([]),
+          checkinIds.length ? getAllBeds() : Promise.resolve([]),
+        ]);
+        const checkinMap = new Map(checkinRows.map((row) => [row.id, row]));
+        const options: any[] = [];
+        const hostelGroups = new Map<number, typeof orders>();
+        const walkinGroups = new Map<string, typeof orders>();
+        for (const order of orders) {
+          if (order.guestType === "hostel" && order.checkinId) {
+            const list = hostelGroups.get(order.checkinId) || [];
+            list.push(order); hostelGroups.set(order.checkinId, list);
+          } else {
+            const table = order.roomInfo && /^Table \d+$/i.test(order.roomInfo);
+            const key = table ? `table_${order.roomInfo}` : (order.guestPhone || `_no_phone_${order.id}`);
+            const list = walkinGroups.get(key) || [];
+            list.push(order); walkinGroups.set(key, list);
+          }
         }
+        for (const [checkinId, grouped] of hostelGroups) {
+          const guest = checkinMap.get(checkinId);
+          if (!guest) continue;
+          const bed = beds.find((b) => b.status === "occupied" && (b.guestName === guest.name || b.guestContact === guest.contact));
+          options.push({
+            key: `hostel_${checkinId}`, checkinId, guestType: "hostel", name: guest.name, contact: guest.contact || grouped.find((o) => o.guestPhone)?.guestPhone || "",
+            bedInfo: bed ? `${bed.dormName} - Bed ${bed.bedId}` : "", orderIds: grouped.map((o) => o.id),
+            tabTotal: grouped.reduce((sum, o) => sum + foodDue(o), 0), orderCount: grouped.length,
+          });
+        }
+        for (const [groupKey, grouped] of walkinGroups) {
+          const table = groupKey.startsWith("table_");
+          options.push({
+            key: `walkin_${groupKey}`, checkinId: null, guestType: "walkin", name: grouped[0].guestName,
+            contact: table || groupKey.startsWith("_no_phone_") ? "" : groupKey,
+            bedInfo: table ? (grouped[0].roomInfo || "") : "", orderIds: grouped.map((o) => o.id),
+            tabTotal: grouped.reduce((sum, o) => sum + foodDue(o), 0), orderCount: grouped.length,
+          });
+        }
+        options.sort((a, b) => b.tabTotal - a.tabTotal);
+        return NextResponse.json({ role, guests: options });
+      }
 
-        const orders = await getFoodOrdersByCheckinIds(checkinIds);
-        const orderIds = orders.map((o) => o.id);
+      case "getCombinedBill": {
+        const { checkinIds, orderIds } = rest;
+        const rawCheckinIds: unknown[] = Array.isArray(checkinIds) ? checkinIds : [];
+        const rawOrderIds: unknown[] = Array.isArray(orderIds) ? orderIds : [];
+        const selectedCheckinIds = rawCheckinIds.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+        const selectedOrderIds = rawOrderIds.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+        if (selectedCheckinIds.length === 0 && selectedOrderIds.length === 0) {
+          return NextResponse.json({ error: "Select at least one unpaid guest or order" }, { status: 400 });
+        }
+        const db = getDb();
+        const selector = selectedCheckinIds.length && selectedOrderIds.length
+          ? or(inArray(foodOrders.checkinId, selectedCheckinIds), inArray(foodOrders.id, selectedOrderIds))
+          : selectedCheckinIds.length ? inArray(foodOrders.checkinId, selectedCheckinIds) : inArray(foodOrders.id, selectedOrderIds);
+        const rows = await db.select().from(foodOrders).where(and(
+          selector,
+          sql`${foodOrders.status} != 'cancelled'`,
+        ));
+        const orders = rows.filter((order) => foodDue(order) > 0);
+        const selectedOrderRows = orders.map((o) => o.id);
         const [itemsMap, modCountMap] = await Promise.all([
-          getFoodOrderItemsBatch(orderIds),
-          getModCountMap(orderIds),
+          getFoodOrderItemsBatch(selectedOrderRows),
+          getModCountMap(selectedOrderRows),
         ]);
         const withItems = orders.map((o) => ({
           ...o,
@@ -903,26 +1187,30 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Set final prices before generating a combined bill" }, { status: 400 });
         }
 
-        const grouped: Record<number, { checkinId: number; guestName: string; guestPhone: string; roomInfo: string; orders: any[]; subtotal: number }> = {};
+        const grouped: Record<string, { key: string; checkinId: number | null; guestName: string; guestPhone: string; roomInfo: string; orders: any[]; subtotal: number; amountDue: number }> = {};
         for (const o of withItems) {
-          const cid = o.checkinId!;
-          if (!grouped[cid]) {
-            grouped[cid] = {
-              checkinId: cid,
+          const table = o.roomInfo && /^Table \d+$/i.test(o.roomInfo);
+          const groupKey = o.checkinId ? `hostel_${o.checkinId}` : `walkin_${table ? `table_${o.roomInfo}` : (o.guestPhone || `_no_phone_${o.id}`)}`;
+          if (!grouped[groupKey]) {
+            grouped[groupKey] = {
+              key: groupKey,
+              checkinId: o.checkinId || null,
               guestName: o.guestName,
               guestPhone: o.guestPhone || "",
               roomInfo: o.roomInfo || "",
               orders: [],
               subtotal: 0,
+              amountDue: 0,
             };
           }
-          if (!grouped[cid].guestPhone && o.guestPhone) grouped[cid].guestPhone = o.guestPhone;
-          grouped[cid].orders.push(o);
-          grouped[cid].subtotal += o.total;
+          if (!grouped[groupKey].guestPhone && o.guestPhone) grouped[groupKey].guestPhone = o.guestPhone;
+          grouped[groupKey].orders.push(o);
+          grouped[groupKey].subtotal += o.subtotal;
+          grouped[groupKey].amountDue += foodDue(o);
         }
 
         const guests = Object.values(grouped);
-        const missingPhoneIds = guests.filter((g) => !g.guestPhone).map((g) => g.checkinId);
+        const missingPhoneIds = guests.filter((g) => !g.guestPhone && g.checkinId).map((g) => g.checkinId as number);
         if (missingPhoneIds.length > 0) {
           const db = getDb();
           const rows = await collectInBatches(missingPhoneIds, (batch) => db
@@ -931,10 +1219,10 @@ export async function POST(req: NextRequest) {
             .where(inArray(checkins.id, batch)));
           const contactById = new Map(rows.map((r) => [r.id, normalizePhone(r.contact || "")]));
           for (const g of guests) {
-            if (!g.guestPhone) g.guestPhone = contactById.get(g.checkinId) || "";
+            if (!g.guestPhone && g.checkinId) g.guestPhone = contactById.get(g.checkinId) || "";
           }
         }
-        const grandTotal = guests.reduce((sum, g) => sum + g.subtotal, 0);
+        const grandTotal = guests.reduce((sum, g) => sum + g.amountDue, 0);
         return NextResponse.json({ role, guests, grandTotal });
       }
 
@@ -985,18 +1273,18 @@ export async function POST(req: NextRequest) {
           .where(
             and(
               eq(foodOrders.guestType, "walkin"),
-              inArray(foodOrders.paymentStatus, ["on_tab", "pending", "partial"]),
               sql`${foodOrders.status} != 'cancelled'`,
             )
           )
           .orderBy(desc(foodOrders.createdAt));
 
-        const orderIds = orders.map((o) => o.id);
+        const payableOrders = orders.filter((order) => foodDue(order) > 0);
+        const orderIds = payableOrders.map((o) => o.id);
         const [itemsMap, modCountMap] = await Promise.all([
           getFoodOrderItemsBatch(orderIds),
           getModCountMap(orderIds),
         ]);
-        const withItems = orders.map((o) => ({
+        const withItems = payableOrders.map((o) => ({
           ...o,
           items: itemsMap.get(o.id) || [],
           hasModifications: (modCountMap.get(o.id) || 0) > 0,
@@ -1107,7 +1395,14 @@ export async function POST(req: NextRequest) {
         const updateData: Record<string, any> = { updatedAt: new Date().toISOString() };
         if (newPaymentStatus !== undefined) {
           const state = foodPaymentState(order.total, nextPaid, newPaymentStatus === "on_tab");
-          updateData.amountPaid = state.amountPaid;
+          updateData.amountPaid = newPaymentStatus === "paid" ? order.total : state.amountPaid;
+          if (newPaymentStatus !== "paid" && state.amountPaid === 0) {
+            updateData.amountRefunded = 0;
+            updateData.refundMethod = "";
+            updateData.refundCash = 0;
+            updateData.refundedAt = "";
+            updateData.refundedBy = "";
+          }
           updateData.paymentStatus = state.paymentStatus;
         }
         if (newPaymentMethod !== undefined) updateData.paymentMethod = newPaymentMethod;
@@ -1146,6 +1441,9 @@ export async function POST(req: NextRequest) {
     const userMessage = raw.includes("Failed query") || raw.includes("D1_ERROR")
       ? "Database temporarily unavailable. Please try again."
       : raw;
-    return NextResponse.json({ error: userMessage }, { status: error?.status || (/Receiving bank|Selected receiving bank/.test(raw) ? 400 : 500) });
+    return NextResponse.json({
+      error: userMessage,
+      ...(error?.requiresRefund ? { requiresRefund: true, refundAmount: error.refundAmount } : {}),
+    }, { status: error?.status || (/Receiving bank|Selected receiving bank/.test(raw) ? 400 : 500) });
   }
 }

@@ -11,6 +11,7 @@ import {
   splitGstRate,
 } from "@/lib/foodBillFormat";
 import { foodTaxRateFromAmounts } from "@/lib/foodLookup";
+import { foodAmountPaid } from "@/lib/foodPaymentBalance";
 
 export type GuestFoodBillItem = {
   name?: string;
@@ -34,6 +35,7 @@ export type GuestFoodBillOrder = {
   tax: number;
   total: number;
   discount?: number;
+  amountRefunded?: number;
   items: GuestFoodBillItem[];
 };
 
@@ -93,10 +95,10 @@ export function GuestFoodBillCard({
   const tax = orders.reduce((s, o) => s + o.tax, 0);
   const total = orders.reduce((s, o) => s + o.total, 0);
   const discount = orders.reduce((s, o) => s + (o.discount || 0), 0);
-  const due = paymentDue ?? orders.reduce((s, o) => s + Math.max(0, o.total - (o.amountPaid || 0)), 0);
+  const due = paymentDue ?? orders.reduce((s, o) => s + Math.max(0, o.total - foodAmountPaid(o)), 0);
   const items = mergeBillLineItems(
     orders.flatMap((o) =>
-      (variant === "unpaid" ? payableBillItems(o.items, o.amountPaid || 0, o.total) : o.items)
+      (variant === "unpaid" ? payableBillItems(o.items, foodAmountPaid(o), o.total) : o.items)
         .filter((i) => i.pricingStatus !== "pending" && i.status !== "voided")
         .map((i) => ({
           name: i.itemName || i.name,

@@ -36,10 +36,11 @@ const FOOD_ORDERS_PERMISSIONS: Record<string, ActionPerm> = {
   getOrderModifications: "canViewFoodOrders", getActiveGuests: "canViewFoodOrders",
   getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
   getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
-  getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
+  getCombinedBillOptions: ["canGenerateFoodBills", "canViewFoodOrders"], getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
   updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
   voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
+  saveOrderEdits: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
   markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
   applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
@@ -218,10 +219,12 @@ describe("RBAC: Staff with no permissions is blocked", () => {
   it("food-bill staff can load Combined Bill supporting reads without payment access", () => {
     const permissions = { canGenerateFoodBills: true };
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getCombinedBill")).toBe("allowed");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getCombinedBillOptions")).toBe("allowed");
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getGuestsWithTabs")).toBe("allowed");
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "getMenu")).toBe("allowed");
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "markOrderPaid")).toBe("forbidden");
     expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "applyDiscount")).toBe("forbidden");
+    expect(checkPermission(role, permissions, FOOD_ORDERS_PERMISSIONS, "saveOrderEdits")).toBe("forbidden");
   });
 
   it("staff cannot reconcile without a scoped reconciliation permission", () => {

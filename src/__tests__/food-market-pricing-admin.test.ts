@@ -35,6 +35,14 @@ function req(body: Record<string, unknown>) {
   return new NextRequest("http://localhost/api/admin/food-orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "pw", action: "setFoodOrderItemPrice", ...body }) });
 }
 
+function actionReq(action: string, body: Record<string, unknown> = {}) {
+  return new NextRequest("http://localhost/api/admin/food-orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "pw", action, ...body }),
+  });
+}
+
 beforeEach(() => {
   for (const fn of Object.values(q)) fn.mockReset();
   Object.assign(pendingItem, { itemPrice: 0, quantity: 2, lineTotal: 0, pricingStatus: "pending" });
@@ -181,6 +189,35 @@ describe("admin market-pricing workflows", () => {
     expect(insert).toHaveBeenCalledTimes(2);
   });
 
+  it("uses the net outstanding balance when a legacy paid flag is stale", async () => {
+    const stalePaidOrder = {
+      ...order,
+      total: 300,
+      amountPaid: 100,
+      paymentStatus: "paid",
+      paymentMethod: "online",
+    };
+    q.getFoodOrderById.mockResolvedValue(stalePaidOrder);
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([[10, [{ status: "active", pricingStatus: "fixed" }]]]));
+    q.resolveReceiptAccount.mockResolvedValue(7);
+
+    const currentRows = vi.fn(async () => [stalePaidOrder]);
+    const update = vi.fn(() => ({ set: () => ({ where: async () => undefined }) }));
+    const insertValues = vi.fn(async () => undefined);
+    const insert = vi.fn(() => ({ values: insertValues }));
+    q.getDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: currentRows }) }),
+      update,
+      insert,
+      batch: vi.fn(async () => []),
+    });
+
+    const response = await POST(actionReq("markOrderPaid", { orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }));
+
+    expect(response.status).toBe(200);
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ amount: 200, kind: "food" }));
+  });
+
   it("reverts a paid online order to pending and reverses its receipt with an audit entry", async () => {
     q.getFoodOrderById.mockResolvedValue({ ...order, paymentStatus: "paid", paymentMethod: "online", total: 10000, paidBy: "Admin" });
     q.latestReceiptAccount.mockResolvedValue(7);
@@ -301,5 +338,165 @@ describe("admin market-pricing workflows", () => {
     expect(response.status).toBe(409);
     expect((await response.json()).requiresPaymentAdjustment).toBe(true);
     expect(q.updateFoodOrder).not.toHaveBeenCalled();
+  });
+
+  it("saves multiple staged edits in one idempotent transaction and preserves gross money collected", async () => {
+    const currentOrder = {
+      ...order,
+      updatedAt: "2026-09-23T06:00:00.000Z",
+      total: 210,
+      subtotal: 200,
+      tax: 10,
+      amountPaid: 210,
+      amountRefunded: 0,
+      paymentStatus: "paid",
+      paymentMethod: "online",
+      paidBy: "Admin",
+    };
+    const currentItem = {
+      id: 20, orderId: 10, menuItemId: 4, itemName: "Seasonal Fish", itemPrice: 100,
+      quantity: 2, lineTotal: 200, pricingStatus: "fixed", status: "active", notes: "",
+    };
+    q.getFoodOrderById.mockResolvedValue(currentOrder);
+    q.getSetting.mockResolvedValue("5");
+    q.getMenuItemCategoryExemptions.mockResolvedValue(new Map());
+
+    let savedBatch: Record<string, unknown> | undefined;
+    const inserts: Record<string, unknown>[] = [];
+    const makeTx = () => {
+      let selectIndex = 0;
+      const selectValues = [
+        savedBatch ? [savedBatch] : [],
+        [currentOrder],
+        [currentItem],
+        [{ trackInventory: 0 }],
+      ];
+      const select = () => ({
+        from: () => ({
+          where: () => {
+            const value = selectValues[selectIndex++] || [];
+            const builder = {
+              limit: async () => value,
+              then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(value).then(resolve, reject),
+            };
+            return builder;
+          },
+        }),
+      });
+      const insert = () => ({
+        values: async (value: Record<string, unknown>) => {
+          inserts.push(value);
+          if (value.operationId) savedBatch = value;
+        },
+      });
+      const update = () => ({
+        set: () => ({
+          where: () => ({
+            returning: async () => [{ id: 10 }],
+            then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve([]).then(resolve, reject),
+          }),
+        }),
+      });
+      return { select, insert, update };
+    };
+    q.getDb.mockReturnValue({ transaction: async (callback: (tx: ReturnType<typeof makeTx>) => unknown) => callback(makeTx()) });
+
+    const body = {
+      orderId: 10,
+      operationId: "edit-batch-001",
+      changes: [{ itemId: 20, quantity: 3, reason: "Guest added one" }],
+    };
+    const response = await POST(actionReq("saveOrderEdits", body));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, duplicate: false, total: 315, refundAmount: 0 });
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ operationId: "edit-batch-001", orderId: 10 }),
+      expect.objectContaining({ action: "quantity_changed", oldValue: "2", newValue: "3" }),
+      expect.objectContaining({ action: "food_order_edited" }),
+    ]));
+
+    const retry = await POST(actionReq("saveOrderEdits", body));
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({ success: true, duplicate: true });
+    expect(inserts.filter((value) => value.operationId === "edit-batch-001")).toHaveLength(1);
+  });
+
+  it("requires an exact refund for a paid reduction, then journals the audited refund atomically", async () => {
+    const currentOrder = {
+      ...order,
+      orderNumber: "F-10",
+      updatedAt: "2026-09-23T06:00:00.000Z",
+      total: 210,
+      subtotal: 200,
+      tax: 10,
+      amountPaid: 210,
+      amountRefunded: 0,
+      paymentStatus: "paid",
+      paymentMethod: "online",
+      paidBy: "Admin",
+    };
+    const currentItem = {
+      id: 20, orderId: 10, menuItemId: 4, itemName: "Seasonal Fish", itemPrice: 100,
+      quantity: 2, lineTotal: 200, pricingStatus: "fixed", status: "active", notes: "",
+    };
+    q.getFoodOrderById.mockResolvedValue(currentOrder);
+    q.getSetting.mockResolvedValue("5");
+    q.getMenuItemCategoryExemptions.mockResolvedValue(new Map());
+    q.resolveReceiptAccount.mockResolvedValue(7);
+    const inserts: Record<string, unknown>[] = [];
+    q.getDb.mockReturnValue({
+      transaction: async (callback: (tx: any) => unknown) => {
+        let selectIndex = 0;
+        const selectValues = [[], [currentOrder], [currentItem], [{ trackInventory: 0 }]];
+        return callback({
+          select: () => ({ from: () => ({ where: () => {
+            const value = selectValues[selectIndex++] || [];
+            return { limit: async () => value, then: (resolve: (result: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(value).then(resolve, reject) };
+          } }) }),
+          insert: () => ({ values: async (value: Record<string, unknown>) => { inserts.push(value); } }),
+          update: () => ({ set: () => ({ where: () => ({ returning: async () => [{ id: 10 }] }) }) }),
+        });
+      },
+    });
+
+    const edit = { orderId: 10, operationId: "edit-reduce-001", changes: [{ itemId: 20, quantity: 1 }] };
+    const needsRefund = await POST(actionReq("saveOrderEdits", edit));
+    expect(needsRefund.status).toBe(409);
+    expect(await needsRefund.json()).toMatchObject({ requiresRefund: true, refundAmount: 105 });
+    expect(inserts).toHaveLength(0);
+
+    const saved = await POST(actionReq("saveOrderEdits", {
+      ...edit,
+      refund: { amountPaise: 105, method: "online", onlineAccountId: 7, operationId: "refund-001", receiptId: "refund-receipt-001", note: "Paid reduction" },
+    }));
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ success: true, total: 105, refundAmount: 105 });
+    expect(inserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "refund", amountPaise: 105, onlinePaise: 105, accountId: 7, eventId: "refund-001" }),
+      expect.objectContaining({ kind: "refund", amount: -105, accountId: 7, receiptId: "refund-receipt-001" }),
+      expect.objectContaining({ action: "food_order_edited_refunded" }),
+    ]));
+  });
+
+  it("lists all outstanding walk-in groups for Combined Bill even when payment status is stale", async () => {
+    const rows = [
+      { ...order, id: 1, guestType: "walkin", guestName: "Paid", guestPhone: "9000000001", roomInfo: "", total: 100, amountPaid: 100, amountRefunded: 0, paymentStatus: "paid", status: "placed", createdAt: "2026-09-23T01:00:00.000Z" },
+      { ...order, id: 2, guestType: "walkin", guestName: "Stale Paid", guestPhone: "9000000002", roomInfo: "", total: 300, amountPaid: 100, amountRefunded: 0, paymentStatus: "paid", status: "placed", createdAt: "2026-09-23T02:00:00.000Z" },
+      { ...order, id: 3, guestType: "walkin", guestName: "Pending", guestPhone: "9000000003", roomInfo: "", total: 200, amountPaid: 0, amountRefunded: 0, paymentStatus: "pending", status: "placed", createdAt: "2026-09-23T03:00:00.000Z" },
+      { ...order, id: 4, guestType: "walkin", guestName: "Cancelled", guestPhone: "9000000004", roomInfo: "", total: 500, amountPaid: 0, amountRefunded: 0, paymentStatus: "pending", status: "cancelled", createdAt: "2026-09-23T04:00:00.000Z" },
+    ];
+    const builder = {
+      orderBy: async () => rows.filter((row) => row.status !== "cancelled"),
+    };
+    q.getDb.mockReturnValue({ select: () => ({ from: () => ({ where: () => builder }) }) });
+    const response = await POST(actionReq("getCombinedBillOptions"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.guests).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Stale Paid", tabTotal: 200, orderIds: [2] }),
+      expect.objectContaining({ name: "Pending", tabTotal: 200, orderIds: [3] }),
+    ]));
+    expect(body.guests).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Paid" })]));
+    expect(body.guests).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Cancelled" })]));
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foodAmountPaid, foodDue, foodPaymentState } from "@/lib/foodPaymentBalance";
+import { foodAmountPaid, foodDue, foodPaymentState, foodPaymentStatus } from "@/lib/foodPaymentBalance";
 
 describe("food payment balances", () => {
   it("preserves collected money and exposes only the revised due", () => {
@@ -21,5 +21,22 @@ describe("food payment balances", () => {
 
   it("clamps stale payment amounts to the current total", () => {
     expect(foodPaymentState(300, 500)).toMatchObject({ amountPaid: 300, due: 0, paymentStatus: "paid" });
+  });
+
+  it("subtracts audited refunds from collected money without losing the gross collection", () => {
+    const order = { total: 300, amountPaid: 400, amountRefunded: 100, paymentStatus: "partial" };
+    expect(foodAmountPaid(order)).toBe(300);
+    expect(foodDue(order)).toBe(0);
+    expect(foodPaymentState(450, foodAmountPaid(order))).toMatchObject({ amountPaid: 300, due: 150, paymentStatus: "partial" });
+  });
+
+  it("still exposes due for a stale paid status when the net balance is outstanding", () => {
+    expect(foodDue({ total: 300, amountPaid: 100, paymentStatus: "paid" })).toBe(200);
+  });
+
+  it("derives the visible badge from the net balance, not a stale status", () => {
+    expect(foodPaymentStatus({ total: 300, amountPaid: 100, amountRefunded: 0 })).toBe("partial");
+    expect(foodPaymentStatus({ total: 300, amountPaid: 400, amountRefunded: 100 })).toBe("paid");
+    expect(foodPaymentStatus({ total: 300, amountPaid: 0, amountRefunded: 0 })).toBe("pending");
   });
 });

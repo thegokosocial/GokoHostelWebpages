@@ -66,6 +66,8 @@ Admin Food Orders embeds kitchen + tabs + place-for-guest + combined PDF/thermal
 
 ---
 
+Editing and Combined Bill invariants: staged quantity, void, and pending-price edits are sent through one `saveOrderEdits` transaction with an idempotency key. Additions preserve previously collected money and expose only the incremental due. Reductions below net collected require an exact cash/online/split refund; the refund event, receipt, modification history, payment projection, inventory delta, and audit entry commit together. Combined Bill offers all non-cancelled hostel and walk-in groups with positive net due and renders only outstanding items. Payment correction/revert and food-item editing are available from the order view, not inside Bill.
+
 ## Settings keys (`/api/admin/food` `FOOD_SETTINGS_KEYS`)
 
 Exact names in code. UI defaults in `AdminFoodSettings.tsx`.

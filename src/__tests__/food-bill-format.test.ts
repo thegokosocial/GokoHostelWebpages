@@ -73,6 +73,13 @@ describe("payableBillItems", () => {
     ], 100, 600);
     expect(payable).toEqual([{ itemName: "Meal", quantity: 1, itemPrice: 500, lineTotal: 500 }]);
   });
+
+  it("uses net paid after a refund when calculating payable quantity", () => {
+    const payable = payableBillItems([
+      { itemName: "Shampoo", quantity: 3, itemPrice: 200, lineTotal: 600 },
+    ], 400, 600, 100);
+    expect(payable).toEqual([{ itemName: "Shampoo", quantity: 2, itemPrice: 200, lineTotal: 300 }]);
+  });
 });
 
 describe("sanitizeBillPaymentQrUrl", () => {
