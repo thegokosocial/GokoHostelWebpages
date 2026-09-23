@@ -8,7 +8,7 @@ Push payloads and event producers are documented in [Push notifications](push-no
 
 Almost every admin route remains `POST` + JSON `{ action, ... }`; legacy password fields are accepted only by compatibility paths during migration. Unknown `action` → 400. Missing auth → 401. RBAC fail → 403.
 
-Authentication migration: `/api/auth/login` accepts credentials once and sets an HttpOnly `goko_session` cookie; `/api/auth/session` returns the current non-secret identity; `/api/auth/logout` revokes it. Admin and kitchen API calls use the cookie and no longer need password fields. Legacy direct-password calls remain accepted only by compatibility paths during migration.
+Authentication migration: `/api/auth/login` accepts credentials once, plus optional `rememberMe: true`, and sets an HttpOnly scope-specific session cookie; remembered sessions expire after 15 days, while default sessions use the shorter scope-specific TTL. `/api/auth/session` returns the current non-secret identity; `/api/auth/logout` revokes it. Admin and kitchen API calls use the cookie and no longer need password fields. Legacy direct-password calls remain accepted only by compatibility paths during migration.
 
 ## Error responses
 

@@ -65,6 +65,7 @@ function AdminPageInner() {
   const [pendingCheckinId, setPendingCheckinId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [autoLogging, setAutoLogging] = useState(true);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [cpCurrent, setCpCurrent] = useState("");
@@ -131,7 +132,7 @@ function AdminPageInner() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, username, scope: "admin" }),
+        body: JSON.stringify({ password, username, scope: "admin", rememberMe }),
       });
       if (res.status === 401) { setError("Incorrect credentials"); return; }
       if (!res.ok) throw new Error("Failed");
@@ -221,6 +222,10 @@ function AdminPageInner() {
                 </button>
               </div>
             </div>
+            <label className="flex items-center gap-2 text-sm text-brand-green-dark/80 dark:text-zinc-400">
+              <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+              Remember me for 15 days
+            </label>
             {error && <p className="text-sm text-red-500">{error}</p>}
             <Button type="submit" variant="cta" className="w-full" disabled={loading || !password || !username}>
               {loading ? "Verifying..." : "Login"}

@@ -14,7 +14,7 @@ Code: `src/lib/auth.ts`, `src/lib/actionPermissions.ts`, `src/lib/adminNav.ts`.
 
 ## How login works
 
-The admin and kitchen SPAs authenticate once through `/api/auth/login`. The server issues a short-lived, HttpOnly session cookie; subsequent API calls do not send or store the password. `/api/auth/logout` revokes the current session and `/api/auth/session` restores the UI state. Cloudflare and Pi sessions are local to each runtime.
+The admin and kitchen SPAs authenticate once through `/api/auth/login`. The server issues an HttpOnly session cookie; subsequent API calls do not send or store the password. “Remember me” extends that server-side session to 15 days; otherwise admin sessions last 8 hours and kitchen sessions 12 hours. `/api/auth/logout` revokes the current session and `/api/auth/session` restores the UI state. Cloudflare and Pi sessions are local to each runtime.
 
 ```mermaid
 sequenceDiagram

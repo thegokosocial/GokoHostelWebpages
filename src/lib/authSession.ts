@@ -21,10 +21,10 @@ async function digest(value: string): Promise<string> {
 
 function nowIso() { return new Date().toISOString(); }
 
-export async function createAuthSession(auth: AuthResult | KitchenAuthResult, scope: AuthScope): Promise<void> {
+export async function createAuthSession(auth: AuthResult | KitchenAuthResult, scope: AuthScope, rememberMe = false): Promise<void> {
   const raw = encode(crypto.getRandomValues(new Uint8Array(32)));
   const now = new Date();
-  const expires = new Date(now.getTime() + (scope === "kitchen" ? 12 : 8) * 60 * 60 * 1000);
+  const expires = new Date(now.getTime() + (rememberMe ? 15 * 24 * 60 * 60 : (scope === "kitchen" ? 12 : 8) * 60 * 60) * 1000);
   await getDb().insert(authSessions).values({
     tokenHash: await digest(raw),
     username: "username" in auth && auth.username ? auth.username : auth.displayName,

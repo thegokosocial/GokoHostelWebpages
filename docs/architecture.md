@@ -135,8 +135,8 @@ If `MEDIA` is unbound, CMS upload returns **503**. Guest ID upload still uses Dr
 | Admin | Client SPA, `next/dynamic` per section (first click spinner) |
 | State | No Redux/Zustand. `useState` per panel. `BookingGateProvider` for Book now (then fresh configured guest destination; blank/error → enquiry). `useTabWithHistory` syncs `?section=` / `?tab=` |
 | Guest cart | `localStorage` `gokoFoodCart` / `gokoFoodPhone` |
-| Kitchen auth | `sessionStorage.kitchen_pw` |
-| Admin auth | Password in React state; Remember me → `localStorage.gokoAdminSession` **raw password JSON** |
+| Kitchen auth | HttpOnly scope-specific server session; optional Remember me extends it to 15 days |
+| Admin auth | HttpOnly server session; optional Remember me extends the revocable session to 15 days; passwords are never stored in browser storage |
 | Admin fetch helper | `useAdminApi` → **only** `POST /api/admin/checkins`. Other tabs use their own URLs. |
 | PWA | `public/sw.js` (admin register). Failover via `/api/failover-config`. See [llm-onboarding.md](llm-onboarding.md). |
 

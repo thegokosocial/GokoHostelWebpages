@@ -22,6 +22,14 @@ describe("security hardening", () => {
     expect(sessions).toContain(".catch(() => {})");
   });
 
+  it("supports a persistent server-side session without storing passwords", () => {
+    const sessions = read("src/lib/authSession.ts");
+    const login = read("src/app/api/auth/login/route.ts");
+    expect(sessions).toContain("rememberMe = false");
+    expect(sessions).toContain("15 * 24 * 60 * 60");
+    expect(login).toContain("body.rememberMe === true");
+  });
+
   it("does not put the admin password in the OAuth URL", () => {
     const start = read("src/app/api/auth/google/start/route.ts");
     const health = read("src/components/admin/ManagementHealth.tsx");

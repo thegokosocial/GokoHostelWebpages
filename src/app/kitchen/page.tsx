@@ -19,6 +19,7 @@ const KitchenDashboard = dynamic(
 export default function KitchenPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [inputPassword, setInputPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -37,7 +38,7 @@ export default function KitchenPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: inputPassword, scope: "kitchen" }),
+        body: JSON.stringify({ password: inputPassword, scope: "kitchen", rememberMe }),
       });
       if (res.status === 401) {
         setError("Incorrect password");
@@ -86,6 +87,10 @@ export default function KitchenPage() {
               autoFocus
               className="w-full rounded-xl border border-gray-300 dark:border-border bg-white dark:bg-muted px-4 py-3 text-gray-900 dark:text-foreground placeholder-gray-400 dark:placeholder-muted-foreground outline-none transition-all duration-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:focus:ring-amber-500/30 focus:shadow-sm"
             />
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-muted-foreground">
+              <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+              Remember me for 15 days
+            </label>
             {error && <p className="text-sm text-red-500">{error}</p>}
             <button
               type="submit"
