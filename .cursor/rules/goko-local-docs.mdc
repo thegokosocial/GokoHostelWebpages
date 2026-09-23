@@ -7,11 +7,13 @@ alwaysApply: true
 
 Committed `docs/` is how this project is explained. Gitignored `docs/secrets-and-access.md` and `MAINTAINER.local.md` hold passwords and live stamps.
 
-## After every product change (same turn)
+## After every code or product change (same turn)
+
+Every behavior change, feature, bug fix, refactor that changes a contract, API/auth/workflow change, and user-visible UI change must add or update automated test coverage in the same turn. “Every change” means at least one focused test for the changed contract; choose proportional coverage for success plus the relevant failure, boundary, duplicate/retry, permission, or loading state. Do not silently skip tests because a path is small. Only zero-behavior comment, formatting, or typo edits are exempt.
 
 1. Identify which handbook files the change touches (table below).
 2. Edit those files so they match **source**, not memory. Cite real action names, setting keys, tables, routes.
-3. Add or update a focused regression test in the same turn: Vitest for logic/API/auth/data behavior; Playwright for critical cross-page or user-visible workflows. Extend an existing suite first.
+3. Add or update a focused regression test in the same turn: Vitest for logic/API/auth/data behavior; Playwright for critical cross-page or user-visible workflows. Extend an existing suite first. Keep the test with the source and documentation change in the same commit.
 4. Cover success and the relevant permission, boundary, duplicate/retry, and failure cases. Do not require browser tests for pure logic already covered at the unit/API layer.
 5. If a password, token, Worker version, or D1 stamp changed: `docs/secrets-and-access.md` and/or `MAINTAINER.local.md`.
 6. Do **not** `git add docs/secrets-and-access.md` or `MAINTAINER.local.md`.

@@ -37,6 +37,15 @@ Before every commit, inspect both staged and unstaged diffs. The commit must con
 - `npm run cf:build` and `npm run deploy:cf` enforce the same production migration check and must fail closed when D1 is unreachable or has pending migrations. Do not bypass that failure or claim the Worker is released until the check passes.
 - Migration tests use disposable/local databases and cannot certify live D1. Live migration status must be verified separately and recorded in the ignored maintainer state file.
 
+## Production release integrity
+
+- A local commit is not released until its exact commit SHA is present on `origin/main` and the corresponding Cloudflare Worker deployment is confirmed at 100% traffic.
+- Before pushing, inspect staged and unstaged changes and deploy only the intended commit from an isolated worktree when the checkout contains unrelated edits or a running dev server.
+- After pushing, verify the remote ref explicitly with `git ls-remote origin refs/heads/main` and confirm it matches the intended commit; do not infer success from a local `git push` message alone.
+- After a Workers Builds push, poll the Cloudflare deployment list and verify the deployed build/version identifies the intended commit. If no matching deployment appears within the bounded release window, stop waiting and use the documented `npm run deploy:cf` fallback from the exact pushed commit.
+- Never call a release complete based only on GitHub or only on a Cloudflare version UUID. The final handoff must include the commit SHA, Worker version, traffic percentage, migration-gate result, and any unresolved validation failure.
+- If the deployed build cannot be matched to a commit, treat the release as unverified and do not claim production success; improve or use the build/version health signal before the next release.
+
 ## Current RBAC expectations
 
 - `admin` bypasses permission maps.
