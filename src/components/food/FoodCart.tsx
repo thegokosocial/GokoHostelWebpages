@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { PrinterIcon, DownloadIcon } from "lucide-react";
 import { isBluetoothSupported, printFoodBill } from "@/lib/thermalPrint";
 import { generateGuestBill, type GuestBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 
 export interface CartItemData {
   menuItemId: number;
@@ -76,6 +77,7 @@ export function FoodCart({
   } | null>(null);
   const [btSupported, setBtSupported] = useState(false);
   const [printingReceipt, setPrintingReceipt] = useState(false);
+  const { runAction } = useActionProgress();
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
@@ -91,13 +93,14 @@ export function FoodCart({
       return;
     }
 
-    setSubmitting(true);
-    setError("");
+    await runAction("Placing order…", async () => {
+      setSubmitting(true);
+      setError("");
 
-    const idempotencyKey = generateUUID();
+      const idempotencyKey = generateUUID();
 
-    try {
-      const res = await fetch("/api/food/order", {
+      try {
+        const res = await fetch("/api/food/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -111,40 +114,40 @@ export function FoodCart({
           items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: itemNotes[c.menuItemId] || "" })),
           createdBy: "guest",
         }),
-      });
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!res.ok) {
-        setError(data.message || data.error || "Failed to place order");
+        if (!res.ok) {
+          setError(data.message || data.error || "Failed to place order");
+          return;
+        }
+
+        setOrderSuccess({
+          orderNumber: data.orderNumber,
+          total: data.total,
+          items: cart.map(c => ({
+            name: c.name,
+            quantity: c.quantity,
+            price: c.price,
+            lineTotal: c.price * c.quantity,
+          })),
+          subtotal,
+          taxAmount,
+        });
+        onOrderPlaced(data.orderNumber);
+
+        if (whatsappNumber && customerWhatsappEnabled) {
+          const msg = buildWhatsAppMessage(name, data.orderNumber, cart, total, specialInstructions, guestInfo.roomInfo);
+          const waUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`;
+          window.open(waUrl, "_blank");
+        }
+      } catch {
+        setError("Network error. Please try again.");
+      } finally {
         setSubmitting(false);
-        return;
       }
-
-      setOrderSuccess({
-        orderNumber: data.orderNumber,
-        total: data.total,
-        items: cart.map(c => ({
-          name: c.name,
-          quantity: c.quantity,
-          price: c.price,
-          lineTotal: c.price * c.quantity,
-        })),
-        subtotal,
-        taxAmount,
-      });
-      onOrderPlaced(data.orderNumber);
-
-      if (whatsappNumber && customerWhatsappEnabled) {
-        const msg = buildWhatsAppMessage(name, data.orderNumber, cart, total, specialInstructions, guestInfo.roomInfo);
-        const waUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`;
-        window.open(waUrl, "_blank");
-      }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   if (orderSuccess) {

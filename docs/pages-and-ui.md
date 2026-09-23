@@ -4,6 +4,8 @@ Staff booking templates and review requests use [WhatsApp Business messaging](wh
 
 The admin header notification-settings dialog supports enable/test/disable with busy states and recoverable errors. Test success reports push-service acceptance; users confirm display on their device. See [Push notifications](push-notifications.md) for mobile rendering and Chrome-owned notices.
 
+User-initiated async writes and submissions may use the shared `ActionProgressProvider` (`src/components/ui/ActionProgressProvider.tsx`). It is local to the current browser tab, blocks duplicate/conflicting interaction while the operation is active, shows a centered labelled spinner only after a short delay, and does not cover background polling or passive reads. Existing inline states remain where they provide row-, form-, or batch-specific context.
+
 **Git-safe.** Routes a human hits, then the React files behind `/admin`. APIs: [api-map.md](api-map.md). Nav permissions: [auth-rbac.md](auth-rbac.md).
 
 ---

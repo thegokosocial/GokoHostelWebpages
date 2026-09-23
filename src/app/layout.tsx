@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Mohave, Roboto } from "next/font/google";
 import "./globals.css";
 import { site } from "@/lib/site";
+import { ActionProgressProvider } from "@/components/ui/ActionProgressProvider";
 
 const mohave = Mohave({
   subsets: ["latin"],
@@ -52,7 +53,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${mohave.variable} ${roboto.variable} font-sans`}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <ActionProgressProvider>{children}</ActionProgressProvider>
+      </body>
     </html>
   );
 }

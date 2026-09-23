@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn, localDateStr } from "@/lib/utils";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 import { CameraIcon, UploadIcon, CheckCircle2Icon, XIcon } from "lucide-react";
 
 const countryDialCodes: Record<string, string> = {
@@ -323,6 +324,7 @@ type LookupData = {
 };
 
 export function SelfCheckinForm() {
+  const { runAction } = useActionProgress();
   const { date, time } = getNow();
 
   const [step, setStep] = useState<"phone" | "form">("phone");
@@ -664,9 +666,10 @@ export function SelfCheckinForm() {
   };
 
   const onSubmit = async (data: CheckinFormData) => {
-    setSubmitting(true);
-    setSubmitError("");
-    try {
+    await runAction("Submitting check-in…", async () => {
+      setSubmitting(true);
+      setSubmitError("");
+      try {
       const formData = new FormData();
       formData.append("bookingPlatform", data.bookingPlatform);
       if (data.bookingId) formData.append("bookingId", data.bookingId);
@@ -749,11 +752,12 @@ export function SelfCheckinForm() {
       setReturnGuest(null);
       setPrevIdCardLink("");
       setPrevVisaLink("");
-    } catch {
-      setSubmitError("Something went wrong. Please try again or contact the front desk.");
-    } finally {
-      setSubmitting(false);
-    }
+      } catch {
+        setSubmitError("Something went wrong. Please try again or contact the front desk.");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   if (step === "phone" && !success && !submitting) {

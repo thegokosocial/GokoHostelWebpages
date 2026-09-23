@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { isBluetoothSupported, printOrderTicket } from "@/lib/thermalPrint";
 import { useAdminToast } from "@/components/admin/AdminToast";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 // import { DarkModeToggle } from "@/components/DarkModeToggle";
 
 interface OrderItem {
@@ -133,6 +134,7 @@ const REJECT_REASONS = [
 
 export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: KitchenDashboardProps) {
   const { showError } = useAdminToast();
+  const { runAction } = useActionProgress();
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [kitchenCategories, setKitchenCategories] = useState<KitchenCategory[]>([]);
@@ -282,75 +284,85 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
   const updateStatus = async (orderId: number, status: string) => {
-    try {
-      await api("updateStatus", { orderId, status });
-      setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, status } : o))
-      );
-    } catch {}
+    await runAction("Updating order…", async () => {
+      try {
+        await api("updateStatus", { orderId, status });
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, status } : o))
+        );
+      } catch {}
+    });
   };
 
   const updateAllStatuses = async (ordersInStage: Order[], status: "preparing" | "ready" | "served") => {
     if (ordersInStage.length === 0 || bulkUpdatingStatus) return;
-    setBulkUpdatingStatus(status);
-    try {
-      const data = await api("updateStatusBulk", { orderIds: ordersInStage.map((order) => order.id), status });
-      if (!data.success) throw new Error(data.error || "Bulk status update failed");
-      await fetchOrders();
-    } catch (err: any) {
-      if (err?.message !== "Unauthorized") showError("Could not update all orders", "Please try again.");
-    } finally {
-      setBulkUpdatingStatus(null);
-    }
+    await runAction(`Updating ${ordersInStage.length} orders…`, async () => {
+      setBulkUpdatingStatus(status);
+      try {
+        const data = await api("updateStatusBulk", { orderIds: ordersInStage.map((order) => order.id), status });
+        if (!data.success) throw new Error(data.error || "Bulk status update failed");
+        await fetchOrders();
+      } catch (err: any) {
+        if (err?.message !== "Unauthorized") showError("Could not update all orders", "Please try again.");
+      } finally {
+        setBulkUpdatingStatus(null);
+      }
+    });
   };
 
   const toggleAvailability = async (menuItemId: number, currentlyAvailable: number) => {
     const newAvail = currentlyAvailable === 1 ? 0 : 1;
-    try {
-      await api("toggleItemAvailability", { menuItemId, isAvailable: newAvail === 1 });
-      setMenuItems((prev) =>
-        prev.map((m) => (m.id === menuItemId ? { ...m, isAvailable: newAvail } : m))
-      );
-    } catch {}
+    await runAction("Updating availability…", async () => {
+      try {
+        await api("toggleItemAvailability", { menuItemId, isAvailable: newAvail === 1 });
+        setMenuItems((prev) =>
+          prev.map((m) => (m.id === menuItemId ? { ...m, isAvailable: newAvail } : m))
+        );
+      } catch {}
+    });
   };
 
   const handleReject = async () => {
     if (!rejectModal) return;
-    setRejectLoading(true);
-    const reason = rejectReason === "Other" ? rejectCustom : rejectReason;
-    try {
-      await api("rejectItem", {
-        orderId: rejectModal.orderId,
-        orderItemId: rejectModal.orderItemId,
-        reason,
-      });
-      setOrders((prev) =>
-        prev.map((o) => {
-          if (o.id !== rejectModal.orderId) return o;
-          return {
-            ...o,
-            items: o.items.map((i) =>
-              i.id === rejectModal.orderItemId ? { ...i, status: "voided" } : i
-            ),
-          };
-        })
-      );
-      setRejectModal(null);
-      setRejectReason("Out of stock");
-      setRejectCustom("");
-    } catch {
-    } finally {
-      setRejectLoading(false);
-    }
+    await runAction("Rejecting item…", async () => {
+      setRejectLoading(true);
+      const reason = rejectReason === "Other" ? rejectCustom : rejectReason;
+      try {
+        await api("rejectItem", {
+          orderId: rejectModal.orderId,
+          orderItemId: rejectModal.orderItemId,
+          reason,
+        });
+        setOrders((prev) =>
+          prev.map((o) => {
+            if (o.id !== rejectModal.orderId) return o;
+            return {
+              ...o,
+              items: o.items.map((i) =>
+                i.id === rejectModal.orderItemId ? { ...i, status: "voided" } : i
+              ),
+            };
+          })
+        );
+        setRejectModal(null);
+        setRejectReason("Out of stock");
+        setRejectCustom("");
+      } catch {
+      } finally {
+        setRejectLoading(false);
+      }
+    });
   };
 
 
   const toggleBusy = async () => {
     const newBusy = !isBusy;
-    try {
-      await api("toggleBusy", { isBusy: newBusy });
-      setIsBusy(newBusy);
-    } catch {}
+    await runAction(newBusy ? "Enabling busy mode…" : "Disabling busy mode…", async () => {
+      try {
+        await api("toggleBusy", { isBusy: newBusy });
+        setIsBusy(newBusy);
+      } catch {}
+    });
   };
 
   const startEditing = (orderId: number) => {
@@ -389,12 +401,14 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
   };
 
   const addItemToOrder = async (orderId: number, menuItemId: number, quantity: number) => {
-    try {
-      const data = await api("addItemToOrder", { orderId, menuItemId, quantity });
-      if (data.success) {
-        await fetchOrders();
-      }
-    } catch {}
+    await runAction("Adding item…", async () => {
+      try {
+        const data = await api("addItemToOrder", { orderId, menuItemId, quantity });
+        if (data.success) {
+          await fetchOrders();
+        }
+      } catch {}
+    });
   };
 
   const saveEditing = async () => {
@@ -405,20 +419,22 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
       return;
     }
 
-    setSavingEdit(true);
-    try {
-      for (const [itemId, change] of changes) {
-        await api("updateItemQuantity", {
-          orderId: editingOrderId,
-          orderItemId: itemId,
-          newQuantity: change.newQty,
-        });
+    await runAction("Saving order changes…", async () => {
+      setSavingEdit(true);
+      try {
+        for (const [itemId, change] of changes) {
+          await api("updateItemQuantity", {
+            orderId: editingOrderId,
+            orderItemId: itemId,
+            newQuantity: change.newQty,
+          });
+        }
+        await fetchOrders();
+      } catch {} finally {
+        setSavingEdit(false);
+        cancelEditing();
       }
-      await fetchOrders();
-    } catch {} finally {
-      setSavingEdit(false);
-      cancelEditing();
-    }
+    });
   };
 
   const fetchModificationHistory = async (orderId: number) => {

@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 // import { DarkModeToggle } from "@/components/DarkModeToggle";
 import { AdminToastProvider } from "@/components/admin/AdminToast";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 import type { Role, AdminSection, ManagementTab } from "@/components/admin/types";
 import { PwaInstallBanner } from "@/components/admin/PwaInstallBanner";
 import { StaffWhatsAppProvider } from "@/components/admin/StaffWhatsAppProvider";
@@ -47,6 +48,7 @@ export default function AdminPage() {
 }
 
 function AdminPageInner() {
+  const { runAction } = useActionProgress();
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [role, setRole] = useState<Role | null>(null);
@@ -74,27 +76,29 @@ function AdminPageInner() {
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
 
   const handleChangePassword = async () => {
-    setCpError("");
-    setCpSuccess("");
-    if (!cpNew || !cpCurrent) { setCpError("All fields are required"); return; }
-    if (cpNew !== cpConfirm) { setCpError("New passwords do not match"); return; }
-    if (!cpNew) { setCpError("Password cannot be empty"); return; }
-    setCpLoading(true);
-    try {
-      const res = await fetch("/api/admin/checkins", {
+    await runAction("Saving password…", async () => {
+      setCpError("");
+      setCpSuccess("");
+      if (!cpNew || !cpCurrent) { setCpError("All fields are required"); return; }
+      if (cpNew !== cpConfirm) { setCpError("New passwords do not match"); return; }
+      if (!cpNew) { setCpError("Password cannot be empty"); return; }
+      setCpLoading(true);
+      try {
+        const res = await fetch("/api/admin/checkins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password, username, action: "changeMyPassword", currentPassword: cpCurrent, newPassword: cpNew }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setCpError(data.error || "Failed to change password"); return; }
-      setCpSuccess("Password changed successfully!");
-      setCpCurrent(""); setCpNew(""); setCpConfirm("");
-    } catch {
-      setCpError("Something went wrong");
-    } finally {
-      setCpLoading(false);
-    }
+        });
+        const data = await res.json();
+        if (!res.ok) { setCpError(data.error || "Failed to change password"); return; }
+        setCpSuccess("Password changed successfully!");
+        setCpCurrent(""); setCpNew(""); setCpConfirm("");
+      } catch {
+        setCpError("Something went wrong");
+      } finally {
+        setCpLoading(false);
+      }
+    });
   };
 
   useEffect(() => {
