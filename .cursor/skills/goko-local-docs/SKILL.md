@@ -18,6 +18,18 @@ Committed `docs/` is the knowledge base. Never `git add docs/secrets-and-access.
 7. Production stamps (Worker version, D1 applied list, R2) → `MAINTAINER.local.md`.
 8. If those gitignored files are missing, say so; never invent live values.
 
+## Production schema-change gate
+
+Any table, column, index, constraint, default, or data-shape change must ship as a complete production release, not as source code alone:
+
+1. Add one ordered migration in `migrations/` using the repository's migration conventions. Make it safe for the current production state: account for existing rows, backfills, defaults, nullability, indexes, and retry behavior. Do not edit an applied migration.
+2. Update the schema/data-model handbook entries and add a disposable SQLite/D1 regression test for the migration and affected behavior. Cover fresh data, existing/legacy rows, backfill/default behavior, and a failed or repeated migration where relevant.
+3. Before deploying, inspect remote migration status and apply the migration with `npm run db:migrate:prod`. Investigate schema drift, duplicate-object errors, or partial application; never force a migration or mark it complete manually.
+4. Deploy the Worker after the schema is ready with `npm run deploy:cf` (or verify the Workers Build commit). Confirm the deployed version and traffic state, then verify that remote D1 has no pending migrations and that the affected schema exists with a read-only `PRAGMA table_info(...)` or safe `SELECT`.
+5. Update the local-only production stamps in `MAINTAINER.local.md`. Do not report completion while migration, deployment, or post-deploy verification is failing.
+
+Live validation is read-only by default. Never create real orders, bookings, payments, cancellations, or other customer/financial records merely to smoke-test production. Exercise mutations against disposable/local D1 or deterministic Playwright fixtures; run a live mutation only with an explicitly approved, isolated test record and a documented cleanup/audit plan.
+
 ## Commit gate
 
 Before every commit, inspect both the working-tree and staged diffs. Every feature or behavior update must have its focused regression test added or updated before the commit, and the matching maintainer/handbook documentation must be included in that same commit. Never commit source-only behavior, RBAC, API, page, workflow, payment, receipt, or audit changes. Confirm the permission catalog, UI gates, server action maps, tests, `docs/pages-and-ui.md`, `docs/auth-rbac.md`, `docs/api-map.md`, and relevant flow/onboarding docs are synchronized. Run `git diff --cached --check` plus the applicable tests/typecheck/build before pushing. If a change is intentionally test-exempt because it is non-behavioral, record that rationale in the handoff.
