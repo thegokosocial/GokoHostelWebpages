@@ -418,6 +418,28 @@ describe("food-tab UI checkout workflows", () => {
     expect(source).toContain("ring-2 ring-brand-green/25");
   });
 
+  it("8d1. Edit mode has an explicit exit even before a draft exists", () => {
+    const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
+    expect(source).toContain(">Cancel editing</button>");
+    expect(source).toContain("{isEditing && (");
+    expect(source).toContain("aria-pressed={isEditing}");
+    expect(source).toContain("disabled={isEditing}");
+  });
+
+  it("8d2. Quantity buttons calculate from the effective staged quantity", () => {
+    const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
+    expect(source).toContain("nextFoodOrderQuantity(item.quantity, draft[item.id], -1)");
+    expect(source).toContain("nextFoodOrderQuantity(item.quantity, draft[item.id], 1)");
+    expect(source).toContain("effectiveFoodOrderQuantity(item.quantity, change)");
+  });
+
+  it("8d3. Mobile order actions have a dedicated stable layout row", () => {
+    const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
+    expect(source).toContain("data-testid={`food-order-actions-${order.id}`}");
+    expect(source).toContain("w-full min-w-0 items-center justify-between");
+    expect(source).toContain("data-testid={`food-order-badges-${order.id}`}");
+  });
+
   it("8e. Quantity edits use modification wording and can be saved without a reason", () => {
     const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
     expect(source).toContain('`Modify "${item.itemName}" (${item.quantity} → ${pendingQtyChange.newQty})`');

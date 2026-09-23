@@ -43,7 +43,7 @@ async function mockAdminApi(page: Page) {
   });
 }
 
-async function mockFoodOrderWorkflow(page: Page, requests: Array<Record<string, unknown>>) {
+async function mockFoodOrderWorkflow(page: Page, requests: Array<Record<string, unknown>>, overrides: Record<string, unknown> = {}) {
   await page.route("**/api/admin/food-orders", async (route) => {
     const body = JSON.parse(route.request().postData() || "{}") as Record<string, unknown>;
     requests.push(body);
@@ -77,6 +77,7 @@ async function mockFoodOrderWorkflow(page: Page, requests: Array<Record<string, 
       updatedAt: "2026-09-23T06:00:00.000Z",
       hasModifications: false,
       items: [{ id: 20, menuItemId: 4, itemName: "Shampoo", itemPrice: 200, quantity: 2, lineTotal: 400, status: "active", pricingStatus: "fixed", notes: "" }],
+      ...overrides,
     };
     const response = action === "getGuestsWithTabs"
       ? { guests: [] }
@@ -181,10 +182,26 @@ test("Food Orders browser workflow stages a served quantity modification and sav
   await expect(drawer).toBeVisible();
   await drawer.getByRole("button", { name: "Edit food items for D265-10" }).click();
   const orderCard = drawer.locator('[data-order-id="10"]');
+
+  await expect(orderCard.getByRole("button", { name: "Cancel editing" })).toBeVisible();
+  await expect(orderCard.getByRole("button", { name: "Edit food items for D265-10" })).toBeDisabled();
+  await orderCard.getByRole("button", { name: "Cancel editing" }).click();
+  await expect(orderCard.getByRole("button", { name: "Cancel editing" })).toBeHidden();
+  expect(requests.filter((body) => body.action === "saveOrderEdits")).toHaveLength(0);
+  await drawer.getByRole("button", { name: "Edit food items for D265-10" }).click();
+
   await orderCard.getByRole("button", { name: "+" }).click();
 
   await expect(orderCard).toContainText('Modify "Shampoo" (2 → 3)?');
   await expect(orderCard.getByRole("button", { name: "Save modification" })).toBeEnabled();
+  await orderCard.getByRole("button", { name: "Save modification" }).click();
+  await expect(orderCard.getByText("3", { exact: true })).toBeVisible();
+  await orderCard.getByRole("button", { name: "+" }).click();
+  await expect(orderCard).toContainText('Modify "Shampoo" (3 → 4)?');
+  await orderCard.getByRole("button", { name: "Save modification" }).click();
+  await expect(orderCard.getByText("4", { exact: true })).toBeVisible();
+  await orderCard.getByRole("button", { name: "−" }).click();
+  await expect(orderCard).toContainText('Modify "Shampoo" (4 → 3)?');
   await orderCard.getByRole("button", { name: "Save modification" }).click();
   await expect(orderCard.getByText("3", { exact: true })).toBeVisible();
   await expect(orderCard).toContainText("Shampoo");
@@ -196,6 +213,56 @@ test("Food Orders browser workflow stages a served quantity modification and sav
     changes: [{ itemId: 20, quantity: 3, reason: "" }],
   });
 });
+
+test("Food Orders mobile edit controls stay in the action row", async ({ page }) => {
+  await mockFoodOrderWorkflow(page, []);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInToManagement(page);
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.locator("#admin-mobile-navigation").getByRole("button", { name: "Food Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Pawan test" }).click();
+  const drawer = page.locator(".fixed.inset-0.z-50");
+  const orderCard = drawer.locator('[data-order-id="10"]');
+  const actions = orderCard.getByTestId("food-order-actions-10");
+  const edit = orderCard.getByRole("button", { name: "Edit food items for D265-10" });
+
+  await expect(actions).toBeVisible();
+  await expect(actions).toContainText("23 Sep");
+  await edit.click();
+  await expect(actions).toBeVisible();
+  await expect(actions.getByRole("button", { name: "Edit food items for D265-10" })).toBeDisabled();
+  await expect(orderCard.getByRole("button", { name: "Cancel editing" })).toBeVisible();
+});
+
+for (const paymentState of [
+  { name: "partial", paymentStatus: "partial", amountPaid: 200 },
+  { name: "paid", paymentStatus: "paid", amountPaid: 400 },
+] as const) {
+  test(`Food Orders ${paymentState.name} orders support the same explicit edit lifecycle`, async ({ page }) => {
+    const requests: Array<Record<string, unknown>> = [];
+    await mockFoodOrderWorkflow(page, requests, paymentState);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await signInToManagement(page);
+
+    await page.getByRole("button", { name: "Food Orders", exact: true }).click();
+    await page.getByRole("button", { name: "Pawan test" }).click();
+    const drawer = page.locator(".fixed.inset-0.z-50");
+    const orderCard = drawer.locator('[data-order-id="10"]');
+    await orderCard.getByRole("button", { name: "Edit food items for D265-10" }).click();
+    await expect(orderCard.getByRole("button", { name: "Cancel editing" })).toBeVisible();
+    await orderCard.getByRole("button", { name: "+" }).click();
+    await expect(orderCard).toContainText('Modify "Shampoo" (2 → 3)?');
+    await orderCard.getByRole("button", { name: "Save modification" }).click();
+    await orderCard.getByRole("button", { name: "Save changes" }).click();
+
+    await expect.poll(() => requests.filter((body) => body.action === "saveOrderEdits")).toHaveLength(1);
+    expect(requests.find((body) => body.action === "saveOrderEdits")).toMatchObject({
+      orderId: 10,
+      changes: [{ itemId: 20, quantity: 3, reason: "" }],
+    });
+  });
+}
 
 test("in-page Management selectors keep their own selected state", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });

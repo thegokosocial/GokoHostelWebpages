@@ -113,7 +113,7 @@ describe("Payment History", () => {
     expect(summary).toContain('title="Edit food items"');
     expect(source).toContain('<BanknoteIcon className="h-3 w-3" /> Edit Payment');
     expect(summary).toContain('setDrawerView("orders");');
-    expect(summary).toContain('setEditingOrderId(isEditing ? null : order.id)');
+    expect(summary).toContain('if (!isEditing) { setEditingOrderId(order.id); setVoidingItemId(null); }');
     expect(summary).toContain('scrollIntoView({ behavior: "smooth", block: "center" })');
     expect(summary).toContain('data-order-id={order.id}');
     expect(summary).toContain('>Editing</span>');

@@ -372,6 +372,58 @@ describe("admin market-pricing workflows", () => {
     expect(q.createGuestReceipt).not.toHaveBeenCalled();
   });
 
+  it("preserves a partial payment and charges only the incremental balance", async () => {
+    const partialOrder = {
+      ...order,
+      updatedAt: "2026-09-23T06:00:00.000Z",
+      total: 200,
+      subtotal: 200,
+      tax: 0,
+      amountPaid: 100,
+      amountRefunded: 0,
+      paymentStatus: "partial",
+      paymentMethod: "cash",
+      paidBy: "Admin",
+    };
+    const partialItem = {
+      id: 20, orderId: 10, menuItemId: 4, itemName: "Shampoo", itemPrice: 100,
+      quantity: 2, lineTotal: 200, pricingStatus: "fixed", status: "active", notes: "",
+    };
+    const updates: Record<string, unknown>[] = [];
+    q.getFoodOrderById.mockResolvedValue(partialOrder);
+    q.getSetting.mockResolvedValue("0");
+    q.getMenuItemCategoryExemptions.mockResolvedValue(new Map());
+    q.getDb.mockReturnValue({
+      transaction: async (callback: (tx: any) => unknown) => {
+        let selectIndex = 0;
+        const selectValues = [[], [partialOrder], [partialItem], [{ trackInventory: 0 }]];
+        return callback({
+          select: () => ({ from: () => ({ where: () => {
+            const value = selectValues[selectIndex++] || [];
+            return { limit: async () => value, then: (resolve: (result: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(value).then(resolve, reject) };
+          } }) }),
+          insert: () => ({ values: async () => undefined }),
+          update: () => ({ set: (value: Record<string, unknown>) => {
+            updates.push(value);
+            return { where: () => ({ returning: async () => [{ id: 10 }] }) };
+          } }),
+        });
+      },
+    });
+
+    const response = await POST(actionReq("saveOrderEdits", {
+      orderId: 10,
+      operationId: "edit-partial-001",
+      changes: [{ itemId: 20, quantity: 3 }],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, total: 300, refundAmount: 0 });
+    expect(updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ total: 300, amountPaid: 100, amountRefunded: 0, paymentStatus: "partial" }),
+    ]));
+  });
+
   it("reserves tracked stock before an admin quantity increase", async () => {
     const trackedItem = { ...pendingItem, itemPrice: 200, quantity: 2, lineTotal: 400, pricingStatus: "fixed" };
     q.getFoodOrderItems.mockResolvedValue([trackedItem]);

@@ -21,6 +21,7 @@ import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
 import { foodAmountPaid, foodDue, foodPaymentStatus } from "@/lib/foodPaymentBalance";
+import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
 
 async function withBillBranding(
   password: string,
@@ -1686,7 +1687,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     const effectiveItems = order.items.map((item) => {
                       const change = draft[item.id];
                       if (!change) return item;
-                      const quantity = change.quantity ?? item.quantity;
+                      const quantity = effectiveFoodOrderQuantity(item.quantity, change);
                       const itemPrice = change.price ?? item.itemPrice;
                       return {
                         ...item,
@@ -1714,8 +1715,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           : "border-brand-mist",
                       )}
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-1">
-                        <div className="flex items-center gap-2">
+                      <div data-testid={`food-order-header-${order.id}`} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                        <div data-testid={`food-order-badges-${order.id}`} className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="font-mono text-xs font-bold text-brand-green">{order.orderNumber}</span>
                           {isEditing && <span className="rounded-full bg-brand-green px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
                           <StatusBadge status={order.status} />
@@ -1724,8 +1725,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                             <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">Modified</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-brand-green-dark/50">
+                        <div data-testid={`food-order-actions-${order.id}`} className="flex w-full min-w-0 items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                          <span className="min-w-0 truncate text-xs text-brand-green-dark/50">
                             {new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}{" "}
                             {new Date(order.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
                           </span>
@@ -1759,11 +1760,13 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           <button
                             type="button"
                             aria-label={`Edit food items for ${order.orderNumber}`}
-                            onClick={() => { setEditingOrderId(isEditing ? null : order.id); setVoidingItemId(null); }}
+                            aria-pressed={isEditing}
+                            onClick={() => { if (!isEditing) { setEditingOrderId(order.id); setVoidingItemId(null); } }}
+                            disabled={isEditing}
                             className={cn(
                               "rounded p-1 transition-colors",
                               isEditing
-                                ? "bg-brand-green/10 text-brand-green"
+                                ? "cursor-default bg-brand-green/10 text-brand-green"
                                 : "text-brand-green-dark/40 hover:text-brand-green-dark/70 hover:bg-brand-sand"
                             )}
                             title="Edit food items"
@@ -1798,14 +1801,14 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                 <div className="flex items-center gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => handleQuantityChange(order.id, item.id, item.quantity - 1, order.status)}
+                                    onClick={() => handleQuantityChange(order.id, item.id, nextFoodOrderQuantity(item.quantity, draft[item.id], -1), order.status)}
                                     disabled={actionBusy === `qty_${item.id}`}
                                     className="flex h-5 w-5 items-center justify-center rounded border border-brand-mist text-brand-green-dark/60 hover:bg-gray-100 dark:hover:bg-[#1c1c1c] disabled:opacity-50"
                                   >−</button>
                                   <span className="w-5 text-center font-medium text-brand-green-dark">{item.quantity}</span>
                                   <button
                                     type="button"
-                                    onClick={() => handleQuantityChange(order.id, item.id, item.quantity + 1, order.status)}
+                                    onClick={() => handleQuantityChange(order.id, item.id, nextFoodOrderQuantity(item.quantity, draft[item.id], 1), order.status)}
                                     disabled={actionBusy === `qty_${item.id}`}
                                     className="flex h-5 w-5 items-center justify-center rounded border border-brand-mist text-brand-green-dark/60 hover:bg-gray-100 dark:hover:bg-[#1c1c1c] disabled:opacity-50"
                                   >+</button>
@@ -1873,20 +1876,27 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           <span>-₹{(order.discount / 100).toFixed(0)}</span>
                         </div>
                       )}
-                      {isEditing && hasDraft && (
+                      {isEditing && (
                         <div className="mt-2 flex items-center justify-end gap-2 border-t border-brand-mist pt-2">
                           <button
                             type="button"
-                            onClick={() => setDraftEdits((prev) => { const next = { ...prev }; delete next[order.id]; return next; })}
+                            onClick={() => {
+                              setDraftEdits((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+                              setEditingOrderId(null);
+                              setVoidingItemId(null);
+                              setPendingQtyChange(null);
+                            }}
                             disabled={actionBusy === `save_${order.id}`}
                             className="rounded border border-brand-mist px-2.5 py-1 text-[11px] font-medium text-brand-green-dark/70 hover:bg-brand-sand disabled:opacity-50"
-                          >Cancel changes</button>
-                          <button
-                            type="button"
-                            onClick={() => void handleSaveOrderEdits(order)}
-                            disabled={actionBusy === `save_${order.id}`}
-                            className="rounded bg-brand-green px-3 py-1 text-[11px] font-semibold text-white hover:bg-brand-green/90 disabled:opacity-50"
-                          >{actionBusy === `save_${order.id}` ? "Saving…" : "Save changes"}</button>
+                          >Cancel editing</button>
+                          {hasDraft && (
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveOrderEdits(order)}
+                              disabled={actionBusy === `save_${order.id}`}
+                              className="rounded bg-brand-green px-3 py-1 text-[11px] font-semibold text-white hover:bg-brand-green/90 disabled:opacity-50"
+                            >{actionBusy === `save_${order.id}` ? "Saving…" : "Save changes"}</button>
+                          )}
                         </div>
                       )}
                       {order.hasModifications && (
