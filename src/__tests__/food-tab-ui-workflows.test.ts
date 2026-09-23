@@ -445,7 +445,9 @@ describe("food-tab UI checkout workflows", () => {
     const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
     expect(source).toContain("BatchModificationPopup");
     expect(source).toContain("pendingQtyChanges");
-    expect(source).toContain('Save modification');
+    const panel = source.slice(source.indexOf('function BatchModificationPopup'), source.indexOf('function OrderCancelConfirmation'));
+    expect(panel).not.toContain('Save modification');
+    expect(panel).toContain('onReasonChange');
     expect(source).toContain('disabled={busy}');
     expect(source).not.toContain('disabled={busy || !selectedReason}');
   });

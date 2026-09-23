@@ -48,6 +48,10 @@ async function mockFoodOrderWorkflow(page: Page, requests: Array<Record<string, 
     const body = JSON.parse(route.request().postData() || "{}") as Record<string, unknown>;
     requests.push(body);
     const action = body.action;
+    if (action === "saveOrderEdits" && overrides.failFirstSave && requests.filter((r) => r.action === action).length === 1) {
+      await route.fulfill({ status: 503, json: { error: "Database temporarily unavailable. Please try again." } });
+      return;
+    }
     const order = {
       id: 10,
       orderNumber: "D265-10",
@@ -194,16 +198,13 @@ test("Food Orders browser workflow stages a served quantity modification and sav
 
   await expect(orderCard).toContainText("Modify order quantities?");
   await expect(orderCard).toContainText("Shampoo: 2 → 3");
-  await expect(orderCard.getByRole("button", { name: "Save modification" })).toBeEnabled();
-  await orderCard.getByRole("button", { name: "Save modification" }).click();
+  await expect(orderCard.getByRole("button", { name: "Save modification" })).toHaveCount(0);
   await expect(orderCard.getByText("3", { exact: true })).toBeVisible();
   await orderCard.getByRole("button", { name: "+" }).click();
-  await expect(orderCard).toContainText("Shampoo: 3 → 4");
-  await orderCard.getByRole("button", { name: "Save modification" }).click();
+  await expect(orderCard).toContainText("Shampoo: 2 → 4");
   await expect(orderCard.getByText("4", { exact: true })).toBeVisible();
   await orderCard.getByRole("button", { name: "−" }).click();
-  await expect(orderCard).toContainText("Shampoo: 4 → 3");
-  await orderCard.getByRole("button", { name: "Save modification" }).click();
+  await expect(orderCard).toContainText("Shampoo: 2 → 3");
   await expect(orderCard.getByText("3", { exact: true })).toBeVisible();
   await expect(orderCard).toContainText("Shampoo");
   await orderCard.getByRole("button", { name: "Save changes" }).click();
@@ -267,7 +268,6 @@ test("Food Orders batch served edit lists every item and saves once", async ({ p
   await expect(orderCard).toContainText("Staff Food: 1 → 2");
   await expect(orderCard).toContainText("Chicken Kebab: 1 → 2");
   await orderCard.getByRole("button", { name: "Guest complaint" }).click();
-  await orderCard.getByRole("button", { name: "Save modification" }).click();
   await orderCard.getByRole("button", { name: "Save changes" }).click();
 
   await expect.poll(() => requests.filter((body) => body.action === "saveOrderEdits")).toHaveLength(1);
@@ -279,6 +279,54 @@ test("Food Orders batch served edit lists every item and saves once", async ({ p
       { itemId: 22, quantity: 2, reason: "Guest complaint" },
     ]),
   });
+});
+
+test("Food Orders retries the same draft safely and reverses quantities without a no-op summary", async ({ page }) => {
+  const requests: Array<Record<string, unknown>> = [];
+  await mockFoodOrderWorkflow(page, requests, { failFirstSave: true });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Food Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Pawan test" }).click();
+  const card = page.locator('[data-order-id="10"]');
+  await card.getByRole("button", { name: "Edit food items for D265-10" }).click();
+  for (let i = 0; i < 3; i++) await card.getByRole("button", { name: "+", exact: true }).click();
+  await expect(card).toContainText("Shampoo: 2 → 5");
+  await expect(card.getByText("5", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Guest complaint" }).click();
+  await card.getByPlaceholder("Additional notes (optional)").fill("Keep this reason");
+  for (let i = 0; i < 3; i++) await card.getByRole("button", { name: "−", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(card.getByText("Modify order quantities?", { exact: true })).toBeHidden();
+  await card.getByRole("button", { name: "+", exact: true }).click();
+  await expect(card.getByPlaceholder("Additional notes (optional)")).toHaveValue("Keep this reason");
+  await card.getByRole("button", { name: "Save changes" }).click();
+  await expect(card.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  await expect(card).toContainText("Shampoo: 2 → 3");
+  await card.getByRole("button", { name: "Save changes" }).click();
+  await expect.poll(() => requests.filter((r) => r.action === "saveOrderEdits").length).toBe(2);
+  const saves = requests.filter((r) => r.action === "saveOrderEdits");
+  expect(saves[0].operationId).toBe(saves[1].operationId);
+  expect(saves[0].changes).toEqual(saves[1].changes);
+  expect(saves[0].changes).toEqual([{ itemId: 20, quantity: 3, reason: "Guest complaint — Keep this reason" }]);
+});
+
+test("Food Orders placed-order changes revert or cancel without saving", async ({ page }) => {
+  const requests: Array<Record<string, unknown>> = [];
+  await mockFoodOrderWorkflow(page, requests, { status: "placed" });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Food Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Pawan test" }).click();
+  const card = page.locator('[data-order-id="10"]');
+  await card.getByRole("button", { name: "Edit food items for D265-10" }).click();
+  await card.getByRole("button", { name: "+", exact: true }).click();
+  await card.getByRole("button", { name: "−", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await card.getByRole("button", { name: "+", exact: true }).click();
+  await card.getByRole("button", { name: "Cancel editing" }).click();
+  await card.getByRole("button", { name: "Edit food items for D265-10" }).click();
+  await expect(card.getByText("2", { exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  expect(requests.filter((r) => r.action === "saveOrderEdits")).toHaveLength(0);
 });
 
 test("Food Orders shows unpaid cancel confirmation beside edit", async ({ page }) => {
@@ -331,7 +379,6 @@ for (const paymentState of [
     await orderCard.getByRole("button", { name: "+" }).click();
     await expect(orderCard).toContainText("Modify order quantities?");
     await expect(orderCard).toContainText("Shampoo: 2 → 3");
-    await orderCard.getByRole("button", { name: "Save modification" }).click();
     await orderCard.getByRole("button", { name: "Save changes" }).click();
 
     await expect.poll(() => requests.filter((body) => body.action === "saveOrderEdits")).toHaveLength(1);

@@ -537,7 +537,9 @@ export async function POST(req: NextRequest) {
         const taxRate = foodTaxPercent(await getSetting("food_tax_rate"));
         const now = new Date().toISOString();
 
-        const result = await db.transaction(async (tx: any) => {
+        const result = await (async () => {
+          const tx = db;
+          const writes: any[] = [];
           const previousBatch = await tx.select().from(foodOrderEditBatches)
             .where(eq(foodOrderEditBatches.operationId, operationId)).limit(1);
           if (previousBatch[0]) {
@@ -553,7 +555,7 @@ export async function POST(req: NextRequest) {
           const currentItems = await tx.select().from(foodOrderItems).where(eq(foodOrderItems.orderId, orderId));
           const byId = new Map(currentItems.map((item: any) => [item.id, item]));
           const seen = new Set<number>();
-          const normalizedChanges: Array<{ item: any; quantity: number; price: number; label: string; reason: string; oldQuantity: number; oldPrice: number; removed: boolean }> = [];
+          const normalizedChanges: Array<{ item: any; quantity: number; price: number; label: string; reason: string; finalizePrice: boolean; removed: boolean }> = [];
 
           for (const raw of changes) {
             const itemId = Number(raw?.itemId);
@@ -563,20 +565,21 @@ export async function POST(req: NextRequest) {
             if (!item || item.orderId !== orderId) throw Object.assign(new Error("Order item not found"), { status: 404 });
             if (item.status === "voided") throw Object.assign(new Error("A cancelled item cannot be edited"), { status: 400 });
             const quantity = raw.quantity === undefined ? item.quantity : Number(raw.quantity);
-            if (!Number.isInteger(quantity) || quantity < 0) throw Object.assign(new Error("Quantity must be a non-negative whole number"), { status: 400 });
+            if (!Number.isSafeInteger(quantity) || quantity < 0) throw Object.assign(new Error("Quantity must be a non-negative whole number"), { status: 400 });
             let price = item.itemPrice;
             let label = item.notes || "";
             if (raw.price !== undefined) {
               price = Number(raw.price);
-              if (!Number.isInteger(price) || price <= 0 || item.pricingStatus !== "pending") {
+              if (!Number.isSafeInteger(price) || price <= 0 || item.pricingStatus !== "pending") {
                 throw Object.assign(new Error("Only pending prices can be finalized"), { status: 400 });
               }
               label = typeof raw.label === "string" ? raw.label.trim().slice(0, 24) : "";
             }
+            if (!Number.isSafeInteger(quantity * price)) throw Object.assign(new Error("Item total exceeds the supported amount"), { status: 400 });
             normalizedChanges.push({
               item, quantity, price, label,
               reason: typeof raw.reason === "string" ? raw.reason.trim().slice(0, 240) : "",
-              oldQuantity: item.quantity, oldPrice: item.itemPrice, removed: quantity === 0,
+              finalizePrice: raw.price !== undefined, removed: quantity === 0,
             });
           }
 
@@ -644,36 +647,57 @@ export async function POST(req: NextRequest) {
           }
           if (refundAmount > currentPaid) throw Object.assign(new Error("Refund exceeds the amount collected for this order"), { status: 409 });
 
-          await tx.insert(foodOrderEditBatches).values(syncInsert({
-            operationId, orderId, requestJson: requestedJson, actor: actorName, createdAt: now,
-          }));
+          // The NOT NULL guard is evaluated inside the atomic batch. A stale
+          // snapshot must fail a statement, not silently update zero rows.
+          const guards = [sql`EXISTS (SELECT 1 FROM ${foodOrders} WHERE ${foodOrders.id} = ${orderId}
+            AND ${foodOrders.updatedAt} = ${current.updatedAt}
+            AND ${foodOrders.status} = ${current.status}
+            AND ${foodOrders.total} = ${current.total}
+            AND ${foodOrders.amountPaid} IS ${current.amountPaid}
+            AND ${foodOrders.amountRefunded} IS ${current.amountRefunded})`,
+            sql`(SELECT COUNT(*) FROM ${foodOrderItems} WHERE ${foodOrderItems.orderId} = ${orderId}) = ${currentItems.length}`];
+          for (const item of currentItems) guards.push(sql`EXISTS (SELECT 1 FROM ${foodOrderItems}
+            WHERE ${foodOrderItems.id} = ${item.id} AND ${foodOrderItems.orderId} = ${orderId}
+            AND ${foodOrderItems.quantity} = ${item.quantity} AND ${foodOrderItems.itemPrice} = ${item.itemPrice}
+            AND ${foodOrderItems.status} = ${item.status} AND ${foodOrderItems.pricingStatus} = ${item.pricingStatus})`);
+          for (const [id, delta] of inventoryDeltas) guards.push(sql`EXISTS (SELECT 1 FROM ${menuItems}
+            WHERE ${menuItems.id} = ${id} AND ${menuItems.trackInventory} = ${inventoryItems.get(id)!.trackInventory}
+            AND (${menuItems.trackInventory} = 0 OR ${menuItems.stockQuantity} >= ${Math.max(0, delta)}))`);
+          writes.push(tx.insert(foodOrderEditBatches).values(syncInsert({
+            operationId, orderId: sql`CASE WHEN ${guards[0]} THEN ${orderId} ELSE NULL END`,
+            requestJson: requestedJson, actor: actorName, createdAt: now,
+          })));
+          // Bounded statements also keep large orders below D1's bind limit.
+          for (const guard of guards.slice(1)) writes.push(tx.update(foodOrderEditBatches)
+            .set({ orderId: sql`CASE WHEN ${guard} THEN ${orderId} ELSE NULL END` })
+            .where(eq(foodOrderEditBatches.operationId, operationId)));
 
           for (const change of normalizedChanges) {
             const { item } = change;
             const delta = change.quantity - item.quantity;
             if (change.removed) {
-              await tx.update(foodOrderItems).set(syncUpdate({ status: "voided", updatedAt: now })).where(eq(foodOrderItems.id, item.id));
-              await tx.insert(orderModifications).values(syncInsert({
+              writes.push(tx.update(foodOrderItems).set(syncUpdate({ status: "voided", updatedAt: now })).where(eq(foodOrderItems.id, item.id)));
+              writes.push(tx.insert(orderModifications).values(syncInsert({
                 orderId, action: "item_removed", itemId: item.id, oldValue: String(item.quantity), newValue: "0",
                 reason: change.reason, modifiedBy: actorName, createdAt: now,
-              }));
+              })));
             } else {
               const itemUpdate: Record<string, unknown> = { quantity: change.quantity, lineTotal: change.quantity * change.price };
-              if (change.price !== item.itemPrice) {
+              if (change.finalizePrice) {
                 itemUpdate.itemPrice = change.price;
                 itemUpdate.pricingStatus = "fixed";
                 itemUpdate.notes = change.label;
-                await tx.insert(orderModifications).values(syncInsert({
+                writes.push(tx.insert(orderModifications).values(syncInsert({
                   orderId, action: "price_finalized", itemId: item.id, oldValue: String(item.itemPrice), newValue: String(change.price),
                   reason: change.label ? `Final market price · ${change.label}` : "Final market price", modifiedBy: actorName, createdAt: now,
-                }));
+                })));
               }
-              await tx.update(foodOrderItems).set(syncUpdate({ ...itemUpdate, updatedAt: now })).where(eq(foodOrderItems.id, item.id));
+              writes.push(tx.update(foodOrderItems).set(syncUpdate({ ...itemUpdate, updatedAt: now })).where(eq(foodOrderItems.id, item.id)));
               if (delta !== 0) {
-                await tx.insert(orderModifications).values(syncInsert({
+                writes.push(tx.insert(orderModifications).values(syncInsert({
                   orderId, action: "quantity_changed", itemId: item.id, oldValue: String(item.quantity), newValue: String(change.quantity),
                   reason: change.reason, modifiedBy: actorName, createdAt: now,
-                }));
+                })));
               }
             }
           }
@@ -681,20 +705,17 @@ export async function POST(req: NextRequest) {
           for (const [menuItemId, delta] of inventoryDeltas) {
             if (!inventoryItems.get(menuItemId)?.trackInventory) continue;
             if (delta > 0) {
-              const updatedStock = await tx.update(menuItems).set({
+              writes.push(tx.update(menuItems).set({
                 stockQuantity: sql`${menuItems.stockQuantity} - ${delta}`,
                 isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} - ${delta} <= 0 THEN 0 ELSE ${menuItems.isAvailable} END`,
               }).where(and(
                 eq(menuItems.id, menuItemId),
                 eq(menuItems.trackInventory, 1),
                 sql`${menuItems.stockQuantity} >= ${delta}`,
-              )).returning({ id: menuItems.id });
-              if (updatedStock.length === 0) {
-                throw Object.assign(new Error("Inventory changed while the order was being edited. Reload and try again."), { status: 409 });
-              }
+              )));
             } else if (delta < 0) {
-              await tx.update(menuItems).set({ stockQuantity: sql`${menuItems.stockQuantity} + ${Math.abs(delta)}`, isAvailable: 1 })
-                .where(and(eq(menuItems.id, menuItemId), eq(menuItems.trackInventory, 1)));
+              writes.push(tx.update(menuItems).set({ stockQuantity: sql`${menuItems.stockQuantity} + ${Math.abs(delta)}`, isAvailable: 1 })
+                .where(and(eq(menuItems.id, menuItemId), eq(menuItems.trackInventory, 1))));
             }
           }
 
@@ -718,30 +739,46 @@ export async function POST(req: NextRequest) {
             orderUpdate.refundedAt = now;
             orderUpdate.refundedBy = actorName;
           }
-          const updated = await tx.update(foodOrders).set(syncUpdate(orderUpdate)).where(and(eq(foodOrders.id, orderId), eq(foodOrders.updatedAt, current.updatedAt))).returning({ id: foodOrders.id });
-          if (!updated[0]) throw Object.assign(new Error("Order changed while it was being edited. Reload and try again."), { status: 409 });
+          writes.push(tx.update(foodOrders).set(syncUpdate(orderUpdate)).where(eq(foodOrders.id, orderId)));
 
           if (refundAmount > 0) {
-            await tx.insert(foodPaymentEvents).values(syncInsert({
+            writes.push(tx.insert(foodPaymentEvents).values(syncInsert({
               eventId: String(refund.operationId), orderId, eventType: "refund", amountPaise: refundAmount,
               cashPaise: refundCash, onlinePaise: refundOnline, accountId: refundAccountId,
               note: typeof refund.note === "string" ? refund.note.trim().slice(0, 240) : "Manual refund for food-order edit",
               actor: actorName, createdAt: now,
-            }));
+            })));
             if (refundOnline > 0 && refundAccountId) {
-              await tx.insert(guestReceipts).values(syncInsert({
+              writes.push(tx.insert(guestReceipts).values(syncInsert({
                 receiptId: String(refund.receiptId || refund.operationId), sourceType: "food_order", sourceId: orderId,
                 kind: "refund", accountId: refundAccountId, amount: -refundOnline, businessDate: receiptBusinessDate(),
                 notes: `Food order ${current.orderNumber} manual refund`, createdBy: actorName, createdAt: now,
-              }));
+              })));
             }
           }
-          await tx.insert(auditLog).values({
+          writes.push(tx.insert(auditLog).values({
             timestamp: now, username: actorName, action: refundAmount > 0 ? "food_order_edited_refunded" : "food_order_edited",
             target: `order:${orderId}`, details: `Saved ${normalizedChanges.length} food-order edit${normalizedChanges.length === 1 ? "" : "s"}${refundAmount > 0 ? ` and refunded ₹${(refundAmount / 100).toFixed(2)} via ${refundMethod}` : ""}`,
-          });
+          }));
+          try {
+            if (typeof (db as any).batch === "function") {
+              await (db as any).batch(writes);
+            } else {
+              // better-sqlite3 commits when its callback returns; never async.
+              db.transaction(() => { for (const write of writes) write.run(); });
+            }
+          } catch (error) {
+            const previous = await db.select().from(foodOrderEditBatches)
+              .where(eq(foodOrderEditBatches.operationId, operationId)).limit(1);
+            if (previous[0]?.requestJson === requestedJson && previous[0]?.orderId === orderId) return { duplicate: true, orderId };
+            const cause = error instanceof Error ? `${error.message} ${String(error.cause || "")}` : String(error);
+            if (previous[0] || cause.includes("NOT NULL constraint failed: food_order_edit_batches.order_id")) {
+              throw Object.assign(new Error("Order or inventory changed while saving. Reload the order and try again."), { status: 409 });
+            }
+            throw error;
+          }
           return { duplicate: false, orderId, subtotal, tax, total, refundAmount };
-        });
+        })();
 
         return NextResponse.json({ success: true, role, ...result });
       }

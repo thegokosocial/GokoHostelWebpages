@@ -186,3 +186,7 @@ These are the load-bearing choices. Changing one without the others usually crea
 | CMS on Pi | Explicitly out of scope |
 | Splits on Pi | Explicitly out of scope (skip `0041`, hide nav) |
 | R2 for ID photos | Out of scope (PII + staff Drive habit) |
+
+### Food-order edit persistence (2026-09-23)
+
+`saveOrderEdits` uses D1 `batch()` for all writes. The existing edit-batch `order_id NOT NULL` constraint is deliberately used by bounded CASE guards to abort the batch when the prepared order/items or stock availability changed. A zero-row conditional update is not sufficient to roll back D1. Pi executes the same prepared statements in a synchronous SQLite transaction callback. Production regression coverage runs actual local workerd D1; no new schema or dependency is required.

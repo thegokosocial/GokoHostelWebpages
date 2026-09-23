@@ -8,6 +8,11 @@ function caseBody(source: string, name: string, nextCase: string) {
 }
 
 describe("D1 transaction regressions", () => {
+  it("batches order edits and uses a synchronous Pi callback", () => {
+    const body = caseBody(foodOrders, "saveOrderEdits", "voidItem");
+    expect(body).toContain('.batch(writes)');
+    expect(body).not.toContain('transaction(async');
+  });
   it("uses batch for food discount mutations and keeps transaction only as the Pi fallback", () => {
     for (const body of [caseBody(foodOrders, "applyDiscount", "removeDiscount"), caseBody(foodOrders, "removeDiscount", "reassignOrder")]) {
       expect(body).toContain('typeof db.batch === "function"');

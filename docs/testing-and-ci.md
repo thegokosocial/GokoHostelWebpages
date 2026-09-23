@@ -86,3 +86,5 @@ Error-handling changes must cover the shared API error contract, HTTP status/cod
 
 Rate scrape: `scrape-rates.yml` workflow_dispatch only. Needs GitHub secrets `API_URL`, `API_PASSWORD`.
 Food-order regression coverage must include batch quantity edits across multiple lines, paid/partial refund behavior, the unpaid-only red-X cancellation confirmation, and server rejection of paid/partial whole-order cancellation.
+
+Food-order saves must pass `food-edits-d1-runtime.test.ts` against disposable Miniflare/workerd D1, including atomic rollback, concurrent stock claims, idempotent retries, paid/partial/unpaid edits, refunds, large orders, and the synchronous Pi fallback. Transaction mocks alone cannot validate production D1. The Food Orders Playwright workflows verify a single Save changes action, multi-line summaries, no-op reversal, and failed-save retries retaining their operation ID.
