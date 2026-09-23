@@ -438,6 +438,7 @@ describe("food-tab UI checkout workflows", () => {
     expect(source).toContain("data-testid={`food-order-actions-${order.id}`}");
     expect(source).toContain("w-full min-w-0 items-center justify-between");
     expect(source).toContain("data-testid={`food-order-badges-${order.id}`}");
+    expect(source).toContain('hasPermission(role || "staff", permissions || {}, "canVoidFoodOrders")');
   });
 
   it("8e. Quantity edits use one batch modification popup and can be saved without a reason", () => {

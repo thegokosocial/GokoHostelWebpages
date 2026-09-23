@@ -1066,6 +1066,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const canEditOrderItems = hasPermission(role || "staff", permissions || {}, "canEditFoodOrders")
     || hasPermission(role || "staff", permissions || {}, "canPlaceOrders")
     || hasPermission(role || "staff", permissions || {}, "canViewFoodOrders");
+  const canCancelFoodOrders = hasPermission(role || "staff", permissions || {}, "canVoidFoodOrders")
+    || hasPermission(role || "staff", permissions || {}, "canPlaceOrders")
+    || hasPermission(role || "staff", permissions || {}, "canViewFoodOrders");
   // Mixed groups show only the unpaid orders in the bill. Fully paid groups still
   // open their complete paid bill so Print/Bill/Order More remain available.
   const billOrders = useMemo(() => {
@@ -1749,7 +1752,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     const displayItems = effectiveItems.map((item) => pendingChanges[item.id]
                       ? { ...item, quantity: pendingChanges[item.id].newQty, lineTotal: pendingChanges[item.id].newQty * item.itemPrice }
                       : item);
-                    const canCancelOrder = order.status !== "cancelled" && foodAmountPaid(order) === 0 && order.items.some((item) => item.status !== "voided");
+                    const canCancelOrder = canCancelFoodOrders && order.status !== "cancelled" && foodAmountPaid(order) === 0 && order.items.some((item) => item.status !== "voided");
                     const draftGross = displayItems.filter((item) => item.status !== "voided").reduce((sum, item) => sum + item.lineTotal, 0);
                     const draftSubtotal = Math.max(0, draftGross - Math.min(order.discount || 0, draftGross));
                     const inferredTaxRate = order.subtotal > 0 ? (order.tax / order.subtotal) * 100 : 0;
