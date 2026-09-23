@@ -64,7 +64,7 @@ npm run preview:cf
 2. `npm test` for auth/stock/CMS/PMS; `npx tsc --noEmit`.
 3. Commit on `main` if you want history. GitHub CI tests/lints/`next build` and **does not ship**. Cloudflare **Workers Builds** on `goko-hostel-latest-webpage` **does** ship on push to `main` (`npm run cf:build` then `npx wrangler deploy`). Run `npx tsc --noEmit` first — a type error aborts that build (seen `4e62b55a` / `5b466f0`: `mode` used before assigned).
 4. Local Wrangler from a **worktree** (below) still works if Builds is red or you need a stamp without waiting.
-5. If new SQL: `CI=true npm run db:migrate:prod` around the same time.
+5. If new SQL: run `CI=true npm run db:migrate:prod` before the Worker build, then `npm run db:verify:prod`. Cloudflare `cf:build` and `deploy:cf` fail closed if any migration remains pending or D1 is unreachable.
 6. If Pi should get ops changes: pull/build on Pi (`npm run db:migrate:pi` skips CMS `0035` and splits `0041`; it **does** apply stay-payment `0042`).
 
 Do **not** run `drizzle-kit generate` expecting production SQL. Write `migrations/` by hand.
@@ -120,6 +120,7 @@ After deploy, spot-check:
 ```bash
 npx wrangler d1 migrations list goko-hostel-db --remote
 CI=true npm run db:migrate:prod
+npm run db:verify:prod             # required release gate; must report no pending migrations
 npx wrangler d1 execute goko-hostel-db --remote --command "SELECT name FROM d1_migrations ORDER BY name"
 ```
 

@@ -31,6 +31,12 @@ For every non-trivial code change, validate proportionally. At minimum for RBAC/
 
 Before every commit, inspect both staged and unstaged diffs. The commit must contain the matching code, permission maps, tests, and handbook updates for the behavior changed in that commit. Do not commit source-only RBAC/API/page changes. Run `git diff --cached --check` and the applicable validation commands before pushing.
 
+## Production schema release gate
+
+- A migration file being committed is not evidence that production D1 has it. For any change under `migrations/`, read the local maintainer instructions, run `CI=true npm run db:migrate:prod`, and then run `npm run db:verify:prod`.
+- `npm run cf:build` and `npm run deploy:cf` enforce the same production migration check and must fail closed when D1 is unreachable or has pending migrations. Do not bypass that failure or claim the Worker is released until the check passes.
+- Migration tests use disposable/local databases and cannot certify live D1. Live migration status must be verified separately and recorded in the ignored maintainer state file.
+
 ## Current RBAC expectations
 
 - `admin` bypasses permission maps.

@@ -87,6 +87,7 @@ describe("admin market-pricing workflows", () => {
     });
     q.getNextOrderNumber.mockResolvedValue("D266-11");
     q.createFoodOrder.mockResolvedValue([{ id: 99, orderNumber: "D266-11" }]);
+    q.getSetting.mockResolvedValue("0");
 
     const response = await POST(actionReq("placeOrderForGuest", {
       guestType: "walkin",
@@ -96,10 +97,10 @@ describe("admin market-pricing workflows", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ success: true, orderId: 99, orderNumber: "D266-11", total: 525 });
+    expect(await response.json()).toMatchObject({ success: true, orderId: 99, orderNumber: "D266-11", total: 500 });
     expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({
       guestName: "Pawan test",
-      total: 525,
+      total: 500,
       paymentStatus: "pending",
       createdBy: "Admin",
     }));
