@@ -139,6 +139,20 @@ describe("Kitchen listOrders workflows", () => {
     expect(json.data.orders).toEqual([{ id: 12, status: "placed", orderNumber: "K-12", hasModifications: false, items: [] }]);
   });
 
+  it("retries transient primary D1 reads instead of reporting the kitchen as unavailable", async () => {
+    kitchenMocks.getActiveFoodOrders
+      .mockRejectedValueOnce(new Error("D1_ERROR: database is temporarily busy"))
+      .mockResolvedValueOnce([{ id: 13, status: "placed", orderNumber: "K-13" }]);
+    kitchenMocks.getFoodOrderItemsBatch.mockResolvedValue(new Map([[13, []]]));
+    kitchenMocks.getMenuItemTagsByIds.mockResolvedValue(new Map());
+
+    const res = await POST(req({ password: "ok", action: "listOrders" }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(kitchenMocks.getActiveFoodOrders).toHaveBeenCalledTimes(2);
+    expect(json.data.orders).toEqual([{ id: 13, status: "placed", orderNumber: "K-13", hasModifications: false, items: [] }]);
+  });
+
   it("dedupes menu ids, skips non-numeric ids, maps tags, and flags modifications", async () => {
     kitchenMocks.getActiveFoodOrders.mockResolvedValue([{ id: 10, status: "placed", orderNumber: "K-1" }]);
     kitchenMocks.getFoodOrderItemsBatch.mockResolvedValue(new Map([

@@ -28,6 +28,7 @@ import { foodOrderItems, foodOrders, orderModifications } from "@/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { authenticateKitchen } from "@/lib/auth";
 import { foodTaxPercent } from "@/lib/foodLookup";
+import { dbRead } from "@/lib/dbRetry";
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,12 +42,14 @@ export async function POST(req: NextRequest) {
     const { role, displayName: actorName } = auth;
 
     if (action === "listOrders") {
-      const orders = await getActiveFoodOrders();
-      const itemsMap = await getFoodOrderItemsBatch(orders.map((o) => o.id));
+      // The board polls continuously. Retry each read once so a transient D1
+      // blip does not turn into an empty/unavailable kitchen for every role.
+      const orders = await dbRead(() => getActiveFoodOrders());
+      const itemsMap = await dbRead(() => getFoodOrderItemsBatch(orders.map((o) => o.id)));
       const tagIds = [...new Set(
         [...itemsMap.values()].flat().map((i) => i.menuItemId).filter((id): id is number => typeof id === "number"),
       )];
-      const menuItemTags = await getMenuItemTagsByIds(tagIds);
+      const menuItemTags = await dbRead(() => getMenuItemTagsByIds(tagIds));
 
       const orderIds = orders.map((o) => o.id);
       const modCountMap = new Map<number, number>();
@@ -84,7 +87,7 @@ export async function POST(req: NextRequest) {
         };
       });
 
-      const isBusy = (await getSetting("food_kitchen_busy")) === "true";
+      const isBusy = (await dbRead(() => getSetting("food_kitchen_busy"))) === "true";
 
       return NextResponse.json({
         success: true,
