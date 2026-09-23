@@ -59,11 +59,14 @@ export async function POST(req: NextRequest) {
         // temporarily unavailable during schema sync or database recovery.
         try {
           const db = getDb();
-          const modCounts = await db.select({
-            orderId: orderModifications.orderId,
-            count: sql<number>`COUNT(*)`,
-          }).from(orderModifications).where(inArray(orderModifications.orderId, orderIds)).groupBy(orderModifications.orderId);
-          for (const row of modCounts) modCountMap.set(row.orderId, row.count);
+          for (let start = 0; start < orderIds.length; start += 50) {
+            const batchIds = orderIds.slice(start, start + 50);
+            const modCounts = await db.select({
+              orderId: orderModifications.orderId,
+              count: sql<number>`COUNT(*)`,
+            }).from(orderModifications).where(inArray(orderModifications.orderId, batchIds)).groupBy(orderModifications.orderId);
+            for (const row of modCounts) modCountMap.set(row.orderId, row.count);
+          }
         } catch (error) {
           console.warn("Kitchen modification metadata unavailable:", error);
         }

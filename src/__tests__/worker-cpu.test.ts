@@ -39,7 +39,7 @@ describe("Workers CPU: zero-regression API paths", () => {
     expect(section!).toContain("hasModifications");
     expect(section!).toContain("isBusy");
     expect(section!).not.toContain("getAllMenuItems");
-    expect(section!).toContain("inArray(orderModifications.orderId, orderIds)");
+    expect(section!).toContain("inArray(orderModifications.orderId, batchIds)");
     expect(section!).toContain("if (orderIds.length > 0)");
     expect(section!.split("getFoodOrderItemsBatch").length - 1).toBe(1);
 
@@ -48,7 +48,8 @@ describe("Workers CPU: zero-regression API paths", () => {
     )?.[0];
     expect(tagsFn).toBeTruthy();
     expect(tagsFn!).toContain("if (ids.length === 0) return map");
-    expect(tagsFn!).toContain("inArray(menuItems.id, ids)");
+    expect(tagsFn!).toContain("uniqueInBatches(ids)");
+    expect(tagsFn!).toContain("inArray(menuItems.id, batch)");
   });
 
   it("keeps sold-out panel on getMenuItems and does not slow the kitchen poll", () => {

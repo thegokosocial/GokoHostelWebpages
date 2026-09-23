@@ -12,6 +12,20 @@ import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUD
 import { INVENTORY_AUDIT_ACTION_PREFIXES } from "@/lib/inventoryAudit";
 import type { AuditReferenceMaps } from "@/lib/auditPresentation";
 
+// Keep bulk IN queries below D1/SQLite's bound-parameter limit. Kitchen and
+// admin screens can load many orders at once, while callers still receive a
+// single combined result.
+const D1_IN_BATCH_SIZE = 50;
+
+function uniqueInBatches(ids: number[]): number[][] {
+  const uniqueIds = [...new Set(ids)];
+  const batches: number[][] = [];
+  for (let index = 0; index < uniqueIds.length; index += D1_IN_BATCH_SIZE) {
+    batches.push(uniqueIds.slice(index, index + D1_IN_BATCH_SIZE));
+  }
+  return batches;
+}
+
 // --- Check-ins ---
 
 export async function getCheckinsByMonth(month: string) {
@@ -1072,8 +1086,10 @@ export async function getMenuItemTagsByIds(ids: number[]): Promise<Map<number, s
   const map = new Map<number, string>();
   if (ids.length === 0) return map;
   const db = getDb();
-  const rows = await db.select({ id: menuItems.id, tags: menuItems.tags }).from(menuItems).where(inArray(menuItems.id, ids));
-  for (const row of rows) map.set(row.id, row.tags || "[]");
+  for (const batch of uniqueInBatches(ids)) {
+    const rows = await db.select({ id: menuItems.id, tags: menuItems.tags }).from(menuItems).where(inArray(menuItems.id, batch));
+    for (const row of rows) map.set(row.id, row.tags || "[]");
+  }
   return map;
 }
 
@@ -1203,12 +1219,14 @@ export async function getFoodOrderItems(orderId: number) {
 export async function getFoodOrderItemsBatch(orderIds: number[]) {
   if (orderIds.length === 0) return new Map<number, Awaited<ReturnType<typeof getFoodOrderItems>>>();
   const db = getDb();
-  const allItems = await db.select().from(foodOrderItems).where(inArray(foodOrderItems.orderId, orderIds));
-  const grouped = new Map<number, typeof allItems>();
-  for (const item of allItems) {
-    const list = grouped.get(item.orderId) || [];
-    list.push(item);
-    grouped.set(item.orderId, list);
+  const grouped = new Map<number, Awaited<ReturnType<typeof getFoodOrderItems>>>();
+  for (const batch of uniqueInBatches(orderIds)) {
+    const items = await db.select().from(foodOrderItems).where(inArray(foodOrderItems.orderId, batch));
+    for (const item of items) {
+      const list = grouped.get(item.orderId) || [];
+      list.push(item);
+      grouped.set(item.orderId, list);
+    }
   }
   return grouped;
 }
