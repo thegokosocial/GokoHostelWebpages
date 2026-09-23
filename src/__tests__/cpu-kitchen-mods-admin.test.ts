@@ -23,6 +23,7 @@ const kitchenMocks = vi.hoisted(() => ({
   getUserByUsername: vi.fn(),
   addStock: vi.fn(),
   decrementStock: vi.fn(),
+  decrementStockIfAvailable: vi.fn(),
   getMenuItemById: vi.fn(),
   getFoodOrderById: vi.fn(),
   areAllOrderItemsInventory: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("@/db/queries", () => ({
   getUserByUsername: kitchenMocks.getUserByUsername,
   addStock: kitchenMocks.addStock,
   decrementStock: kitchenMocks.decrementStock,
+  decrementStockIfAvailable: kitchenMocks.decrementStockIfAvailable,
   getMenuItemById: kitchenMocks.getMenuItemById,
   getFoodOrderById: kitchenMocks.getFoodOrderById,
   areAllOrderItemsInventory: kitchenMocks.areAllOrderItemsInventory,
@@ -230,6 +232,79 @@ describe("Kitchen bulk status workflow", () => {
     expect(res.status).toBe(400);
     expect(kitchenMocks.getFoodOrderById).not.toHaveBeenCalled();
     expect(kitchenMocks.updateFoodOrderStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("Kitchen food-order quantity and add-item inventory workflows", () => {
+  beforeEach(() => {
+    for (const fn of Object.values(kitchenMocks)) fn.mockReset();
+    kitchenMocks.authenticateKitchen.mockResolvedValue({ role: "staff", displayName: "Cook" });
+    kitchenMocks.getSetting.mockResolvedValue("0");
+    kitchenMocks.getMenuItemCategoryExemptions.mockResolvedValue(new Map());
+    kitchenMocks.updateFoodOrderItemQuantity.mockResolvedValue(undefined);
+    kitchenMocks.addOrderModification.mockResolvedValue(undefined);
+    kitchenMocks.updateFoodOrder.mockResolvedValue(undefined);
+    kitchenMocks.getDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ discount: 0 }] }) }) }),
+      insert: () => ({ values: async () => undefined }),
+    });
+  });
+
+  it("adds an inventory-tracked item only after an atomic stock reservation", async () => {
+    kitchenMocks.getMenuItemById.mockResolvedValue({
+      id: 5, name: "Shampoo", price: 2, priceOnRequest: 0, isAvailable: 1,
+      trackInventory: 1, stockQuantity: 4,
+    });
+    kitchenMocks.decrementStockIfAvailable.mockResolvedValue(true);
+    kitchenMocks.getFoodOrderItems.mockResolvedValue([{ id: 10, menuItemId: 1, quantity: 1, lineTotal: 5, status: "active" }]);
+
+    const res = await POST(req({ password: "ok", action: "addItemToOrder", orderId: 10, menuItemId: 5, quantity: 2 }));
+
+    expect(res.status).toBe(200);
+    expect(kitchenMocks.decrementStockIfAvailable).toHaveBeenCalledWith(5, 2);
+    expect(kitchenMocks.decrementStock).not.toHaveBeenCalled();
+    expect(kitchenMocks.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({ action: "item_added", newValue: "2" }));
+  });
+
+  it("does not add an inventory-tracked item when stock reservation fails", async () => {
+    kitchenMocks.getMenuItemById.mockResolvedValue({
+      id: 5, name: "Shampoo", price: 2, priceOnRequest: 0, isAvailable: 1,
+      trackInventory: 1, stockQuantity: 0,
+    });
+    kitchenMocks.decrementStockIfAvailable.mockResolvedValue(false);
+
+    const res = await POST(req({ password: "ok", action: "addItemToOrder", orderId: 10, menuItemId: 5, quantity: 1 }));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("Shampoo");
+    expect(kitchenMocks.getDb).not.toHaveBeenCalled();
+    expect(kitchenMocks.addOrderModification).not.toHaveBeenCalled();
+  });
+
+  it("allows a kitchen quantity edit without a reason and reserves only the increase", async () => {
+    kitchenMocks.getFoodOrderItems.mockResolvedValue([{ id: 20, menuItemId: 5, itemName: "Shampoo", itemPrice: 2, quantity: 2, lineTotal: 4, status: "active" }]);
+    kitchenMocks.getMenuItemById.mockResolvedValue({ id: 5, name: "Shampoo", trackInventory: 1, stockQuantity: 3 });
+    kitchenMocks.decrementStockIfAvailable.mockResolvedValue(true);
+
+    const res = await POST(req({ password: "ok", action: "updateItemQuantity", orderId: 10, orderItemId: 20, newQuantity: 3 }));
+
+    expect(res.status).toBe(200);
+    expect(kitchenMocks.decrementStockIfAvailable).toHaveBeenCalledWith(5, 1);
+    expect(kitchenMocks.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({
+      action: "quantity_changed", oldValue: "2", newValue: "3", reason: "",
+    }));
+  });
+
+  it("rejects a kitchen quantity edit that exceeds tracked stock", async () => {
+    kitchenMocks.getFoodOrderItems.mockResolvedValue([{ id: 20, menuItemId: 5, itemName: "Shampoo", itemPrice: 2, quantity: 2, lineTotal: 4, status: "active" }]);
+    kitchenMocks.getMenuItemById.mockResolvedValue({ id: 5, name: "Shampoo", trackInventory: 1, stockQuantity: 0 });
+    kitchenMocks.decrementStockIfAvailable.mockResolvedValue(false);
+
+    const res = await POST(req({ password: "ok", action: "updateItemQuantity", orderId: 10, orderItemId: 20, newQuantity: 3 }));
+
+    expect(res.status).toBe(409);
+    expect(kitchenMocks.updateFoodOrderItemQuantity).not.toHaveBeenCalled();
+    expect(kitchenMocks.addOrderModification).not.toHaveBeenCalled();
   });
 });
 

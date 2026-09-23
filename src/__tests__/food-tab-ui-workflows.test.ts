@@ -418,6 +418,22 @@ describe("food-tab UI checkout workflows", () => {
     expect(source).toContain("ring-2 ring-brand-green/25");
   });
 
+  it("8e. Quantity edits use modification wording and can be saved without a reason", () => {
+    const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
+    expect(source).toContain('`Modify "${item.itemName}" (${item.quantity} → ${pendingQtyChange.newQty})`');
+    expect(source).toContain('isModification={pendingQtyChange?.itemId === item.id}');
+    expect(source).toContain('isModification ? "Save modification" : "Cancel Item"');
+    expect(source).toContain('disabled={busy}');
+    expect(source).not.toContain('disabled={busy || !selectedReason}');
+  });
+
+  it("8f. Explicit item removal keeps cancellation wording", () => {
+    const source = readSrc("src/components/admin/AdminFoodOrders.tsx");
+    expect(source).toContain('`Cancel "${itemName}"?`');
+    expect(source).toContain('isModification ? `${itemName}?` : `Cancel "${itemName}"?`');
+    expect(source).toContain('isModification ? "Saving..." : "Cancelling..."');
+  });
+
   it("9. Inventory: no other src/components guest-checkout button besides the four UIs", () => {
     const files = walkTsx(join(ROOT, "src/components"));
     const handlerHits: string[] = [];

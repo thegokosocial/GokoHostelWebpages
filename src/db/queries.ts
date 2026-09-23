@@ -1440,6 +1440,21 @@ export async function decrementStock(menuItemId: number, quantity: number) {
   }).where(eq(menuItems.id, menuItemId));
 }
 
+/** Atomically reserves tracked inventory for an order edit or kitchen add. */
+export async function decrementStockIfAvailable(menuItemId: number, quantity: number): Promise<boolean> {
+  if (!Number.isInteger(quantity) || quantity <= 0) return true;
+  const db = getDb();
+  const updated = await db.update(menuItems).set({
+    stockQuantity: sql`${menuItems.stockQuantity} - ${quantity}`,
+    isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} - ${quantity} <= 0 THEN 0 ELSE ${menuItems.isAvailable} END`,
+  }).where(and(
+    eq(menuItems.id, menuItemId),
+    eq(menuItems.trackInventory, 1),
+    sql`${menuItems.stockQuantity} >= ${quantity}`,
+  )).returning({ id: menuItems.id });
+  return updated.length > 0;
+}
+
 export async function addStock(menuItemId: number, quantity: number) {
   const db = getDb();
   await db.update(menuItems).set({

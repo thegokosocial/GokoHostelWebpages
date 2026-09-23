@@ -18,6 +18,7 @@ import {
   getUserByUsername,
   addStock,
   decrementStock,
+  decrementStockIfAvailable,
   getMenuItemById,
   getFoodOrderById,
   areAllOrderItemsInventory,
@@ -210,9 +211,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "updateItemQuantity") {
-      const { orderId, orderItemId, newQuantity } = rest;
+      const { orderId, orderItemId, newQuantity, reason: qtyReason } = rest;
       if (!orderId || !orderItemId || newQuantity === undefined) {
         return NextResponse.json({ error: "Missing orderId, orderItemId, or newQuantity" }, { status: 400 });
+      }
+      if (!Number.isInteger(newQuantity) || newQuantity < 0) {
+        return NextResponse.json({ error: "newQuantity must be a non-negative whole number" }, { status: 400 });
       }
 
       const allItems = await getFoodOrderItems(orderId);
@@ -223,6 +227,17 @@ export async function POST(req: NextRequest) {
 
       const oldQty = targetItem.quantity;
       const qtyDiff = oldQty - (newQuantity > 0 ? newQuantity : 0);
+      let stockReserved = false;
+      if (newQuantity > oldQty) {
+        const menuItem = await getMenuItemById(targetItem.menuItemId);
+        if (!menuItem) return NextResponse.json({ error: "Menu item not found" }, { status: 404 });
+        if (menuItem.trackInventory) {
+          stockReserved = await decrementStockIfAvailable(targetItem.menuItemId, newQuantity - oldQty);
+          if (!stockReserved) {
+            return NextResponse.json({ error: `"${menuItem.name}" only has ${menuItem.stockQuantity} left in stock` }, { status: 409 });
+          }
+        }
+      }
 
       if (newQuantity <= 0) {
         await deleteFoodOrderItem(orderItemId);
@@ -232,7 +247,7 @@ export async function POST(req: NextRequest) {
           itemId: orderItemId,
           oldValue: String(oldQty),
           newValue: "0",
-          reason: "Quantity reduced to zero",
+          reason: typeof qtyReason === "string" ? qtyReason.trim() : "",
           modifiedBy: actorName,
         });
       } else {
@@ -243,7 +258,7 @@ export async function POST(req: NextRequest) {
           itemId: orderItemId,
           oldValue: String(oldQty),
           newValue: String(newQuantity),
-          reason: "",
+          reason: typeof qtyReason === "string" ? qtyReason.trim() : "",
           modifiedBy: actorName,
         });
       }
@@ -251,7 +266,7 @@ export async function POST(req: NextRequest) {
       // Restore or decrement inventory based on quantity change
       if (qtyDiff > 0) {
         await addStock(targetItem.menuItemId, qtyDiff);
-      } else if (qtyDiff < 0) {
+      } else if (qtyDiff < 0 && !stockReserved) {
         await decrementStock(targetItem.menuItemId, Math.abs(qtyDiff));
       }
 
@@ -275,7 +290,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "addItemToOrder") {
       const { orderId, menuItemId, quantity } = rest;
-      if (!orderId || !menuItemId || !quantity) {
+      if (!orderId || !menuItemId || !Number.isInteger(quantity) || quantity <= 0) {
         return NextResponse.json({ error: "Missing orderId, menuItemId, or quantity" }, { status: 400 });
       }
 
@@ -285,6 +300,9 @@ export async function POST(req: NextRequest) {
       }
       if (!menuItem.isAvailable) {
         return NextResponse.json({ error: "Menu item is not available" }, { status: 400 });
+      }
+      if (menuItem.trackInventory && !(await decrementStockIfAvailable(menuItem.id, quantity))) {
+        return NextResponse.json({ error: `"${menuItem.name}" only has ${menuItem.stockQuantity} left in stock` }, { status: 409 });
       }
 
       const db = getDb();
@@ -303,7 +321,7 @@ export async function POST(req: NextRequest) {
         status: "active",
       });
 
-      await decrementStock(menuItem.id, quantity);
+      if (!menuItem.trackInventory) await decrementStock(menuItem.id, quantity);
 
       await addOrderModification({
         orderId,

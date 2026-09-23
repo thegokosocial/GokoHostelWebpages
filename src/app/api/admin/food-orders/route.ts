@@ -24,6 +24,7 @@ import {
   getUserByUsername,
   getSetting,
   decrementStock,
+  decrementStockIfAvailable,
   restoreStock,
   addStock,
   areAllOrderItemsInventory,
@@ -551,6 +552,41 @@ export async function POST(req: NextRequest) {
             });
           }
 
+          const inventoryDeltas = new Map<number, number>();
+          const inventoryItems = new Map<number, { name: string; trackInventory: number; stockQuantity: number }>();
+          for (const change of normalizedChanges) {
+            const delta = change.quantity - change.item.quantity;
+            if (delta !== 0) inventoryDeltas.set(
+              change.item.menuItemId,
+              (inventoryDeltas.get(change.item.menuItemId) || 0) + delta,
+            );
+          }
+          for (const [menuItemId, delta] of inventoryDeltas) {
+            if (delta <= 0) continue;
+            const [menu] = await tx.select({
+              name: menuItems.name,
+              trackInventory: menuItems.trackInventory,
+              stockQuantity: menuItems.stockQuantity,
+            }).from(menuItems).where(eq(menuItems.id, menuItemId)).limit(1);
+            if (!menu) {
+              throw Object.assign(new Error("Menu item is no longer available"), { status: 409 });
+            }
+            inventoryItems.set(menuItemId, menu);
+            if (menu.trackInventory && menu.stockQuantity < delta) {
+              throw Object.assign(new Error(`"${menu.name}" only has ${menu.stockQuantity} left in stock`), { status: 409 });
+            }
+          }
+          for (const menuItemId of inventoryDeltas.keys()) {
+            if (inventoryItems.has(menuItemId)) continue;
+            const [menu] = await tx.select({
+              name: menuItems.name,
+              trackInventory: menuItems.trackInventory,
+              stockQuantity: menuItems.stockQuantity,
+            }).from(menuItems).where(eq(menuItems.id, menuItemId)).limit(1);
+            if (!menu) throw Object.assign(new Error("Menu item is no longer available"), { status: 409 });
+            inventoryItems.set(menuItemId, menu);
+          }
+
           const projectedItems = currentItems
             .filter((item: any) => item.status !== "voided")
             .map((item: any) => {
@@ -591,7 +627,7 @@ export async function POST(req: NextRequest) {
               await tx.update(foodOrderItems).set(syncUpdate({ status: "voided", updatedAt: now })).where(eq(foodOrderItems.id, item.id));
               await tx.insert(orderModifications).values(syncInsert({
                 orderId, action: "item_removed", itemId: item.id, oldValue: String(item.quantity), newValue: "0",
-                reason: change.reason || "Quantity reduced to zero", modifiedBy: actorName, createdAt: now,
+                reason: change.reason, modifiedBy: actorName, createdAt: now,
               }));
             } else {
               const itemUpdate: Record<string, unknown> = { quantity: change.quantity, lineTotal: change.quantity * change.price };
@@ -612,19 +648,25 @@ export async function POST(req: NextRequest) {
                 }));
               }
             }
-            if (delta !== 0) {
-              const menu = await tx.select({ trackInventory: menuItems.trackInventory }).from(menuItems).where(eq(menuItems.id, item.menuItemId)).limit(1);
-              if (menu[0]?.trackInventory) {
-                if (delta > 0) {
-                  await tx.update(menuItems).set({
-                    stockQuantity: sql`MAX(0, ${menuItems.stockQuantity} - ${delta})`,
-                    isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} - ${delta} <= 0 THEN 0 ELSE ${menuItems.isAvailable} END`,
-                  }).where(eq(menuItems.id, item.menuItemId));
-                } else {
-                  await tx.update(menuItems).set({ stockQuantity: sql`${menuItems.stockQuantity} + ${Math.abs(delta)}`, isAvailable: 1 })
-                    .where(eq(menuItems.id, item.menuItemId));
-                }
+          }
+
+          for (const [menuItemId, delta] of inventoryDeltas) {
+            if (!inventoryItems.get(menuItemId)?.trackInventory) continue;
+            if (delta > 0) {
+              const updatedStock = await tx.update(menuItems).set({
+                stockQuantity: sql`${menuItems.stockQuantity} - ${delta}`,
+                isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} - ${delta} <= 0 THEN 0 ELSE ${menuItems.isAvailable} END`,
+              }).where(and(
+                eq(menuItems.id, menuItemId),
+                eq(menuItems.trackInventory, 1),
+                sql`${menuItems.stockQuantity} >= ${delta}`,
+              )).returning({ id: menuItems.id });
+              if (updatedStock.length === 0) {
+                throw Object.assign(new Error("Inventory changed while the order was being edited. Reload and try again."), { status: 409 });
               }
+            } else if (delta < 0) {
+              await tx.update(menuItems).set({ stockQuantity: sql`${menuItems.stockQuantity} + ${Math.abs(delta)}`, isAvailable: 1 })
+                .where(and(eq(menuItems.id, menuItemId), eq(menuItems.trackInventory, 1)));
             }
           }
 
@@ -777,6 +819,9 @@ export async function POST(req: NextRequest) {
         if (!orderId || !orderItemId || newQuantity === undefined) {
           return NextResponse.json({ error: "Missing orderId, orderItemId, or newQuantity" }, { status: 400 });
         }
+        if (!Number.isInteger(newQuantity) || newQuantity < 0) {
+          return NextResponse.json({ error: "newQuantity must be a non-negative whole number" }, { status: 400 });
+        }
         const db = getDb();
 
         const allOrderItems = await getFoodOrderItems(orderId);
@@ -787,6 +832,12 @@ export async function POST(req: NextRequest) {
 
         const oldQty = targetItem.quantity;
         const qtyDiff = oldQty - (newQuantity > 0 ? newQuantity : 0);
+        let stockReserved = false;
+        let trackedMenuItem: { name: string; trackInventory: number; stockQuantity: number } | null = null;
+        if (newQuantity > oldQty) {
+          trackedMenuItem = await getMenuItemById(targetItem.menuItemId);
+          if (!trackedMenuItem) return NextResponse.json({ error: "Menu item not found" }, { status: 404 });
+        }
         const currentOrder = await getFoodOrderById(orderId);
         const projectedItems = allOrderItems
           .filter((item) => item.id !== orderItemId && item.status !== "voided")
@@ -801,16 +852,23 @@ export async function POST(req: NextRequest) {
         const paymentUpdate = paymentForEditedTotal(currentOrder, projectedTotal);
         if (paymentUpdate.error) return NextResponse.json({ error: paymentUpdate.error, requiresPaymentAdjustment: true }, { status: 409 });
 
+        if (newQuantity > oldQty && trackedMenuItem?.trackInventory) {
+          stockReserved = await decrementStockIfAvailable(targetItem.menuItemId, newQuantity - oldQty);
+          if (!stockReserved) {
+            return NextResponse.json({ error: `"${trackedMenuItem.name}" only has ${trackedMenuItem.stockQuantity} left in stock` }, { status: 409 });
+          }
+        }
+
         if (newQuantity <= 0) {
           await deleteFoodOrderItem(orderItemId);
-          await addOrderModification({ orderId, action: "item_removed", itemId: orderItemId, oldValue: String(oldQty), newValue: "0", reason: qtyReason || "Quantity reduced to zero", modifiedBy: actorName });
+          await addOrderModification({ orderId, action: "item_removed", itemId: orderItemId, oldValue: String(oldQty), newValue: "0", reason: typeof qtyReason === "string" ? qtyReason.trim() : "", modifiedBy: actorName });
         } else {
           await updateFoodOrderItemQuantity(orderItemId, newQuantity, targetItem.itemPrice);
           await addOrderModification({ orderId, action: "quantity_changed", itemId: orderItemId, oldValue: String(oldQty), newValue: String(newQuantity), reason: qtyReason || "", modifiedBy: actorName });
         }
 
         if (qtyDiff > 0) await addStock(targetItem.menuItemId, qtyDiff);
-        else if (qtyDiff < 0) await decrementStock(targetItem.menuItemId, Math.abs(qtyDiff));
+        else if (qtyDiff < 0 && !stockReserved) await decrementStock(targetItem.menuItemId, Math.abs(qtyDiff));
 
         const updItems = await getFoodOrderItems(orderId);
         const actItems = updItems.filter((i) => i.status !== "voided");
@@ -834,10 +892,10 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "orderIds required" }, { status: 400 });
         }
         if (new Set(orderIds).size !== orderIds.length) return NextResponse.json({ error: "Duplicate orderIds are not allowed" }, { status: 400 });
-        if (!reason) return NextResponse.json({ error: "reason required" }, { status: 400 });
         if (discountPercent == null && discountAmount == null) {
           return NextResponse.json({ error: "discountPercent or discountAmount required" }, { status: 400 });
         }
+        const discountReason = typeof reason === "string" ? reason.trim().slice(0, 240) : "";
 
         const existingOrders = await Promise.all(orderIds.map((orderId: number) => getFoodOrderById(orderId)));
         if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
@@ -885,7 +943,7 @@ export async function POST(req: NextRequest) {
             if (paymentUpdate.error) throw Object.assign(new Error(paymentUpdate.error), { status: 409 });
             await tx.update(foodOrders).set(syncUpdate({
               discount: orderDiscount,
-              discountReason: reason,
+              discountReason,
               discountBy: actorName,
               subtotal: newSubtotal,
               tax: newTax,
@@ -899,7 +957,7 @@ export async function POST(req: NextRequest) {
               action: "discount",
               oldValue: `₹${(od.grossSubtotal / 100).toFixed(0)}`,
               newValue: `₹${(newTotal / 100).toFixed(0)}`,
-              reason: `${reason} (discount ₹${(orderDiscount / 100).toFixed(0)})`,
+              reason: `${discountReason ? `${discountReason} ` : ""}(discount ₹${(orderDiscount / 100).toFixed(0)})`,
               modifiedBy: actorName,
               createdAt: new Date().toISOString(),
             }));
@@ -909,7 +967,7 @@ export async function POST(req: NextRequest) {
             username: actorName,
             action: "food_discount",
             target: `orders:${orderIds.join(",")}`,
-            details: `Discount ₹${(totalDiscount / 100).toFixed(0)} on discountable ₹${(discountableTotal / 100).toFixed(0)} of gross ₹${(grossTotal / 100).toFixed(0)}. Reason: ${reason}`,
+            details: `Discount ₹${(totalDiscount / 100).toFixed(0)} on discountable ₹${(discountableTotal / 100).toFixed(0)} of gross ₹${(grossTotal / 100).toFixed(0)}${discountReason ? `. Reason: ${discountReason}` : ""}`,
           });
         });
         return NextResponse.json({ success: true, role });

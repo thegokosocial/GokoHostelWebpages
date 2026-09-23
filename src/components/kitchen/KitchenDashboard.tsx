@@ -153,7 +153,7 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
     orderItemId: number;
     itemName: string;
   } | null>(null);
-  const [rejectReason, setRejectReason] = useState("Out of stock");
+  const [rejectReason, setRejectReason] = useState("");
   const [rejectCustom, setRejectCustom] = useState("");
   const [rejectLoading, setRejectLoading] = useState(false);
   const [bulkUpdatingStatus, setBulkUpdatingStatus] = useState<string | null>(null);
@@ -345,7 +345,7 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
           })
         );
         setRejectModal(null);
-        setRejectReason("Out of stock");
+        setRejectReason("");
         setRejectCustom("");
       } catch {
       } finally {
@@ -1130,7 +1130,7 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
                 <button
                   type="button"
                   onClick={handleReject}
-                  disabled={rejectLoading || (rejectReason === "Other" && !rejectCustom.trim())}
+                  disabled={rejectLoading}
                   className="flex-1 rounded-lg bg-red-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-50"
                 >
                   {rejectLoading ? "Rejecting..." : "Reject Item"}

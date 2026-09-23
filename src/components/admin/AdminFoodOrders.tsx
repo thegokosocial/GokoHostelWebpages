@@ -1846,7 +1846,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                             )}
                             {voidingItemId === item.id && (
                               <VoidReasonPopup
-                                itemName={pendingQtyChange?.itemId === item.id ? `Reduce "${item.itemName}" (${item.quantity} → ${pendingQtyChange.newQty})` : item.itemName}
+                                itemName={pendingQtyChange?.itemId === item.id ? `Modify "${item.itemName}" (${item.quantity} → ${pendingQtyChange.newQty})` : item.itemName}
+                                isModification={pendingQtyChange?.itemId === item.id}
                                 onVoid={(reason) => {
                                   if (pendingQtyChange?.itemId === item.id) {
                                     handleServedQtyChange(reason);
@@ -2107,8 +2108,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
 const VOID_REASONS = ["Burnt", "Wrong order", "Guest complaint", "Quality issue", "Out of stock", "Other"];
 
-function VoidReasonPopup({ itemName, onVoid, onCancel, busy }: {
+function VoidReasonPopup({ itemName, isModification = false, onVoid, onCancel, busy }: {
   itemName: string;
+  isModification?: boolean;
   onVoid: (reason: string) => void;
   onCancel: () => void;
   busy: boolean;
@@ -2122,7 +2124,9 @@ function VoidReasonPopup({ itemName, onVoid, onCancel, busy }: {
 
   return (
     <div className="mt-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-2.5 space-y-2">
-      <p className="text-xs font-medium text-red-700 dark:text-red-400">Cancel &quot;{itemName}&quot;?</p>
+      <p className="text-xs font-medium text-red-700 dark:text-red-400">
+        {isModification ? `${itemName}?` : `Cancel "${itemName}"?`}
+      </p>
       <div className="flex flex-wrap gap-1">
         {VOID_REASONS.map((r) => (
           <button
@@ -2150,10 +2154,10 @@ function VoidReasonPopup({ itemName, onVoid, onCancel, busy }: {
         <button
           type="button"
           onClick={() => onVoid(finalReason)}
-          disabled={busy || !selectedReason}
+          disabled={busy}
           className="rounded-md bg-red-500 px-3 py-1 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
         >
-          {busy ? "Cancelling..." : "Cancel Item"}
+          {busy ? (isModification ? "Saving..." : "Cancelling...") : (isModification ? "Save modification" : "Cancel Item")}
         </button>
         <button
           type="button"
@@ -4065,7 +4069,7 @@ function DiscountModal({
   const [mode, setMode] = useState<"percent" | "fixed">("percent");
   const [percentInput, setPercentInput] = useState("");
   const [fixedInput, setFixedInput] = useState("");
-  const [reason, setReason] = useState(DISCOUNT_REASONS[0]);
+  const [reason, setReason] = useState("");
   const [customReason, setCustomReason] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -4079,7 +4083,7 @@ function DiscountModal({
   const newTotal = Math.max(0, totalAmount - discountPaise);
   const finalReason = reason === "Other" ? customReason : reason;
 
-  const canApply = discountPaise > 0 && finalReason.trim().length > 0 && !saving;
+  const canApply = discountPaise > 0 && !saving;
 
   const handleApply = async () => {
     setSaving(true);
@@ -4203,6 +4207,7 @@ function DiscountModal({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               >
+                <option value="">No reason (optional)</option>
                 {DISCOUNT_REASONS.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}

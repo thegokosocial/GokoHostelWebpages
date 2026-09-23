@@ -5,7 +5,7 @@ const q = vi.hoisted(() => ({
   authenticateUser: vi.fn(), getFoodOrderById: vi.fn(), getFoodOrderItems: vi.fn(),
   getMenuItemCategoryExemptions: vi.fn(), getSetting: vi.fn(), updateFoodOrder: vi.fn(),
   addOrderModification: vi.fn(), addAuditEntry: vi.fn(), updateFoodOrderPayment: vi.fn(), updateFoodOrderStatus: vi.fn(),
-  updateFoodOrderItemQuantity: vi.fn(), deleteFoodOrderItem: vi.fn(), addStock: vi.fn(), decrementStock: vi.fn(),
+  updateFoodOrderItemQuantity: vi.fn(), deleteFoodOrderItem: vi.fn(), addStock: vi.fn(), decrementStock: vi.fn(), decrementStockIfAvailable: vi.fn(),
   restoreStock: vi.fn(),
   createFoodOrder: vi.fn(), addFoodOrderItems: vi.fn(), getNextOrderNumber: vi.fn(), getMenuItemById: vi.fn(),
   dispatchPush: vi.fn(), notificationFoodBody: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("@/db/queries", () => ({
   addAuditEntry: q.addAuditEntry, updateFoodOrderPayment: q.updateFoodOrderPayment,
   updateFoodOrderStatus: q.updateFoodOrderStatus,
   updateFoodOrderItemQuantity: q.updateFoodOrderItemQuantity, deleteFoodOrderItem: q.deleteFoodOrderItem,
-  addStock: q.addStock, decrementStock: q.decrementStock, restoreStock: q.restoreStock,
+  addStock: q.addStock, decrementStock: q.decrementStock, decrementStockIfAvailable: q.decrementStockIfAvailable, restoreStock: q.restoreStock,
   getFoodOrderItemsBatch: q.getFoodOrderItemsBatch,
   createFoodOrder: q.createFoodOrder, addFoodOrderItems: q.addFoodOrderItems,
   getNextOrderNumber: q.getNextOrderNumber, getMenuItemById: q.getMenuItemById,
@@ -68,6 +68,7 @@ beforeEach(() => {
   q.dispatchPush.mockResolvedValue(undefined);
   q.notificationFoodBody.mockReturnValue("New food order");
   q.getFoodOrderItemsBatch.mockResolvedValue(new Map());
+  q.getMenuItemById.mockResolvedValue({ id: 4, name: "Seasonal Fish", trackInventory: 0, stockQuantity: 0 });
   q.updateFoodOrderItemQuantity.mockImplementation(async (id: number, quantity: number, price: number) => Object.assign(pendingItem, { quantity, lineTotal: quantity * price }));
   q.getDb.mockReturnValue({
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [pendingItem] }) }) }),
@@ -371,6 +372,41 @@ describe("admin market-pricing workflows", () => {
     expect(q.createGuestReceipt).not.toHaveBeenCalled();
   });
 
+  it("reserves tracked stock before an admin quantity increase", async () => {
+    const trackedItem = { ...pendingItem, itemPrice: 200, quantity: 2, lineTotal: 400, pricingStatus: "fixed" };
+    q.getFoodOrderItems.mockResolvedValue([trackedItem]);
+    q.getMenuItemById.mockResolvedValue({ id: 4, name: "Shampoo", trackInventory: 1, stockQuantity: 3 });
+    q.getSetting.mockResolvedValue("0");
+    q.decrementStockIfAvailable.mockResolvedValue(true);
+
+    const response = await POST(actionReq("updateItemQuantity", {
+      orderId: 10, orderItemId: 20, newQuantity: 3,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(q.decrementStockIfAvailable).toHaveBeenCalledWith(4, 1);
+    expect(q.decrementStock).not.toHaveBeenCalled();
+    expect(q.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({
+      action: "quantity_changed", oldValue: "2", newValue: "3", reason: "",
+    }));
+  });
+
+  it("rejects an admin quantity increase when tracked stock is exhausted", async () => {
+    const trackedItem = { ...pendingItem, itemPrice: 200, quantity: 2, lineTotal: 400, pricingStatus: "fixed" };
+    q.getFoodOrderItems.mockResolvedValue([trackedItem]);
+    q.getMenuItemById.mockResolvedValue({ id: 4, name: "Shampoo", trackInventory: 1, stockQuantity: 0 });
+    q.decrementStockIfAvailable.mockResolvedValue(false);
+
+    const response = await POST(actionReq("updateItemQuantity", {
+      orderId: 10, orderItemId: 20, newQuantity: 3,
+    }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("Shampoo");
+    expect(q.updateFoodOrderItemQuantity).not.toHaveBeenCalled();
+    expect(q.addOrderModification).not.toHaveBeenCalled();
+  });
+
   it("rejects a quantity reduction that would make the order overpaid", async () => {
     const paidOrder = { ...order, paymentStatus: "paid", paymentMethod: "online", total: 10000, amountPaid: 10000, checkinId: null };
     const paidItem = { id: 20, orderId: 10, menuItemId: 4, itemName: "Seasonal Fish", itemPrice: 5000, quantity: 2, lineTotal: 10000, pricingStatus: "fixed", status: "active" };
@@ -464,6 +500,53 @@ describe("admin market-pricing workflows", () => {
     expect(retry.status).toBe(200);
     expect(await retry.json()).toMatchObject({ success: true, duplicate: true });
     expect(inserts.filter((value) => value.operationId === "edit-batch-001")).toHaveLength(1);
+  });
+
+  it("rejects a staged quantity increase above tracked stock before writing the edit batch", async () => {
+    const currentOrder = {
+      ...order,
+      updatedAt: "2026-09-23T06:00:00.000Z",
+      total: 200,
+      subtotal: 200,
+      tax: 0,
+      amountPaid: 0,
+      amountRefunded: 0,
+      paymentStatus: "pending",
+    };
+    const currentItem = {
+      id: 20, orderId: 10, menuItemId: 4, itemName: "Shampoo", itemPrice: 100,
+      quantity: 2, lineTotal: 200, pricingStatus: "fixed", status: "active", notes: "",
+    };
+    const inserts: Record<string, unknown>[] = [];
+    q.getFoodOrderById.mockResolvedValue(currentOrder);
+    q.getSetting.mockResolvedValue("0");
+    q.getMenuItemCategoryExemptions.mockResolvedValue(new Map());
+    (q.getDb as any).__selectCalls = 0;
+    q.getDb.mockReturnValue({
+      transaction: async (callback: (tx: any) => unknown) => callback({
+        select: () => ({ from: () => ({ where: () => ({
+          limit: async () => {
+            const calls = (q.getDb as any).__selectCalls = ((q.getDb as any).__selectCalls || 0) + 1;
+            if (calls === 1) return [];
+            if (calls === 2) return [currentOrder];
+            return [{ name: "Shampoo", trackInventory: 1, stockQuantity: 0 }];
+          },
+          then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve([currentItem]).then(resolve, reject),
+        }) }) }),
+        insert: () => ({ values: async (value: Record<string, unknown>) => { inserts.push(value); } }),
+        update: () => ({ set: () => ({ where: () => ({ returning: async () => [{ id: 10 }] }) }) }),
+      }),
+    });
+
+    const response = await POST(actionReq("saveOrderEdits", {
+      orderId: 10,
+      operationId: "edit-stock-001",
+      changes: [{ itemId: 20, quantity: 3 }],
+    }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("Shampoo");
+    expect(inserts).toHaveLength(0);
   });
 
   it("requires an exact refund for a paid reduction, then journals the audited refund atomically", async () => {
