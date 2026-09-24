@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { bookingWhatsAppNumber } from "@/lib/bookingWhatsApp";
-import { clearStaffWhatsAppDraft, parseStaffWhatsAppDraft, staffWhatsAppLinks, STAFF_WHATSAPP_TTL } from "@/lib/staffWhatsApp";
+import { clearStaffWhatsAppDraft, parseStaffWhatsAppDraft, staffWhatsAppFallback, staffWhatsAppLinks, STAFF_WHATSAPP_TTL } from "@/lib/staffWhatsApp";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import * as ts from "typescript";
@@ -14,8 +14,32 @@ describe("staff WhatsApp routing", () => {
     expect(query.get("phone")).toBe("447700900123");
     expect(query.get("text")).toBe(message);
     const fallback = decodeURIComponent(links.business.split("S.browser_fallback_url=")[1].split(";end")[0]);
-    expect(fallback).toBe("https://gokohostel.com/admin?section=reviews");
+    expect(fallback).toBe("https://gokohostel.com/admin?section=reviews&whatsappBusinessUnavailable=1");
+    expect(fallback).not.toContain("447700900123");
+    expect(fallback).not.toContain(encodeURIComponent(message));
     expect(new URL(links.defaultApp).searchParams.get("text")).toBe(message);
+  });
+  it.each(["bookings", "reviews"] as const)("marks and cleans the %s fallback without losing URL state", (section) => {
+    const links = staffWhatsAppLinks({ phone: "447700900123", message: "Hi", section }, "https://gokohostel.com");
+    const fallbackUrl = decodeURIComponent(links.business.split("S.browser_fallback_url=")[1].split(";end")[0]);
+    const result = staffWhatsAppFallback(`${fallbackUrl}&tab=active#guest`);
+    expect(result).toEqual({
+      unavailable: true,
+      hadMarker: true,
+      cleanUrl: `/admin?section=${section}&tab=active#guest`,
+    });
+  });
+  it("cleans invalid or copied fallback markers without reporting Business unavailable", () => {
+    expect(staffWhatsAppFallback("https://goko.test/admin?section=reviews&whatsappBusinessUnavailable=0")).toEqual({
+      unavailable: false,
+      hadMarker: true,
+      cleanUrl: "/admin?section=reviews",
+    });
+    expect(staffWhatsAppFallback("https://goko.test/admin?section=reviews")).toEqual({
+      unavailable: false,
+      hadMarker: false,
+      cleanUrl: "/admin?section=reviews",
+    });
   });
   it.each([
     ["11111 11111", "911111111111"], ["+1 202-555-0100", "12025550100"], ["+44 7700 900123", "447700900123"],
@@ -106,7 +130,7 @@ describe("staff WhatsApp workflows", () => {
   ])("prepares on %s with immediate launch=%s", (userAgent, launch, expected) => {
     const globals = {
       active: { current: true }, bookingWhatsAppNumber, username: "staff-a", STAFF_WHATSAPP_KEY: "draft",
-      setDraft: vi.fn(), setNotice: vi.fn(), setAttempted: vi.fn(), launchBusiness: vi.fn(),
+      setDraft: vi.fn(), setNotice: vi.fn(), setBusinessUnavailable: vi.fn(), setAttempted: vi.fn(), launchBusiness: vi.fn(),
       sessionStorage: { setItem: vi.fn() }, navigator: { userAgent },
     };
     const run = handler(provider, "prepare", globals);
@@ -137,6 +161,14 @@ describe("staff WhatsApp workflows", () => {
     expect(globals.window.open).not.toHaveBeenCalled();
     expect(globals.setNotice).toHaveBeenCalledWith(expect.stringContaining("could not open"));
     expect(parseStaffWhatsAppDraft(storage.get("draft")!, "admin")).toEqual(draft);
+  });
+  it("restores a valid fallback draft with an unavailable warning and retry state", () => {
+    const source = readFileSync(provider, "utf8");
+    expect(source).toContain("fallback.unavailable && saved");
+    expect(source).toContain("setAttempted(true)");
+    expect(source).toContain("setBusinessUnavailable(true)");
+    expect(source).toContain("WhatsApp Business isn&apos;t installed or available.");
+    expect(source).toContain("window.history.replaceState(window.history.state, \"\", fallback.cleanUrl)");
   });
   it("allows selectable text after clipboard denial", async () => {
     const setNotice = vi.fn();

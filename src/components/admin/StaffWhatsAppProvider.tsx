@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { bookingWhatsAppNumber } from "@/lib/bookingWhatsApp";
-import { clearStaffWhatsAppDraft, parseStaffWhatsAppDraft, staffWhatsAppLinks, STAFF_WHATSAPP_KEY, STAFF_WHATSAPP_TTL, type StaffWhatsAppDraft } from "@/lib/staffWhatsApp";
+import { clearStaffWhatsAppDraft, parseStaffWhatsAppDraft, staffWhatsAppFallback, staffWhatsAppLinks, STAFF_WHATSAPP_KEY, STAFF_WHATSAPP_TTL, type StaffWhatsAppDraft } from "@/lib/staffWhatsApp";
 
 type PrepareMessage = (phone: string, message: string, section: StaffWhatsAppDraft["section"], launch?: boolean) => void;
 const StaffWhatsAppContext = createContext<PrepareMessage | null>(null);
@@ -18,6 +18,7 @@ export function StaffWhatsAppProvider({ username, children }: { username: string
   const [draft, setDraft] = useState<StaffWhatsAppDraft | null>(null);
   const [android, setAndroid] = useState(false);
   const [notice, setNotice] = useState("");
+  const [businessUnavailable, setBusinessUnavailable] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
@@ -26,12 +27,18 @@ export function StaffWhatsAppProvider({ username, children }: { username: string
     setAndroid(/Android/i.test(navigator.userAgent));
     try {
       const saved = parseStaffWhatsAppDraft(sessionStorage.getItem(STAFF_WHATSAPP_KEY), username);
+      const fallback = staffWhatsAppFallback(window.location.href);
       setDraft(saved);
       if (!saved) clearStaffWhatsAppDraft();
+      if (fallback.unavailable && saved) {
+        setAttempted(true);
+        setBusinessUnavailable(true);
+      }
+      if (fallback.hadMarker) window.history.replaceState(window.history.state, "", fallback.cleanUrl);
     } catch { /* The message can still be kept in memory. */ }
   }, [username]);
 
-  const dismiss = () => { setDraft(null); clearStaffWhatsAppDraft(); setNotice(""); setAttempted(false); };
+  const dismiss = () => { setDraft(null); clearStaffWhatsAppDraft(); setNotice(""); setBusinessUnavailable(false); setAttempted(false); };
   useEffect(() => {
     if (!draft) return;
     const expire = () => {
@@ -68,6 +75,7 @@ export function StaffWhatsAppProvider({ username, children }: { username: string
     const value = { phone: normalized, message, section, owner: username, createdAt: Date.now() };
     setDraft(value);
     setNotice("");
+    setBusinessUnavailable(false);
     setAttempted(false);
     try { sessionStorage.setItem(STAFF_WHATSAPP_KEY, JSON.stringify(value)); } catch { /* Keep the open panel. */ }
     if (launch && /Android/i.test(navigator.userAgent)) launchBusiness(value);
@@ -89,6 +97,7 @@ export function StaffWhatsAppProvider({ username, children }: { username: string
             : "This device chooses which WhatsApp app or account opens. To use Business specifically, copy the message and number into WhatsApp Business."}</DialogDescription>
         </DialogHeader>
         {draft && <>
+          {businessUnavailable && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">WhatsApp Business isn&apos;t installed or available. Retry, copy the message, or open regular/default WhatsApp.</p>}
           <label className="grid gap-1">Phone number<input readOnly value={`+${draft.phone}`} className="rounded border p-2" /></label>
           <label className="grid gap-1">Prepared message<textarea readOnly value={draft.message} rows={7} className="w-full rounded border p-2" /></label>
           <div className="flex flex-wrap gap-2">
