@@ -4,7 +4,7 @@
 
 Menu/settings admin: `/api/admin/food` uses `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory`, and `canManageFoodSettings`. Admin bypasses all permissions.
 
-Food payment saves retain per-order balance allocations. Online allocations share a receipt operation ID so Account Activity shows one combined bank entry. Cash and split-cash portions are written prospectively to `cash_payment_events` using the net retained amount; food refunds append negative cash movements and payment corrections append linked adjustments.
+Food payment saves retain per-order balance allocations. Online allocations share a receipt operation ID so Account Activity shows one combined bank entry for whatever amount was confirmed in that Pay modal. Order Summary Bill **Pay · ₹pending** and Combined Bill **Pay** call `markOrderPaid` with every selected unpaid `orderIds` plus the modal `receiptId`; Dashboard checkout food pay passes an explicit `receiptId` too. Per-order Edit Payment / Mark Paid via `updatePaymentDetails` remains a separate collection. Cash and split-cash portions are written prospectively to `cash_payment_events` using the net retained amount; food refunds append negative cash movements and payment corrections append linked adjustments.
 
 Collecting an outstanding balance after Order More preserves earlier tender totals (cash followed by online becomes split). Payment batches reject stale balances and invalid fractional/negative cash amounts before recording additional collections. Cash corrections and their source balance updates commit together.
 

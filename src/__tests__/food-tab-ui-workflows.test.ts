@@ -391,6 +391,9 @@ describe("food-tab UI checkout workflows", () => {
     const dash = readSrc(DASHBOARD);
     expect(dash).toContain("if (!payRes.ok)");
     expect(dash).toContain("Could not record food payment");
+    expect(dash).toContain("receiptId: crypto.randomUUID()");
+    expect(dash).toContain('action: "markOrderPaid"');
+    expect(dash).toContain("orderIds");
     expect(dash.indexOf("if (!payRes.ok)")).toBeLessThan(dash.indexOf("await doCheckout(checkoutModal.bedIdx)"));
 
     await expect(dashboardPayThenCheckout([1, 2], async () => ({ ok: false }))).resolves.toEqual({ checkout: false });

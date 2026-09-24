@@ -141,4 +141,47 @@ describe("Account Activity payment-level grouping", () => {
     expect(new Set([...first.activity, ...second.activity].map((entry) => entry.id)).size).toBe(17);
     expect(first.balanceAsOf).toBe(194000);
   });
+
+  it("groups repaired multi-order receipts that share operation_id despite divergent receipt prefixes", async () => {
+    sqlite.exec(`
+      INSERT INTO food_orders (id, order_number, guest_name, total, amount_paid, payment_status, created_at, updated_at)
+        VALUES (225, 'D262-S13', 'Sourav N G', 20000, 20000, 'paid', '2026-09-23T13:00:00Z', '2026-09-23T13:30:10Z'),
+               (234, 'D262-S22', 'Sourav N G', 12000, 12000, 'paid', '2026-09-23T13:00:00Z', '2026-09-23T13:30:10Z'),
+               (243, 'D262-S31', 'Sourav N G', 14000, 14000, 'paid', '2026-09-23T13:00:00Z', '2026-09-23T13:30:10Z');
+      INSERT INTO guest_receipts
+        (receipt_id, operation_id, source_type, source_id, kind, account_id, amount, business_date, notes, created_by, created_at)
+        VALUES ('88d173b7:food:225', '88d173b7', 'food_order', 225, 'food', 1, 20000, '2026-09-23', 'Food order D262-S13', 'admin', '2026-09-23T13:30:10Z'),
+               ('d4effa60:food:234', '88d173b7', 'food_order', 234, 'food', 1, 12000, '2026-09-23', 'Food order D262-S22', 'admin', '2026-09-23T13:30:10Z'),
+               ('b48b2c27:food:243', '88d173b7', 'food_order', 243, 'food', 1, 14000, '2026-09-23', 'Food order D262-S31', 'admin', '2026-09-23T13:30:10Z');
+    `);
+
+    const body = await (await POST(request(1))).json();
+    const sourav = body.activity.find((row: { description?: string }) => row.description === "Food payment · Sourav N G");
+    expect(sourav).toMatchObject({
+      kind: "food",
+      amount: 46000,
+      reference: "D262-S13 + 2 more",
+    });
+    expect(body.activity.filter((row: { description?: string }) => row.description === "Food payment · Sourav N G")).toHaveLength(1);
+  });
+
+  it("shows Combined bill description when one operation covers multiple guests", async () => {
+    sqlite.exec(`
+      INSERT INTO food_orders (id, order_number, guest_name, total, amount_paid, payment_status, created_at, updated_at)
+        VALUES (301, 'D300-01', 'Guest A', 30000, 30000, 'paid', '2026-09-23T16:00:00Z', '2026-09-23T16:00:00Z'),
+               (302, 'D300-02', 'Guest B', 20000, 20000, 'paid', '2026-09-23T16:00:00Z', '2026-09-23T16:00:00Z');
+      INSERT INTO guest_receipts
+        (receipt_id, operation_id, source_type, source_id, kind, account_id, amount, business_date, notes, created_by, created_at)
+        VALUES ('combo:food:301', 'combo-op', 'food_order', 301, 'food', 1, 30000, '2026-09-23', 'Food order D300-01', 'Sunny', '2026-09-23T16:05:00Z'),
+               ('combo:food:302', 'combo-op', 'food_order', 302, 'food', 1, 20000, '2026-09-23', 'Food order D300-02', 'Sunny', '2026-09-23T16:05:00Z');
+    `);
+
+    const body = await (await POST(request(1))).json();
+    const combined = body.activity.find((row: { amount: number }) => row.amount === 50000);
+    expect(combined).toMatchObject({
+      kind: "food",
+      description: "Food payment · Combined bill",
+      reference: "D300-01 + 1 more",
+    });
+  });
 });

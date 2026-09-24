@@ -100,6 +100,8 @@ describe("Payment History", () => {
     expect(summary).toContain('border-l-orange-400');
     expect(summary).toContain('border-l-green-400');
     expect(summary).toContain('const unpaid = selectedGroupOrders.filter((o) => foodDue(o) > 0)');
+    expect(summary).toContain('action: "markOrderPaid", orderIds');
+    expect(summary).toContain("Pay · ₹{(actualGroupPending / 100).toFixed(0)}");
     expect(source).toContain('hasPermission(role, permissions, "canViewFoodOrders")');
     expect(summary).toContain('<OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />');
     expect(source).toContain('partial ? "Partial" : "Unpaid"');
@@ -121,6 +123,8 @@ describe("Payment History", () => {
     expect(summary).toContain('setEditingOrderId(null)');
     expect(summary).toContain('const canEditOrderItems = hasPermission');
     expect(summary).toContain('Payment History');
+    expect(summary).toContain('markGroupPaid');
+    expect(summary).toContain('receiptId');
   });
 
   it("preserves payment balances when bill items change", () => {

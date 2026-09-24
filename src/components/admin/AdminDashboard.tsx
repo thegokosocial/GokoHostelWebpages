@@ -190,7 +190,12 @@ export function AdminDashboard({
         }
       }
       if (orderIds.length > 0) {
-        const payRes = await foodApiCall({ action: "markOrderPaid", orderIds, paymentMethod: method });
+        const payRes = await foodApiCall({
+          action: "markOrderPaid",
+          orderIds,
+          paymentMethod: method,
+          receiptId: crypto.randomUUID(),
+        });
         if (!payRes.ok) {
           const data = await payRes.json().catch(() => ({ error: "Could not record food payment" }));
           showError(data.error || "Could not record food payment");

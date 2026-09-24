@@ -256,6 +256,95 @@ describe("food payment D1 persistence", () => {
     ]);
   });
 
+  it("shares one server-generated operation id when receiptId is omitted", async () => {
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, guest_name, total, updated_at) VALUES (?, ?, ?, ?, ?)").run(11, "F-11", "Test Guest", 600, "2026-09-22T16:00:00.000Z");
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, guest_name, total, updated_at) VALUES (?, ?, ?, ?, ?)").run(12, "F-12", "Test Guest", 200, "2026-09-22T16:00:00.000Z");
+    q.getFoodOrderById.mockImplementation(async (id: number) => ({
+      id, orderNumber: `F-${id}`, guestName: "Test Guest", status: "placed", paymentStatus: "pending",
+      total: id === 10 ? 400 : id === 11 ? 600 : 200,
+    }));
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([
+      [10, [{ status: "active", pricingStatus: "fixed" }]],
+      [11, [{ status: "active", pricingStatus: "fixed" }]],
+      [12, [{ status: "active", pricingStatus: "fixed" }]],
+    ]));
+
+    const response = await POST(request({ orderIds: [10, 11, 12], paymentMethod: "online", onlineAccountId: 7 }));
+
+    expect(response.status).toBe(200);
+    const rows = sqlite.prepare("SELECT operation_id, amount, receipt_id FROM guest_receipts ORDER BY source_id").all() as Array<{
+      operation_id: string; amount: number; receipt_id: string;
+    }>;
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((row) => row.operation_id)).size).toBe(1);
+    expect(rows.reduce((sum, row) => sum + row.amount, 0)).toBe(1200);
+    expect(rows.every((row) => row.receipt_id.startsWith(`${rows[0].operation_id}:food:`))).toBe(true);
+    expect(sqlite.prepare("SELECT target FROM audit_log WHERE action = 'food_order_paid'").get()).toEqual({
+      target: "orders:10,11,12",
+    });
+  });
+
+  it("shares one cash operation and reference snapshot across a multi-order pay without receiptId", async () => {
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, guest_name, total, updated_at) VALUES (?, ?, ?, ?, ?)").run(11, "F-11", "Sourav N G", 14000, "2026-09-22T16:00:00.000Z");
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, guest_name, total, updated_at) VALUES (?, ?, ?, ?, ?)").run(12, "F-12", "Sourav N G", 20000, "2026-09-22T16:00:00.000Z");
+    sqlite.prepare("UPDATE food_orders SET total = 12000, guest_name = 'Sourav N G' WHERE id = 10").run();
+    q.getFoodOrderById.mockImplementation(async (id: number) => ({
+      id, orderNumber: `F-${id}`, guestName: "Sourav N G", status: "placed", paymentStatus: "pending",
+      amountPaid: 0, amountRefunded: 0,
+      total: id === 10 ? 12000 : id === 11 ? 14000 : 20000,
+    }));
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([
+      [10, [{ status: "active", pricingStatus: "fixed" }]],
+      [11, [{ status: "active", pricingStatus: "fixed" }]],
+      [12, [{ status: "active", pricingStatus: "fixed" }]],
+    ]));
+
+    const response = await POST(request({
+      orderIds: [10, 11, 12], paymentMethod: "cash", cashReceived: 46000, changeGiven: 0,
+    }));
+
+    expect(response.status).toBe(200);
+    const events = sqlite.prepare(
+      "SELECT operation_id, amount_paise, reference_snapshot, guest_name_snapshot FROM cash_payment_events ORDER BY source_id",
+    ).all() as Array<{
+      operation_id: string; amount_paise: number; reference_snapshot: string; guest_name_snapshot: string;
+    }>;
+    expect(events).toHaveLength(3);
+    expect(new Set(events.map((event) => event.operation_id)).size).toBe(1);
+    expect(events.every((event) => event.reference_snapshot === "F-10 + 2 more")).toBe(true);
+    expect(events.every((event) => event.guest_name_snapshot === "Sourav N G")).toBe(true);
+    expect(events.reduce((sum, event) => sum + event.amount_paise, 0)).toBe(46000);
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM guest_receipts").get()).toEqual({ count: 0 });
+  });
+
+  it("shares one operation id for a multi-guest Combined Bill online pay", async () => {
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, guest_name, total, updated_at) VALUES (?, ?, ?, ?, ?)").run(11, "F-11", "Guest A", 600, "2026-09-22T16:00:00.000Z");
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, guest_name, total, updated_at) VALUES (?, ?, ?, ?, ?)").run(12, "F-12", "Guest B", 200, "2026-09-22T16:00:00.000Z");
+    q.getFoodOrderById.mockImplementation(async (id: number) => ({
+      id,
+      orderNumber: `F-${id}`,
+      guestName: id === 10 ? "Guest A" : id === 11 ? "Guest A" : "Guest B",
+      status: "placed",
+      paymentStatus: "pending",
+      total: id === 10 ? 400 : id === 11 ? 600 : 200,
+    }));
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([
+      [10, [{ status: "active", pricingStatus: "fixed" }]],
+      [11, [{ status: "active", pricingStatus: "fixed" }]],
+      [12, [{ status: "active", pricingStatus: "fixed" }]],
+    ]));
+
+    const response = await POST(request({
+      orderIds: [10, 11, 12], paymentMethod: "online", onlineAccountId: 7, receiptId: "combined-bill-1",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(sqlite.prepare("SELECT DISTINCT operation_id FROM guest_receipts").all()).toEqual([
+      { operation_id: "combined-bill-1" },
+    ]);
+    expect(sqlite.prepare("SELECT SUM(amount) AS total FROM guest_receipts").get()).toEqual({ total: 1200 });
+  });
+
   it("collects only the outstanding balance for a partially paid order", async () => {
     sqlite.prepare("UPDATE food_orders SET amount_paid = 200, payment_status = 'partial' WHERE id = 10").run();
     q.getFoodOrderById.mockResolvedValue({ id: 10, orderNumber: "F-10", status: "placed", paymentStatus: "partial", amountPaid: 200, total: 400 });
