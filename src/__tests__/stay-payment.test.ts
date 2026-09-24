@@ -216,6 +216,8 @@ describe("layout / extract", () => {
     const bookingsApi = readFileSync("src/app/api/admin/bookings/route.ts", "utf8");
     expect(bookingsApi).toContain("prepaidCheckInWrite");
     expect(bookingsApi).toContain("prepaidCheckInRollback");
+    expect(bookingsApi).toContain("isPrepaidStatus(detail.booking.paymentStatus)");
+    expect(bookingsApi).toContain("recognizePlatformBooking");
     expect(bookingsApi).not.toContain("refundPaise / 100");
   });
   it("food orders import the shared modal", () => {

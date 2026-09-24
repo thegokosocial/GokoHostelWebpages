@@ -1101,7 +1101,7 @@ export async function POST(req: NextRequest) {
         if (!bookingUpdatedInJournal) await updateBookingFull(bookingId, updateData);
         if (receiptData) await createGuestReceipt({ ...receiptData, sourceType: "booking", sourceId: bookingId, createdBy: actingUser });
       }
-      if (prepaidRecorded > 0) {
+      if (isPrepaidStatus(detail.booking.paymentStatus)) {
         try {
           await recognizePlatformBooking({ ...detail.booking, id: bookingId }, actingUser);
         } catch (error) {

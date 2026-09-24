@@ -1,12 +1,64 @@
 import { describe, expect, it } from "vitest";
-import { allocatePlatformSettlementBatch, bookingAmountsFromRaw, expectedNetPaise, gatewayExpectedNetPaise, parsePlatformAmounts, rupeesToPaise, subtractPlatformAmounts } from "@/lib/platformReceivables";
+import { allocatePlatformSettlementBatch, applyManualGatewayFees, bookingAmountsFromRaw, expectedNetPaise, gatewayExpectedNetPaise, mergeProviderGatewayFees, parsePlatformAmounts, PLATFORM_RECEIVABLE_BACKFILL_FROM, recognizeMissingPlatformBookings, rupeesToPaise, subtractPlatformAmounts } from "@/lib/platformReceivables";
 import { razorpayPaymentSchema } from "@/lib/razorpay";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 describe("platform receivables money rules", () => {
   it("deducts Razorpay fee, fee tax and refunds from website settlement expectations", () => {
     expect(gatewayExpectedNetPaise(10000, 500, 250, 45)).toBe(9205);
     expect(gatewayExpectedNetPaise(10000, 500, null, 45)).toBeNull();
     expect(gatewayExpectedNetPaise(10000, 500, 250, null)).toBeNull();
+  });
+
+  it("lets Razorpay provider fee/tax overwrite stored values including prior manual entry", () => {
+    const merged = mergeProviderGatewayFees({ feePaise: 100, taxPaise: 18 }, { fee: 236, tax: 36 });
+    expect(merged).toEqual({ feePaise: 236, taxPaise: 36, changed: true });
+    expect(mergeProviderGatewayFees({ feePaise: 100, taxPaise: null }, { fee: null, tax: 36 }))
+      .toEqual({ feePaise: 100, taxPaise: 36, changed: true });
+    expect(mergeProviderGatewayFees({ feePaise: 100, taxPaise: 18 }, { fee: undefined, tax: undefined }).changed).toBe(false);
+  });
+
+  it("allows manual gateway fee/tax only while the field is still null", () => {
+    expect(applyManualGatewayFees({ feePaise: null, taxPaise: null }, { feePaise: 236, taxPaise: 36 }))
+      .toEqual({ feePaise: 236, taxPaise: 36 });
+    expect(applyManualGatewayFees({ feePaise: 100, taxPaise: null }, { taxPaise: 18 }))
+      .toEqual({ feePaise: 100, taxPaise: 18 });
+    expect(() => applyManualGatewayFees({ feePaise: 100, taxPaise: null }, { feePaise: 200 }))
+      .toThrow(/already verified/);
+    expect(() => applyManualGatewayFees({ feePaise: null, taxPaise: null }, {}))
+      .toThrow(/Enter a pending/);
+  });
+
+  it("treats zero fee and tax as verified provider evidence", () => {
+    const merged = mergeProviderGatewayFees({ feePaise: null, taxPaise: null }, { fee: 0, tax: 0 });
+    expect(merged).toEqual({ feePaise: 0, taxPaise: 0, changed: true });
+    expect(gatewayExpectedNetPaise(10000, 0, 0, 0)).toBe(10000);
+    expect(applyManualGatewayFees({ feePaise: null, taxPaise: null }, { feePaise: 0, taxPaise: 0 }))
+      .toEqual({ feePaise: 0, taxPaise: 0 });
+  });
+
+  it("rejects backfill start dates before the Sep 20 floor", async () => {
+    await expect(recognizeMissingPlatformBookings("admin", "2026-09-19"))
+      .rejects.toThrow(/on or after 2026-09-20/);
+    await expect(recognizeMissingPlatformBookings("admin", "not-a-date"))
+      .rejects.toThrow(/on or after 2026-09-20/);
+  });
+
+  it("wires platform settlement fee and recognition actions to the documented permissions", () => {
+    expect(PLATFORM_RECEIVABLE_BACKFILL_FROM).toBe("2026-09-20");
+    const route = readFileSync(join(process.cwd(), "src/app/api/admin/platform-settlements/route.ts"), "utf8");
+    expect(route).toContain('adjustActions = new Set(["adjust", "setWebsiteFees", "recognizeMissing"])');
+    expect(route).toContain('action === "refreshWebsiteFees"');
+    expect(route).toContain('from "@/lib/websiteGatewayFees"');
+    expect(route).not.toContain('from "@/lib/nativeGuestCheckout"');
+    const ui = readFileSync(join(process.cwd(), "src/components/admin/PlatformReceivables.tsx"), "utf8");
+    expect(ui).toContain('call("refreshWebsiteFees"');
+    expect(ui).toContain('call("setWebsiteFees"');
+    expect(ui).toContain('call("recognizeMissing")');
+    const checkIn = readFileSync(join(process.cwd(), "src/app/api/admin/bookings/route.ts"), "utf8");
+    expect(checkIn).toMatch(/if \(isPrepaidStatus\(detail\.booking\.paymentStatus\)\)[\s\S]*recognizePlatformBooking/);
+    expect(checkIn).not.toMatch(/if \(prepaidRecorded > 0\)[\s\S]{0,80}recognizePlatformBooking/);
   });
   it("converts decimal rupees exactly", () => {
     expect(rupeesToPaise("450")).toBe(45000);

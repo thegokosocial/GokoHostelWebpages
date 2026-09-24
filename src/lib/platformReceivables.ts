@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   accounts,
@@ -73,6 +73,48 @@ export function rupeesToPaise(value: unknown): number {
 export function gatewayExpectedNetPaise(amountPaise: number, refundedPaise: number, feePaise: number | null, taxPaise: number | null): number | null {
   if (feePaise == null || taxPaise == null) return null;
   return amountPaise - refundedPaise - feePaise - taxPaise;
+}
+
+/** Hard backfill floor for missing OTA recognition (inclusive stay check-in date). */
+export const PLATFORM_RECEIVABLE_BACKFILL_FROM = "2026-09-20";
+
+type GatewayFeePair = { feePaise: number | null; taxPaise: number | null };
+
+/** Provider non-null fee/tax overwrite stored values; omitted/null provider fields keep prior (including manual). */
+export function mergeProviderGatewayFees(
+  existing: GatewayFeePair,
+  provider: { fee?: number | null; tax?: number | null },
+): GatewayFeePair & { changed: boolean } {
+  const feePaise = provider.fee != null ? provider.fee : existing.feePaise;
+  const taxPaise = provider.tax != null ? provider.tax : existing.taxPaise;
+  return {
+    feePaise,
+    taxPaise,
+    changed: feePaise !== existing.feePaise || taxPaise !== existing.taxPaise,
+  };
+}
+
+/** Manual entry only fills still-null fields; never overwrites verified provider/manual values. */
+export function applyManualGatewayFees(
+  existing: GatewayFeePair,
+  manual: { feePaise?: number | null; taxPaise?: number | null },
+): GatewayFeePair {
+  let feePaise = existing.feePaise;
+  let taxPaise = existing.taxPaise;
+  if (manual.feePaise !== undefined && manual.feePaise !== null) {
+    if (existing.feePaise != null) throw new Error("Gateway fee is already verified and cannot be overwritten manually");
+    if (!Number.isSafeInteger(manual.feePaise) || manual.feePaise < 0) throw new Error("Invalid gateway fee");
+    feePaise = manual.feePaise;
+  }
+  if (manual.taxPaise !== undefined && manual.taxPaise !== null) {
+    if (existing.taxPaise != null) throw new Error("Gateway tax is already verified and cannot be overwritten manually");
+    if (!Number.isSafeInteger(manual.taxPaise) || manual.taxPaise < 0) throw new Error("Invalid gateway tax");
+    taxPaise = manual.taxPaise;
+  }
+  if (feePaise === existing.feePaise && taxPaise === existing.taxPaise) {
+    throw new Error("Enter a pending gateway fee or tax value");
+  }
+  return { feePaise, taxPaise };
 }
 
 export function expectedNetPaise(amounts: PlatformAmounts, policy: Record<string, unknown> = {}): number {
@@ -448,4 +490,63 @@ export function bookingAmountsFromRaw(rawData: string | null | undefined, fallba
     tcs: Number(amount.tcs ?? 0),
     otherDeductions: Number(amount.otherDeductions ?? 0),
   });
+}
+
+/**
+ * Recognize prepaid checked-in stays from `fromDate` (inclusive check-in date) that lack a
+ * recognition journal row for their current booking cycle. Default floor: 2026-09-20.
+ */
+export async function recognizeMissingPlatformBookings(
+  actor = "system",
+  fromDate = PLATFORM_RECEIVABLE_BACKFILL_FROM,
+) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || fromDate < PLATFORM_RECEIVABLE_BACKFILL_FROM) {
+    throw new Error(`Backfill start date must be on or after ${PLATFORM_RECEIVABLE_BACKFILL_FROM}`);
+  }
+  const db = getDb();
+  const candidates = await db.select({
+    id: bookings.id,
+    bookingCycle: bookings.bookingCycle,
+    platform: bookings.platform,
+    paymentStatus: bookings.paymentStatus,
+    amountTotal: bookings.amountTotal,
+    amountTax: bookings.amountTax,
+    amountBeforeTax: bookings.amountBeforeTax,
+    currency: bookings.currency,
+    rawData: bookings.rawData,
+  }).from(bookings).where(and(
+    eq(bookings.paymentStatus, "prepaid"),
+    gte(bookings.checkinDate, fromDate),
+    sql`COALESCE(${bookings.checkedInAt}, '') != ''`,
+  ));
+  if (!candidates.length) return { created: 0, skipped: 0, reasons: {} as Record<string, number> };
+
+  const recognized = new Set<string>();
+  const existing = await collectInBatches(candidates.map((row) => row.id), (batch) =>
+    db.select({
+      bookingId: platformReceivableEntries.bookingId,
+      bookingCycle: platformReceivableEntries.bookingCycle,
+    }).from(platformReceivableEntries).where(and(
+      inArray(platformReceivableEntries.bookingId, batch),
+      eq(platformReceivableEntries.entryType, "recognition"),
+    )));
+  for (const row of existing) recognized.add(`${row.bookingId}:${row.bookingCycle || 1}`);
+
+  let created = 0;
+  let skipped = 0;
+  const reasons: Record<string, number> = {};
+  const bump = (reason: string) => { reasons[reason] = (reasons[reason] || 0) + 1; skipped += 1; };
+
+  for (const booking of candidates) {
+    const cycle = booking.bookingCycle || 1;
+    if (recognized.has(`${booking.id}:${cycle}`)) { bump("already-recognized"); continue; }
+    const result = await recognizePlatformBooking(booking, actor);
+    if (result.created) {
+      created += 1;
+      recognized.add(`${booking.id}:${cycle}`);
+    } else {
+      bump(result.reason || "skipped");
+    }
+  }
+  return { created, skipped, reasons, fromDate };
 }

@@ -15,7 +15,7 @@ type Settlement = { id: number; platformKey: string; payoutDate: string; actualA
 function todayIST(): string { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()); }
 const rupees = (amount: number | null | undefined) => amount == null ? "Pending" : `₹${(amount / 100).toFixed(2)}`;
 
-export function PlatformReceivables({ password, username }: { password: string; username?: string; role: Role }) {
+export function PlatformReceivables({ password, username }: { password: string; username?: string; role?: Role }) {
   const { showError, showSuccess } = useAdminToast();
   const [rows, setRows] = useState<PlatformRow[]>([]);
   const [websitePayments, setWebsitePayments] = useState<WebsiteRow[]>([]);
@@ -24,6 +24,7 @@ export function PlatformReceivables({ password, username }: { password: string; 
   const [settlementId, setSettlementId] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [feeDrafts, setFeeDrafts] = useState<Record<string, { fee: string; tax: string }>>({});
   const [form, setForm] = useState({ platform: "Razorpay Website", amount: "", payoutDate: todayIST(), bankAccountId: "", reference: "" });
   const [busy, setBusy] = useState(false);
 
@@ -44,6 +45,7 @@ export function PlatformReceivables({ password, username }: { password: string; 
 
   const currentSettlement = settlements.find((item) => String(item.id) === settlementId);
   const razorpayPayout = currentSettlement?.platformKey === "razorpay-website";
+  const pendingWebsite = websitePayments.filter((row) => row.feePaise == null || row.taxPaise == null);
   const createSettlement = async () => {
     setBusy(true);
     try {
@@ -76,12 +78,67 @@ export function PlatformReceivables({ password, username }: { password: string; 
     } catch (error) { showError(error instanceof Error ? error.message : "Could not allocate payout"); }
     finally { setBusy(false); }
   };
+  const refreshFees = async (paymentId?: string) => {
+    setBusy(true);
+    try {
+      const data = await call("refreshWebsiteFees", paymentId ? { paymentId } : {});
+      if (paymentId) {
+        showSuccess(data.stillPending
+          ? "Razorpay refreshed; fee/tax still pending — enter manually if the provider has no values yet"
+          : "Gateway fee and tax verified from Razorpay");
+      } else {
+        showSuccess(`Refreshed ${data.attempted || 0} pending payment(s); ${data.updated || 0} updated, ${data.stillPending || 0} still pending`);
+      }
+      await load();
+    } catch (error) { showError(error instanceof Error ? error.message : "Could not refresh gateway fees"); }
+    finally { setBusy(false); }
+  };
+  const saveManualFees = async (paymentId: string) => {
+    const draft = feeDrafts[paymentId] || { fee: "", tax: "" };
+    setBusy(true);
+    try {
+      await call("setWebsiteFees", {
+        paymentId,
+        ...(draft.fee.trim() ? { fee: draft.fee.trim() } : {}),
+        ...(draft.tax.trim() ? { tax: draft.tax.trim() } : {}),
+      });
+      showSuccess("Gateway fee/tax saved");
+      setFeeDrafts((current) => { const next = { ...current }; delete next[paymentId]; return next; });
+      await load();
+    } catch (error) { showError(error instanceof Error ? error.message : "Could not save gateway fees"); }
+    finally { setBusy(false); }
+  };
+  const recognizeMissing = async () => {
+    setBusy(true);
+    try {
+      const data = await call("recognizeMissing");
+      showSuccess(`Recognized ${data.created || 0} prepaid OTA booking(s) since ${data.fromDate || "2026-09-20"} (${data.skipped || 0} skipped)`);
+      await load();
+    } catch (error) { showError(error instanceof Error ? error.message : "Could not recognize missing receivables"); }
+    finally { setBusy(false); }
+  };
   const bookingDetails = (booking: Booking) => <><strong>{booking?.guestName || "Guest details unavailable"}</strong><br />{booking?.gokoBookingId || booking?.bookingRef || "No booking reference"} · {booking?.checkinDate || "—"} to {booking?.checkoutDate || "—"}</>;
+  const feeControls = (row: WebsiteRow) => {
+    const pendingFee = row.feePaise == null;
+    const pendingTax = row.taxPaise == null;
+    if (!pendingFee && !pendingTax) {
+      return <span>Gateway fee {rupees(row.feePaise)}<br />Gateway tax {rupees(row.taxPaise)}</span>;
+    }
+    const draft = feeDrafts[row.paymentId] || { fee: "", tax: "" };
+    return <div className="space-y-2 text-xs">
+      <div>Gateway fee {pendingFee ? <Input className="mt-1 h-8 w-28" aria-label={`Gateway fee for ${row.paymentId}`} placeholder="₹ fee" inputMode="decimal" value={draft.fee} onChange={(e) => setFeeDrafts((c) => ({ ...c, [row.paymentId]: { ...draft, fee: e.target.value } }))} /> : rupees(row.feePaise)}</div>
+      <div>Gateway tax {pendingTax ? <Input className="mt-1 h-8 w-28" aria-label={`Gateway tax for ${row.paymentId}`} placeholder="₹ tax" inputMode="decimal" value={draft.tax} onChange={(e) => setFeeDrafts((c) => ({ ...c, [row.paymentId]: { ...draft, tax: e.target.value } }))} /> : rupees(row.taxPaise)}</div>
+      <div className="flex flex-wrap gap-1">
+        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => refreshFees(row.paymentId)}>Refresh</Button>
+        <Button type="button" size="sm" disabled={busy || (!draft.fee.trim() && !draft.tax.trim())} onClick={() => saveManualFees(row.paymentId)}>Save</Button>
+      </div>
+    </div>;
+  };
 
   return <div className="space-y-5">
     <div className="rounded-xl border border-brand-mist bg-white p-4 dark:bg-card">
       <h3 className="font-semibold text-brand-green">Record platform or website payout</h3>
-      <p className="mt-1 text-xs text-brand-green-dark/60">Records one real bank receipt on the payout date. Website gateway fees are shown only when verified by provider evidence.</p>
+      <p className="mt-1 text-xs text-brand-green-dark/60">Records one real bank receipt on the payout date. Website gateway fees come from Razorpay when verified; enter manually only while still pending. Provider values overwrite manual on refresh.</p>
       <div className="mt-3 grid gap-2 md:grid-cols-5">
         <Input value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} placeholder="Platform or provider" />
         <Input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="Amount ₹" inputMode="decimal" />
@@ -91,17 +148,21 @@ export function PlatformReceivables({ password, username }: { password: string; 
       </div>
       {settlements.length > 0 && <div className="mt-3 flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center"><span>Allocate payout:</span><select className="w-full min-w-0 rounded-md border px-2 py-2 sm:w-auto" value={settlementId} onChange={(e) => { setSettlementId(e.target.value); setSelected([]); setAmounts({}); }}><option value="">Choose payout</option>{settlements.map((item) => <option key={item.id} value={item.id}>{item.platformKey} · {item.payoutDate} · received ₹{(item.actualAmountPaise / 100).toFixed(2)} · remaining ₹{(item.unallocatedPaise / 100).toFixed(2)}</option>)}</select>{currentSettlement && <span>Unallocated payout: <strong>{rupees(currentSettlement.unallocatedPaise)}</strong></span>}</div>}
       {selected.length > 0 && <div className="mt-3 flex items-center justify-between rounded-lg bg-brand-green/5 p-3"><span>{selected.length} entries selected</span><Button type="button" disabled={busy || !settlementId} onClick={allocateSelected}>Allocate selected entries</Button></div>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" variant="outline" disabled={busy || pendingWebsite.length === 0} onClick={() => refreshFees()}>Refresh pending Razorpay fees ({pendingWebsite.length})</Button>
+        <Button type="button" variant="outline" disabled={busy} onClick={recognizeMissing}>Recognize missing prepaid OTAs since 20 Sep</Button>
+      </div>
     </div>
     <div className="rounded-xl border border-brand-mist bg-white p-4 dark:bg-card">
       <h3 className="font-semibold text-brand-green">Outstanding platform receivables</h3>
       <p className="mt-1 text-xs text-brand-green-dark/60">Tax and deductions are shown individually. “Tax charged” and “tax withheld” are separate because they have different settlement treatment.</p>
       <div className="mt-3 hidden overflow-x-auto md:block"><table className="w-full min-w-[1050px] text-left text-sm"><thead><tr className="border-b text-xs text-brand-green-dark/60"><th className="p-2">Select</th><th className="p-2">Booking / guest</th><th className="p-2">Platform</th><th className="p-2">Gross</th><th className="p-2">Tax charged</th><th className="p-2">Tax withheld</th><th className="p-2">Commission</th><th className="p-2">TDS / TCS</th><th className="p-2">Other deductions</th><th className="p-2">Expected net</th><th className="p-2">Allocated</th><th className="p-2">Outstanding</th><th className="p-2">Allocate ₹</th></tr></thead><tbody>
         {rows.map((row) => { const key = keyFor(row); const compatible = !currentSettlement || row.platformKey === currentSettlement.platformKey; return <tr key={key} className="border-b align-top last:border-0"><td className="p-2"><input type="checkbox" aria-label={`Select booking ${row.bookingId}`} disabled={!compatible || row.outstandingPaise <= 0 || busy} checked={selected.includes(key)} onChange={() => toggle(row)} /></td><td className="p-2">{bookingDetails(row.booking)}</td><td className="p-2">{row.platformKey} · cycle {row.bookingCycle}</td><td className="p-2">{rupees(row.grossPaise)}</td><td className="p-2">{rupees(row.taxChargedPaise)}</td><td className="p-2">{rupees(row.taxWithheldPaise)}</td><td className="p-2">{rupees(row.commissionPaise)}</td><td className="p-2">{rupees(row.tdsPaise)} / {rupees(row.tcsPaise)}</td><td className="p-2">{rupees(row.otherDeductionsPaise)}</td><td className="p-2">{rupees(row.expectedNetPaise)}</td><td className="p-2">{rupees(row.allocatedPaise)}</td><td className="p-2 font-medium">{rupees(row.outstandingPaise)}</td><td className="p-2"><Input className="w-28" aria-label={`Allocation amount for booking ${row.bookingId}`} value={amounts[key] || ""} onChange={(e) => setAmounts((current) => ({ ...current, [key]: e.target.value }))} disabled={!selected.includes(key)} inputMode="decimal" /></td></tr>; })}
-        {websitePayments.map((row) => { const key = keyFor(row); const netDetail = row.expectedNetPaise == null ? "Fee / tax pending verification" : rupees(row.expectedNetPaise); return <tr key={key} className="border-b align-top last:border-0"><td className="p-2"><input type="checkbox" aria-label={`Select website payment ${row.paymentId}`} disabled={!razorpayPayout || row.outstandingPaise == null || row.outstandingPaise <= 0 || busy} checked={selected.includes(key)} onChange={() => toggle(row)} /></td><td className="p-2"><strong>{row.guestName}</strong><br />{row.gokoBookingId || row.bookingRef || row.paymentId} · {row.checkinDate || "—"} to {row.checkoutDate || "—"}</td><td className="p-2">Website · Razorpay</td><td className="p-2">{rupees(row.amountPaise)}</td><td className="p-2">—</td><td className="p-2">—</td><td className="p-2">Gateway fee {rupees(row.feePaise)}<br />Gateway tax {rupees(row.taxPaise)}</td><td className="p-2">—</td><td className="p-2">Refunded {rupees(row.refundedPaise)}</td><td className="p-2">{netDetail}</td><td className="p-2">{rupees(row.allocatedPaise)}</td><td className="p-2 font-medium">{rupees(row.outstandingPaise)}</td><td className="p-2"><Input className="w-28" aria-label={`Allocation amount for website payment ${row.paymentId}`} value={amounts[key] || ""} onChange={(e) => setAmounts((current) => ({ ...current, [key]: e.target.value }))} disabled={!selected.includes(key)} inputMode="decimal" /></td></tr>; })}
+        {websitePayments.map((row) => { const key = keyFor(row); const netDetail = row.expectedNetPaise == null ? "Fee / tax pending verification" : rupees(row.expectedNetPaise); return <tr key={key} className="border-b align-top last:border-0"><td className="p-2"><input type="checkbox" aria-label={`Select website payment ${row.paymentId}`} disabled={!razorpayPayout || row.outstandingPaise == null || row.outstandingPaise <= 0 || busy} checked={selected.includes(key)} onChange={() => toggle(row)} /></td><td className="p-2"><strong>{row.guestName}</strong><br />{row.gokoBookingId || row.bookingRef || row.paymentId} · {row.checkinDate || "—"} to {row.checkoutDate || "—"}</td><td className="p-2">Website · Razorpay</td><td className="p-2">{rupees(row.amountPaise)}</td><td className="p-2">—</td><td className="p-2">—</td><td className="p-2">{feeControls(row)}</td><td className="p-2">—</td><td className="p-2">Refunded {rupees(row.refundedPaise)}</td><td className="p-2">{netDetail}</td><td className="p-2">{rupees(row.allocatedPaise)}</td><td className="p-2 font-medium">{rupees(row.outstandingPaise)}</td><td className="p-2"><Input className="w-28" aria-label={`Allocation amount for website payment ${row.paymentId}`} value={amounts[key] || ""} onChange={(e) => setAmounts((current) => ({ ...current, [key]: e.target.value }))} disabled={!selected.includes(key)} inputMode="decimal" /></td></tr>; })}
       </tbody></table></div>
       <div className="mt-3 space-y-3 md:hidden">
         {rows.map((row) => { const key = keyFor(row); const compatible = !currentSettlement || row.platformKey === currentSettlement.platformKey; return <article key={key} className="rounded-lg border border-brand-mist p-3 text-sm"><div className="flex items-start gap-3"><input className="mt-1 h-5 w-5 shrink-0" type="checkbox" aria-label={`Select booking ${row.bookingId}`} disabled={!compatible || row.outstandingPaise <= 0 || busy} checked={selected.includes(key)} onChange={() => toggle(row)} /><div className="min-w-0 flex-1"><div className="break-words">{bookingDetails(row.booking)}</div><p className="mt-1 text-xs text-brand-green-dark/60">{row.platformKey} · cycle {row.bookingCycle}</p></div></div><dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs"><div><dt className="text-brand-green-dark/50">Gross</dt><dd>{rupees(row.grossPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Tax charged / withheld</dt><dd>{rupees(row.taxChargedPaise)} / {rupees(row.taxWithheldPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Commission</dt><dd>{rupees(row.commissionPaise)}</dd></div><div><dt className="text-brand-green-dark/50">TDS / TCS</dt><dd>{rupees(row.tdsPaise)} / {rupees(row.tcsPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Other deductions</dt><dd>{rupees(row.otherDeductionsPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Expected net</dt><dd>{rupees(row.expectedNetPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Allocated</dt><dd>{rupees(row.allocatedPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Outstanding</dt><dd className="font-semibold">{rupees(row.outstandingPaise)}</dd></div></dl><label className="mt-3 block text-xs text-brand-green-dark/60">Allocate amount (₹)<Input className="mt-1" value={amounts[key] || ""} onChange={(e) => setAmounts((current) => ({ ...current, [key]: e.target.value }))} disabled={!selected.includes(key)} inputMode="decimal" /></label></article>; })}
-        {websitePayments.map((row) => { const key = keyFor(row); const netDetail = row.expectedNetPaise == null ? "Fee / tax pending verification" : rupees(row.expectedNetPaise); return <article key={key} className="rounded-lg border border-brand-mist p-3 text-sm"><div className="flex items-start gap-3"><input className="mt-1 h-5 w-5 shrink-0" type="checkbox" aria-label={`Select website payment ${row.paymentId}`} disabled={!razorpayPayout || row.outstandingPaise == null || row.outstandingPaise <= 0 || busy} checked={selected.includes(key)} onChange={() => toggle(row)} /><div className="min-w-0 flex-1"><strong className="break-words">{row.guestName}</strong><p className="break-words text-xs">{row.gokoBookingId || row.bookingRef || row.paymentId}</p><p className="text-xs text-brand-green-dark/60">{row.checkinDate || "—"} to {row.checkoutDate || "—"} · Website / Razorpay</p></div></div><dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs"><div><dt className="text-brand-green-dark/50">Gross</dt><dd>{rupees(row.amountPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Refunded</dt><dd>{rupees(row.refundedPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Gateway fee</dt><dd>{rupees(row.feePaise)}</dd></div><div><dt className="text-brand-green-dark/50">Gateway tax</dt><dd>{rupees(row.taxPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Expected net</dt><dd>{netDetail}</dd></div><div><dt className="text-brand-green-dark/50">Allocated / outstanding</dt><dd>{rupees(row.allocatedPaise)} / {rupees(row.outstandingPaise)}</dd></div></dl><label className="mt-3 block text-xs text-brand-green-dark/60">Allocate amount (₹)<Input className="mt-1" value={amounts[key] || ""} onChange={(e) => setAmounts((current) => ({ ...current, [key]: e.target.value }))} disabled={!selected.includes(key)} inputMode="decimal" /></label></article>; })}
+        {websitePayments.map((row) => { const key = keyFor(row); const netDetail = row.expectedNetPaise == null ? "Fee / tax pending verification" : rupees(row.expectedNetPaise); return <article key={key} className="rounded-lg border border-brand-mist p-3 text-sm"><div className="flex items-start gap-3"><input className="mt-1 h-5 w-5 shrink-0" type="checkbox" aria-label={`Select website payment ${row.paymentId}`} disabled={!razorpayPayout || row.outstandingPaise == null || row.outstandingPaise <= 0 || busy} checked={selected.includes(key)} onChange={() => toggle(row)} /><div className="min-w-0 flex-1"><strong className="break-words">{row.guestName}</strong><p className="break-words text-xs">{row.gokoBookingId || row.bookingRef || row.paymentId}</p><p className="text-xs text-brand-green-dark/60">{row.checkinDate || "—"} to {row.checkoutDate || "—"} · Website / Razorpay</p></div></div><dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs"><div><dt className="text-brand-green-dark/50">Gross</dt><dd>{rupees(row.amountPaise)}</dd></div><div><dt className="text-brand-green-dark/50">Refunded</dt><dd>{rupees(row.refundedPaise)}</dd></div><div className="col-span-2"><dt className="text-brand-green-dark/50">Gateway fee / tax</dt><dd className="mt-1">{feeControls(row)}</dd></div><div><dt className="text-brand-green-dark/50">Expected net</dt><dd>{netDetail}</dd></div><div><dt className="text-brand-green-dark/50">Allocated / outstanding</dt><dd>{rupees(row.allocatedPaise)} / {rupees(row.outstandingPaise)}</dd></div></dl><label className="mt-3 block text-xs text-brand-green-dark/60">Allocate amount (₹)<Input className="mt-1" value={amounts[key] || ""} onChange={(e) => setAmounts((current) => ({ ...current, [key]: e.target.value }))} disabled={!selected.includes(key)} inputMode="decimal" /></label></article>; })}
         {rows.length === 0 && websitePayments.length === 0 && <p className="py-8 text-center text-sm text-brand-green-dark/60">No receivables recorded yet.</p>}
       </div>
     </div>

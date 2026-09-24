@@ -37,6 +37,8 @@ Any dynamic D1/SQLite `IN (...)` lookup must use `src/lib/dbBatch.ts` (`collectI
 
 Cloudflare production builds also run `npm run db:verify:prod` before compiling. This is intentionally separate from local migration tests: local/disposable D1 proves SQL correctness, while the release gate proves the remote migration ledger is caught up. If D1 is unavailable or migrations are pending, the Worker build fails closed.
 
+Dependency security checks use `npm audit`. Next stays on the supported 15.5 patch line; its private PostCSS copy is overridden to the audited patched release. SheetJS is pinned to the official patched `cdn.sheetjs.com` distribution because the abandoned npm-registry `xlsx` package has no repaired release. Keep the existing authenticated 5 MB / 500-row import limits when updating spreadsheet parsing.
+
 ## Test files (`src/__tests__/`)
 
 | File | Covers |
@@ -52,7 +54,7 @@ Cloudflare production builds also run `npm run db:verify:prod` before compiling.
 | `aiosell-inventory-sync.test.ts` | Real `getDateAwareAvailability` (incl. unassigned OTA + native website holds) / `heldBedsToUnits` / range snapshot second pass / `triggerInventoryPush` / `pushIfOtaChanged` (mocked D1 + Aiosell HTTP) |
 | `stay-payment.test.ts` | `stayDueAtHotel`, merge collect, Room Revenue occupancy, `RecordPaymentModal` overlay (no `left-1/2`) |
 | `booking-payment-journal.test.ts` | OTA postpaid paise math/eligibility, partial online advance + idempotency, balance conflict, cash tender/change, cancellation/no-show refund caps and atomic transitions, Admin correction/receipt reversal, cycle snapshots, disconnected over-refund preservation/warnings, post-modification total increases/remaining balance, and permission/terms separation on migrated SQLite |
-| `platform-receivables.test.ts` | Exact paise conversion, supplied Aiosell deduction extraction, expected OTA net, delta adjustments, and input validation |
+| `platform-receivables.test.ts` | Exact paise conversion, Aiosell deduction extraction, expected OTA net, Razorpay fee/tax precedence (provider overwrite vs null-only manual, including fee=0), Sep-20 backfill floor rejection, settlement action permission wiring, and input validation |
 | `food-tab.test.ts` / `food-tab-db-workflows.test.ts` / `food-tab-api-workflows.test.ts` / `food-tab-ui-workflows.test.ts` | Self-checkin phone match; mocked `getPendingFoodTab` DB/API/UI checkout trees (live dashboard lookup, honest no-phone/lookup-failed confirms, Pay uses `orderIds`); Admin quantity-modification wording, optional reasons, and explicit removal wording |
 | `food-market-pricing-admin.test.ts` / `cpu-kitchen-mods-admin.test.ts` / `stock-operations.test.ts` | Admin and Kitchen quantity increases reserve only the delta, reject insufficient tracked stock before writes, allow reasonless edits, and preserve stock restoration on reductions/additions |
 | `food-inventory-d1.integration.test.ts` / `food-payment-d1.integration.test.ts` | Real in-memory D1/SQLite persistence for conditional inventory reservations and food payment writes, grouped receipt operations, cash events, audit entries, split payments, and idempotent retries |

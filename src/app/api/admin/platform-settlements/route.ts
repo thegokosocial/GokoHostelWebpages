@@ -14,9 +14,18 @@ import {
   gatewayExpectedNetPaise,
   getPlatformReceivableSummary,
   parsePlatformAmounts,
+  PLATFORM_RECEIVABLE_BACKFILL_FROM,
+  recognizeMissingPlatformBookings,
   recordPlatformAdjustment,
   rupeesToPaise,
 } from "@/lib/platformReceivables";
+import {
+  refreshPendingWebsitePaymentGatewayFees,
+  refreshWebsitePaymentGatewayFees,
+  setWebsitePaymentGatewayFees,
+  WebsiteGatewayFeeError,
+} from "@/lib/websiteGatewayFees";
+import { RazorpayError } from "@/lib/razorpay";
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,7 +33,10 @@ export async function POST(req: NextRequest) {
     const { password, username, action, ...rest } = body;
     const auth = await authenticateUser(password, username);
     if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const permission = action === "list" ? "canViewAccounts" : action === "adjust" ? "canAdjustPlatformReceivables" : "canSettlePlatformPayments";
+    const adjustActions = new Set(["adjust", "setWebsiteFees", "recognizeMissing"]);
+    const permission = action === "list" ? "canViewAccounts"
+      : adjustActions.has(action) ? "canAdjustPlatformReceivables"
+      : "canSettlePlatformPayments";
     const gate = actionAllowed(auth.role, auth.permissions, permission);
     if (gate === "admin_required") return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     if (gate === "forbidden") return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
@@ -162,8 +174,39 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ success: true, ...result });
     }
+    if (action === "refreshWebsiteFees") {
+      if (isPiRuntime()) return NextResponse.json({ error: "Website gateway fee refresh is available on the Cloudflare runtime" }, { status: 400 });
+      if (rest.paymentId) {
+        const result = await refreshWebsitePaymentGatewayFees(String(rest.paymentId));
+        return NextResponse.json({ success: true, ...result });
+      }
+      const result = await refreshPendingWebsitePaymentGatewayFees();
+      return NextResponse.json({ success: true, ...result });
+    }
+    if (action === "setWebsiteFees") {
+      if (isPiRuntime()) return NextResponse.json({ error: "Website gateway fees are available on the Cloudflare runtime" }, { status: 400 });
+      const feePaise = rest.feePaise !== undefined && rest.feePaise !== null && rest.feePaise !== ""
+        ? (Number.isSafeInteger(rest.feePaise) ? Number(rest.feePaise) : rupeesToPaise(rest.feePaise))
+        : rest.fee !== undefined && rest.fee !== null && rest.fee !== ""
+          ? rupeesToPaise(rest.fee)
+          : undefined;
+      const taxPaise = rest.taxPaise !== undefined && rest.taxPaise !== null && rest.taxPaise !== ""
+        ? (Number.isSafeInteger(rest.taxPaise) ? Number(rest.taxPaise) : rupeesToPaise(rest.taxPaise))
+        : rest.tax !== undefined && rest.tax !== null && rest.tax !== ""
+          ? rupeesToPaise(rest.tax)
+          : undefined;
+      const result = await setWebsitePaymentGatewayFees(String(rest.paymentId || ""), { feePaise, taxPaise });
+      return NextResponse.json({ success: true, ...result });
+    }
+    if (action === "recognizeMissing") {
+      const fromDate = String(rest.fromDate || PLATFORM_RECEIVABLE_BACKFILL_FROM);
+      const result = await recognizeMissingPlatformBookings(actor, fromDate);
+      return NextResponse.json({ success: true, ...result });
+    }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
+    if (error instanceof WebsiteGatewayFeeError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof RazorpayError) return NextResponse.json({ error: error.message }, { status: error.httpStatus });
     const message = error instanceof Error ? error.message : "Platform finance action failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }

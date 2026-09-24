@@ -214,7 +214,7 @@ Accounts/vendors/categories actions use `canManageAccountSettings` (or legacy `c
 
 ### `/api/admin/platform-settlements`
 
-`list` requires `canViewAccounts`. `createSettlement`, `allocate`, and `allocateBatch` require `canSettlePlatformPayments`; `adjust` requires `canAdjustPlatformReceivables`. Admin bypasses all maps. Virtual platform accounts are deliberately excluded from bank-receipt defaults and reconciliation.
+`list` requires `canViewAccounts`. `createSettlement`, `allocate`, `allocateBatch`, and `refreshWebsiteFees` require `canSettlePlatformPayments`; `adjust`, `setWebsiteFees`, and `recognizeMissing` require `canAdjustPlatformReceivables`. Admin bypasses all maps. Virtual platform accounts are deliberately excluded from bank-receipt defaults and reconciliation.
 
 ---
 
