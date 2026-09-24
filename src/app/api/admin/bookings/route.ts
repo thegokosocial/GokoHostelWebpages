@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { accounts, bookingPaymentEvents } from "@/db/schema";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { isRedundantOtaMoneyHistoryAction } from "@/lib/otaPaymentHistory";
 import { otaFingerprint, pushIfOtaChanged, type InventorySyncResult } from "@/lib/aiosellSync";
 import { occupiedNights, exclusiveEndDate, sellableUnits, assignedSlotsInUnit, expandRemovedBedIds, type InventoryPool } from "@/lib/inventoryAvailability";
 import {
@@ -299,7 +300,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   collectStayPayment: ["canCheckIn", "canAddBooking"],
   collectOtaBookingPayment: "canRecordBookingPayments",
   refundOtaBookingPayment: "canDeleteBooking",
-  correctOtaBookingPayment: "admin_only",
+  correctOtaBookingPayment: "canCorrectBookingPayments",
   checkOut: ["canCheckOut", "canAddBooking"],
   getPendingFoodTab: ["canCheckOut", "canAddBooking"],
   modifyCheckin: "canAddBooking",
@@ -652,7 +653,9 @@ export async function POST(req: NextRequest) {
           ...(body.dateTo ? [lte(bookingPaymentEvents.createdAt, `${body.dateTo}T23:59:59.999`)] : []),
         ))
         .orderBy(desc(bookingPaymentEvents.createdAt)).limit(500);
-      const entries = history.map((entry) => {
+      const entries = history
+        .filter((entry) => !isRedundantOtaMoneyHistoryAction(entry.action))
+        .map((entry) => {
         const reference = entry.gokoBookingId || entry.bookingRef || `Booking #${entry.bookingId}`;
         const target = `${reference} · ${entry.guestName || "Unknown guest"}`;
         const stay = entry.checkinDate
@@ -1156,14 +1159,7 @@ export async function POST(req: NextRequest) {
           note: typeof body.note === "string" ? body.note : "",
           actor: actingUser,
         });
-        if (!result.duplicate) {
-          await addBookingHistoryEntry({
-            bookingId,
-            action: "OTA Payment Collected",
-            details: `₹${paiseToRupees(amountPaise).toFixed(2)} · ${cashPaise > 0 && onlinePaise > 0 ? "cash + online" : cashPaise > 0 ? "cash" : "online"}${body.note ? ` · ${String(body.note).trim()}` : ""}`,
-            performedBy: actingUser,
-          });
-        }
+        // Money events live in booking_payment_events only (no OTA Payment Collected history dual-write).
         return NextResponse.json({
           success: true,
           duplicate: result.duplicate,
@@ -1198,12 +1194,6 @@ export async function POST(req: NextRequest) {
           actor: actingUser,
           allowedStatuses: ["received", "hold", "checked_in", "checked_out", "cancelled", "no_show"],
         });
-        if (!result.duplicate) await addBookingHistoryEntry({
-          bookingId,
-          action: "OTA Payment Refunded",
-          details: `₹${paiseToRupees(amountPaise).toFixed(2)} · ${cashPaise > 0 && onlinePaise > 0 ? "cash + online" : cashPaise > 0 ? "cash" : "online"}${body.note ? ` · ${String(body.note).trim()}` : ""}`,
-          performedBy: actingUser,
-        });
         return NextResponse.json({ success: true, duplicate: result.duplicate, eventId: result.eventId, booking: result.booking });
       } catch (error) {
         if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
@@ -1212,7 +1202,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "correctOtaBookingPayment") {
-      if (role !== "admin") return NextResponse.json({ error: "Admin access required" }, { status: 403 });
       const bookingId = Number(body.bookingId);
       if (!Number.isInteger(bookingId) || bookingId <= 0) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
       const detail = await getBookingDetail(bookingId);
@@ -1229,11 +1218,6 @@ export async function POST(req: NextRequest) {
           amountPaise, cashPaise, onlinePaise,
           note: typeof body.note === "string" ? body.note : "",
           actor: actingUser,
-        });
-        if (!result.duplicate) await addBookingHistoryEntry({
-          bookingId, action: "OTA Payment Corrected",
-          details: `₹${(amountPaise / 100).toFixed(2)} · correction for ${String(body.correctsEventId)} · ${String(body.note).trim()}`,
-          performedBy: actingUser,
         });
         return NextResponse.json({ success: true, duplicate: result.duplicate, eventId: result.eventId, booking: result.booking });
       } catch (error) {
@@ -1275,12 +1259,6 @@ export async function POST(req: NextRequest) {
             changePaise: paymentMethod === "cash" ? rupeesToPaise(Number(changeGiven) || 0) : 0,
             accountId: onlinePaise > 0 ? await resolveReceiptAccount("room", onlineAccountId) : null,
             actor: actingUser,
-          });
-          if (!result.duplicate) await addBookingHistoryEntry({
-            bookingId,
-            action: "OTA Payment Collected",
-            details: `₹${paiseToRupees(amountPaise).toFixed(2)} · ${paymentMethod} by ${actingUser}`,
-            performedBy: actingUser,
           });
           return NextResponse.json({ success: true, duplicate: result.duplicate, eventId: result.eventId, booking: result.booking });
         } catch (error) {
@@ -1829,9 +1807,6 @@ export async function POST(req: NextRequest) {
             statusUpdate: { status: "no_show" },
           });
           journalRefund = { duplicate: result.duplicate };
-          if (!result.duplicate) await addBookingHistoryEntry({
-            bookingId, action: "OTA Payment Refunded", details: `₹${paiseToRupees(Number(refundAmountPaise)).toFixed(2)} · refund recorded with no-show by ${actingUser}${note ? ` · ${String(note).trim()}` : ""}`, performedBy: actingUser,
-          });
         } catch (error) {
           if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
           throw error;

@@ -18,6 +18,7 @@ import {
   rebuildBookingPaymentProjection,
   rupeesToPaise,
 } from "@/lib/bookingPaymentJournal";
+import { remainingCorrectableOnEvent } from "@/lib/otaPaymentCorrectionUi";
 import { todayIST } from "@/lib/utils";
 
 const state = vi.hoisted(() => ({ db: null as Database | null }));
@@ -232,8 +233,11 @@ describe("OTA postpaid booking payment journal", () => {
     expect(paid.booking.otaPaymentTerms).toBe("pay_at_hotel");
     expect(canCollectOtaPayment(paid.booking)).toBe(false);
     expect(ALL_PERMISSION_KEYS).toContain("canRecordBookingPayments");
+    expect(ALL_PERMISSION_KEYS).toContain("canCorrectBookingPayments");
     expect(actionAllowed("staff", { canRecordBookingPayments: true }, "canRecordBookingPayments")).toBe("allowed");
     expect(actionAllowed("staff", { canRecordBookingPayments: true }, "canDeleteBooking")).toBe("forbidden");
+    expect(actionAllowed("staff", { canCorrectBookingPayments: true }, "canCorrectBookingPayments")).toBe("allowed");
+    expect(actionAllowed("staff", { canRecordBookingPayments: true }, "canCorrectBookingPayments")).toBe("forbidden");
     expect(actionAllowed("staff", { canRecordBookingPayments: true }, "admin_only")).toBe("admin_required");
     expect(actionAllowed("admin", {}, "admin_only")).toBe("allowed");
     expect(todayIST()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -401,6 +405,53 @@ describe("OTA payment journal Cloudflare D1 batch path", () => {
     expect(corrected.booking.amountPaid).toBe(0);
     const receipts = await db.select().from(guestReceipts).where(eq(guestReceipts.sourceId, booking.id));
     expect(receipts.map((r) => [r.kind, r.amount])).toEqual([["stay", 5000], ["reversal", -5000]]);
+  });
+
+  it("records correction actor and reason for audit, supports partial then full remaining revert", async () => {
+    const booking = await addBooking({ bookingRef: "ota-audit-revert" });
+    const accountId = await addAccount();
+    const mistaken = await recordOtaBookingPayment({
+      booking, eventId: "audit-mistaken", kind: "collection", amountPaise: 10000,
+      cashPaise: 4000, onlinePaise: 6000, cashTenderPaise: 4000, accountId, actor: "frontdesk",
+      note: "Phone advance",
+    });
+    expect(mistaken.booking.amountPaid).toBe(100);
+
+    const partial = await correctOtaBookingPayment({
+      booking: mistaken.booking, eventId: "audit-partial", correctsEventId: "audit-mistaken",
+      amountPaise: 3000, cashPaise: 1000, onlinePaise: 2000,
+      note: "Partial mistype", actor: "manager.pawan",
+    });
+    expect(partial.booking.amountPaid).toBe(70);
+    const afterPartial = await db.select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.eventId, "audit-partial"));
+    expect(afterPartial).toMatchObject([{
+      eventType: "correction",
+      amountPaise: -3000,
+      cashPaise: -1000,
+      onlinePaise: -2000,
+      correctsEventId: "audit-mistaken",
+      note: "Partial mistype",
+      actor: "manager.pawan",
+    }]);
+    expect(remainingCorrectableOnEvent(
+      { amountPaise: 10000, cashPaise: 4000, onlinePaise: 6000 },
+      afterPartial,
+    )).toEqual({ amountPaise: 7000, cashPaise: 3000, onlinePaise: 4000 });
+
+    const full = await correctOtaBookingPayment({
+      booking: partial.booking, eventId: "audit-full", correctsEventId: "audit-mistaken",
+      amountPaise: 7000, cashPaise: 3000, onlinePaise: 4000,
+      note: "Clear remaining mistaken entry", actor: "manager.pawan",
+    });
+    expect(full.booking.amountPaid).toBe(0);
+    const events = await db.select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.bookingId, booking.id));
+    const corrections = events.filter((e) => e.eventType === "correction");
+    expect(corrections).toHaveLength(2);
+    expect(corrections.every((e) => e.actor === "manager.pawan" && e.note)).toBe(true);
+    expect(remainingCorrectableOnEvent(
+      { amountPaise: 10000, cashPaise: 4000, onlinePaise: 6000 },
+      corrections,
+    ).amountPaise).toBe(0);
   });
 
   it("rejects when D1 batch API is missing", async () => {

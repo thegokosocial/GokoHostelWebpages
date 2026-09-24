@@ -33,6 +33,8 @@ import { parseGokoWalkin, walkinDiscountOnGross } from "@/lib/bookingPricing";
 import { parseWebsiteCheckout } from "@/lib/websiteCheckoutSnapshot";
 import { isManualWalkinBooking } from "@/lib/bookingResolution";
 import { stayDueAtHotel, stayRefundCap } from "@/lib/stayPayment";
+import { remainingCorrectableOnEvent, resolveCorrectionConfirmAmounts } from "@/lib/otaPaymentCorrectionUi";
+import { isRedundantOtaMoneyHistoryAction } from "@/lib/otaPaymentHistory";
 import { CheckInPopup } from "./CheckInPopup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/RecordPaymentModal";
@@ -590,13 +592,10 @@ export function BookingDetailPanel({
                     {paymentEvents.slice().reverse().map((event) => {
                       const amount = `₹${(Math.abs(event.amountPaise || 0) / 100).toFixed(2)}`;
                       const corrections = paymentEvents.filter((entry) => entry.eventType === "correction" && entry.correctsEventId === event.eventId);
-                      const correctedAmount = corrections.reduce((sum, entry) => sum + Math.abs(entry.amountPaise || 0), 0);
-                      const correctableAmountPaise = Math.min(
-                        Math.max(0, (event.amountPaise || 0) - correctedAmount),
-                        Math.max(0, Math.abs(event.cashPaise || 0) - corrections.reduce((sum, entry) => sum + Math.abs(entry.cashPaise || 0), 0))
-                          + Math.max(0, Math.abs(event.onlinePaise || 0) - corrections.reduce((sum, entry) => sum + Math.abs(entry.onlinePaise || 0), 0)),
-                      );
-                      const canCorrectEvent = role === "admin" && ["collection", "refund"].includes(event.eventType)
+                      const remaining = remainingCorrectableOnEvent(event, corrections);
+                      const correctableAmountPaise = remaining.amountPaise;
+                      const canCorrectEvent = hasPermission(role, permissions, "canCorrectBookingPayments")
+                        && ["collection", "refund"].includes(event.eventType)
                         && !event.isOpening && Boolean(event.businessDate) && !event.unknownPaise && event.bookingCycle === booking.bookingCycle
                         && correctableAmountPaise > 0;
                       const tender = event.unknownPaise > 0 ? "method not recorded"
@@ -607,11 +606,32 @@ export function BookingDetailPanel({
                         <p className="text-muted-foreground">{event.guestNameSnapshot} · {tender} · cycle {event.bookingCycle}{event.isOpening ? " · opening balance" : ""}</p>
                         {event.note && <p className="text-muted-foreground">{event.note}</p>}
                         <div className="mt-0.5 text-[10px] text-muted-foreground">{event.businessDate || "Date unknown"} · {event.actor}</div>
-                        {canCorrectEvent && <Button className="mt-1 h-7 px-2 text-[10px]" size="sm" variant="outline" onClick={() => setCorrectionTarget({ event, maxPaise: correctableAmountPaise })}>Correct mistaken entry</Button>}
+                        {canCorrectEvent && (
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            {corrections.length > 0 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                ₹{(correctableAmountPaise / 100).toFixed(2)} still reversible
+                              </span>
+                            )}
+                            <Button
+                              className="h-7 px-2 text-[10px]"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setCorrectionTarget({
+                                event,
+                                maxPaise: remaining.amountPaise,
+                                remainingCashPaise: remaining.cashPaise,
+                                remainingOnlinePaise: remaining.onlinePaise,
+                              })}
+                            >
+                              Revert mistaken payment
+                            </Button>
+                          </div>
+                        )}
                       </div>;
                     })}
                   </div>}
-                  {history.map((entry) => (
+                  {history.filter((entry) => !isRedundantOtaMoneyHistoryAction(entry.action)).map((entry) => (
                     <div key={entry.id} className="border-l-2 border-border pl-3 text-xs">
                       <div className="font-medium text-foreground">{entry.action}</div>
                       {entry.details && <p className="text-muted-foreground">{entry.details}</p>}
@@ -941,14 +961,20 @@ export function BookingDetailPanel({
           username={username}
           receiptKind="room"
           onConfirm={async (method, cashReceived, _change, onlineAccountId, _receiptId, amountToApply, operationId, note) => {
-            const amountPaise = Math.round((amountToApply || 0) * 100);
-            const cashPaise = method === "cash" ? amountPaise : method === "split" ? Math.round(cashReceived * 100) : 0;
+            const { amountPaise, cashPaise, onlinePaise } = resolveCorrectionConfirmAmounts({
+              amountToApplyRupees: amountToApply || 0,
+              maxPaise: correctionTarget.maxPaise,
+              remainingCashPaise: correctionTarget.remainingCashPaise,
+              remainingOnlinePaise: correctionTarget.remainingOnlinePaise,
+              method,
+              cashReceivedRupees: cashReceived,
+            });
             const ok = await handleAction("correctOtaBookingPayment", {
               operationId,
               correctsEventId: correctionTarget.event.eventId,
               amountPaise,
               cashPaise,
-              onlinePaise: amountPaise - cashPaise,
+              onlinePaise,
               onlineAccountId,
               note,
             });

@@ -88,7 +88,7 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 
 **Check-in:** `canAddCheckin`, `canAssignBed`, `canCheckout`, `canMarkClean`, `canEditRecords`, `canDeleteRecords`
 
-**Booking:** `canAddBooking`, `canCheckIn`, `canCheckOut`, `canDeleteBooking`, `canRecordBookingPayments`, `canManageBookingContacts`, `canManageBookingTemplates`
+**Booking:** `canAddBooking`, `canCheckIn`, `canCheckOut`, `canDeleteBooking`, `canRecordBookingPayments`, `canCorrectBookingPayments`, `canManageBookingContacts`, `canManageBookingTemplates`
 
 **Food:** `canViewFoodOrders`, `canViewFoodTabs`, `canPlaceOrders`, `canEditFoodOrders`, `canVoidFoodOrders`, `canMarkPaid`, `canApplyFoodDiscounts`, `canGenerateFoodBills`, `canManageInventory`, `canViewMenu`, `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageFoodSettings`. The food payment modal may call `getFoodReceiptAccounts` with an empty password after login; it authenticates through the existing admin session cookie and still requires `canMarkPaid` (or admin bypass).
 
@@ -184,7 +184,7 @@ Calendar PMS. View keys `canViewBookings`; this includes `getCalendarData`, `get
 
 Walk-in creation may record an optional cash or online advance. `getRoomReceiptAccounts` is available to `canAddBooking`, `canCheckIn`, `canRecordBookingPayments`, or `canDeleteBooking` users and returns only active room-receipt account display data. `canDeleteBooking` is included so staff already authorized to cancel/no-show can select an account for an online refund; it does not grant collection permission. Online advances create the normal booking receipt and are server-validated against the recomputed total; manual reservation edits can correct or adjust collected money, and reject totals below the final amount received.
 
-Eligible OTA pay-at-property bookings have a dedicated payment flow: `collectOtaBookingPayment` requires `canRecordBookingPayments` plus the existing booking view gate. It records a cash/online/split collection and does not grant booking edit, check-in, cancellation, or refund rights. `refundOtaBookingPayment` remains under `canDeleteBooking`; immediate cancellation/no-show refunds also require authorization for that lifecycle action. `correctOtaBookingPayment` is Admin-only. Admin bypass behavior remains unchanged.
+Eligible OTA pay-at-property bookings have a dedicated payment flow: `collectOtaBookingPayment` requires `canRecordBookingPayments` plus the existing booking view gate. It records a cash/online/split collection and does not grant booking edit, check-in, cancellation, or refund rights. `refundOtaBookingPayment` remains under `canDeleteBooking`; immediate cancellation/no-show refunds also require authorization for that lifecycle action. `correctOtaBookingPayment` requires `canCorrectBookingPayments` (reason-required; reverses mistaken journal Paid, does not refund the guest). Admin bypass behavior remains unchanged.
 
 ### `/api/admin/inventory`
 

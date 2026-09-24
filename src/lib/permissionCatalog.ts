@@ -27,6 +27,7 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
     options: [
       ["canAddBooking", "Add bookings"], ["canCheckIn", "Check in booking guests"],
       ["canRecordBookingPayments", "Record OTA postpaid booking payments"],
+      ["canCorrectBookingPayments", "Correct / revert mistaken OTA booking payments"],
       ["canCheckOut", "Check out booking guests"], ["canDeleteBooking", "Delete bookings"],
       ["canManageBookingContacts", "Manage booking contact details"],
       ["canManageBookingTemplates", "Manage booking message templates"],

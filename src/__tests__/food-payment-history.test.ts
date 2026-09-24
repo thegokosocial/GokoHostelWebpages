@@ -147,7 +147,7 @@ describe("Payment History", () => {
 
   it("prevents duplicate payment submits while the modal request is in flight", () => {
     const source = readFileSync("src/components/admin/RecordPaymentModal.tsx", "utf8");
-    expect(source).toContain("if (saving) return;");
+    expect(source).toMatch(/if \(saving(?:\s*\|\|[^)]*)?\) return;/);
     expect(source).toContain("setSaving(true)");
     expect(source).toContain("await onConfirm");
     expect(source).toContain("setSaving(false)");

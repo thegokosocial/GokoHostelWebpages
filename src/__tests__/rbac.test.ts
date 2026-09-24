@@ -66,7 +66,7 @@ const BOOKINGS_PERMISSIONS: Record<string, ActionPerm> = {
   getRoomReceiptAccounts: ["canAddBooking", "canCheckIn", "canRecordBookingPayments", "canDeleteBooking"],
   collectOtaBookingPayment: "canRecordBookingPayments",
   refundOtaBookingPayment: "canDeleteBooking",
-  correctOtaBookingPayment: "admin_only",
+  correctOtaBookingPayment: "canCorrectBookingPayments",
   checkIn: ["canCheckIn", "canAddBooking"],
   collectStayPayment: ["canCheckIn", "canAddBooking"],
   checkOut: ["canCheckOut", "canAddBooking"],
@@ -345,11 +345,23 @@ describe("RBAC: Dual-key OR (fine-grained or today's coarse key)", () => {
     expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "collectOtaBookingPayment")).toBe("allowed");
     expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "refundOtaBookingPayment")).toBe("forbidden");
     expect(checkPermission(role, { canDeleteBooking: true }, BOOKINGS_PERMISSIONS, "refundOtaBookingPayment")).toBe("allowed");
-    expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "correctOtaBookingPayment")).toBe("admin_required");
+    expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "correctOtaBookingPayment")).toBe("forbidden");
+    expect(checkPermission(role, { canCorrectBookingPayments: true }, BOOKINGS_PERMISSIONS, "correctOtaBookingPayment")).toBe("allowed");
     expect(checkPermission(role, { canDeleteBooking: true }, BOOKINGS_PERMISSIONS, "getRoomReceiptAccounts")).toBe("allowed");
     expect(checkPermission(role, { canRecordBookingPayments: true }, BOOKINGS_PERMISSIONS, "getRoomReceiptAccounts")).toBe("allowed");
     const route = readFileSync("src/app/api/admin/bookings/route.ts", "utf8");
     expect(route).toContain('getRoomReceiptAccounts: ["canAddBooking", "canCheckIn", "canRecordBookingPayments", "canDeleteBooking"]');
+    expect(route).toContain('correctOtaBookingPayment: "canCorrectBookingPayments"');
+    expect(route).not.toContain('correctOtaBookingPayment: "admin_only"');
+    expect(route).not.toMatch(/if \(action === "correctOtaBookingPayment"\) \{\s*if \(role !== "admin"\)/);
+    expect(route).not.toContain('action: "OTA Payment Collected"');
+    expect(route).not.toContain('action: "OTA Payment Refunded"');
+    expect(route).not.toContain('action: "OTA Payment Corrected"');
+    expect(ALL_PERMISSION_KEYS).toContain("canCorrectBookingPayments");
+    const panel = readFileSync("src/components/admin/booking-dashboard/BookingDetailPanel.tsx", "utf8");
+    expect(panel).toContain('hasPermission(role, permissions, "canCorrectBookingPayments")');
+    expect(panel).toContain("Revert mistaken payment");
+    expect(panel).toContain("isRedundantOtaMoneyHistoryAction");
   });
 });
 

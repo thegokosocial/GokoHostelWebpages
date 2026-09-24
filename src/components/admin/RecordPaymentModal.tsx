@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { BanknoteIcon, SmartphoneIcon, XIcon } from "lucide-react";
+import { correctionDisabledHint, parseCorrectionAmountInput } from "@/lib/otaPaymentCorrectionUi";
 
 type PaymentTab = "cash" | "online" | "split";
 type AmountUnit = "paise" | "rupees";
@@ -58,7 +59,9 @@ export function RecordPaymentModal({
   const [saving, setSaving] = useState(false);
   const [accounts, setAccounts] = useState<ReceiptAccount[]>([]);
   const [onlineAccountId, setOnlineAccountId] = useState("");
-  const [partialAmount, setPartialAmount] = useState(totalAmount > 0 ? (totalAmount / scale).toFixed(2) : "0.00");
+  const [partialAmount, setPartialAmount] = useState(
+    correction ? "0" : totalAmount > 0 ? (totalAmount / scale).toFixed(2) : "0.00",
+  );
   const [note, setNote] = useState("");
   const [operationId] = useState(() => crypto.randomUUID());
 
@@ -79,25 +82,35 @@ export function RecordPaymentModal({
   }, [password, username, receiptKind]);
 
   const totalRupees = totalAmount / scale;
-  const amountRupees = allowPartial ? (Number(partialAmount) || 0) : totalRupees;
+  const correctionAmountParse = correction && allowPartial
+    ? parseCorrectionAmountInput(partialAmount, totalRupees)
+    : null;
+  const amountRupees = (() => {
+    if (!allowPartial) return totalRupees;
+    if (correction && correctionAmountParse?.status === "ok") return correctionAmountParse.amountRupees;
+    if (correction) return Number.NaN;
+    return Number(partialAmount) || 0;
+  })();
   const cashValue = Number(cashInput) || 0;
-  const changeDue = cashValue - amountRupees;
+  const changeDue = cashValue - (Number.isFinite(amountRupees) ? amountRupees : 0);
   const splitCashVal = Number(splitCash) || 0;
   const splitOnlineVal = Number(splitOnline) || 0;
   const splitTotal = splitCashVal + splitOnlineVal;
-  const splitExact = Math.round(splitTotal * 100) === Math.round(amountRupees * 100);
+  const splitExact = Math.round(splitTotal * 100) === Math.round((Number.isFinite(amountRupees) ? amountRupees : 0) * 100);
+  const displayAmountRupees = Number.isFinite(amountRupees) ? amountRupees : 0;
 
   useEffect(() => {
+    if (!Number.isFinite(amountRupees)) return;
     const online = amountRupees - splitCashVal;
     setSplitOnline(online > 0 ? online.toString() : "0");
   }, [splitCash, amountRupees, splitCashVal]);
 
   useEffect(() => {
-    if (allowPartial) setCashInput(amountRupees.toFixed(2));
+    if (allowPartial && Number.isFinite(amountRupees)) setCashInput(amountRupees.toFixed(2));
   }, [allowPartial, amountRupees]);
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || !Number.isFinite(amountRupees) || amountRupees <= 0) return;
     setSaving(true);
     try {
       if (activeTab === "cash") {
@@ -126,8 +139,23 @@ export function RecordPaymentModal({
     try { await onSecondaryAction(); } finally { setSaving(false); }
   };
 
+  const disabledHint = correction && correctionAmountParse
+    ? correctionDisabledHint({
+      saving,
+      note,
+      amountParse: correctionAmountParse,
+      totalRupees,
+      activeTab,
+      splitCashVal,
+      splitOnlineVal,
+      splitExact,
+    })
+    : null;
+
   const canSave = (() => {
-    if (saving || !(amountRupees > 0 && amountRupees <= totalRupees) || (correction && !note.trim())) return false;
+    if (saving) return false;
+    if (correction) return !disabledHint;
+    if (!(amountRupees > 0 && amountRupees <= totalRupees)) return false;
     if (activeTab === "cash") return refund ? true : cashValue >= amountRupees;
     if (activeTab === "online") return !receiptKind || !!onlineAccountId;
     if (activeTab === "split") {
@@ -149,8 +177,11 @@ export function RecordPaymentModal({
       <div className="relative w-full min-w-0 max-w-sm rounded-2xl bg-white dark:bg-card shadow-2xl dark:shadow-none animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between border-b border-brand-mist px-5 py-4">
           <div className="min-w-0">
-            <h3 className="text-base font-bold text-brand-green-dark">{correction ? "Correct Payment Entry" : refund ? "Record Refund" : "Record Payment"}</h3>
+            <h3 className="text-base font-bold text-brand-green-dark">{correction ? "Revert mistaken payment" : refund ? "Record Refund" : "Record Payment"}</h3>
             <p className="truncate text-xs text-brand-green-dark/50">{guestName}</p>
+            {correction && (
+              <p className="mt-1 text-[11px] text-brand-green-dark/60">Reverses journal Paid. Does not refund the guest.</p>
+            )}
           </div>
           <button type="button" onClick={onClose} disabled={saving} className="shrink-0 rounded-lg p-1.5 hover:bg-brand-sand disabled:opacity-40">
             <XIcon className="h-5 w-5 text-brand-green-dark/60" />
@@ -183,18 +214,23 @@ export function RecordPaymentModal({
         <div className="px-5 py-4">
           {allowPartial && (
             <div className="mb-4">
-              <label className="mb-1 block text-xs font-medium text-brand-green-dark/70">{correction ? "Amount to correct (₹)" : refund ? "Amount to refund (₹)" : "Amount to collect (₹)"}</label>
-              <input type="number" inputMode="decimal" min="0.01" max={totalRupees} step="0.01" value={partialAmount}
+              <label className="mb-1 block text-xs font-medium text-brand-green-dark/70">{correction ? "Amount to reverse (₹)" : refund ? "Amount to refund (₹)" : "Amount to collect (₹)"}</label>
+              <input type="number" inputMode="decimal" min={correction ? "0" : "0.01"} max={totalRupees} step="0.01" value={partialAmount}
                 onChange={(e) => setPartialAmount(e.target.value)}
                 className="w-full min-w-0 rounded-lg border border-brand-mist px-3 py-2.5 text-lg font-semibold text-brand-green-dark focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green" />
-              <button type="button" onClick={() => setPartialAmount(totalRupees.toFixed(2))} className="mt-1 text-xs font-medium text-blue-600 underline">{correction ? "Correct full remaining amount" : refund ? "Refund full amount" : "Collect full balance"}</button>
+              {correction && (
+                <p className="mt-1 text-[11px] text-brand-green-dark/60">
+                  0 = reverse the full correctable amount (₹{totalRupees.toFixed(2)}).
+                </p>
+              )}
+              <button type="button" onClick={() => setPartialAmount(correction ? "0" : totalRupees.toFixed(2))} className="mt-1 text-xs font-medium text-blue-600 underline">{correction ? "Reverse full remaining amount" : refund ? "Refund full amount" : "Collect full balance"}</button>
             </div>
           )}
           {activeTab === "cash" && (
             correction ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-center dark:border-amber-800 dark:bg-amber-950/30">
                 <BanknoteIcon className="mx-auto mb-2 h-8 w-8 text-amber-700" />
-                <p className="text-sm text-amber-900 dark:text-amber-200">Reverse <span className="font-bold">₹{amountRupees.toFixed(2)}</span> from the original cash entry?</p>
+                <p className="text-sm text-amber-900 dark:text-amber-200">Reverse <span className="font-bold">₹{displayAmountRupees.toFixed(2)}</span> from the original cash entry?</p>
               </div>
             ) : refund ? (
               <div className="rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 px-4 py-4 text-center">
@@ -243,10 +279,10 @@ export function RecordPaymentModal({
               <SmartphoneIcon className="mx-auto mb-2 h-8 w-8 text-blue-500" />
               <p className="text-sm text-blue-800 dark:text-blue-300">
                 {refund ? "Mark " : "Mark "}
-                <span className="font-bold">₹{amountRupees.toFixed(allowPartial || amountDigits === 2 ? 2 : 0)}</span>
+                <span className="font-bold">₹{displayAmountRupees.toFixed(allowPartial || amountDigits === 2 ? 2 : 0)}</span>
                 {correction ? " from the original online entry?" : refund ? " as refunded online?" : " as paid online?"}
               </p>
-              {receiptKind && <label className="block text-left text-xs font-medium text-blue-900 dark:text-blue-200">Received in
+              {receiptKind && !correction && <label className="block text-left text-xs font-medium text-blue-900 dark:text-blue-200">Received in
                 <select value={onlineAccountId} onChange={(e) => setOnlineAccountId(e.target.value)} className="mt-1 w-full rounded border border-blue-200 bg-white px-2 py-2 text-sm text-brand-green-dark"><option value="">Select bank…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nickname || a.name}</option>)}</select>
               </label>}
             </div>
@@ -285,10 +321,10 @@ export function RecordPaymentModal({
                   ? "bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400"
                   : "bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400"
               )}>
-                Total: ₹{splitTotal.toFixed(allowPartial ? 2 : 0)} / ₹{amountRupees.toFixed(allowPartial ? 2 : 0)}
-                {splitTotal < amountRupees && <span className="ml-1 text-xs">(₹{(amountRupees - splitTotal).toFixed(allowPartial ? 2 : 0)} short)</span>}
+                Total: ₹{splitTotal.toFixed(allowPartial ? 2 : 0)} / ₹{displayAmountRupees.toFixed(allowPartial ? 2 : 0)}
+                {Number.isFinite(amountRupees) && splitTotal < amountRupees && <span className="ml-1 text-xs">(₹{(amountRupees - splitTotal).toFixed(allowPartial ? 2 : 0)} short)</span>}
               </div>
-              {receiptKind && <label className="block text-xs font-medium text-brand-green-dark/70">Online amount received in
+              {receiptKind && !correction && <label className="block text-xs font-medium text-brand-green-dark/70">Online amount received in
                 <select value={onlineAccountId} onChange={(e) => setOnlineAccountId(e.target.value)} className="mt-1 w-full rounded border border-input bg-white px-2 py-2 text-sm"><option value="">Select bank…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nickname || a.name}</option>)}</select>
               </label>}
             </div>
@@ -300,7 +336,11 @@ export function RecordPaymentModal({
           )}
         </div>
 
-        <div className="flex gap-2 border-t border-brand-mist px-5 py-4">
+        <div className="border-t border-brand-mist px-5 py-4">
+          {disabledHint && (
+            <p className="mb-3 text-center text-xs text-amber-800 dark:text-amber-300">{disabledHint}</p>
+          )}
+          <div className="flex gap-2">
           <button
             type="button"
             onClick={onClose}
@@ -321,8 +361,9 @@ export function RecordPaymentModal({
             disabled={!canSave}
             className="min-w-0 flex-1 rounded-lg bg-brand-green px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-green/90 disabled:opacity-40"
           >
-            {saving ? "Saving..." : correction ? "Save correction" : "Save"}
+            {saving ? "Saving..." : correction ? "Save reversal" : "Save"}
           </button>
+          </div>
         </div>
       </div>
     </div>
