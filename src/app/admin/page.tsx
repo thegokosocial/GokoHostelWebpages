@@ -252,7 +252,7 @@ function AdminPageInner() {
 
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && role !== "admin") return false;
-    if (item.id === "management" && role === "manager" && Object.keys(permissions).length > 0) return true;
+    if (item.id === "management") return true;
     if (item.permission && role !== "admin" && !permissions[item.permission]) return false;
     return true;
   });

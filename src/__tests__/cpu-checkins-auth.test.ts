@@ -288,8 +288,8 @@ describe("firstVisibleAdminSection", () => {
     expect(firstVisibleAdminSection("staff", { canViewBookings: true }, "dashboard")).toBe("bookings");
   });
 
-  it("returns null when a non-admin has no visible sections", () => {
-    expect(firstVisibleAdminSection("manager", {}, "dashboard")).toBeNull();
+  it("routes a permissionless authenticated user to self-service Management", () => {
+    expect(firstVisibleAdminSection("manager", {}, "dashboard")).toBe("management");
   });
 
   it("keeps Splits for staff with canViewSplits and does not use it as a Pi landing pad in ADMIN_NAV_PERMS", () => {

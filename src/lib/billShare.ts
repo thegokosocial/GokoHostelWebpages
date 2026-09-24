@@ -25,11 +25,19 @@ export function buildBillWhatsAppHref(opts: {
   guestName: string;
   shareUrl: string;
 }): string | null {
+  const draft = buildBillWhatsAppDraft(opts);
+  return draft ? `https://wa.me/${draft.phone}?text=${encodeURIComponent(draft.message)}` : null;
+}
+
+export function buildBillWhatsAppDraft(opts: {
+  guestPhone: string | null | undefined;
+  guestName: string;
+  shareUrl: string;
+}): { phone: string; message: string } | null {
   const waPhone = whatsAppPhoneDigits(opts.guestPhone);
   if (!waPhone) return null;
   const name = opts.guestName.trim() || "there";
-  const text = `Hi ${name}, here is your Goko food bill:\n${opts.shareUrl}`;
-  return `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}`;
+  return { phone: waPhone, message: `Hi ${name}, here is your Goko food bill:\n${opts.shareUrl}` };
 }
 
 export function publicBillShareUrl(origin: string, token: string): string {

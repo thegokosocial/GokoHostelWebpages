@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon, ReceiptIcon, CreditCardIcon } from "lucide-react";
+import { BedDoubleIcon, UsersIcon, DatabaseIcon, ShieldCheckIcon, FileTextIcon, HeartPulseIcon, HistoryIcon, IndianRupeeIcon, UtensilsIcon, SettingsIcon, UploadIcon, QrCodeIcon, ChevronDownIcon, WalletIcon, ServerIcon, WifiIcon, GlobeIcon, UserRoundCheckIcon, BarChart3Icon, LinkIcon, ListTodoIcon, ReceiptIcon, CreditCardIcon, MessageCircleIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role, type ManagementTab } from "./types";
 import {
@@ -39,10 +39,12 @@ const RazorpayPayments = dynamic(() => import("./RazorpayPayments").then((m) => 
 const AdminWebsite = dynamic(() => import("./AdminWebsite").then((m) => m.AdminWebsite), { loading: tabLoader, ssr: false });
 const AdminAnalytics = dynamic(() => import("./AdminAnalytics").then((m) => m.AdminAnalytics), { loading: tabLoader, ssr: false });
 const QuickLinks = dynamic(() => import("./QuickLinks").then((m) => m.QuickLinks), { loading: tabLoader, ssr: false });
+const ManagementPreferences = dynamic(() => import("./ManagementPreferences").then((m) => m.ManagementPreferences), { loading: tabLoader, ssr: false });
 
-const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly?: boolean; permission?: string | string[] }[] = [
+const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly?: boolean; permission?: string | string[]; selfService?: boolean }[] = [
   { id: "dorms", label: "Dorms", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "users", label: "Users", icon: <UsersIcon className="h-3.5 w-3.5" />, adminOnly: true },
+  { id: "preferences", label: "My Preferences", icon: <MessageCircleIcon className="h-3.5 w-3.5" />, selfService: true },
   { id: "backup", label: "Backup", icon: <DatabaseIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "audit", label: "Audit", icon: <ShieldCheckIcon className="h-3.5 w-3.5" />, permission: "canViewAudit" },
   { id: "logs", label: "Logs", icon: <FileTextIcon className="h-3.5 w-3.5" />, permission: "canViewLogs" },
@@ -70,13 +72,16 @@ const FOOD_SETTINGS_TAB_IDS = new Set<ManagementTab>(["menu", "foodSettings", "b
 type ManagementNavTab = { id: string; label: string; icon: React.ReactNode; tab: ManagementTab; active: boolean };
 
 export function AdminManagement({ password, username, role, permissions = {}, initialTab, initialChannelTab, onTabUsed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; initialTab?: ManagementTab; initialChannelTab?: "sync"; onTabUsed?: () => void }) {
+  const hasManagementAccess = role === "admin" || (role === "manager" && Object.keys(permissions).length > 0) || Boolean(permissions.canViewManagement);
   const visibleTabs = useMemo(() => TABS.filter((t) => {
+    if (t.selfService) return true;
+    if (!hasManagementAccess) return false;
     if ((t.id === "website" || t.id === "bookingSettings") && process.env.NEXT_PUBLIC_GOKO_RUNTIME === "pi") return false;
     if (t.adminOnly && role !== "admin") return false;
     if (t.id === "analytics" && role === "manager") return true;
     if (t.permission && (Array.isArray(t.permission) ? !t.permission.some((permission) => hasPermission(role, permissions, permission)) : !hasPermission(role, permissions, t.permission))) return false;
     return true;
-  }), [role, permissions]);
+  }), [role, permissions, hasManagementAccess]);
   const defaultTab = visibleTabs[0]?.id || "history";
   const [tab, setTab] = useTabWithHistory<ManagementTab>("tab", defaultTab, {
     validValues: visibleTabs.map((t) => t.id),
@@ -209,6 +214,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         </div>
       )}
       <div className="mt-6">
+        {tab === "preferences" && <ManagementPreferences username={username || "admin"} />}
         {tab === "dorms" && <AdminSetup password={password} />}
         {tab === "users" && <ManagementUsers password={password} role={role} />}
         {tab === "backup" && <ManagementBackup password={password} role={role} />}

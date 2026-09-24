@@ -24,7 +24,7 @@ export function firstVisibleAdminSection(
   if (role === "admin") {
     return ADMIN_NAV.includes(current) ? current : (ADMIN_NAV[0] ?? null);
   }
-  const isVisible = (id: AdminSection) => id === "management" && role === "manager" && Object.keys(permissions).length > 0 ? true : Boolean(permissions[ADMIN_NAV_PERMS[id]]);
+  const isVisible = (id: AdminSection) => id === "management" || Boolean(permissions[ADMIN_NAV_PERMS[id]]);
   if (ADMIN_NAV.includes(current) && isVisible(current)) return current;
   return ADMIN_NAV.find(isVisible) ?? null;
 }

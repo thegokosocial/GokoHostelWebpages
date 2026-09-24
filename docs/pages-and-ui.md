@@ -1,6 +1,6 @@
 # Pages and admin UI
 
-Staff booking templates and review requests use [WhatsApp Business messaging](whatsapp-messaging.md): Android targets Business with copy/retry recovery; when Business is missing or unavailable, the admin fallback restores the draft and shows an explicit warning instead of silently appearing to restart. Other devices offer default-app/copy choices. Reviews prepare the message before a separate launch tap; counters show preparation attempts. Public/guest WhatsApp links retain existing behavior.
+Staff booking templates, review requests, and Admin Food Bills use [staff WhatsApp messaging](whatsapp-messaging.md). Each user selects Ask every time, Business, or regular/default WhatsApp in Management → My Preferences on that device. Android retains explicit links for both apps and a recoverable draft even when an automatic attempt fails. Review counters count preparation attempts, not launches. Public/guest WhatsApp links retain existing behavior.
 
 The admin header notification-settings dialog supports enable/test/disable with busy states and recoverable errors. Test success reports push-service acceptance; users confirm display on their device. See [Push notifications](push-notifications.md) for mobile rendering and Chrome-owned notices.
 
@@ -84,12 +84,13 @@ Menu deletion removes items/categories from active admin and guest-menu lists us
 
 Bulk availability saves its local override and mapped dirty retry rows before calling PMS. The modal stays in progress until Aiosell accepts the push, then shows the successful PMS confirmation; a failed or timed-out push leaves the local change saved and exposes a Retry PMS sync action. The Worker’s protected five-minute retry remains a server-side safety net for dirty inventory rows.
 
-Most `adminOnly: true`. On phone view, the section selector is bounded and scrollable beneath the global navigation drawer; long To Do task forms/details and attendance date-range dialogs are bounded to the dynamic viewport and scroll internally. Management dropdown options remain clickable above their local dismiss layer. Audit and Logs are separately grantable view tabs; To Do is visible with `canViewTasks` or `canManageTasks`; users still need `canViewManagement` to enter Management. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
+Most `adminOnly: true`. Management → My Preferences is the self-service exception available to every authenticated user; users without existing Management access see only that tab, while existing manager compatibility and all tab-specific gates remain unchanged. On phone view, the section selector is bounded and scrollable beneath the global navigation drawer; long To Do task forms/details and attendance date-range dialogs are bounded to the dynamic viewport and scroll internally. Management dropdown options remain clickable above their local dismiss layer. Audit and Logs are separately grantable view tabs; To Do is visible with `canViewTasks` or `canManageTasks`. Website hidden when `NEXT_PUBLIC_GOKO_RUNTIME === "pi"`.
 
 Existing section selectors within Management use a shared wrapping style based on Account Settings; their page-specific state, route IDs, permission gates, and selection side effects remain unchanged. Food Settings groups the existing Menu, general food settings, and Bill Settings tabs. Each child retains its existing permission gate and `tab` ID; only the Management navigation is grouped.
 
 | `tab` | UI | Permissions | Notes |
 |-------|-----|-------------|-------|
+| `preferences` | `ManagementPreferences` | any authenticated admin user | device-local WhatsApp app preference; no permission key |
 | `dorms` | `AdminSetup` | admin only | init/remove dorms/beds |
 | `users` | `ManagementUsers` | admin only | permission checkboxes |
 | `backup` | `ManagementBackup` | admin only | |

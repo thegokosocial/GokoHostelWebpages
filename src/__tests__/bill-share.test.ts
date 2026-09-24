@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   billShareExpiresAt,
+  buildBillWhatsAppDraft,
   buildBillWhatsAppHref,
   generateBillShareToken,
   publicBillShareUrl,
@@ -43,6 +44,7 @@ describe("billShare helpers", () => {
     expect(text).toContain("Ada");
     expect(text).toContain(shareUrl);
     expect(text).not.toMatch(/phone=\d/);
+    expect(buildBillWhatsAppDraft({ guestPhone: "9876543210", guestName: "Ada", shareUrl })).toEqual({ phone: "919876543210", message: `Hi Ada, here is your Goko food bill:\n${shareUrl}` });
   });
 
   it("rejects non-10-digit India mobiles for WhatsApp", () => {
@@ -86,10 +88,11 @@ describe("mock workflows (source contracts)", () => {
     expect(route).toMatch(/phone: viaToken \? undefined : normalized/);
   });
 
-  it("Order Summary + Combined Bill mint share links and open WhatsApp", () => {
+  it("Order Summary + Combined Bill mint share links through the shared staff launcher", () => {
     const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
     expect(ui).toMatch(/createBillShareLink/);
-    expect(ui).toMatch(/buildBillWhatsAppHref/);
+    expect(ui).toMatch(/buildBillWhatsAppDraft/);
+    expect(ui.match(/prepareWhatsApp\(draft\.phone, draft\.message, "foodOrders"\)/g)).toHaveLength(2);
     expect(ui).toMatch(/function CombinedBill/);
     expect(ui).toMatch(/GuestFoodBillCard/);
     expect(ui).toMatch(/embedQr:\s*false/);

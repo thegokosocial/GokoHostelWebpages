@@ -10,7 +10,8 @@ import { generateGuestBill, generateCombinedBill, type CombinedBillData, type Bi
 import { loadBillBranding } from "@/lib/loadBillBranding";
 import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/food/GuestFoodBillCard";
 import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/lib/foodBillFormat";
-import { buildBillWhatsAppHref } from "@/lib/billShare";
+import { buildBillWhatsAppDraft } from "@/lib/billShare";
+import { useStaffWhatsApp } from "@/components/admin/StaffWhatsAppProvider";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
@@ -811,6 +812,7 @@ interface SummaryGroup {
 
 function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder, role, permissions }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string; onOrderMore: (guest: PrefillGuest) => void; onAddNewOrder?: () => void; role?: Role; permissions?: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
+  const prepareWhatsApp = useStaffWhatsApp();
   const [hostelGuests, setHostelGuests] = useState<GuestWithTab[]>([]);
   const [walkinOrders, setWalkinOrders] = useState<Order[]>([]);
   const [recentPaidOrders, setRecentPaidOrders] = useState<Order[]>([]);
@@ -1320,12 +1322,12 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         showError("WhatsApp", data.error || "Could not create bill link");
         return;
       }
-      const href = buildBillWhatsAppHref({ guestPhone: phone, guestName, shareUrl: data.url });
-      if (!href) {
+      const draft = buildBillWhatsAppDraft({ guestPhone: phone, guestName, shareUrl: data.url });
+      if (!draft) {
         showError("WhatsApp", "Could not open WhatsApp for this number");
         return;
       }
-      window.open(href, "_blank", "noopener,noreferrer");
+      prepareWhatsApp(draft.phone, draft.message, "foodOrders");
     } finally {
       setWhatsAppBusy(false);
     }
@@ -2322,6 +2324,7 @@ function VoidReasonPopup({ itemName, isModification = false, onVoid, onCancel, b
 
 function CombinedBill({ apiCall, password, username, role, permissions }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string; role: Role; permissions: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
+  const prepareWhatsApp = useStaffWhatsApp();
   const [guests, setGuests] = useState<CombinedGuestOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2416,12 +2419,12 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
         showError("WhatsApp", data.error || "Could not create bill link");
         return;
       }
-      const href = buildBillWhatsAppHref({ guestPhone: normalized, guestName: g.guestName, shareUrl: data.url });
-      if (!href) {
+      const draft = buildBillWhatsAppDraft({ guestPhone: normalized, guestName: g.guestName, shareUrl: data.url });
+      if (!draft) {
         showError("WhatsApp", "Could not open WhatsApp for this number");
         return;
       }
-      window.open(href, "_blank", "noopener,noreferrer");
+      prepareWhatsApp(draft.phone, draft.message, "foodOrders");
     } finally {
       setWhatsAppBusyKey(null);
     }

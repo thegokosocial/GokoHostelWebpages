@@ -254,7 +254,7 @@ export function BookingDetailPanel({
       "{BALANCE}": balanceText,
       "{PROPERTY_NAME}": propertyName,
     });
-    prepareWhatsApp(whatsAppContact, message, "bookings", true);
+    prepareWhatsApp(whatsAppContact, message, "bookings");
     setShowWhatsAppTemplates(false);
   };
   const beginContactEdit = () => {
@@ -826,7 +826,7 @@ export function BookingDetailPanel({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-foreground">Message {booking.guestName}</h3>
-                <p className="text-xs text-muted-foreground">Choose a template. Android opens WhatsApp Business; other devices show message options.</p>
+                <p className="text-xs text-muted-foreground">Choose a template, then review the message or use your saved WhatsApp preference.</p>
               </div>
               <Button variant="ghost" size="icon-sm" onClick={() => setShowWhatsAppTemplates(false)}><XIcon className="size-4" /><span className="sr-only">Close</span></Button>
             </div>
