@@ -4,6 +4,8 @@
 
 Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data-model.md](data-model.md). FKs: [relationships.md](relationships.md).
 
+Payment activity additions: `guest_receipts.operation_id` groups per-order online food allocations from one payment save. `cash_payment_events` is the append-only prospective journal for ordinary food and non-OTA room cash collections, refunds, and corrections; amounts are signed paise and guest/reference values are immutable snapshots. OTA postpaid room cash remains in `booking_payment_events`.
+
 | Table | Columns |
 |-------|---------|
 | `checkins` | 33 |
@@ -30,6 +32,8 @@ Source of truth if this file lags: `src/db/schema.ts`. Role of each table: [data
 | `employees` | 13 |
 | `salary_payments` | 12 |
 | `daily_income` | 15 |
+| `guest_receipts` | 22 |
+| `cash_payment_events` | 17 |
 | `daily_ledger` | 15 |
 | `expenses` | 21 |
 | `push_subscriptions` | 6 |

@@ -58,6 +58,16 @@ vi.mock("@/lib/guestReceipts", () => ({
   createGuestReceipt: q.createGuestReceipt,
   resolveReceiptAccount: q.resolveReceiptAccount,
   latestReceiptAccount: q.latestReceiptAccount,
+  receiptBusinessDate: () => "2026-09-23",
+}));
+vi.mock("@/lib/cashPaymentJournal", () => ({
+  assertCashDateOpen: vi.fn(async () => undefined),
+  assertCashPaymentCorrectionOpen: vi.fn(async () => undefined),
+  recordCashPaymentEvent: vi.fn(async (event: any, mutation: any) => {
+    if (mutation) await q.updateBookingFull(event.sourceId, mutation.values);
+    return { duplicate: false };
+  }),
+  recordCashPaymentCorrection: vi.fn(async () => ({ duplicate: false })),
 }));
 vi.mock("@/db/queries", () => ({
   getCalendarAvailability: q.getCalendarAvailability,

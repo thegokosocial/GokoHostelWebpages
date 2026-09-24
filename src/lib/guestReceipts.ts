@@ -27,6 +27,7 @@ export async function createGuestReceipt(data: {
   receiptId: string; sourceType: "food_order" | "booking" | "platform_settlement"; sourceId: number;
   kind: "food" | "stay" | "ota_prepaid" | "refund" | "reversal" | "platform_settlement";
   accountId: number; amount: number; createdBy: string; notes?: string; businessDate?: string;
+  operationId?: string;
 }) {
   if (!data.receiptId) throw new Error("receiptId required");
   const db = getDb();

@@ -24,6 +24,12 @@ vi.mock("@/lib/guestReceipts", () => ({
   receiptBusinessDate: vi.fn(() => "2026-09-22"),
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
+vi.mock("@/lib/cashPaymentJournal", () => ({
+  assertCashDateOpen: vi.fn(async () => undefined),
+  assertCashPaymentCorrectionOpen: vi.fn(async () => undefined),
+  recordCashPaymentEvent: vi.fn(async () => ({ duplicate: false })),
+  recordCashPaymentCorrection: vi.fn(async () => ({ duplicate: false })),
+}));
 
 import { POST } from "@/app/api/admin/food-orders/route";
 
@@ -112,6 +118,7 @@ function createPaymentTables(sqlite: SQLite.Database) {
     CREATE TABLE guest_receipts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       receipt_id TEXT NOT NULL UNIQUE,
+      operation_id TEXT,
       source_type TEXT NOT NULL,
       source_id INTEGER NOT NULL,
       kind TEXT NOT NULL,
@@ -128,6 +135,25 @@ function createPaymentTables(sqlite: SQLite.Database) {
       checkin_date_snapshot TEXT,
       checkout_date_snapshot TEXT,
       booking_cycle_snapshot INTEGER,
+      sync_id TEXT,
+      sync_updated_at TEXT,
+      sync_source TEXT
+    );
+    CREATE TABLE cash_payment_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT NOT NULL UNIQUE,
+      operation_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      amount_paise INTEGER NOT NULL,
+      business_date TEXT NOT NULL,
+      corrects_event_id TEXT,
+      guest_name_snapshot TEXT NOT NULL DEFAULT '',
+      reference_snapshot TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL,
+      created_at TEXT NOT NULL,
       sync_id TEXT,
       sync_updated_at TEXT,
       sync_source TEXT
@@ -199,6 +225,7 @@ describe("food payment D1 persistence", () => {
       payment_status: "paid", amount_paid: 400, payment_method: "cash", cash_received: 500, change_given: 100,
     });
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM guest_receipts").get()).toEqual({ count: 0 });
+    expect(sqlite.prepare("SELECT amount_paise, event_type FROM cash_payment_events").all()).toEqual([{ amount_paise: 400, event_type: "collection" }]);
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_log").get()).toEqual({ count: 1 });
   });
 
@@ -212,7 +239,21 @@ describe("food payment D1 persistence", () => {
       payment_method: "split", cash_received: 100, change_given: 0,
     });
     expect(sqlite.prepare("SELECT account_id, amount FROM guest_receipts").all()).toEqual([{ account_id: 7, amount: 300 }]);
+    expect(sqlite.prepare("SELECT amount_paise FROM cash_payment_events").all()).toEqual([{ amount_paise: 100 }]);
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_log").get()).toEqual({ count: 1 });
+  });
+
+  it("keeps one operation id across a combined online payment", async () => {
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, guest_name, total, updated_at) VALUES (?, ?, ?, ?, ?)").run(11, "F-11", "Test Guest", 600, "2026-09-22T16:00:00.000Z");
+    q.getFoodOrderById.mockImplementation(async (id: number) => ({ id, orderNumber: `F-${id}`, guestName: "Test Guest", status: "placed", paymentStatus: "pending", total: id === 10 ? 400 : 600 }));
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([[10, [{ status: "active", pricingStatus: "fixed" }]], [11, [{ status: "active", pricingStatus: "fixed" }]]]));
+
+    const response = await POST(request({ orderIds: [10, 11], paymentMethod: "online", onlineAccountId: 7, receiptId: "payment-1" }));
+
+    expect(response.status).toBe(200);
+    expect(sqlite.prepare("SELECT operation_id, amount FROM guest_receipts ORDER BY source_id").all()).toEqual([
+      { operation_id: "payment-1", amount: 400 }, { operation_id: "payment-1", amount: 600 },
+    ]);
   });
 
   it("collects only the outstanding balance for a partially paid order", async () => {
@@ -224,5 +265,15 @@ describe("food payment D1 persistence", () => {
     expect(response.status).toBe(200);
     expect(sqlite.prepare("SELECT payment_status, amount_paid FROM food_orders WHERE id = 10").get()).toMatchObject({ payment_status: "paid", amount_paid: 400 });
     expect(sqlite.prepare("SELECT amount FROM guest_receipts").all()).toEqual([{ amount: 200 }]);
+  });
+
+  it("retains earlier cash when Order More is later paid online", async () => {
+    sqlite.prepare("UPDATE food_orders SET amount_paid = 200, payment_status = 'partial', payment_method = 'cash', cash_received = 200 WHERE id = 10").run();
+    q.getFoodOrderById.mockResolvedValue({ id: 10, orderNumber: "F-10", status: "placed", paymentStatus: "partial", amountPaid: 200, total: 400, paymentMethod: "cash", cashReceived: 200 });
+    expect((await POST(request({ orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }))).status).toBe(200);
+    expect(sqlite.prepare("SELECT amount_paid, payment_method, cash_received FROM food_orders WHERE id = 10").get())
+      .toEqual({ amount_paid: 400, payment_method: "split", cash_received: 200 });
+    expect(sqlite.prepare("SELECT amount FROM guest_receipts").all()).toEqual([{ amount: 200 }]);
+    expect(sqlite.prepare("SELECT COUNT(*) n FROM cash_payment_events").get()).toEqual({ n: 0 });
   });
 });

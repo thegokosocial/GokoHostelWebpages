@@ -8,10 +8,14 @@ const foodPayments = readFileSync("src/app/api/admin/food-orders/route.ts", "utf
 describe("account activity provenance", () => {
   it("returns the authenticated creator for income, receipts, expenses, and virtual ledger rows", () => {
     expect(route).toContain("COALESCE(created_by, '') AS addedBy");
-    expect(route).toContain("COALESCE(gr.created_by, '') AS addedBy");
+    expect(route).toContain("MIN(COALESCE(created_by, '')) AS addedBy");
     expect(route).toContain('addedBy: row.createdBy || "System"');
     expect(route).toContain("gr.source_type = 'food_order'");
     expect(route).toContain("fo.order_number");
+    expect(route).toContain("receipt_activity");
+    expect(route).toContain("cash_payment_events");
+    expect(route).toContain("ota_cash_activity");
+    expect(route).toContain("GROUP BY operation_id HAVING SUM(amount_paise) != 0");
   });
 
   it("shows who added each entry on desktop and mobile and does not trust a client-supplied food payer name", () => {

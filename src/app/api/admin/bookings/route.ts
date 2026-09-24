@@ -33,7 +33,7 @@ import { todayIST } from "@/lib/utils";
 import { generateGokoBookingId } from "@/lib/bookingReference";
 import { manualCreateStatus } from "@/lib/bookingStayStatus";
 import { isStayPayMethod, isPrepaidStatus, stayDueAtHotel, mergeStayCollect, stayRefundCap, stayRefundWrite, prepaidCheckInWrite, prepaidCheckInRollback } from "@/lib/stayPayment";
-import { createGuestReceipt, latestReceiptAccount, resolveReceiptAccount } from "@/lib/guestReceipts";
+import { createGuestReceipt, latestReceiptAccount, receiptBusinessDate, resolveReceiptAccount } from "@/lib/guestReceipts";
 import {
   BookingPaymentError,
   canCollectOtaPayment,
@@ -66,6 +66,7 @@ import {
 import { isPiRuntime } from "@/lib/runtime";
 import { GuestCheckoutError, refundWebsiteOrphanCapture } from "@/lib/nativeGuestCheckout";
 import { RazorpayError } from "@/lib/razorpay";
+import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
 
 function bookingDateRange(checkinDate: string, checkoutDate?: string | null): string[] {
   return occupiedNights(checkinDate, checkoutDate);
@@ -774,6 +775,7 @@ export async function POST(req: NextRequest) {
       if (advance > 0 && advancePaymentMethod === "online") {
         advanceAccountId = await resolveReceiptAccount("room", advanceOnlineAccountId);
       }
+      if (advance > 0 && advancePaymentMethod === "cash") await assertCashDateOpen(receiptBusinessDate());
 
       const now = new Date().toISOString();
       const stayStatus = manualCreateStatus(checkinDate, checkoutDate, todayIST(), now);
@@ -791,10 +793,10 @@ export async function POST(req: NextRequest) {
         amountBeforeTax: totalBeforeTax,
         amountTax: tax,
         amountTotal: total,
-        amountPaid: advance,
-        paymentStatus: advance > 0 ? "paid" : undefined,
-        paymentMethod: advance > 0 ? advancePaymentMethod : undefined,
-        cashReceived: advancePaymentMethod === "cash" ? advance : 0,
+        amountPaid: advancePaymentMethod === "cash" ? 0 : advance,
+        paymentStatus: advance > 0 && advancePaymentMethod !== "cash" ? "paid" : undefined,
+        paymentMethod: advance > 0 && advancePaymentMethod !== "cash" ? advancePaymentMethod : undefined,
+        cashReceived: 0,
         changeGiven: 0,
         specialRequests: specialRequests || "",
         source: "manual",
@@ -856,6 +858,15 @@ export async function POST(req: NextRequest) {
           createdBy: actingUser,
           notes: `Advance stay payment for ${guestName}`,
         });
+      }
+      if (advance > 0 && advancePaymentMethod === "cash") {
+        const operationId = crypto.randomUUID();
+        await recordCashPaymentEvent({
+          eventId: `${operationId}:cash:booking:${newBookingId}`, operationId,
+          sourceType: "booking", sourceId: newBookingId, eventType: "collection",
+          amountPaise: rupeesToPaise(advance), actor: actingUser, guestNameSnapshot: guestName,
+          referenceSnapshot: `Booking #${newBookingId}`, note: "Advance stay payment",
+        }, { values: { amountPaid: advance, paymentStatus: "paid", paymentMethod: "cash", cashReceived: advance, changeGiven: 0 } });
       }
 
       if (newBookingId) {
@@ -1011,6 +1022,7 @@ export async function POST(req: NextRequest) {
       let prepaidRecorded = 0;
       let bookingUpdatedInJournal = false;
       let receiptData: { receiptId: string; kind: "stay"; accountId: number; amount: number; notes: string } | null = null;
+      let cashEventData: Parameters<typeof recordCashPaymentEvent>[0] | null = null;
       if (collectPayment && dueAtCheckIn > 0) {
         const { paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId, operationId } = body;
         if (!isStayPayMethod(paymentMethod)) {
@@ -1039,6 +1051,7 @@ export async function POST(req: NextRequest) {
           collectedAtCheckIn = true;
           collectedMethod = paymentMethod;
         } else {
+          const paymentOperationId = String(operationId || receiptId || crypto.randomUUID());
           const merged = mergeStayCollect({
             existingMethod: detail.booking.paymentMethod,
             existingCashReceived: detail.booking.cashReceived,
@@ -1054,8 +1067,16 @@ export async function POST(req: NextRequest) {
           const onlineAmount = paymentMethod === "online" ? dueAtCheckIn : paymentMethod === "split" ? Math.max(0, dueAtCheckIn - (Number(cashReceived) || 0)) : 0;
           if (onlineAmount > 0) {
             const accountId = await resolveReceiptAccount("room", onlineAccountId);
-            receiptData = { receiptId: receiptId || crypto.randomUUID(), kind: "stay", accountId, amount: Math.round(onlineAmount * 100), notes: `Stay payment for ${detail.booking.guestName}` };
+            receiptData = { receiptId: paymentOperationId, kind: "stay", accountId, amount: Math.round(onlineAmount * 100), notes: `Stay payment for ${detail.booking.guestName}` };
           }
+          const cashAmount = paymentMethod === "cash" ? dueAtCheckIn : paymentMethod === "split" ? Math.min(dueAtCheckIn, Number(cashReceived) || 0) : 0;
+          if (cashAmount > 0) cashEventData = {
+            eventId: `${paymentOperationId}:cash:booking:${bookingId}`, operationId: paymentOperationId,
+            sourceType: "booking", sourceId: bookingId, eventType: "collection", amountPaise: rupeesToPaise(cashAmount),
+            actor: actingUser, guestNameSnapshot: detail.booking.guestName,
+            referenceSnapshot: detail.booking.gokoBookingId || detail.booking.bookingRef || `Booking #${bookingId}`,
+            note: "Stay payment collected at check-in",
+          };
           collectedAtCheckIn = true;
           collectedMethod = merged.paymentMethod;
         }
@@ -1071,8 +1092,15 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (!bookingUpdatedInJournal) await updateBookingFull(bookingId, updateData);
-      if (receiptData) await createGuestReceipt({ ...receiptData, sourceType: "booking", sourceId: bookingId, createdBy: actingUser });
+      if (cashEventData) await assertCashDateOpen(receiptBusinessDate());
+      if (cashEventData) await recordCashPaymentEvent(cashEventData, {
+        values: updateData, expectedPaid: Number(detail.booking.amountPaid) || 0,
+        receipts: receiptData ? [{ ...receiptData, sourceType: "booking", sourceId: bookingId, createdBy: actingUser }] : [],
+      });
+      else {
+        if (!bookingUpdatedInJournal) await updateBookingFull(bookingId, updateData);
+        if (receiptData) await createGuestReceipt({ ...receiptData, sourceType: "booking", sourceId: bookingId, createdBy: actingUser });
+      }
       if (prepaidRecorded > 0) {
         try {
           await recognizePlatformBooking({ ...detail.booking, id: bookingId }, actingUser);
@@ -1272,13 +1300,26 @@ export async function POST(req: NextRequest) {
         newChangeGiven: Number(changeGiven) || 0,
       });
       const onlineAmount = paymentMethod === "online" ? due : paymentMethod === "split" ? Math.max(0, due - (Number(cashReceived) || 0)) : 0;
+      const paymentOperationId = String(operationId || receiptId || crypto.randomUUID());
+      const cashAmount = paymentMethod === "cash" ? due : paymentMethod === "split" ? Math.min(due, Number(cashReceived) || 0) : 0;
       let receiptData: { receiptId: string; accountId: number; amount: number } | null = null;
       if (onlineAmount > 0) {
         const accountId = await resolveReceiptAccount("room", onlineAccountId);
-        receiptData = { receiptId: receiptId || crypto.randomUUID(), accountId, amount: Math.round(onlineAmount * 100) };
+        receiptData = { receiptId: paymentOperationId, accountId, amount: Math.round(onlineAmount * 100) };
       }
-      await updateBookingFull(bookingId, merged);
-      if (receiptData) await createGuestReceipt({ ...receiptData, sourceType: "booking", sourceId: bookingId, kind: "stay", createdBy: actingUser, notes: `Stay payment for ${detail.booking.guestName}` });
+      if (cashAmount > 0) await assertCashDateOpen(receiptBusinessDate());
+      const stayReceipt = receiptData ? { ...receiptData, sourceType: "booking" as const, sourceId: bookingId, kind: "stay" as const, createdBy: actingUser, notes: `Stay payment for ${detail.booking.guestName}` } : null;
+      if (cashAmount > 0) await recordCashPaymentEvent({
+        eventId: `${paymentOperationId}:cash:booking:${bookingId}`, operationId: paymentOperationId,
+        sourceType: "booking", sourceId: bookingId, eventType: "collection", amountPaise: rupeesToPaise(cashAmount),
+        actor: actingUser, guestNameSnapshot: detail.booking.guestName,
+        referenceSnapshot: detail.booking.gokoBookingId || detail.booking.bookingRef || `Booking #${bookingId}`,
+        note: "Stay payment collected",
+      }, { values: merged, expectedPaid: Number(detail.booking.amountPaid) || 0, receipts: stayReceipt ? [stayReceipt] : [] });
+      else {
+        await updateBookingFull(bookingId, merged);
+        if (stayReceipt) await createGuestReceipt(stayReceipt);
+      }
       await addBookingHistoryEntry({
         bookingId,
         action: "Payment Collected",
@@ -1491,6 +1532,8 @@ export async function POST(req: NextRequest) {
         };
         let refundNote = "";
         let journalRefund: { duplicate: boolean } | null = null;
+        let pendingCancelCash: Parameters<typeof recordCashPaymentEvent>[0] | null = null;
+        let pendingCancelReceipt: Parameters<typeof createGuestReceipt>[0] | null = null;
         if (isOtaPostpaidBooking(detail.booking) && Number(refundAmountPaise) > 0) {
           try {
             const result = await recordOtaBookingPayment({
@@ -1535,13 +1578,30 @@ export async function POST(req: NextRequest) {
             if (onlineRefund > 0) {
               const previousAccount = await latestReceiptAccount("booking", bookingId);
               const accountId = await resolveReceiptAccount("room", onlineAccountId ?? previousAccount);
-              await createGuestReceipt({ receiptId: receiptId || crypto.randomUUID(), sourceType: "booking", sourceId: bookingId, kind: "refund", accountId, amount: -Math.round(onlineRefund * 100), createdBy: actingUser, notes: `Stay refund for ${detail.booking.guestName}` });
+              pendingCancelReceipt = { receiptId: receiptId || crypto.randomUUID(), sourceType: "booking", sourceId: bookingId, kind: "refund", accountId, amount: -Math.round(onlineRefund * 100), createdBy: actingUser, notes: `Stay refund for ${detail.booking.guestName}` };
+            }
+            if (written.refundCash > 0) {
+              const cashOperationId = String(receiptId || crypto.randomUUID());
+              pendingCancelCash = {
+                eventId: `${cashOperationId}:cash:booking:${bookingId}`, operationId: cashOperationId,
+                sourceType: "booking", sourceId: bookingId, eventType: "refund",
+                amountPaise: -rupeesToPaise(written.refundCash), actor: actingUser,
+                guestNameSnapshot: detail.booking.guestName,
+                referenceSnapshot: detail.booking.gokoBookingId || detail.booking.bookingRef || `Booking #${bookingId}`,
+                note: "Stay refund on cancellation",
+              };
             }
           }
         }
-        if (!journalRefund) {
+        if (pendingCancelCash) await assertCashDateOpen(receiptBusinessDate());
+        if (pendingCancelCash) await recordCashPaymentEvent(pendingCancelCash, {
+          values: cancelUpdate, allowedStatuses: ["received", "hold", "checked_in"], expectedPaid: Number(detail.booking.amountPaid) || 0,
+          receipts: pendingCancelReceipt ? [pendingCancelReceipt] : [],
+        });
+        else if (!journalRefund) {
           const cancelled = await transitionBookingStatus(bookingId, ["received", "hold", "checked_in"], cancelUpdate);
           if (!cancelled) return NextResponse.json({ error: "Booking was already closed or changed by another user" }, { status: 409 });
+          if (pendingCancelReceipt) await createGuestReceipt(pendingCancelReceipt);
         }
         await unassignBookingBeds(bookingId);
         if (!journalRefund?.duplicate) await addBookingHistoryEntry({
@@ -2240,6 +2300,7 @@ export async function POST(req: NextRequest) {
         }
       }
       let paymentReceipt: { receiptId: string; accountId: number; amount: number; kind: "stay" | "refund" } | null = null;
+      let cashPaymentWrite: { amountPaise: number; eventType: "collection" | "refund" | "correction"; operationId: string } | null = null;
       if (amountPaid !== undefined) {
         if (detail.booking.source !== "manual") return NextResponse.json({ error: "Collected payment can only be edited for manual bookings" }, { status: 400 });
         const nextPaid = Number(amountPaid);
@@ -2266,7 +2327,9 @@ export async function POST(req: NextRequest) {
           Object.assign(updates, merged);
           const delta = nextPaid - oldPaid;
           const onlineAmount = paymentMethod === "online" ? delta : paymentMethod === "split" ? Math.max(0, delta - (Number(cashReceived) || 0)) : 0;
+          const cashAmount = paymentMethod === "cash" ? delta : paymentMethod === "split" ? Math.min(delta, Number(cashReceived) || 0) : 0;
           if (onlineAmount > 0) paymentReceipt = { receiptId: receiptId || crypto.randomUUID(), accountId: await resolveReceiptAccount("room", onlineAccountId), amount: onlineAmount, kind: "stay" };
+          if (cashAmount > 0) cashPaymentWrite = { amountPaise: rupeesToPaise(cashAmount), eventType: "collection", operationId: String(receiptId || crypto.randomUUID()) };
           changes.push(`Amount received → ₹${nextPaid}`);
         } else {
           const difference = oldPaid - nextPaid;
@@ -2283,9 +2346,13 @@ export async function POST(req: NextRequest) {
             updates.refundedBy = actingUser;
             const onlineAmount = written.refundMethod === "online" ? difference : written.refundMethod === "split" ? Math.max(0, difference - written.refundCash) : 0;
             if (onlineAmount > 0) paymentReceipt = { receiptId: receiptId || crypto.randomUUID(), accountId: await resolveReceiptAccount("room", onlineAccountId), amount: -onlineAmount, kind: "refund" };
+            if (written.refundCash > 0) cashPaymentWrite = { amountPaise: -rupeesToPaise(written.refundCash), eventType: "refund", operationId: String(receiptId || crypto.randomUUID()) };
             changes.push(`Refunded ₹${difference} (${written.refundMethod}); amount received → ₹${nextPaid}`);
           } else {
             changes.push(`Corrected amount received → ₹${nextPaid}`);
+            const oldCash = detail.booking.paymentMethod === "cash" ? oldPaid : detail.booking.paymentMethod === "split" ? Math.min(oldPaid, Number(detail.booking.cashReceived) || 0) : 0;
+            const correctedCash = detail.booking.paymentMethod === "cash" ? nextPaid : detail.booking.paymentMethod === "split" ? Math.min(nextPaid, Number(detail.booking.cashReceived) || 0) : 0;
+            if (correctedCash !== oldCash) cashPaymentWrite = { amountPaise: rupeesToPaise(correctedCash - oldCash), eventType: "correction", operationId: String(receiptId || crypto.randomUUID()) };
           }
           updates.amountPaid = nextPaid;
           updates.paymentStatus = nextPaid > 0 ? "paid" : "unknown";
@@ -2308,6 +2375,11 @@ export async function POST(req: NextRequest) {
       const finalAmountPaid = amountPaid !== undefined ? Number(amountPaid) : Number(detail.booking.amountPaid || 0);
       if (Number(updates.amountTotal ?? detail.booking.amountTotal ?? 0) < finalAmountPaid) {
         return NextResponse.json({ error: "Booking total cannot be less than the amount already collected" }, { status: 400 });
+      }
+
+      if (cashPaymentWrite) {
+        if (cashPaymentWrite.eventType === "correction") await assertCashPaymentCorrectionOpen("booking", bookingId);
+        else await assertCashDateOpen(receiptBusinessDate());
       }
 
       const oldDates = bookingDateRange(detail.booking.checkinDate, stayCheckout(detail.booking.checkinDate, detail.booking.checkoutDate));
@@ -2347,20 +2419,35 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (Object.keys(updates).length > 0) {
+      if (!cashPaymentWrite && Object.keys(updates).length > 0) {
         await updateBookingFull(bookingId, updates);
       }
 
-      if (paymentReceipt) await createGuestReceipt({
+      const editedReceipt = paymentReceipt ? {
         receiptId: paymentReceipt.receiptId,
-        sourceType: "booking",
+        sourceType: "booking" as const,
         sourceId: bookingId,
         kind: paymentReceipt.kind,
         accountId: paymentReceipt.accountId,
         amount: paymentReceipt.amount * 100,
         createdBy: actingUser,
         notes: paymentReceipt.kind === "refund" ? `Booking payment refund for ${detail.booking.guestName}` : `Booking payment adjustment for ${detail.booking.guestName}`,
-      });
+      } : null;
+      if (!cashPaymentWrite && editedReceipt) await createGuestReceipt(editedReceipt);
+      if (cashPaymentWrite) {
+        const cashData = {
+          eventId: `${cashPaymentWrite.operationId}:cash:booking:${bookingId}`,
+          sourceType: "booking" as const, sourceId: bookingId, amountPaise: cashPaymentWrite.amountPaise,
+          actor: actingUser, guestNameSnapshot: detail.booking.guestName,
+          referenceSnapshot: detail.booking.gokoBookingId || detail.booking.bookingRef || `Booking #${bookingId}`,
+          note: cashPaymentWrite.eventType === "refund" ? "Stay payment refund" : cashPaymentWrite.eventType === "correction" ? "Stay payment correction" : "Stay payment collected",
+        };
+        const mutation = { values: updates, expectedPaid: Number(detail.booking.amountPaid) || 0, receipts: editedReceipt ? [editedReceipt] : [] };
+        if (cashPaymentWrite.eventType === "correction") {
+          const result = await recordCashPaymentCorrection(cashData, mutation);
+          if (result?.skippedLegacy) await updateBookingFull(bookingId, updates);
+        } else await recordCashPaymentEvent({ ...cashData, operationId: cashPaymentWrite.operationId, eventType: cashPaymentWrite.eventType }, mutation);
+      }
 
       if (changes.length > 0) {
         await addBookingHistoryEntry({
@@ -2469,6 +2556,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("Booking API error:", { requestId, action, stage, error: e });
     const raw = e?.message || "Internal server error";
+    if (e?.status === 409 || e?.status === 400) return NextResponse.json({ error: raw }, { status: e.status });
     if (/Receiving bank|Selected receiving bank/.test(raw)) return NextResponse.json({ error: raw }, { status: 400 });
     const databaseError = /D1|Failed query|SQLITE_/i.test(raw);
     const msg = databaseError ? "Database temporarily unavailable. Please try again." : "Internal server error";

@@ -39,7 +39,7 @@ import { normalizePhone } from "@/lib/phoneUtils";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { getDb } from "@/db";
-import { auditLog, foodOrders, foodOrderItems, foodOrderEditBatches, foodPaymentEvents, menuItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
+import { auditLog, cashPaymentEvents, foodOrders, foodOrderItems, foodOrderEditBatches, foodPaymentEvents, menuItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
 import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
 import { createGuestReceipt, latestReceiptAccount, receiptBusinessDate, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { collectInBatches } from "@/lib/dbBatch";
@@ -50,6 +50,7 @@ import { auditDateBounds } from "@/lib/auditRetention";
 import { dbRead } from "@/lib/dbRetry";
 import { billShareExpiresAt, generateBillShareToken, publicBillShareUrl } from "@/lib/billShare";
 import { foodAmountPaid, foodDue, foodPaymentState } from "@/lib/foodPaymentBalance";
+import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
 
 export async function POST(req: NextRequest) {
   try {
@@ -407,8 +408,11 @@ export async function POST(req: NextRequest) {
         if (new Set(orderIds).size !== orderIds.length) return NextResponse.json({ error: "Duplicate orderIds are not allowed" }, { status: 400 });
 
         const method = paymentMethod as FoodPaymentMethod;
-        const tenderCash = Number(cashReceived) || 0;
-        const tenderChange = Number(changeGiven) || 0;
+        const tenderCash = cashReceived == null ? 0 : Number(cashReceived);
+        const tenderChange = changeGiven == null ? 0 : Number(changeGiven);
+        if (!Number.isSafeInteger(tenderCash) || !Number.isSafeInteger(tenderChange) || tenderCash < 0 || tenderChange < 0) {
+          return NextResponse.json({ error: "Cash and change must be non-negative integer amounts in paise" }, { status: 400 });
+        }
         const orders = await Promise.all(orderIds.map((id: number) => getFoodOrderById(id)));
         if (orders.some((order) => !order)) return NextResponse.json({ error: "Order not found" }, { status: 404 });
         const existingOrders = orders.filter((order): order is NonNullable<typeof order> => !!order);
@@ -431,6 +435,14 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Split payment must contain both cash and online amounts" }, { status: 400 });
         }
         const allocations = allocateFoodPayment(payableOrders, method, tenderCash, tenderChange);
+        const operationId = String(receiptId || crypto.randomUUID());
+        const businessDate = receiptBusinessDate();
+        if (allocations.some((allocation) => allocation.total - allocation.onlineAmount > 0)) await assertCashDateOpen(businessDate);
+        const now = new Date().toISOString();
+        const firstReference = existingOrders[0].orderNumber;
+        const referenceSnapshot = existingOrders.length > 1 ? `${firstReference} + ${existingOrders.length - 1} more` : firstReference;
+        const guestNames = new Set(existingOrders.map((order) => order.guestName || "guest"));
+        const guestNameSnapshot = guestNames.size === 1 ? [...guestNames][0] : "Combined bill";
         const accountId = allocations.some((allocation) => allocation.onlineAmount > 0)
           ? await resolveReceiptAccount("food", onlineAccountId)
           : undefined;
@@ -445,32 +457,55 @@ export async function POST(req: NextRequest) {
           const writes: any[] = [];
           for (const allocation of allocations) {
             const order = existingOrders.find((candidate) => candidate.id === allocation.orderId)!;
+            const previousPaid = foodAmountPaid(order);
+            const previousCash = order.paymentMethod === "cash" ? previousPaid
+              : order.paymentMethod === "split" ? Math.min(previousPaid, Number(order.cashReceived) || 0) : 0;
+            const combinedCash = previousCash + allocation.total - allocation.onlineAmount;
+            const combinedPaid = previousPaid + allocation.total;
+            const combinedMethod = previousPaid === 0 ? allocation.paymentMethod
+              : combinedCash === 0 ? "online" : combinedCash === combinedPaid ? "cash" : "split";
+            const combinedChange = combinedMethod === "cash" ? (Number(order.changeGiven) || 0) + allocation.changeGiven : 0;
             writes.push(client.update(foodOrders).set(syncUpdate({
-              amountPaid: Math.max(0, Number(order.amountPaid) || 0) + allocation.total,
+              amountPaid: sql`CASE WHEN ${foodOrders.total} = ${order.total}
+                AND ${foodOrders.amountPaid} = ${Number(order.amountPaid) || 0}
+                AND ${foodOrders.amountRefunded} = ${Number(order.amountRefunded) || 0}
+                AND ${foodOrders.status} != 'cancelled'
+                THEN ${Math.max(0, Number(order.amountPaid) || 0) + allocation.total} ELSE NULL END`,
               paymentStatus: foodPaymentState(order.total, foodAmountPaid(order) + allocation.total, order.paymentStatus === "on_tab").paymentStatus,
-              paymentMethod: allocation.paymentMethod,
+              paymentMethod: combinedMethod,
               paidBy: actorName,
-              cashReceived: allocation.cashReceived,
-              changeGiven: allocation.changeGiven,
-              updatedAt: new Date().toISOString(),
+              cashReceived: combinedCash + combinedChange,
+              changeGiven: combinedChange,
+              updatedAt: now,
             })).where(eq(foodOrders.id, allocation.orderId)));
             if (allocation.onlineAmount > 0) {
               writes.push(client.insert(guestReceipts).values(syncInsert({
-                receiptId: `${receiptId || crypto.randomUUID()}:food:${allocation.orderId}`,
+                receiptId: `${operationId}:food:${allocation.orderId}`,
+                operationId,
                 sourceType: "food_order",
                 sourceId: allocation.orderId,
                 kind: "food",
                 accountId,
                 amount: allocation.onlineAmount,
-                businessDate: receiptBusinessDate(),
+                businessDate,
                 notes: `Food order ${order.orderNumber}`,
                 createdBy: actorName,
-                createdAt: new Date().toISOString(),
+                createdAt: now,
+              })));
+            }
+            const cashAmount = allocation.total - allocation.onlineAmount;
+            if (cashAmount > 0) {
+              writes.push(client.insert(cashPaymentEvents).values(syncInsert({
+                eventId: `${operationId}:cash:food:${allocation.orderId}`,
+                operationId, sourceType: "food_order", sourceId: allocation.orderId,
+                eventType: "collection", amountPaise: cashAmount, businessDate,
+                guestNameSnapshot, referenceSnapshot, actor: actorName,
+                note: `Food payment ${referenceSnapshot}`, createdAt: now,
               })));
             }
           }
           writes.push(client.insert(auditLog).values({
-            timestamp: new Date().toISOString(),
+            timestamp: now,
             username: actorName,
             action: "food_order_paid",
             target: `orders:${orderIds.join(",")}`,
@@ -485,9 +520,9 @@ export async function POST(req: NextRequest) {
           await assertCurrentOrders(db);
           await db.batch(buildPaymentWrites(db));
         } else {
-          await db.transaction(async (tx: any) => {
-            await assertCurrentOrders(tx);
-            for (const write of buildPaymentWrites(tx)) await write;
+          await assertCurrentOrders(db);
+          db.transaction((tx: any) => {
+            for (const write of buildPaymentWrites(tx)) write.run();
           });
         }
         return NextResponse.json({ success: true, role });
@@ -742,12 +777,23 @@ export async function POST(req: NextRequest) {
           writes.push(tx.update(foodOrders).set(syncUpdate(orderUpdate)).where(eq(foodOrders.id, orderId)));
 
           if (refundAmount > 0) {
+            if (refundCash > 0) await assertCashDateOpen(receiptBusinessDate());
             writes.push(tx.insert(foodPaymentEvents).values(syncInsert({
               eventId: String(refund.operationId), orderId, eventType: "refund", amountPaise: refundAmount,
               cashPaise: refundCash, onlinePaise: refundOnline, accountId: refundAccountId,
               note: typeof refund.note === "string" ? refund.note.trim().slice(0, 240) : "Manual refund for food-order edit",
               actor: actorName, createdAt: now,
             })));
+            if (refundCash > 0) {
+              writes.push(tx.insert(cashPaymentEvents).values(syncInsert({
+                eventId: `${refund.operationId}:cash:food:${orderId}`,
+                operationId: String(refund.operationId), sourceType: "food_order", sourceId: orderId,
+                eventType: "refund", amountPaise: -refundCash, businessDate: receiptBusinessDate(),
+                guestNameSnapshot: current.guestName || "guest", referenceSnapshot: current.orderNumber,
+                note: typeof refund.note === "string" ? refund.note.trim().slice(0, 240) : "Food refund",
+                actor: actorName, createdAt: now,
+              })));
+            }
             if (refundOnline > 0 && refundAccountId) {
               writes.push(tx.insert(guestReceipts).values(syncInsert({
                 receiptId: String(refund.receiptId || refund.operationId), sourceType: "food_order", sourceId: orderId,
@@ -1523,6 +1569,10 @@ export async function POST(req: NextRequest) {
           : order.paymentMethod === "split"
             ? Math.max(0, currentPaid - (order.cashReceived || 0))
             : 0;
+        const oldCashAmount = order.paymentMethod === "cash" ? currentPaid
+          : order.paymentMethod === "split" ? Math.min(currentPaid, Number(order.cashReceived) || 0) : 0;
+        const newCashAmount = method === "cash" ? replacementAllocation
+          : method === "split" ? Math.min(replacementAllocation, cash) : 0;
         const oldAccountId = oldOnlineAmount > 0 ? await latestReceiptAccount("food_order", orderId) : null;
         const accountChanged = order.paymentStatus === "paid" && onlineAmount > 0 && onlineAccountId != null && Number(onlineAccountId) !== oldAccountId;
         if (accountChanged) {
@@ -1549,18 +1599,55 @@ export async function POST(req: NextRequest) {
         if (newPaymentMethod !== undefined) updateData.paymentMethod = newPaymentMethod;
         if (newCashReceived !== undefined) updateData.cashReceived = newCashReceived;
         if (newChangeGiven !== undefined) updateData.changeGiven = newChangeGiven;
+        if (newPaymentCollection > 0 && currentPaid > 0) {
+          const combinedCash = oldCashAmount + newCashAmount;
+          updateData.paymentMethod = combinedCash === 0 ? "online" : combinedCash === nextPaid ? "cash" : "split";
+          updateData.changeGiven = updateData.paymentMethod === "cash"
+            ? (Number(order.changeGiven) || 0) + (Number(newChangeGiven) || 0) : 0;
+          updateData.cashReceived = combinedCash + updateData.changeGiven;
+        }
         if (newPaymentStatus === "paid" && !order.paidBy) updateData.paidBy = actorName;
         if (newPaymentStatus && newPaymentStatus !== "paid" && nextPaid === 0) updateData.paidBy = "";
 
+        const paymentOperationId = String(receiptId || crypto.randomUUID());
         const db = getDb();
-        await db.update(foodOrders).set(updateData).where(eq(foodOrders.id, orderId));
+        const cashDelta = newPaymentCollection > 0 ? newCashAmount : newCashAmount - oldCashAmount;
+        const correctingCash = oldCashAmount > 0 && newPaymentCollection === 0;
+        if (cashDelta !== 0) {
+          if (correctingCash) await assertCashPaymentCorrectionOpen("food_order", orderId);
+          else await assertCashDateOpen(receiptBusinessDate());
+        }
         const changedAllocation = order.paymentStatus === "paid" && (nextStatus !== "paid" || oldOnlineAmount !== onlineAmount || accountChanged);
-        if (changedAllocation && oldOnlineAmount > 0) {
-          if (oldAccountId) await createGuestReceipt({ receiptId: `${receiptId || crypto.randomUUID()}:reverse`, sourceType: "food_order", sourceId: orderId, kind: "reversal", accountId: oldAccountId, amount: -oldOnlineAmount, createdBy: actorName, notes: `Correction for food order ${order.orderNumber}` });
+        const receipts: Array<Parameters<typeof createGuestReceipt>[0]> = [];
+        if (changedAllocation && oldOnlineAmount > 0 && oldAccountId) {
+          receipts.push({ receiptId: `${paymentOperationId}:reverse`, sourceType: "food_order", sourceId: orderId, kind: "reversal", accountId: oldAccountId, amount: -oldOnlineAmount, createdBy: actorName, notes: `Correction for food order ${order.orderNumber}` });
         }
         if (nextStatus === "paid" && onlineAmount > 0 && (order.paymentStatus !== "paid" || changedAllocation)) {
           const accountId = await resolveReceiptAccount("food", onlineAccountId);
-          await createGuestReceipt({ receiptId: receiptId || crypto.randomUUID(), sourceType: "food_order", sourceId: orderId, kind: "food", accountId, amount: onlineAmount, createdBy: actorName, notes: `Food order ${order.orderNumber}` });
+          receipts.push({ receiptId: paymentOperationId, operationId: paymentOperationId, sourceType: "food_order", sourceId: orderId, kind: "food", accountId, amount: onlineAmount, createdBy: actorName, notes: `Food order ${order.orderNumber}` });
+        }
+        let savedWithCash = false;
+        if (cashDelta !== 0) {
+          const cashEvent = {
+            eventId: `${paymentOperationId}:cash:food:${orderId}`,
+            sourceType: "food_order" as const, sourceId: orderId, amountPaise: cashDelta,
+            guestNameSnapshot: order.guestName || "guest", referenceSnapshot: order.orderNumber,
+            actor: actorName,
+          };
+          if (correctingCash) {
+            const result = await recordCashPaymentCorrection({ ...cashEvent, note: `Payment correction for ${order.orderNumber}` }, { values: updateData, expectedPaid: Number(order.amountPaid) || 0, receipts });
+            savedWithCash = !result.skippedLegacy;
+          } else {
+            await recordCashPaymentEvent({
+              ...cashEvent, operationId: paymentOperationId, eventType: "collection",
+              note: `Food payment ${order.orderNumber}`,
+            }, { values: updateData, expectedPaid: Number(order.amountPaid) || 0, receipts });
+            savedWithCash = true;
+          }
+        }
+        if (!savedWithCash) {
+          await db.update(foodOrders).set(syncUpdate(updateData)).where(eq(foodOrders.id, orderId));
+          for (const receipt of receipts) await createGuestReceipt(receipt);
         }
 
         await addAuditEntry({

@@ -11,7 +11,7 @@ import {
   getMonthKey,
 } from "@/db/queries";
 import { getDb } from "@/db";
-import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, bookingPaymentEvents, bookingCycleSnapshots, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations } from "@/db/schema";
+import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, cashPaymentEvents, bookingPaymentEvents, bookingCycleSnapshots, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations } from "@/db/schema";
 import { eq, and, sql, desc, inArray, isNull, lt, gte, lte } from "drizzle-orm";
 import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
 import { isOfflineMode, isPiRuntime } from "@/lib/runtime";
@@ -115,51 +115,93 @@ export async function POST(req: NextRequest) {
           db.select().from(dailyLedger).where(and(accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), sql`${dailyLedger.date} <= ${toDate}`, eq(dailyLedger.openingAdjusted, 1))).orderBy(desc(dailyLedger.date)).limit(1),
         ]);
         if (accountId !== null && !accountRows[0]) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+        const cashActivityCondition = accountId === null ? sql`1 = 1` : sql`0 = 1`;
         const activity = await db.all(sql`
-          SELECT * FROM (
-            SELECT 'income-' || id AS id, date, 'income' AS kind, COALESCE(description, source, '') AS description, amount, COALESCE(source_detail, '') AS reference, COALESCE(created_by, '') AS addedBy
-            FROM daily_income WHERE ${accountCondition} AND date >= ${fromDate} AND date <= ${toDate}
-            UNION ALL
-            SELECT 'receipt-' || gr.id AS id, gr.business_date AS date, gr.kind,
-              CASE
-                WHEN gr.source_type = 'food_order' THEN 'Food payment · ' || COALESCE(NULLIF(fo.guest_name, ''), 'guest')
-                WHEN gr.source_type = 'booking' THEN CASE WHEN gr.kind = 'refund' THEN 'Stay refund · ' ELSE 'Stay payment · ' END || COALESCE(NULLIF(gr.guest_name_snapshot, ''), NULLIF(b.guest_name, ''), gr.notes)
-                ELSE gr.notes
-              END AS description,
-              gr.amount,
-              CASE
-                WHEN gr.source_type = 'food_order' THEN COALESCE(NULLIF(fo.order_number, ''), CAST(gr.source_id AS TEXT))
-                WHEN gr.source_type = 'booking' THEN COALESCE(NULLIF(gr.booking_ref_snapshot, ''), NULLIF(b.goko_booking_id, ''), NULLIF(b.booking_ref, ''), gr.receipt_id)
-                ELSE gr.receipt_id
-              END AS reference,
-              COALESCE(gr.created_by, '') AS addedBy
+          WITH receipt_lines AS (
+            SELECT gr.*,
+              CASE WHEN gr.source_type = 'food_order' THEN COALESCE(NULLIF(gr.operation_id, ''),
+                CASE WHEN gr.receipt_id LIKE '%:food:' || gr.source_id
+                  THEN substr(gr.receipt_id, 1, length(gr.receipt_id) - length(':food:' || gr.source_id)) END,
+                gr.receipt_id) ELSE gr.receipt_id END AS payment_key,
+              fo.guest_name AS food_guest_name, fo.order_number AS food_order_number,
+              b.guest_name AS booking_guest_name, b.goko_booking_id, b.booking_ref
             FROM guest_receipts gr
             LEFT JOIN food_orders fo ON gr.source_type = 'food_order' AND gr.source_id = fo.id
             LEFT JOIN bookings b ON gr.source_type = 'booking' AND gr.source_id = b.id
             WHERE ${receiptCondition} AND gr.business_date >= ${fromDate} AND gr.business_date <= ${toDate}
+          ), receipt_activity AS (
+            SELECT 'receipt-' || payment_key AS id, MIN(business_date) AS date, MIN(kind) AS kind,
+              CASE WHEN MIN(source_type) = 'food_order' THEN
+                'Food payment · ' || CASE WHEN COUNT(DISTINCT COALESCE(NULLIF(food_guest_name, ''), 'guest')) = 1
+                  THEN MIN(COALESCE(NULLIF(food_guest_name, ''), 'guest')) ELSE 'Combined bill' END
+                WHEN MIN(source_type) = 'booking' THEN
+                  CASE WHEN MIN(kind) = 'refund' THEN 'Stay refund · ' ELSE 'Stay payment · ' END ||
+                    MIN(COALESCE(NULLIF(guest_name_snapshot, ''), NULLIF(booking_guest_name, ''), notes))
+                ELSE MIN(notes) END AS description,
+              SUM(amount) AS amount,
+              CASE WHEN MIN(source_type) = 'food_order' THEN MIN(COALESCE(NULLIF(food_order_number, ''), CAST(source_id AS TEXT))) ||
+                CASE WHEN COUNT(*) > 1 THEN ' + ' || (COUNT(*) - 1) || ' more' ELSE '' END
+                WHEN MIN(source_type) = 'booking' THEN MIN(COALESCE(NULLIF(booking_ref_snapshot, ''), NULLIF(goko_booking_id, ''), NULLIF(booking_ref, ''), receipt_id))
+                ELSE MIN(receipt_id) END AS reference,
+              MIN(COALESCE(created_by, '')) AS addedBy
+            FROM receipt_lines GROUP BY payment_key
+          ), cash_activity AS (
+            SELECT 'cash-' || operation_id AS id, MIN(business_date) AS date,
+              CASE WHEN SUM(CASE WHEN event_type = 'refund' THEN 1 ELSE 0 END) > 0 THEN 'refund'
+                WHEN MIN(source_type) = 'food_order' THEN 'food' ELSE 'stay' END AS kind,
+              CASE WHEN SUM(CASE WHEN event_type = 'refund' THEN 1 ELSE 0 END) > 0
+                THEN CASE WHEN MIN(source_type) = 'food_order' THEN 'Food refund · ' ELSE 'Stay refund · ' END
+                ELSE CASE WHEN MIN(source_type) = 'food_order' THEN 'Food payment · ' ELSE 'Stay payment · ' END END || MIN(guest_name_snapshot) AS description,
+              SUM(amount_paise) AS amount, MIN(reference_snapshot) AS reference, MIN(actor) AS addedBy
+            FROM cash_payment_events
+            WHERE ${cashActivityCondition} AND business_date >= ${fromDate} AND business_date <= ${toDate}
+            GROUP BY operation_id HAVING SUM(amount_paise) != 0
+          ), ota_cash_activity AS (
+            SELECT 'ota-cash-' || COALESCE(corrects_event_id, event_id) AS id, MIN(business_date) AS date,
+              CASE WHEN SUM(CASE WHEN event_type = 'refund' THEN 1 ELSE 0 END) > 0 THEN 'refund' ELSE 'stay' END AS kind,
+              CASE WHEN SUM(CASE WHEN event_type = 'refund' THEN 1 ELSE 0 END) > 0
+                THEN 'Stay refund · ' ELSE 'Stay payment · ' END || MIN(guest_name_snapshot) AS description, SUM(cash_paise) AS amount,
+              MIN(COALESCE(NULLIF(booking_ref_snapshot, ''), 'Booking #' || booking_id)) AS reference,
+              MIN(actor) AS addedBy
+            FROM booking_payment_events
+            WHERE ${cashActivityCondition} AND business_date IS NOT NULL AND cash_paise != 0
+              AND business_date >= ${fromDate} AND business_date <= ${toDate}
+            GROUP BY COALESCE(corrects_event_id, event_id) HAVING SUM(cash_paise) != 0
+          )
+          SELECT * FROM (
+            SELECT 'income-' || id AS id, date, 'income' AS kind, COALESCE(description, source, '') AS description, amount, COALESCE(source_detail, '') AS reference, COALESCE(created_by, '') AS addedBy
+            FROM daily_income WHERE ${accountCondition} AND date >= ${fromDate} AND date <= ${toDate}
+            UNION ALL
+            SELECT * FROM receipt_activity
+            UNION ALL SELECT * FROM cash_activity
+            UNION ALL SELECT * FROM ota_cash_activity
             UNION ALL
             SELECT 'expense-' || id AS id, expense_date AS date, 'expense' AS kind, COALESCE(purpose, category, '') AS description, -amount AS amount, category AS reference, COALESCE(created_by, '') AS addedBy
             FROM expenses WHERE ${accountCondition} AND expense_date >= ${fromDate} AND expense_date <= ${toDate} AND deleted_at IS NULL
           ) ORDER BY date DESC, id DESC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
         `) as Array<{ id: string; date: string; kind: string; description: string; amount: number; reference: string; addedBy: string }>;
-        const [incomeCount, receiptCount, expenseCount] = await Promise.all([
+        const [incomeCount, receiptCountRows, cashCountRows, otaCashCountRows, expenseCount] = await Promise.all([
           db.select({ count: sql<number>`COUNT(*)` }).from(dailyIncome).where(and(accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), sql`${dailyIncome.date} >= ${fromDate} AND ${dailyIncome.date} <= ${toDate}`)),
-          accountId === null ? Promise.resolve([{ count: 0 }]) : db.select({ count: sql<number>`COUNT(*)` }).from(guestReceipts).where(and(eq(guestReceipts.accountId, accountId), sql`${guestReceipts.businessDate} >= ${fromDate} AND ${guestReceipts.businessDate} <= ${toDate}`)),
+          accountId === null ? Promise.resolve([{ count: 0 }]) : db.all(sql`SELECT COUNT(*) AS count FROM (SELECT CASE WHEN source_type = 'food_order' THEN COALESCE(NULLIF(operation_id, ''), CASE WHEN receipt_id LIKE '%:food:' || source_id THEN substr(receipt_id, 1, length(receipt_id) - length(':food:' || source_id)) END, receipt_id) ELSE receipt_id END payment_key FROM guest_receipts WHERE account_id = ${accountId} AND business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY payment_key)`),
+          accountId === null ? db.all(sql`SELECT COUNT(*) AS count FROM (SELECT operation_id FROM cash_payment_events WHERE business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY operation_id HAVING SUM(amount_paise) != 0)`) : Promise.resolve([{ count: 0 }]),
+          accountId === null ? db.all(sql`SELECT COUNT(*) AS count FROM (SELECT COALESCE(corrects_event_id, event_id) k FROM booking_payment_events WHERE business_date IS NOT NULL AND cash_paise != 0 AND business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY k HAVING SUM(cash_paise) != 0)`) : Promise.resolve([{ count: 0 }]),
           db.select({ count: sql<number>`COUNT(*)` }).from(expenses).where(and(accountId === null ? isNull(expenses.accountId) : eq(expenses.accountId, accountId), sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))),
         ]);
-        const activityCount = incomeCount[0].count + receiptCount[0].count + expenseCount[0].count;
+        const activityCount = Number(incomeCount[0].count) + Number((receiptCountRows as any)[0]?.count || 0) + Number((cashCountRows as any)[0]?.count || 0) + Number((otaCashCountRows as any)[0]?.count || 0) + Number(expenseCount[0].count);
         const actualClose = reconciliations[0];
         const openingAdjustment = openingAdjustments[0];
         const seed = accountId === null ? 0 : accountRows[0]?.openingBalance || 0;
         const anchor = resolveActivityAnchor(seed, actualClose, openingAdjustment);
         const anchorDate = anchor.date;
-        const [throughIncome, throughReceipts, throughExpenses] = await Promise.all([
+        const [throughIncome, throughReceipts, throughCashPayments, throughOtaCash, throughExpenses] = await Promise.all([
           db.select({ total: sql<number>`COALESCE(SUM(${dailyIncome.amount}), 0)` }).from(dailyIncome).where(and(accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${dailyIncome.date} >= ${anchorDate} AND ${dailyIncome.date} <= ${toDate}` : sql`${dailyIncome.date} > ${anchorDate} AND ${dailyIncome.date} <= ${toDate}`) : sql`${dailyIncome.date} <= ${toDate}`)),
           accountId === null ? Promise.resolve([{ total: 0 }]) : db.select({ total: sql<number>`COALESCE(SUM(${guestReceipts.amount}), 0)` }).from(guestReceipts).where(and(eq(guestReceipts.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${guestReceipts.businessDate} >= ${anchorDate} AND ${guestReceipts.businessDate} <= ${toDate}` : sql`${guestReceipts.businessDate} > ${anchorDate} AND ${guestReceipts.businessDate} <= ${toDate}`) : sql`${guestReceipts.businessDate} <= ${toDate}`)),
+          accountId === null ? db.select({ total: sql<number>`COALESCE(SUM(${cashPaymentEvents.amountPaise}), 0)` }).from(cashPaymentEvents).where(anchorDate ? (anchor.includeAnchorDay ? sql`${cashPaymentEvents.businessDate} >= ${anchorDate} AND ${cashPaymentEvents.businessDate} <= ${toDate}` : sql`${cashPaymentEvents.businessDate} > ${anchorDate} AND ${cashPaymentEvents.businessDate} <= ${toDate}`) : sql`${cashPaymentEvents.businessDate} <= ${toDate}`) : Promise.resolve([{ total: 0 }]),
+          accountId === null ? db.select({ total: sql<number>`COALESCE(SUM(${bookingPaymentEvents.cashPaise}), 0)` }).from(bookingPaymentEvents).where(and(sql`${bookingPaymentEvents.businessDate} IS NOT NULL`, anchorDate ? (anchor.includeAnchorDay ? sql`${bookingPaymentEvents.businessDate} >= ${anchorDate} AND ${bookingPaymentEvents.businessDate} <= ${toDate}` : sql`${bookingPaymentEvents.businessDate} > ${anchorDate} AND ${bookingPaymentEvents.businessDate} <= ${toDate}`) : sql`${bookingPaymentEvents.businessDate} <= ${toDate}`)) : Promise.resolve([{ total: 0 }]),
           db.select({ total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` }).from(expenses).where(and(accountId === null ? isNull(expenses.accountId) : eq(expenses.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${expenses.expenseDate} >= ${anchorDate} AND ${expenses.expenseDate} <= ${toDate}` : sql`${expenses.expenseDate} > ${anchorDate} AND ${expenses.expenseDate} <= ${toDate}`) : sql`${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))),
         ]);
         let balanceAsOf = anchor.balance
-          + throughIncome[0].total + throughReceipts[0].total - throughExpenses[0].total;
+          + throughIncome[0].total + throughReceipts[0].total + throughCashPayments[0].total + throughOtaCash[0].total - throughExpenses[0].total;
         const selectedAccount = accountId === null ? null : accountRows[0];
         const virtualActivity = selectedAccount?.isVirtual ? await (async () => {
           const [profiles, receivables] = await Promise.all([
@@ -988,6 +1030,10 @@ export async function POST(req: NextRequest) {
           lte(bookingPaymentEvents.businessDate, date),
           sql`${bookingPaymentEvents.cashPaise} != 0`,
         ));
+        const ordinaryCashEvents = await db.select().from(cashPaymentEvents).where(and(
+          gte(cashPaymentEvents.businessDate, minStart),
+          lte(cashPaymentEvents.businessDate, date),
+        ));
 
         // Build balance for each account + cash
         const balances = [
@@ -1011,12 +1057,18 @@ export async function POST(req: NextRequest) {
           const bookingPaymentCash = acc.accountId === null
             ? bookingCashEvents.filter((event) => afterBase({ businessDate: event.businessDate || "" })).reduce((sum, event) => sum + event.cashPaise, 0)
             : 0;
-          const totalIncome = manualIncome + receiptIncome + bookingPaymentCash;
+          const guestPaymentCash = acc.accountId === null
+            ? ordinaryCashEvents.filter((event) => afterBase({ businessDate: event.businessDate })).reduce((sum, event) => sum + event.amountPaise, 0)
+            : 0;
+          const totalIncome = manualIncome + receiptIncome + bookingPaymentCash + guestPaymentCash;
           const totalExpense = dayExpenses.filter((e) => e.accountId === acc.accountId && afterBase({ date: e.expenseDate })).reduce((s, e) => s + e.amount, 0);
           const dayIncome = incomeEntries.filter((i) => i.accountId === acc.accountId && i.date === date).reduce((s, i) => s + i.amount, 0);
           const dayReceiptIncome = automaticReceipts.filter((r) => r.accountId === acc.accountId && r.businessDate === date).reduce((s, r) => s + r.amount, 0);
           const dayBookingPaymentCash = acc.accountId === null
             ? bookingCashEvents.filter((event) => event.businessDate === date).reduce((sum, event) => sum + event.cashPaise, 0)
+            : 0;
+          const dayGuestPaymentCash = acc.accountId === null
+            ? ordinaryCashEvents.filter((event) => event.businessDate === date).reduce((sum, event) => sum + event.amountPaise, 0)
             : 0;
           const dayExpenseTotal = dayExpenses.filter((e) => e.accountId === acc.accountId && e.expenseDate === date).reduce((s, e) => s + e.amount, 0);
 
@@ -1030,8 +1082,9 @@ export async function POST(req: NextRequest) {
             manualIncome,
             automaticGuestReceipts: receiptIncome,
             bookingPaymentCash,
+            guestPaymentCash,
             totalExpense,
-            dayIncome: dayIncome + dayReceiptIncome + dayBookingPaymentCash,
+            dayIncome: dayIncome + dayReceiptIncome + dayBookingPaymentCash + dayGuestPaymentCash,
             dayExpense: dayExpenseTotal,
             asOfDate: date,
             expectedClosing,
@@ -1052,6 +1105,7 @@ export async function POST(req: NextRequest) {
           balances,
           automaticReceipts: automaticReceipts.filter((receipt) => receipt.businessDate === date),
           bookingPaymentEvents: bookingCashEvents.filter((event) => event.businessDate === date),
+          cashPaymentEvents: ordinaryCashEvents.filter((event) => event.businessDate === date),
           isReconciled, notes, reconciledBy, reconciledAt,
         });
       }
@@ -1095,13 +1149,17 @@ export async function POST(req: NextRequest) {
         const anchorDate = currentAdjustment ? date : previousAnchorIsClose ? previousActual?.date : previousAdjustment?.date;
         const lowerBound = anchorDate || "0000-01-01";
         const include = (d: string) => anchorDate ? (currentAdjustment ? d >= lowerBound : d > lowerBound) : true;
-        const [incomeEntries, automaticReceipts, dayExpenses] = await Promise.all([
+        const [incomeEntries, automaticReceipts, saveBookingCashEvents, saveOrdinaryCashEvents, dayExpenses] = await Promise.all([
           db.select().from(dailyIncome).where(sql`${dailyIncome.date} >= ${lowerBound} AND ${dailyIncome.date} <= ${date}`),
           db.select().from(guestReceipts).where(sql`${guestReceipts.businessDate} >= ${lowerBound} AND ${guestReceipts.businessDate} <= ${date}`),
+          target.accountId === null ? db.select().from(bookingPaymentEvents).where(and(gte(bookingPaymentEvents.businessDate, lowerBound), lte(bookingPaymentEvents.businessDate, date))) : Promise.resolve([]),
+          target.accountId === null ? db.select().from(cashPaymentEvents).where(and(gte(cashPaymentEvents.businessDate, lowerBound), lte(cashPaymentEvents.businessDate, date))) : Promise.resolve([]),
           db.select().from(expenses).where(and(sql`${expenses.expenseDate} >= ${lowerBound} AND ${expenses.expenseDate} <= ${date}`, isNull(expenses.deletedAt))),
         ]);
         const totalIncome = incomeEntries.filter((item) => item.accountId === target.accountId && include(item.date)).reduce((sum, item) => sum + item.amount, 0)
-          + automaticReceipts.filter((item) => item.accountId === target.accountId && include(item.businessDate)).reduce((sum, item) => sum + item.amount, 0);
+          + automaticReceipts.filter((item) => item.accountId === target.accountId && include(item.businessDate)).reduce((sum, item) => sum + item.amount, 0)
+          + saveBookingCashEvents.filter((item) => item.businessDate && include(item.businessDate)).reduce((sum, item) => sum + item.cashPaise, 0)
+          + saveOrdinaryCashEvents.filter((item) => include(item.businessDate)).reduce((sum, item) => sum + item.amountPaise, 0);
         const totalExpense = dayExpenses.filter((item) => item.accountId === target.accountId && include(item.expenseDate)).reduce((sum, item) => sum + item.amount, 0);
         const expectedClosing = openingBalance + totalIncome - totalExpense;
         const reconciledAt = new Date().toISOString();

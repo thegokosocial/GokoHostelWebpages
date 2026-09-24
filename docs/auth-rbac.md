@@ -200,7 +200,7 @@ View list/tabs: `canViewFoodOrders` / `canViewFoodTabs`; the Order Summary UI ac
 
 list/getMy: `canViewExpenses`. add: `canAddExpense`. update/delete: edit/delete expense keys. food revenue **and** room revenue (`getRoomRevenue`): `canViewFoodBills`. ledger: `canViewAccounts`. income: `canAddIncome`. cash reconcile: `canReconcileCash`; configured-account reconcile: `canReconcileOnline`. The retired `canReconcileAccounts` and `canReconcile` keys grant both scopes during compatibility. Undo reconciliation is Admin-only. Opening balance: `canManageAccountSettings` (legacy alias `canManageAccounts`).
 
-`getAccountActivity` requires both `canViewAccounts` and `canViewExpenses`; this is an AND gate. `getExpenseEditOptions` requires `canEditExpense`.
+`getAccountActivity` requires both `canViewAccounts` and `canViewExpenses`; this is an AND gate. Its online food rows are payment-level projections over per-order receipts, and Cash includes manual income/expenses plus journaled food and room cash movements. These projections do not grant payment or reconciliation permissions. `getExpenseEditOptions` requires `canEditExpense`.
 
 Accounts UI shows the Reconcile tab when either scoped reconciliation permission is available. Every account is saved separately; server authorization is selected from the submitted cash/online target.
 

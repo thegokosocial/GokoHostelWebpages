@@ -932,6 +932,7 @@ export const dailyIncome = sqliteTable("daily_income", {
 export const guestReceipts = sqliteTable("guest_receipts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   receiptId: text("receipt_id").notNull().unique(),
+  operationId: text("operation_id"),
   sourceType: text("source_type").notNull(), // food_order | booking | platform_settlement
   sourceId: integer("source_id").notNull(),
   kind: text("kind").notNull(), // food | stay | ota_prepaid | refund | reversal | platform_settlement
@@ -953,6 +954,30 @@ export const guestReceipts = sqliteTable("guest_receipts", {
   index("idx_guest_receipts_date_account").on(table.businessDate, table.accountId),
   index("idx_guest_receipts_account_date").on(table.accountId, table.businessDate),
   index("idx_guest_receipts_source").on(table.sourceType, table.sourceId),
+  index("idx_guest_receipts_operation").on(table.operationId),
+]);
+
+/** Append-only cash portions of ordinary food and room payments. Amounts are signed paise. */
+export const cashPaymentEvents = sqliteTable("cash_payment_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  eventId: text("event_id").notNull().unique(),
+  operationId: text("operation_id").notNull(),
+  sourceType: text("source_type").notNull(), // food_order | booking
+  sourceId: integer("source_id").notNull(),
+  eventType: text("event_type").notNull(), // collection | refund | correction
+  amountPaise: integer("amount_paise").notNull(), // signed; refunds/correction reversals are negative
+  businessDate: text("business_date").notNull(),
+  correctsEventId: text("corrects_event_id"),
+  guestNameSnapshot: text("guest_name_snapshot").notNull().default(""),
+  referenceSnapshot: text("reference_snapshot").notNull().default(""),
+  note: text("note").notNull().default(""),
+  actor: text("actor").notNull(),
+  createdAt: text("created_at").notNull(),
+  ...syncColumns,
+}, (table) => [
+  index("idx_cash_payment_events_operation").on(table.operationId),
+  index("idx_cash_payment_events_date").on(table.businessDate),
+  index("idx_cash_payment_events_source").on(table.sourceType, table.sourceId),
 ]);
 
 export const dailyLedger = sqliteTable("daily_ledger", {

@@ -38,6 +38,8 @@ const q = vi.hoisted(() => ({
   pushNoShow: vi.fn(),
   resolveReceiptAccount: vi.fn(),
   createGuestReceipt: vi.fn(),
+  recordCashPaymentEvent: vi.fn(),
+  recordCashPaymentCorrection: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: q.authenticateUser }));
@@ -50,6 +52,21 @@ vi.mock("@/lib/guestReceipts", () => ({
   createGuestReceipt: q.createGuestReceipt,
   resolveReceiptAccount: q.resolveReceiptAccount,
   latestReceiptAccount: vi.fn(),
+  receiptBusinessDate: () => "2026-09-23",
+}));
+vi.mock("@/lib/cashPaymentJournal", () => ({
+  assertCashDateOpen: vi.fn(async () => undefined),
+  assertCashPaymentCorrectionOpen: vi.fn(async () => undefined),
+  recordCashPaymentEvent: async (event: any, mutation: any) => {
+    await q.recordCashPaymentEvent(event, mutation);
+    if (mutation) await q.updateBookingFull(event.sourceId, mutation.values);
+    return { duplicate: false };
+  },
+  recordCashPaymentCorrection: async (event: any, mutation: any) => {
+    await q.recordCashPaymentCorrection(event, mutation);
+    if (mutation) await q.updateBookingFull(event.sourceId, mutation.values);
+    return { duplicate: false };
+  },
 }));
 vi.mock("@/db/queries", () => ({
   getCalendarAvailability: q.getCalendarAvailability,
@@ -837,9 +854,12 @@ describe("walk-in advance payment", () => {
     }));
     expect(res.status).toBe(200);
     expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
-      amountTotal: 1050, amountPaid: 400, paymentStatus: "paid", paymentMethod: "cash", cashReceived: 400,
+      amountTotal: 1050, amountPaid: 0, cashReceived: 0,
     }));
     expect(q.createGuestReceipt).not.toHaveBeenCalled();
+    expect(q.recordCashPaymentEvent).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: 10, eventType: "collection", amountPaise: 40000, note: "Advance stay payment",
+    }), expect.objectContaining({ values: expect.objectContaining({ amountPaid: 400, paymentMethod: "cash", cashReceived: 400 }) }));
   });
 
   it("records an online advance with a room receipt account", async () => {

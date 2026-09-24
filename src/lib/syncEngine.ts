@@ -18,6 +18,7 @@ const SYNCED_TABLES_WITH_DELETE = [
 const SYNCED_TABLES_APPEND = [
   "bed_history", "food_order_items", "order_modifications", "salary_payments",
   "daily_ledger", "qr_history", "booking_cycle_snapshots", "booking_payment_events", "guest_receipts",
+  "cash_payment_events",
   "employee_attendance_history",
   "platform_receivable_entries", "platform_settlements", "platform_settlement_allocations",
 ] as const;
@@ -62,6 +63,7 @@ const TABLE_MAP: Record<string, any> = {
   guest_receipts: schema.guestReceipts,
   booking_cycle_snapshots: schema.bookingCycleSnapshots,
   booking_payment_events: schema.bookingPaymentEvents,
+  cash_payment_events: schema.cashPaymentEvents,
   platform_payment_profiles: schema.platformPaymentProfiles,
   platform_receivable_entries: schema.platformReceivableEntries,
   platform_settlements: schema.platformSettlements,
@@ -893,9 +895,7 @@ async function remapForeignKeys(
   tableName: string,
   data: Record<string, any>,
 ): Promise<Record<string, any>> {
-  const fkConfig = FK_REMAP[tableName];
-  if (!fkConfig) return { ...data };
-
+  const fkConfig = FK_REMAP[tableName] || {};
   const remapped = { ...data };
 
   for (const [column, parentTable] of Object.entries(fkConfig)) {
@@ -940,6 +940,25 @@ async function remapForeignKeys(
         eq(schema.syncIdMap.tableName, "bookings"), eq(schema.syncIdMap.remoteId, remapped.sourceId),
       )).limit(1);
       if (mapping[0]) remapped.sourceId = mapping[0].localId;
+    }
+  }
+
+  // Ordinary cash events have a polymorphic source. Normal full sync applies
+  // bookings/food_orders first, so their integer identity map is available here.
+  if (tableName === "cash_payment_events" || (tableName === "guest_receipts" && remapped.sourceType === "food_order")) {
+    const parentTable = remapped.sourceType === "booking" ? "bookings"
+      : remapped.sourceType === "food_order" ? "food_orders" : null;
+    const remoteId = parseSyncFkId(remapped.sourceId);
+    if (parentTable && remoteId != null) {
+      const mapping = await db.select({ localId: schema.syncIdMap.localId }).from(schema.syncIdMap).where(and(
+        eq(schema.syncIdMap.tableName, parentTable), eq(schema.syncIdMap.remoteId, remoteId),
+      )).limit(1);
+      if (!mapping[0]) throw new Error(`Sync the ${parentTable} parent before its payment activity`);
+      if (tableName === "guest_receipts" && !remapped.operationId
+        && typeof remapped.receiptId === "string" && remapped.receiptId.endsWith(`:food:${remoteId}`)) {
+        remapped.operationId = remapped.receiptId.slice(0, -`:food:${remoteId}`.length);
+      }
+      remapped.sourceId = mapping[0].localId;
     }
   }
 

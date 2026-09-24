@@ -128,7 +128,7 @@ describe("Payment History", () => {
     expect(source).toContain("function paymentForEditedTotal");
     expect(source).toContain("foodAmountPaid(order)");
     expect(source).toContain("requiresPaymentAdjustment: true");
-    expect(source).toContain('amountPaid: Math.max(0, Number(order.amountPaid) || 0) + allocation.total');
+    expect(source).toContain('Math.max(0, Number(order.amountPaid) || 0) + allocation.total');
     expect(source).toContain('amountRefunded');
     const billCard = readFileSync("src/components/food/GuestFoodBillCard.tsx", "utf8");
     expect(billCard).toContain("foodAmountPaid(o)");

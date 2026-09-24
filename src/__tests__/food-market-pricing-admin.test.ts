@@ -300,6 +300,17 @@ describe("admin market-pricing workflows", () => {
     expect(q.createGuestReceipt).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "food", amount: 600 }));
   });
 
+  it("preserves previous cash when payment editing completes a partial order online", async () => {
+    q.getFoodOrderById.mockResolvedValue({ ...order, paymentStatus: "partial", paymentMethod: "cash", amountPaid: 400, cashReceived: 500, changeGiven: 100, total: 600 });
+    q.getFoodOrderItems.mockResolvedValue([{ ...pendingItem, pricingStatus: "fixed" }]);
+
+    const response = await POST(actionReq("updatePaymentDetails", { orderId: 10, paymentStatus: "paid", paymentMethod: "online", onlineAccountId: 7 }));
+
+    expect(response.status).toBe(200);
+    expect(pendingItem).toMatchObject({ amountPaid: 600, paymentMethod: "split", cashReceived: 400, changeGiven: 0 });
+    expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ kind: "food", amount: 200 }));
+  });
+
   it("cancels a food order, restores stock, and records the status audit", async () => {
     const response = await POST(new NextRequest("http://localhost/api/admin/food-orders", {
       method: "POST", headers: { "Content-Type": "application/json" },

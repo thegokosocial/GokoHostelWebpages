@@ -4,6 +4,8 @@
 
 Booking double-bed rule: one guest may reserve one internal slot; two guests must reserve both slots. The picker and create API use the same validation. Booking detail / calendar collapse a full double pair to one assignment row; that row carries `capacity` and `physicalBedIds` for the assigned slots so Edit Booking persons checks and money previews match Create Booking. `editReservation` expands a remove of either half to the whole unit before capacity and pricing projection.
 
+Ordinary non-OTA room cash collected as a new walk-in advance, at check-in, later collection, reservation adjustment, or cancellation refund is journaled prospectively in `cash_payment_events`. Cash payment changes commit the booking balance, cash journal, and split online receipt together. New cash advances are applied only after successful booking/bed creation. OTA pay-at-property cash continues through `booking_payment_events`. Legacy mutable booking totals are not converted into invented historical cash transactions.
+
 ---
 
 ## Two occupancy models
