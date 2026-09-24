@@ -59,7 +59,12 @@ export function subtractPlatformAmounts(next: PlatformAmounts, previous: Platfor
 
 /** Convert decimal rupees without binary floating-point rounding. */
 export function rupeesToPaise(value: unknown): number {
-  if (typeof value === "number" && !Number.isFinite(value)) throw new Error("Invalid monetary amount");
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Invalid monetary amount");
+    const paise = Math.round(value * 100);
+    if (!Number.isSafeInteger(paise)) throw new Error("Monetary amount is too large");
+    return paise;
+  }
   const raw = String(value ?? "0").trim();
   if (!/^-?\d+(?:\.\d{1,2})?$/.test(raw)) throw new Error(`Invalid monetary amount: ${raw}`);
   const negative = raw.startsWith("-");
@@ -540,12 +545,17 @@ export async function recognizeMissingPlatformBookings(
   for (const booking of candidates) {
     const cycle = booking.bookingCycle || 1;
     if (recognized.has(`${booking.id}:${cycle}`)) { bump("already-recognized"); continue; }
-    const result = await recognizePlatformBooking(booking, actor);
-    if (result.created) {
-      created += 1;
-      recognized.add(`${booking.id}:${cycle}`);
-    } else {
-      bump(result.reason || "skipped");
+    try {
+      const result = await recognizePlatformBooking(booking, actor);
+      if (result.created) {
+        created += 1;
+        recognized.add(`${booking.id}:${cycle}`);
+      } else {
+        bump(result.reason || "skipped");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      bump(message.slice(0, 120) || "error");
     }
   }
   return { created, skipped, reasons, fromDate };

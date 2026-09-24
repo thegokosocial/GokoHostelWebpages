@@ -55,15 +55,20 @@ describe("platform receivables money rules", () => {
     const ui = readFileSync(join(process.cwd(), "src/components/admin/PlatformReceivables.tsx"), "utf8");
     expect(ui).toContain('call("refreshWebsiteFees"');
     expect(ui).toContain('call("setWebsiteFees"');
-    expect(ui).toContain('call("recognizeMissing")');
+    expect(ui).not.toContain('call("recognizeMissing")');
+    expect(ui).toContain("websiteCompatible");
+    expect(ui).not.toContain("razorpayPayout");
     const checkIn = readFileSync(join(process.cwd(), "src/app/api/admin/bookings/route.ts"), "utf8");
     expect(checkIn).toMatch(/if \(isPrepaidStatus\(detail\.booking\.paymentStatus\)\)[\s\S]*recognizePlatformBooking/);
     expect(checkIn).not.toMatch(/if \(prepaidRecorded > 0\)[\s\S]{0,80}recognizePlatformBooking/);
   });
-  it("converts decimal rupees exactly", () => {
+  it("converts decimal rupees exactly including IEEE float noise from Aiosell numbers", () => {
     expect(rupeesToPaise("450")).toBe(45000);
     expect(rupeesToPaise("22.50")).toBe(2250);
     expect(rupeesToPaise(0.45)).toBe(45);
+    expect(rupeesToPaise(448.20000000000005)).toBe(44820);
+    expect(rupeesToPaise(81)).toBe(8100);
+    expect(() => rupeesToPaise(Number.POSITIVE_INFINITY)).toThrow(/Invalid monetary amount/);
   });
 
   it("calculates expected payout without treating guest tax as a platform deduction by default", () => {
