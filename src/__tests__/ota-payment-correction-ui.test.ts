@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   correctionDisabledHint,
+  correctionPaidTransition,
+  formatCorrectionPaidTransition,
   parseCorrectionAmountInput,
+  projectOtaNetPaidPaise,
   remainingCorrectableOnEvent,
   resolveCorrectionConfirmAmounts,
 } from "@/lib/otaPaymentCorrectionUi";
@@ -69,6 +72,49 @@ describe("correctionDisabledHint", () => {
       splitOnlineVal: 0.5,
       splitExact: false,
     })).toBe("Split needs both cash and online amounts");
+  });
+});
+
+describe("correctionPaidTransition", () => {
+  it("shows Paid before → after for a full collection reverse (1 → 0)", () => {
+    const events = [
+      { eventId: "p1", eventType: "collection", amountPaise: 100 },
+      { eventId: "c1", eventType: "correction", amountPaise: -100, correctsEventId: "p1" },
+    ];
+    expect(correctionPaidTransition(events, "c1")).toEqual({ beforeRupees: 1, afterRupees: 0 });
+    expect(formatCorrectionPaidTransition(correctionPaidTransition(events, "c1")!)).toBe("₹1.00 → ₹0.00");
+  });
+
+  it("shows partial collection reverse (450 → 350)", () => {
+    const events = [
+      { eventId: "p1", eventType: "collection", amountPaise: 45000 },
+      { eventId: "c1", eventType: "correction", amountPaise: -10000, correctsEventId: "p1" },
+    ];
+    expect(correctionPaidTransition(events, "c1")).toEqual({ beforeRupees: 450, afterRupees: 350 });
+  });
+
+  it("shows refund reverse increasing net Paid (600 → 800)", () => {
+    const events = [
+      { eventId: "p1", eventType: "collection", amountPaise: 80000 },
+      { eventId: "r1", eventType: "refund", amountPaise: 20000 },
+      { eventId: "c1", eventType: "correction", amountPaise: -20000, correctsEventId: "r1" },
+    ];
+    expect(projectOtaNetPaidPaise(events.slice(0, 2))).toBe(60000);
+    expect(correctionPaidTransition(events, "c1")).toEqual({ beforeRupees: 600, afterRupees: 800 });
+  });
+
+  it("returns null for non-correction events", () => {
+    expect(correctionPaidTransition([{ eventId: "p1", eventType: "collection", amountPaise: 100 }], "p1")).toBeNull();
+  });
+
+  it("scopes Paid transition to the same cycle when the panel filters events", () => {
+    const cycle1 = [
+      { eventId: "old", eventType: "collection", amountPaise: 99900 },
+      { eventId: "p1", eventType: "collection", amountPaise: 100 },
+      { eventId: "c1", eventType: "correction", amountPaise: -100, correctsEventId: "p1" },
+    ];
+    // Panel passes only one cycle — without that filter, Paid would look like 1000 → 900.
+    expect(correctionPaidTransition(cycle1.slice(1), "c1")).toEqual({ beforeRupees: 1, afterRupees: 0 });
   });
 });
 
@@ -150,6 +196,8 @@ describe("OTA money history dedupe and Revert button scope", () => {
     const panel = readFileSync("src/components/admin/booking-dashboard/BookingDetailPanel.tsx", "utf8");
     expect(panel).toContain('["collection", "refund"].includes(event.eventType)');
     expect(panel).toContain("resolveCorrectionConfirmAmounts");
+    expect(panel).toContain("correctionPaidTransition");
+    expect(panel).toContain("formatCorrectionPaidTransition");
     expect(panel).toContain("isRedundantOtaMoneyHistoryAction");
     expect(panel).not.toMatch(/eventType === "correction"[^\n]*canCorrect/);
   });

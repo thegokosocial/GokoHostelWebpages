@@ -33,7 +33,7 @@ import { parseGokoWalkin, walkinDiscountOnGross } from "@/lib/bookingPricing";
 import { parseWebsiteCheckout } from "@/lib/websiteCheckoutSnapshot";
 import { isManualWalkinBooking } from "@/lib/bookingResolution";
 import { stayDueAtHotel, stayRefundCap } from "@/lib/stayPayment";
-import { remainingCorrectableOnEvent, resolveCorrectionConfirmAmounts } from "@/lib/otaPaymentCorrectionUi";
+import { remainingCorrectableOnEvent, resolveCorrectionConfirmAmounts, correctionPaidTransition, formatCorrectionPaidTransition } from "@/lib/otaPaymentCorrectionUi";
 import { isRedundantOtaMoneyHistoryAction } from "@/lib/otaPaymentHistory";
 import { CheckInPopup } from "./CheckInPopup";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -591,6 +591,15 @@ export function BookingDetailPanel({
                   {paymentEvents.length > 0 && <div className="space-y-2">
                     {paymentEvents.slice().reverse().map((event) => {
                       const amount = `₹${(Math.abs(event.amountPaise || 0) / 100).toFixed(2)}`;
+                      const paidTransition = event.eventType === "correction"
+                        ? correctionPaidTransition(
+                          paymentEvents.filter((entry) => entry.bookingCycle === event.bookingCycle),
+                          event.eventId,
+                        )
+                        : null;
+                      const titleAmount = paidTransition
+                        ? formatCorrectionPaidTransition(paidTransition)
+                        : amount;
                       const corrections = paymentEvents.filter((entry) => entry.eventType === "correction" && entry.correctsEventId === event.eventId);
                       const remaining = remainingCorrectableOnEvent(event, corrections);
                       const correctableAmountPaise = remaining.amountPaise;
@@ -602,7 +611,7 @@ export function BookingDetailPanel({
                         : event.cashPaise && event.onlinePaise ? `cash ₹${Math.abs(event.cashPaise) / 100} + online ₹${Math.abs(event.onlinePaise) / 100}`
                           : event.cashPaise ? "cash" : event.onlinePaise ? "online" : "—";
                       return <div key={event.eventId} className="border-l-2 border-emerald-500 pl-3 text-xs">
-                        <div className="font-medium text-foreground">{event.eventType === "refund" ? "Refund" : event.eventType === "correction" ? "Correction" : "Payment"} · {amount}</div>
+                        <div className="font-medium text-foreground">{event.eventType === "refund" ? "Refund" : event.eventType === "correction" ? "Correction" : "Payment"} · {titleAmount}</div>
                         <p className="text-muted-foreground">{event.guestNameSnapshot} · {tender} · cycle {event.bookingCycle}{event.isOpening ? " · opening balance" : ""}</p>
                         {event.note && <p className="text-muted-foreground">{event.note}</p>}
                         <div className="mt-0.5 text-[10px] text-muted-foreground">{event.businessDate || "Date unknown"} · {event.actor}</div>

@@ -15,6 +15,51 @@ export function remainingCorrectableOnEvent(
   return { amountPaise, cashPaise, onlinePaise };
 }
 
+type JournalProjectionEvent = {
+  eventId?: string | null;
+  eventType?: string | null;
+  amountPaise?: number | null;
+  correctsEventId?: string | null;
+};
+
+/** Net Paid (collected − refunded) in paise from an OTA journal prefix — matches booking-detail Paid. */
+export function projectOtaNetPaidPaise(events: JournalProjectionEvent[]): number {
+  const originalById = new Map(events.map((event) => [event.eventId || "", event]));
+  const correctionFor = (eventType: string) => events
+    .filter((event) => event.eventType === "correction"
+      && originalById.get(event.correctsEventId || "")?.eventType === eventType)
+    .reduce((sum, event) => sum + (event.amountPaise || 0), 0);
+  const collectedPaise = events
+    .filter((event) => event.eventType === "collection")
+    .reduce((sum, event) => sum + (event.amountPaise || 0), 0) + correctionFor("collection");
+  const refundedPaise = events
+    .filter((event) => event.eventType === "refund")
+    .reduce((sum, event) => sum + (event.amountPaise || 0), 0) + correctionFor("refund");
+  return collectedPaise - refundedPaise;
+}
+
+/**
+ * Paid before → after for a correction row. Events must be chronological (createdAt ASC).
+ * Returns null if the event is missing or not a correction.
+ */
+export function correctionPaidTransition(
+  eventsChronological: JournalProjectionEvent[],
+  correctionEventId: string,
+): { beforeRupees: number; afterRupees: number } | null {
+  const index = eventsChronological.findIndex((event) => event.eventId === correctionEventId);
+  if (index < 0 || eventsChronological[index]?.eventType !== "correction") return null;
+  const beforePaise = projectOtaNetPaidPaise(eventsChronological.slice(0, index));
+  const afterPaise = projectOtaNetPaidPaise(eventsChronological.slice(0, index + 1));
+  return {
+    beforeRupees: Math.round(beforePaise) / 100,
+    afterRupees: Math.round(afterPaise) / 100,
+  };
+}
+
+export function formatCorrectionPaidTransition(transition: { beforeRupees: number; afterRupees: number }): string {
+  return `₹${transition.beforeRupees.toFixed(2)} → ₹${transition.afterRupees.toFixed(2)}`;
+}
+
 export type CorrectionAmountParse =
   | { status: "empty" }
   | { status: "invalid" }
