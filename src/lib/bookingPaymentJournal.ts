@@ -64,18 +64,10 @@ function paymentSnapshot(booking: OtaPaymentBooking) {
   };
 }
 
-async function ensureOpenings(tx: Database, booking: OtaPaymentBooking): Promise<void> {
-  const cycleEvents = await tx.select({ eventId: bookingPaymentEvents.eventId })
-    .from(bookingPaymentEvents)
-    .where(and(eq(bookingPaymentEvents.bookingId, booking.id), eq(bookingPaymentEvents.bookingCycle, booking.bookingCycle)));
-  // Never seed an opening balance after this cycle has begun journaling. The booking
-  // projection already includes those real events, so doing so would duplicate them.
-  if (cycleEvents.length > 0) return;
+function buildOpeningRows(booking: OtaPaymentBooking, source: string): Array<typeof bookingPaymentEvents.$inferInsert> {
   const now = booking.syncUpdatedAt || booking.createdAt;
-  const source = booking.syncSource || syncSource();
   const snapshot = paymentSnapshot(booking);
   const rows: Array<typeof bookingPaymentEvents.$inferInsert> = [];
-
   const addOpening = (type: OtaPaymentKind, amountRupees: number, method: string, cashRupees: number, tenderRupees: number, changeRupees: number) => {
     const amountPaise = rupeesToPaise(amountRupees);
     if (amountPaise <= 0) return;
@@ -98,10 +90,106 @@ async function ensureOpenings(tx: Database, booking: OtaPaymentBooking): Promise
       createdAt: booking.createdAt, syncUpdatedAt: now, syncSource: source,
     });
   };
-
   addOpening("collection", booking.amountPaid || 0, booking.paymentMethod || "", booking.cashReceived || 0, booking.cashReceived || 0, booking.changeGiven || 0);
   addOpening("refund", booking.amountRefunded || 0, booking.refundMethod || "", booking.refundCash || 0, booking.refundCash || 0, 0);
-  if (rows.length) await tx.insert(bookingPaymentEvents).values(rows).onConflictDoNothing();
+  return rows;
+}
+
+function bookingCasPredicate(current: OtaPaymentBooking) {
+  return and(
+    eq(bookings.bookingCycle, current.bookingCycle),
+    eq(bookings.status, current.status),
+    current.amountTotal == null ? isNull(bookings.amountTotal) : eq(bookings.amountTotal, current.amountTotal),
+    current.amountPaid == null ? isNull(bookings.amountPaid) : eq(bookings.amountPaid, current.amountPaid),
+    current.amountRefunded == null ? isNull(bookings.amountRefunded) : eq(bookings.amountRefunded, current.amountRefunded),
+    eq(bookings.otaPaymentTerms, current.otaPaymentTerms!),
+    eq(bookings.otaCurrency, current.otaCurrency!),
+    eq(bookings.paymentOverride, current.paymentOverride),
+    current.paymentStatus == null ? isNull(bookings.paymentStatus) : eq(bookings.paymentStatus, current.paymentStatus),
+  );
+}
+
+function onlineReceiptValues(event: typeof bookingPaymentEvents.$inferInsert) {
+  const receiptId = `${event.eventId}:online`;
+  return {
+    receiptId, sourceType: "booking" as const, sourceId: event.bookingId!, kind: (event.eventType === "refund" ? "refund" : "stay") as "refund" | "stay",
+    accountId: event.accountId!, amount: event.eventType === "refund" ? -Math.abs(event.onlinePaise || 0) : Math.abs(event.onlinePaise || 0),
+    businessDate: event.businessDate!, notes: event.note || `${event.eventType} · ${event.guestNameSnapshot}`,
+    createdBy: event.actor!, createdAt: event.createdAt!, bookingEventId: event.eventId!,
+    guestNameSnapshot: event.guestNameSnapshot!, bookingRefSnapshot: event.bookingRefSnapshot!,
+    platformSnapshot: event.platformSnapshot!, checkinDateSnapshot: event.checkinDateSnapshot!,
+    checkoutDateSnapshot: event.checkoutDateSnapshot!, bookingCycleSnapshot: event.bookingCycle!,
+    syncId: receiptId, syncUpdatedAt: event.syncUpdatedAt!, syncSource: event.syncSource!,
+  };
+}
+
+function correctionReceiptValues(event: typeof bookingPaymentEvents.$inferInsert) {
+  const receiptId = `${event.eventId}:online`;
+  return {
+    receiptId, sourceType: "booking" as const, sourceId: event.bookingId!, kind: "reversal" as const,
+    accountId: event.accountId!, amount: event.onlinePaise!,
+    businessDate: event.businessDate!, notes: `Correction for ${event.correctsEventId}: ${event.note}`,
+    createdBy: event.actor!, createdAt: event.createdAt!, bookingEventId: event.eventId!,
+    guestNameSnapshot: event.guestNameSnapshot!, bookingRefSnapshot: event.bookingRefSnapshot!,
+    platformSnapshot: event.platformSnapshot!, checkinDateSnapshot: event.checkinDateSnapshot!,
+    checkoutDateSnapshot: event.checkoutDateSnapshot!, bookingCycleSnapshot: event.bookingCycle!,
+    syncId: receiptId, syncUpdatedAt: event.syncUpdatedAt!, syncSource: event.syncSource!,
+  };
+}
+
+function computePaymentProjection(
+  booking: OtaPaymentBooking,
+  events: Array<Pick<typeof bookingPaymentEvents.$inferSelect, "eventId" | "eventType" | "amountPaise" | "cashPaise" | "onlinePaise" | "unknownPaise" | "correctsEventId">>,
+) {
+  const collectionEvents = events.filter((event) => event.eventType === "collection");
+  const refundEvents = events.filter((event) => event.eventType === "refund");
+  const corrections = events.filter((event) => event.eventType === "correction");
+  const originalById = new Map(events.map((event) => [event.eventId, event]));
+  const correctionFor = (eventType: string) => corrections
+    .filter((correction) => originalById.get(correction.correctsEventId || "")?.eventType === eventType)
+    .reduce((sum, correction) => sum + correction.amountPaise, 0);
+  const collectedPaise = collectionEvents.reduce((sum, event) => sum + event.amountPaise, 0) + correctionFor("collection");
+  const refundedPaise = refundEvents.reduce((sum, event) => sum + event.amountPaise, 0) + correctionFor("refund");
+  const cashCollectedPaise = collectionEvents.reduce((sum, event) => sum + event.cashPaise, 0)
+    + corrections.filter((event) => originalById.get(event.correctsEventId || "")?.eventType === "collection").reduce((sum, event) => sum + event.cashPaise, 0);
+  const onlineCollectedPaise = collectionEvents.reduce((sum, event) => sum + event.onlinePaise, 0)
+    + corrections.filter((event) => originalById.get(event.correctsEventId || "")?.eventType === "collection").reduce((sum, event) => sum + event.onlinePaise, 0);
+  const refundCorrections = corrections.filter((event) => originalById.get(event.correctsEventId || "")?.eventType === "refund");
+  const cashRefundedPaise = Math.max(0, -refundEvents.reduce((sum, event) => sum + event.cashPaise, 0) - refundCorrections.reduce((sum, event) => sum + event.cashPaise, 0));
+  const onlineRefundedPaise = Math.max(0, -refundEvents.reduce((sum, event) => sum + event.onlinePaise, 0) - refundCorrections.reduce((sum, event) => sum + event.onlinePaise, 0));
+  const paymentMethod = events.some((event) => event.eventType === "collection" && event.unknownPaise > 0) ? ""
+    : cashCollectedPaise > 0 && onlineCollectedPaise > 0 ? "split"
+      : cashCollectedPaise > 0 ? "cash" : onlineCollectedPaise > 0 ? "online" : "";
+  const refundMethod = cashRefundedPaise > 0 && onlineRefundedPaise > 0 ? "split"
+    : cashRefundedPaise > 0 ? "cash" : onlineRefundedPaise > 0 ? "online" : "";
+  return {
+    amountPaid: paiseToRupees(collectedPaise),
+    amountRefunded: paiseToRupees(refundedPaise),
+    paymentMethod,
+    cashReceived: paiseToRupees(cashCollectedPaise),
+    refundMethod,
+    refundCash: paiseToRupees(cashRefundedPaise),
+    paymentStatus: collectedPaise - refundedPaise >= rupeesToPaise(booking.amountTotal)
+      ? "paid" : booking.otaPaymentTerms || booking.paymentStatus || "pay_at_hotel",
+  };
+}
+
+/** D1 atomic multi-statement commit. Map status NOT NULL CAS aborts to a reloadable 409. */
+async function commitOtaWrites(db: any, writes: any[]): Promise<void> {
+  try {
+    if (typeof db.batch !== "function") {
+      throw new Error("D1 batch API unavailable for OTA payment journal");
+    }
+    await db.batch(writes);
+  } catch (err) {
+    if (err instanceof BookingPaymentError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    // Only the CAS NULL-guard — not UNIQUE/FK or queries that merely mention NULL.
+    if (/NOT NULL constraint failed:\s*bookings\.status|SQLITE_CONSTRAINT_NOTNULL/i.test(msg)) {
+      throw new BookingPaymentError("Booking changed while this payment was being recorded. Reload and try again", 409);
+    }
+    throw err;
+  }
 }
 
 async function movementCoveredByClose(
@@ -164,118 +252,129 @@ export async function recordOtaBookingPayment(input: {
   if (process.env.GOKO_RUNTIME === "pi") {
     return recordOtaBookingPaymentPi(input, db as any, businessDate, now, source);
   }
-  return db.transaction(async (tx) => {
-    const existing = await tx.select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.eventId, input.eventId)).limit(1);
-    if (existing[0]) {
-      const row = existing[0];
-      const same = row.bookingId === input.booking.id && row.bookingCycle === input.booking.bookingCycle
-        && row.eventType === input.kind && row.amountPaise === input.amountPaise
-        && row.cashPaise === input.cashPaise && row.onlinePaise === input.onlinePaise
-        && row.accountId === (input.onlinePaise > 0 ? Number(input.accountId) : null);
-      if (!same) throw new BookingPaymentError("This operation ID was already used for a different payment", 409);
-      await repairOnlineReceipt(tx, row);
-      const current = await tx.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
-      return { eventId: row.eventId, booking: current[0] || input.booking, duplicate: true };
-    }
+  // Cloudflare D1: Drizzle db.transaction() issues BEGIN/COMMIT, which D1 rejects.
+  // Pre-read, validate, then commit with db.batch() + NOT NULL CAS guard (same pattern as cash journals).
+  return recordOtaBookingPaymentD1(input, db, businessDate, now, source);
+}
 
-    const rows = await tx.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
-    const current = rows[0];
-    if (!current || !isOtaPostpaidBooking(current)) throw new BookingPaymentError("This is not an eligible INR pay-at-property OTA booking", 409);
-    if (!current.syncId) throw new BookingPaymentError("Booking sync identity is missing. Run Server Sync → Backfill Sync IDs before recording OTA payments", 409);
-    const allowed = input.allowedStatuses || ["received", "hold", "checked_in", "checked_out"];
-    if (!allowed.includes(current.status)) throw new BookingPaymentError("The booking status no longer allows this payment", 409);
-    if (current.bookingCycle !== input.booking.bookingCycle) throw new BookingPaymentError("The booking cycle changed. Reload the booking", 409);
-    if (input.onlinePaise > 0) {
-      const account = await tx.select({ id: accounts.id }).from(accounts).where(and(
-        eq(accounts.id, Number(input.accountId)), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0),
-      )).limit(1);
-      if (!account[0]) throw new BookingPaymentError("The selected receiving account is no longer active", 409);
-    }
+async function recordOtaBookingPaymentD1(
+  input: Parameters<typeof recordOtaBookingPayment>[0],
+  db: Database,
+  businessDate: string,
+  now: string,
+  source: string,
+): Promise<{ eventId: string; booking: OtaPaymentBooking; duplicate: boolean }> {
+  const existing = await db.select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.eventId, input.eventId)).limit(1);
+  if (existing[0]) {
+    const row = existing[0];
+    const expectedCash = input.kind === "refund" ? -input.cashPaise : input.cashPaise;
+    const expectedOnline = input.kind === "refund" ? -input.onlinePaise : input.onlinePaise;
+    const same = row.bookingId === input.booking.id && row.bookingCycle === input.booking.bookingCycle
+      && row.eventType === input.kind && row.amountPaise === input.amountPaise
+      && row.cashPaise === expectedCash && row.onlinePaise === expectedOnline
+      && row.accountId === (input.onlinePaise > 0 ? Number(input.accountId) : null);
+    if (!same) throw new BookingPaymentError("This operation ID was already used for a different payment", 409);
+    await repairOnlineReceipt(db, row);
+    const current = await db.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
+    return { eventId: row.eventId, booking: current[0] || input.booking, duplicate: true };
+  }
 
-    await ensureOpenings(tx, current);
-    const events = await tx.select().from(bookingPaymentEvents).where(and(
-      eq(bookingPaymentEvents.bookingId, current.id), eq(bookingPaymentEvents.bookingCycle, current.bookingCycle),
-    ));
-    const openingCollection = events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.amountPaise, 0);
-    const openingRefund = events.filter((e) => e.eventType === "refund").reduce((sum, e) => sum + e.amountPaise, 0);
-    const projectedPaid = paiseToRupees(openingCollection);
-    const projectedRefunded = paiseToRupees(openingRefund);
-    if (Math.abs(rupeesToPaise(current.amountPaid) - openingCollection) > 0
-      || Math.abs(rupeesToPaise(current.amountRefunded) - openingRefund) > 0) {
-      throw new BookingPaymentError("The booking payment journal is not ready or needs reconciliation", 409);
-    }
+  const rows = await db.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
+  const current = rows[0];
+  if (!current || !isOtaPostpaidBooking(current)) throw new BookingPaymentError("This is not an eligible INR pay-at-property OTA booking", 409);
+  if (!current.syncId) throw new BookingPaymentError("Booking sync identity is missing. Run Server Sync → Backfill Sync IDs before recording OTA payments", 409);
+  const allowed = input.allowedStatuses || ["received", "hold", "checked_in", "checked_out"];
+  if (!allowed.includes(current.status)) throw new BookingPaymentError("The booking status no longer allows this payment", 409);
+  if (current.bookingCycle !== input.booking.bookingCycle) throw new BookingPaymentError("The booking cycle changed. Reload the booking", 409);
+  if (input.onlinePaise > 0) {
+    const account = await db.select({ id: accounts.id }).from(accounts).where(and(
+      eq(accounts.id, Number(input.accountId)), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0),
+    )).limit(1);
+    if (!account[0]) throw new BookingPaymentError("The selected receiving account is no longer active", 409);
+  }
 
-    if (input.kind === "collection" && input.enforceDue !== false) {
-      const due = Math.max(0, rupeesToPaise(current.amountTotal) - (openingCollection - openingRefund));
-      if (input.amountPaise > due) throw new BookingPaymentError("Payment exceeds the current balance", 409);
-    }
-    if (input.kind === "refund" && input.enforceRefundCap !== false) {
-      const total = rupeesToPaise(current.amountTotal);
-      const terminal = ["cancelled", "no_show"].includes(current.status)
-        || ["cancelled", "no_show"].includes(String(input.statusUpdate?.status || ""));
-      const cap = Math.max(0, openingCollection - openingRefund - (terminal ? 0 : total));
-      if (input.amountPaise > cap) throw new BookingPaymentError(`Refund exceeds the current refundable balance of ${paiseToRupees(cap).toFixed(2)}`, 409);
-    }
+  let events = await db.select().from(bookingPaymentEvents).where(and(
+    eq(bookingPaymentEvents.bookingId, current.id), eq(bookingPaymentEvents.bookingCycle, current.bookingCycle),
+  ));
+  const openingRows = events.length === 0 ? buildOpeningRows(current, source) : [];
+  if (openingRows.length) events = openingRows as typeof events;
 
-    if (await movementCoveredByClose(tx, null, businessDate)) throw new BookingPaymentError("Undo the cash reconciliation for this date before recording a payment", 409);
-    if (input.onlinePaise > 0 && await movementCoveredByClose(tx, Number(input.accountId), businessDate)) {
-      throw new BookingPaymentError("Undo the receiving account reconciliation for this date before recording a payment", 409);
-    }
+  const openingCollection = events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.amountPaise, 0);
+  const openingRefund = events.filter((e) => e.eventType === "refund").reduce((sum, e) => sum + e.amountPaise, 0);
+  if (Math.abs(rupeesToPaise(current.amountPaid) - openingCollection) > 0
+    || Math.abs(rupeesToPaise(current.amountRefunded) - openingRefund) > 0) {
+    throw new BookingPaymentError("The booking payment journal is not ready or needs reconciliation", 409);
+  }
 
-    const event: typeof bookingPaymentEvents.$inferInsert = {
-      eventId: input.eventId, syncId: input.eventId, bookingId: current.id, bookingCycle: current.bookingCycle,
-      eventType: input.kind, amountPaise: input.amountPaise, cashPaise: input.kind === "refund" ? -input.cashPaise : input.cashPaise,
-      onlinePaise: input.kind === "refund" ? -input.onlinePaise : input.onlinePaise,
-      cashTenderPaise: input.cashTenderPaise || 0, changePaise: input.changePaise || 0,
-      accountId: input.onlinePaise > 0 ? Number(input.accountId) : null,
-      currency: current.otaCurrency || "INR", otaPaymentTerms: current.otaPaymentTerms || "pay_at_hotel",
-      businessDate, isOpening: 0, ...paymentSnapshot(current), note: input.note?.trim() || "",
-      actor: input.actor, createdAt: now, syncUpdatedAt: now, syncSource: source,
-    };
+  if (input.kind === "collection" && input.enforceDue !== false) {
+    const due = Math.max(0, rupeesToPaise(current.amountTotal) - (openingCollection - openingRefund));
+    if (input.amountPaise > due) throw new BookingPaymentError("Payment exceeds the current balance", 409);
+  }
+  if (input.kind === "refund" && input.enforceRefundCap !== false) {
+    const total = rupeesToPaise(current.amountTotal);
+    const terminal = ["cancelled", "no_show"].includes(current.status)
+      || ["cancelled", "no_show"].includes(String(input.statusUpdate?.status || ""));
+    const cap = Math.max(0, openingCollection - openingRefund - (terminal ? 0 : total));
+    if (input.amountPaise > cap) throw new BookingPaymentError(`Refund exceeds the current refundable balance of ${paiseToRupees(cap).toFixed(2)}`, 409);
+  }
 
-    // The booking row update is a compare-and-set on every financial/lifecycle input.
-    // A failed CAS rolls back the event and receipt in this transaction.
-    const collectionDelta = input.kind === "collection" ? input.amountPaise : 0;
-    const refundDelta = input.kind === "refund" ? input.amountPaise : 0;
-    const nextPaid = paiseToRupees(openingCollection + collectionDelta);
-    const nextRefunded = paiseToRupees(openingRefund + refundDelta);
-    const nextStatus = input.statusUpdate?.status || current.status;
-    const progressStatus = openingCollection + collectionDelta - openingRefund - refundDelta >= rupeesToPaise(current.amountTotal)
-      ? "paid"
-      : current.otaPaymentTerms || current.paymentStatus || "pay_at_hotel";
-    const updated = await tx.update(bookings).set({
-      amountPaid: nextPaid,
-      amountRefunded: nextRefunded,
-      paymentStatus: progressStatus,
-      paymentOverride: 1,
-      paymentMethod: summarizeTender(events, "collection", input),
-      cashReceived: paiseToRupees(events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.cashPaise, 0) + (input.kind === "collection" ? input.cashPaise : 0)),
-      changeGiven: paiseToRupees(events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.changePaise, 0) + (input.kind === "collection" ? (input.changePaise || 0) : 0)),
-      refundMethod: input.kind === "refund" ? summarizeTender(events, "refund", input) : current.refundMethod,
-      refundCash: paiseToRupees(events.filter((e) => e.eventType === "refund").reduce((sum, e) => sum + Math.abs(e.cashPaise), 0) + (input.kind === "refund" ? input.cashPaise : 0)),
-      refundedAt: input.kind === "refund" ? now : current.refundedAt,
-      refundedBy: input.kind === "refund" ? input.actor : current.refundedBy,
-      status: nextStatus,
-      ...input.statusUpdate,
-      syncUpdatedAt: now,
-      syncSource: source,
-    }).where(and(
-      eq(bookings.id, current.id), eq(bookings.bookingCycle, current.bookingCycle),
-      eq(bookings.status, current.status),
-      current.amountTotal == null ? isNull(bookings.amountTotal) : eq(bookings.amountTotal, current.amountTotal),
-      current.amountPaid == null ? isNull(bookings.amountPaid) : eq(bookings.amountPaid, current.amountPaid),
-      current.amountRefunded == null ? isNull(bookings.amountRefunded) : eq(bookings.amountRefunded, current.amountRefunded),
-      eq(bookings.otaPaymentTerms, current.otaPaymentTerms!), eq(bookings.otaCurrency, current.otaCurrency!),
-      eq(bookings.paymentOverride, current.paymentOverride),
-      current.paymentStatus == null ? isNull(bookings.paymentStatus) : eq(bookings.paymentStatus, current.paymentStatus),
-    )).returning({ id: bookings.id });
-    if (!updated[0]) throw new BookingPaymentError("Booking changed while this payment was being recorded. Reload and try again", 409);
+  if (input.cashPaise > 0 && await movementCoveredByClose(db, null, businessDate)) {
+    throw new BookingPaymentError("Undo the cash reconciliation for this date before recording a payment", 409);
+  }
+  if (input.onlinePaise > 0 && await movementCoveredByClose(db, Number(input.accountId), businessDate)) {
+    throw new BookingPaymentError("Undo the receiving account reconciliation for this date before recording a payment", 409);
+  }
 
-    await tx.insert(bookingPaymentEvents).values(event);
-    if (input.onlinePaise > 0) await insertOnlineReceipt(tx, event);
-    const refreshed = await tx.select().from(bookings).where(eq(bookings.id, current.id)).limit(1);
-    return { eventId: input.eventId, booking: refreshed[0], duplicate: false };
-  });
+  const event: typeof bookingPaymentEvents.$inferInsert = {
+    eventId: input.eventId, syncId: input.eventId, bookingId: current.id, bookingCycle: current.bookingCycle,
+    eventType: input.kind, amountPaise: input.amountPaise, cashPaise: input.kind === "refund" ? -input.cashPaise : input.cashPaise,
+    onlinePaise: input.kind === "refund" ? -input.onlinePaise : input.onlinePaise,
+    cashTenderPaise: input.cashTenderPaise || 0, changePaise: input.changePaise || 0,
+    accountId: input.onlinePaise > 0 ? Number(input.accountId) : null,
+    currency: current.otaCurrency || "INR", otaPaymentTerms: current.otaPaymentTerms || "pay_at_hotel",
+    businessDate, isOpening: 0, ...paymentSnapshot(current), note: input.note?.trim() || "",
+    actor: input.actor, createdAt: now, syncUpdatedAt: now, syncSource: source,
+  };
+
+  const collectionDelta = input.kind === "collection" ? input.amountPaise : 0;
+  const refundDelta = input.kind === "refund" ? input.amountPaise : 0;
+  const nextPaid = paiseToRupees(openingCollection + collectionDelta);
+  const nextRefunded = paiseToRupees(openingRefund + refundDelta);
+  const finalStatus = String(input.statusUpdate?.status || current.status);
+  const progressStatus = openingCollection + collectionDelta - openingRefund - refundDelta >= rupeesToPaise(current.amountTotal)
+    ? "paid"
+    : current.otaPaymentTerms || current.paymentStatus || "pay_at_hotel";
+  const { status: _statusIgnored, ...statusRest } = (input.statusUpdate || {}) as Record<string, unknown>;
+  const casPred = bookingCasPredicate(current);
+
+  const client = db as any;
+  const writes: any[] = [];
+  if (openingRows.length) writes.push(client.insert(bookingPaymentEvents).values(openingRows).onConflictDoNothing());
+  writes.push(client.update(bookings).set({
+    amountPaid: nextPaid,
+    amountRefunded: nextRefunded,
+    paymentStatus: progressStatus,
+    paymentOverride: 1,
+    paymentMethod: summarizeTender(events, "collection", input),
+    cashReceived: paiseToRupees(events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.cashPaise, 0) + (input.kind === "collection" ? input.cashPaise : 0)),
+    changeGiven: paiseToRupees(events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.changePaise, 0) + (input.kind === "collection" ? (input.changePaise || 0) : 0)),
+    refundMethod: input.kind === "refund" ? summarizeTender(events, "refund", input) : current.refundMethod,
+    refundCash: paiseToRupees(events.filter((e) => e.eventType === "refund").reduce((sum, e) => sum + Math.abs(e.cashPaise), 0) + (input.kind === "refund" ? input.cashPaise : 0)),
+    refundedAt: input.kind === "refund" ? now : current.refundedAt,
+    refundedBy: input.kind === "refund" ? input.actor : current.refundedBy,
+    ...statusRest,
+    // NOT NULL guard: stale snapshot aborts the whole D1 batch (0-row UPDATE alone would not).
+    status: sql`CASE WHEN ${casPred} THEN ${finalStatus} ELSE NULL END`,
+    syncUpdatedAt: now,
+    syncSource: source,
+  }).where(eq(bookings.id, current.id)));
+  writes.push(client.insert(bookingPaymentEvents).values(event));
+  if (input.onlinePaise > 0) writes.push(client.insert(guestReceipts).values(onlineReceiptValues(event)).onConflictDoNothing());
+
+  await commitOtaWrites(client, writes);
+
+  const refreshed = await db.select().from(bookings).where(eq(bookings.id, current.id)).limit(1);
+  return { eventId: input.eventId, booking: refreshed[0], duplicate: false };
 }
 
 /** Admin-only correction for a mistaken journal entry where that money did not move. */
@@ -305,78 +404,102 @@ export async function correctOtaBookingPayment(input: {
   if (process.env.GOKO_RUNTIME === "pi") {
     return correctOtaBookingPaymentPi(input, db as any, now, source);
   }
-  return db.transaction(async (tx) => {
-    const duplicateRows = await tx.select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.eventId, input.eventId)).limit(1);
-    if (duplicateRows[0]) {
-      const row = duplicateRows[0];
-      const same = row.eventType === "correction" && row.bookingId === input.booking.id
-        && row.bookingCycle === input.booking.bookingCycle && row.correctsEventId === input.correctsEventId
-        && row.amountPaise === -input.amountPaise
-        && Math.abs(row.cashPaise) === input.cashPaise && Math.abs(row.onlinePaise) === input.onlinePaise;
-      if (!same) throw new BookingPaymentError("This operation ID was already used for a different correction", 409);
-      await repairCorrectionReceipt(tx, row);
-      const rows = await tx.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
-      return { eventId: row.eventId, booking: rows[0] || input.booking, duplicate: true };
-    }
+  return correctOtaBookingPaymentD1(input, db, now, source);
+}
 
-    const bookingRows = await tx.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
-    const current = bookingRows[0];
-    if (!current || !isOtaPostpaidBooking(current) || current.bookingCycle !== input.booking.bookingCycle) {
-      throw new BookingPaymentError("The OTA payment cycle changed. Reload the booking", 409);
-    }
-    if (!current.syncId) throw new BookingPaymentError("Booking sync identity is missing. Run Server Sync → Backfill Sync IDs before correcting OTA payments", 409);
-    const originalRows = await tx.select().from(bookingPaymentEvents).where(and(
-      eq(bookingPaymentEvents.eventId, input.correctsEventId),
-      eq(bookingPaymentEvents.bookingId, current.id),
-      eq(bookingPaymentEvents.bookingCycle, current.bookingCycle),
-    )).limit(1);
-    const original = originalRows[0];
-    if (!original || !["collection", "refund"].includes(original.eventType) || original.isOpening || !original.businessDate) {
-      throw new BookingPaymentError("Only dated Goko collection/refund events can be corrected", 409);
-    }
+async function correctOtaBookingPaymentD1(
+  input: Parameters<typeof correctOtaBookingPayment>[0],
+  db: Database,
+  now: string,
+  source: string,
+): Promise<{ eventId: string; booking: OtaPaymentBooking; duplicate: boolean }> {
+  const duplicateRows = await db.select().from(bookingPaymentEvents).where(eq(bookingPaymentEvents.eventId, input.eventId)).limit(1);
+  if (duplicateRows[0]) {
+    const row = duplicateRows[0];
+    const same = row.eventType === "correction" && row.bookingId === input.booking.id
+      && row.bookingCycle === input.booking.bookingCycle && row.correctsEventId === input.correctsEventId
+      && row.amountPaise === -input.amountPaise
+      && Math.abs(row.cashPaise) === input.cashPaise && Math.abs(row.onlinePaise) === input.onlinePaise;
+    if (!same) throw new BookingPaymentError("This operation ID was already used for a different correction", 409);
+    await repairCorrectionReceipt(db, row);
+    const rows = await db.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
+    return { eventId: row.eventId, booking: rows[0] || input.booking, duplicate: true };
+  }
 
-    const existingCorrections = await tx.select().from(bookingPaymentEvents).where(and(
-      eq(bookingPaymentEvents.correctsEventId, original.eventId), eq(bookingPaymentEvents.eventType, "correction"),
-    ));
-    const correctedAmount = existingCorrections.reduce((sum, event) => sum + Math.abs(event.amountPaise), 0);
-    const correctedCash = existingCorrections.reduce((sum, event) => sum + Math.abs(event.cashPaise), 0);
-    const correctedOnline = existingCorrections.reduce((sum, event) => sum + Math.abs(event.onlinePaise), 0);
-    const remainingAmount = original.amountPaise - correctedAmount;
-    const remainingCash = Math.abs(original.cashPaise) - correctedCash;
-    const remainingOnline = Math.abs(original.onlinePaise) - correctedOnline;
-    if (input.amountPaise > remainingAmount || input.cashPaise > remainingCash || input.onlinePaise > remainingOnline) {
-      throw new BookingPaymentError("Correction exceeds the uncorrected amount or tender split", 409);
-    }
-    if (input.onlinePaise > 0) {
-      if (!original.accountId) throw new BookingPaymentError("The original online payment has no receiving account to reverse", 409);
-      if (await movementCoveredByClose(tx, original.accountId, original.businessDate)) {
-        throw new BookingPaymentError("Undo the receiving account reconciliation covering the original payment before correcting it", 409);
-      }
-    }
-    if (input.cashPaise > 0 && await movementCoveredByClose(tx, null, original.businessDate)) {
-      throw new BookingPaymentError("Undo the cash reconciliation covering the original payment before correcting it", 409);
-    }
+  const bookingRows = await db.select().from(bookings).where(eq(bookings.id, input.booking.id)).limit(1);
+  const current = bookingRows[0];
+  if (!current || !isOtaPostpaidBooking(current) || current.bookingCycle !== input.booking.bookingCycle) {
+    throw new BookingPaymentError("The OTA payment cycle changed. Reload the booking", 409);
+  }
+  if (!current.syncId) throw new BookingPaymentError("Booking sync identity is missing. Run Server Sync → Backfill Sync IDs before correcting OTA payments", 409);
+  const originalRows = await db.select().from(bookingPaymentEvents).where(and(
+    eq(bookingPaymentEvents.eventId, input.correctsEventId),
+    eq(bookingPaymentEvents.bookingId, current.id),
+    eq(bookingPaymentEvents.bookingCycle, current.bookingCycle),
+  )).limit(1);
+  const original = originalRows[0];
+  if (!original || !["collection", "refund"].includes(original.eventType) || original.isOpening || !original.businessDate) {
+    throw new BookingPaymentError("Only dated Goko collection/refund events can be corrected", 409);
+  }
 
-    const reversesCollection = original.eventType === "collection";
-    const event: typeof bookingPaymentEvents.$inferInsert = {
-      eventId: input.eventId, syncId: input.eventId, bookingId: current.id, bookingCycle: current.bookingCycle,
-      eventType: "correction", amountPaise: -input.amountPaise,
-      cashPaise: reversesCollection ? -input.cashPaise : input.cashPaise,
-      onlinePaise: reversesCollection ? -input.onlinePaise : input.onlinePaise,
-      accountId: input.onlinePaise > 0 ? original.accountId : null,
-      currency: original.currency, otaPaymentTerms: original.otaPaymentTerms,
-      businessDate: original.businessDate, isOpening: 0, correctsEventId: original.eventId,
-      guestNameSnapshot: original.guestNameSnapshot, bookingRefSnapshot: original.bookingRefSnapshot,
-      platformSnapshot: original.platformSnapshot, checkinDateSnapshot: original.checkinDateSnapshot,
-      checkoutDateSnapshot: original.checkoutDateSnapshot, note: input.note.trim(), actor: input.actor,
-      createdAt: now, syncUpdatedAt: now, syncSource: source,
-    };
-    await tx.insert(bookingPaymentEvents).values(event);
-    if (input.onlinePaise > 0) await insertCorrectionReceipt(tx, event);
-    await rebuildBookingPaymentProjection(current.id, current.bookingCycle, tx);
-    const refreshed = await tx.select().from(bookings).where(eq(bookings.id, current.id)).limit(1);
-    return { eventId: input.eventId, booking: refreshed[0], duplicate: false };
-  });
+  const existingCorrections = await db.select().from(bookingPaymentEvents).where(and(
+    eq(bookingPaymentEvents.correctsEventId, original.eventId), eq(bookingPaymentEvents.eventType, "correction"),
+  ));
+  const correctedAmount = existingCorrections.reduce((sum, event) => sum + Math.abs(event.amountPaise), 0);
+  const correctedCash = existingCorrections.reduce((sum, event) => sum + Math.abs(event.cashPaise), 0);
+  const correctedOnline = existingCorrections.reduce((sum, event) => sum + Math.abs(event.onlinePaise), 0);
+  const remainingAmount = original.amountPaise - correctedAmount;
+  const remainingCash = Math.abs(original.cashPaise) - correctedCash;
+  const remainingOnline = Math.abs(original.onlinePaise) - correctedOnline;
+  if (input.amountPaise > remainingAmount || input.cashPaise > remainingCash || input.onlinePaise > remainingOnline) {
+    throw new BookingPaymentError("Correction exceeds the uncorrected amount or tender split", 409);
+  }
+  if (input.onlinePaise > 0) {
+    if (!original.accountId) throw new BookingPaymentError("The original online payment has no receiving account to reverse", 409);
+    if (await movementCoveredByClose(db, original.accountId, original.businessDate)) {
+      throw new BookingPaymentError("Undo the receiving account reconciliation covering the original payment before correcting it", 409);
+    }
+  }
+  if (input.cashPaise > 0 && await movementCoveredByClose(db, null, original.businessDate)) {
+    throw new BookingPaymentError("Undo the cash reconciliation covering the original payment before correcting it", 409);
+  }
+
+  const reversesCollection = original.eventType === "collection";
+  const event: typeof bookingPaymentEvents.$inferInsert = {
+    eventId: input.eventId, syncId: input.eventId, bookingId: current.id, bookingCycle: current.bookingCycle,
+    eventType: "correction", amountPaise: -input.amountPaise,
+    cashPaise: reversesCollection ? -input.cashPaise : input.cashPaise,
+    onlinePaise: reversesCollection ? -input.onlinePaise : input.onlinePaise,
+    accountId: input.onlinePaise > 0 ? original.accountId : null,
+    currency: original.currency, otaPaymentTerms: original.otaPaymentTerms,
+    businessDate: original.businessDate, isOpening: 0, correctsEventId: original.eventId,
+    guestNameSnapshot: original.guestNameSnapshot, bookingRefSnapshot: original.bookingRefSnapshot,
+    platformSnapshot: original.platformSnapshot, checkinDateSnapshot: original.checkinDateSnapshot,
+    checkoutDateSnapshot: original.checkoutDateSnapshot, note: input.note.trim(), actor: input.actor,
+    createdAt: now, syncUpdatedAt: now, syncSource: source,
+  };
+
+  const priorEvents = await db.select().from(bookingPaymentEvents).where(and(
+    eq(bookingPaymentEvents.bookingId, current.id), eq(bookingPaymentEvents.bookingCycle, current.bookingCycle),
+  ));
+  const projection = computePaymentProjection(current, [...priorEvents, event as typeof bookingPaymentEvents.$inferSelect]);
+
+  const client = db as any;
+  const writes: any[] = [
+    client.insert(bookingPaymentEvents).values(event),
+  ];
+  if (input.onlinePaise > 0) writes.push(client.insert(guestReceipts).values(correctionReceiptValues(event)).onConflictDoNothing());
+  writes.push(client.update(bookings).set({
+    ...projection,
+    paymentOverride: 1,
+    syncUpdatedAt: now,
+    syncSource: source,
+  }).where(and(eq(bookings.id, current.id), eq(bookings.bookingCycle, current.bookingCycle))));
+
+  await commitOtaWrites(client, writes);
+
+  const refreshed = await db.select().from(bookings).where(eq(bookings.id, current.id)).limit(1);
+  return { eventId: input.eventId, booking: refreshed[0], duplicate: false };
 }
 
 /** better-sqlite3 does not support async transaction callbacks; keep Pi writes fully synchronous. */
@@ -688,17 +811,7 @@ function summarizeTender(
 }
 
 async function insertOnlineReceipt(tx: Database, event: typeof bookingPaymentEvents.$inferInsert) {
-  const receiptId = `${event.eventId}:online`;
-  await tx.insert(guestReceipts).values({
-    receiptId, sourceType: "booking", sourceId: event.bookingId!, kind: event.eventType === "refund" ? "refund" : "stay",
-    accountId: event.accountId!, amount: event.eventType === "refund" ? -Math.abs(event.onlinePaise || 0) : Math.abs(event.onlinePaise || 0),
-    businessDate: event.businessDate!, notes: event.note || `${event.eventType} · ${event.guestNameSnapshot}`,
-    createdBy: event.actor!, createdAt: event.createdAt!, bookingEventId: event.eventId!,
-    guestNameSnapshot: event.guestNameSnapshot!, bookingRefSnapshot: event.bookingRefSnapshot!,
-    platformSnapshot: event.platformSnapshot!, checkinDateSnapshot: event.checkinDateSnapshot!,
-    checkoutDateSnapshot: event.checkoutDateSnapshot!, bookingCycleSnapshot: event.bookingCycle!,
-    syncId: receiptId, syncUpdatedAt: event.syncUpdatedAt!, syncSource: event.syncSource!,
-  }).onConflictDoNothing();
+  await tx.insert(guestReceipts).values(onlineReceiptValues(event)).onConflictDoNothing();
 }
 
 async function repairOnlineReceipt(tx: Database, event: typeof bookingPaymentEvents.$inferSelect) {
@@ -710,17 +823,7 @@ async function repairOnlineReceipt(tx: Database, event: typeof bookingPaymentEve
 
 async function insertCorrectionReceipt(tx: Database, event: typeof bookingPaymentEvents.$inferInsert) {
   if (!event.accountId || !event.onlinePaise) return;
-  const receiptId = `${event.eventId}:online`;
-  await tx.insert(guestReceipts).values({
-    receiptId, sourceType: "booking", sourceId: event.bookingId!, kind: "reversal",
-    accountId: event.accountId, amount: event.onlinePaise,
-    businessDate: event.businessDate!, notes: `Correction for ${event.correctsEventId}: ${event.note}`,
-    createdBy: event.actor!, createdAt: event.createdAt!, bookingEventId: event.eventId!,
-    guestNameSnapshot: event.guestNameSnapshot!, bookingRefSnapshot: event.bookingRefSnapshot!,
-    platformSnapshot: event.platformSnapshot!, checkinDateSnapshot: event.checkinDateSnapshot!,
-    checkoutDateSnapshot: event.checkoutDateSnapshot!, bookingCycleSnapshot: event.bookingCycle!,
-    syncId: receiptId, syncUpdatedAt: event.syncUpdatedAt!, syncSource: event.syncSource!,
-  }).onConflictDoNothing();
+  await tx.insert(guestReceipts).values(correctionReceiptValues(event)).onConflictDoNothing();
 }
 
 async function repairCorrectionReceipt(tx: Database, event: typeof bookingPaymentEvents.$inferSelect) {
@@ -773,40 +876,10 @@ export async function rebuildBookingPaymentProjection(
   const booking = bookingRows[0];
   if (!booking || booking.bookingCycle !== bookingCycle || events.length === 0) return;
 
-  const collectionEvents = events.filter((event) => event.eventType === "collection");
-  const refundEvents = events.filter((event) => event.eventType === "refund");
-  const corrections = events.filter((event) => event.eventType === "correction");
-  const originalById = new Map(events.map((event) => [event.eventId, event]));
-  const correctionFor = (eventType: string) => corrections
-    .filter((correction) => originalById.get(correction.correctsEventId || "")?.eventType === eventType)
-    .reduce((sum, correction) => sum + correction.amountPaise, 0);
-  const collectedPaise = collectionEvents.reduce((sum, event) => sum + event.amountPaise, 0) + correctionFor("collection");
-  const refundedPaise = refundEvents.reduce((sum, event) => sum + event.amountPaise, 0) + correctionFor("refund");
-  const cashCollectedPaise = collectionEvents.reduce((sum, event) => sum + event.cashPaise, 0)
-    + corrections.filter((event) => originalById.get(event.correctsEventId || "")?.eventType === "collection").reduce((sum, event) => sum + event.cashPaise, 0);
-  const onlineCollectedPaise = collectionEvents.reduce((sum, event) => sum + event.onlinePaise, 0)
-    + corrections.filter((event) => originalById.get(event.correctsEventId || "")?.eventType === "collection").reduce((sum, event) => sum + event.onlinePaise, 0);
-  const refundCorrections = corrections.filter((event) => originalById.get(event.correctsEventId || "")?.eventType === "refund");
-  const cashRefundedPaise = Math.max(0, -refundEvents.reduce((sum, event) => sum + event.cashPaise, 0) - refundCorrections.reduce((sum, event) => sum + event.cashPaise, 0));
-  const onlineRefundedPaise = Math.max(0, -refundEvents.reduce((sum, event) => sum + event.onlinePaise, 0) - refundCorrections.reduce((sum, event) => sum + event.onlinePaise, 0));
-  const paymentMethod = events.some((event) => event.eventType === "collection" && event.unknownPaise > 0) ? ""
-    : cashCollectedPaise > 0 && onlineCollectedPaise > 0 ? "split"
-      : cashCollectedPaise > 0 ? "cash" : onlineCollectedPaise > 0 ? "online" : "";
-  const refundMethod = cashRefundedPaise > 0 && onlineRefundedPaise > 0 ? "split"
-    : cashRefundedPaise > 0 ? "cash" : onlineRefundedPaise > 0 ? "online" : "";
-  const paid = paiseToRupees(collectedPaise);
-  const refunded = paiseToRupees(refundedPaise);
-  const paymentStatus = collectedPaise - refundedPaise >= rupeesToPaise(booking.amountTotal)
-    ? "paid" : booking.otaPaymentTerms || booking.paymentStatus || "pay_at_hotel";
+  const projection = computePaymentProjection(booking, events);
   const now = new Date().toISOString();
   await database.update(bookings).set({
-    amountPaid: paid,
-    amountRefunded: refunded,
-    paymentMethod,
-    cashReceived: paiseToRupees(cashCollectedPaise),
-    refundMethod,
-    refundCash: paiseToRupees(cashRefundedPaise),
-    paymentStatus,
+    ...projection,
     paymentOverride: 1,
     syncUpdatedAt: now,
     syncSource: syncSource(),

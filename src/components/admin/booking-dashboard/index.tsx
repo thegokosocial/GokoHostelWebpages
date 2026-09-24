@@ -296,18 +296,18 @@ export function BookingDashboard({
           return true;
         }
         const data = await res.json().catch(() => ({ error: "Action failed" }));
-        showError(data.error || "Action failed");
+        showApiError({ response: res, data, action, endpoint: "/api/admin/bookings" }, data.error || "Action failed");
         if (reload) {
           await loadData(true);
           if (view === "all") await loadAllBookings();
         }
         return false;
       } catch {
-        showError("Network error");
+        showApiError({ error: new Error("Network error"), action, endpoint: "/api/admin/bookings" }, "Network error");
         return false;
       }
     },
-    [apiCall, externalDetail, loadAllBookings, loadData, showError, showInfo, showSuccess, view],
+    [apiCall, externalDetail, loadAllBookings, loadData, showApiError, showInfo, showSuccess, view],
   );
 
   if (loading) {

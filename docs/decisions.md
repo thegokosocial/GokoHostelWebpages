@@ -183,6 +183,7 @@ These are the load-bearing choices. Changing one without the others usually crea
 | JWT for admin | Deferred until a native mobile app needs it |
 | Durable Objects for kitchen WS | Deferred |
 | `db.transaction()` around query helpers | **Tried, broke food orders on D1** |
+| Drizzle `db.transaction()` BEGIN/COMMIT for OTA payment journal on Workers | **Tried pattern; D1 rejects interactive BEGIN — use `db.batch()`** |
 | CMS on Pi | Explicitly out of scope |
 | Splits on Pi | Explicitly out of scope (skip `0041`, hide nav) |
 | R2 for ID photos | Out of scope (PII + staff Drive habit) |

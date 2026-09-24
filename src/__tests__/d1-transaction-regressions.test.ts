@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 const foodOrders = readFileSync("src/app/api/admin/food-orders/route.ts", "utf8");
+const otaJournal = readFileSync("src/lib/bookingPaymentJournal.ts", "utf8");
+const bookingsRoute = readFileSync("src/app/api/admin/bookings/route.ts", "utf8");
 
 function caseBody(source: string, name: string, nextCase: string) {
   return source.match(new RegExp(`case \\\"${name}\\\"[\\s\\S]*?(?=case \\\"${nextCase}\\\")`))?.[0] || "";
@@ -28,4 +30,27 @@ describe("D1 transaction regressions", () => {
     expect(body).toContain("await db.batch(writes)");
   });
 
+  it("commits OTA payment journal on Cloudflare via db.batch, not Drizzle BEGIN/COMMIT", () => {
+    expect(otaJournal).toContain("recordOtaBookingPaymentD1");
+    expect(otaJournal).toContain("correctOtaBookingPaymentD1");
+    expect(otaJournal).toContain("await db.batch(writes)");
+    expect(otaJournal).toContain("CASE WHEN ${casPred} THEN ${finalStatus} ELSE NULL END");
+    expect(otaJournal).toContain("recordOtaBookingPaymentPi");
+    expect(otaJournal).toContain("correctOtaBookingPaymentPi");
+    // Cloudflare entry points must not open interactive async transactions.
+    const afterPiRecord = otaJournal.split("return recordOtaBookingPaymentPi")[1] || "";
+    const d1Record = afterPiRecord.split("async function correctOtaBookingPayment")[0] || "";
+    expect(d1Record).toContain("recordOtaBookingPaymentD1");
+    expect(d1Record).not.toContain("db.transaction(async");
+    const afterPiCorrect = otaJournal.split("return correctOtaBookingPaymentPi")[1] || "";
+    const d1Correct = afterPiCorrect.split("/** better-sqlite3")[0] || "";
+    expect(d1Correct).toContain("correctOtaBookingPaymentD1");
+    expect(d1Correct).not.toContain("db.transaction(async");
+  });
+
+  it("maps only busy/locked/network blips to temporarily-unavailable on bookings", () => {
+    const catchBody = bookingsRoute.match(/Booking API error:[\s\S]*?status: 500[\s\S]*?\n  \}\n\}/)?.[0] || "";
+    expect(catchBody).toContain("SQLITE_BUSY|SQLITE_LOCKED|network error");
+    expect(catchBody).not.toMatch(/databaseError = \/D1\|Failed query\|SQLITE_/);
+  });
 });

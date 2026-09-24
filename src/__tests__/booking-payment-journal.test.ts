@@ -343,3 +343,123 @@ describe("OTA postpaid booking payment journal", () => {
     }
   });
 });
+
+describe("OTA payment journal Cloudflare D1 batch path", () => {
+  beforeEach(() => {
+    vi.stubEnv("GOKO_RUNTIME", "cloudflare");
+    // Simulate D1 db.batch by awaiting each Drizzle statement in order.
+    (db as any).batch = async (queries: any[]) => {
+      const results: unknown[] = [];
+      for (const query of queries) results.push(await query);
+      return results;
+    };
+  });
+
+  it("records a partial online advance, idempotent retry, and guest receipt", async () => {
+    const booking = await addBooking();
+    const accountId = await addAccount();
+    const input = {
+      booking, eventId: "cf-advance-1", kind: "collection" as const,
+      amountPaise: 100, cashPaise: 0, onlinePaise: 100, accountId,
+      note: "Advance received by phone", actor: "frontdesk",
+    };
+    const first = await recordOtaBookingPayment(input);
+    const retry = await recordOtaBookingPayment(input);
+    expect(first.duplicate).toBe(false);
+    expect(retry.duplicate).toBe(true);
+    expect(first.booking.amountPaid).toBe(1);
+    expect(await db.select().from(guestReceipts)).toMatchObject([
+      { amount: 100, accountId, bookingEventId: "cf-advance-1", kind: "stay" },
+    ]);
+  });
+
+  it("commits collection with statusUpdate atomically (check-in collect)", async () => {
+    const booking = await addBooking({ status: "received" });
+    const accountId = await addAccount();
+    const result = await recordOtaBookingPayment({
+      booking, eventId: "cf-checkin-collect", kind: "collection",
+      amountPaise: 47250, cashPaise: 0, onlinePaise: 47250, accountId, actor: "frontdesk",
+      statusUpdate: { status: "checked_in", checkedInAt: "2026-10-01T06:00:00.000Z", checkedInBy: "frontdesk" },
+    });
+    expect(result.booking.status).toBe("checked_in");
+    expect(result.booking.amountPaid).toBe(472.5);
+    expect(result.booking.paymentStatus).toBe("paid");
+    expect(await db.select().from(bookingPaymentEvents)).toHaveLength(1);
+  });
+
+  it("corrects a mistaken online entry and writes a reversal receipt", async () => {
+    const booking = await addBooking();
+    const accountId = await addAccount();
+    const mistaken = await recordOtaBookingPayment({
+      booking, eventId: "cf-mistaken", kind: "collection", amountPaise: 5000,
+      cashPaise: 0, onlinePaise: 5000, accountId, actor: "frontdesk",
+    });
+    const corrected = await correctOtaBookingPayment({
+      booking: mistaken.booking, eventId: "cf-correction", correctsEventId: "cf-mistaken",
+      amountPaise: 5000, cashPaise: 0, onlinePaise: 5000, note: "Accidental entry", actor: "admin",
+    });
+    expect(corrected.booking.amountPaid).toBe(0);
+    const receipts = await db.select().from(guestReceipts).where(eq(guestReceipts.sourceId, booking.id));
+    expect(receipts.map((r) => [r.kind, r.amount])).toEqual([["stay", 5000], ["reversal", -5000]]);
+  });
+
+  it("rejects when D1 batch API is missing", async () => {
+    delete (db as any).batch;
+    const booking = await addBooking();
+    await expect(recordOtaBookingPayment({
+      booking, eventId: "cf-no-batch", kind: "collection", amountPaise: 1000,
+      cashPaise: 1000, onlinePaise: 0, cashTenderPaise: 1000, actor: "frontdesk",
+    })).rejects.toThrow(/batch API unavailable/i);
+  });
+
+  it("records split collection and cancel refund with statusUpdate", async () => {
+    const booking = await addBooking();
+    const accountId = await addAccount();
+    const collected = await recordOtaBookingPayment({
+      booking, eventId: "cf-split", kind: "collection", amountPaise: 20000,
+      cashPaise: 5000, onlinePaise: 15000, cashTenderPaise: 5000, accountId, actor: "frontdesk",
+    });
+    expect(collected.booking.paymentMethod).toBe("split");
+    expect(collected.booking.amountPaid).toBe(200);
+    expect(await db.select().from(guestReceipts)).toMatchObject([{ amount: 15000, kind: "stay" }]);
+
+    const refunded = await recordOtaBookingPayment({
+      booking: collected.booking, eventId: "cf-cancel-refund", kind: "refund", amountPaise: 10000,
+      cashPaise: 0, onlinePaise: 10000, accountId, actor: "frontdesk",
+      allowedStatuses: ["received"], statusUpdate: { status: "cancelled" },
+    });
+    expect(refunded.booking.status).toBe("cancelled");
+    expect(refunded.booking.amountRefunded).toBe(100);
+    expect((await db.select().from(guestReceipts)).map((r) => r.kind).sort()).toEqual(["refund", "stay"]);
+  });
+
+  it("maps status NOT NULL CAS abort to 409 and leaves UNIQUE failures untouched", async () => {
+    const booking = await addBooking();
+    (db as any).batch = async () => {
+      throw new Error("D1_ERROR: NOT NULL constraint failed: bookings.status");
+    };
+    await expect(recordOtaBookingPayment({
+      booking, eventId: "cf-cas-fail", kind: "collection", amountPaise: 1000,
+      cashPaise: 1000, onlinePaise: 0, cashTenderPaise: 1000, actor: "frontdesk",
+    })).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/Booking changed/i) });
+
+    (db as any).batch = async () => {
+      throw new Error("UNIQUE constraint failed: booking_payment_events.event_id");
+    };
+    await expect(recordOtaBookingPayment({
+      booking, eventId: "cf-unique-fail", kind: "collection", amountPaise: 1000,
+      cashPaise: 1000, onlinePaise: 0, cashTenderPaise: 1000, actor: "frontdesk",
+    })).rejects.toThrow(/UNIQUE constraint failed/i);
+  });
+
+  it("allows online-only collection when cash day is closed", async () => {
+    const booking = await addBooking();
+    const accountId = await addAccount();
+    await db.insert(dailyLedger).values({ date: todayIST(), accountId: null, isReconciled: 1, reconciledBy: "admin" });
+    const result = await recordOtaBookingPayment({
+      booking, eventId: "cf-online-while-cash-closed", kind: "collection", amountPaise: 100,
+      cashPaise: 0, onlinePaise: 100, accountId, actor: "frontdesk",
+    });
+    expect(result.booking.amountPaid).toBe(1);
+  });
+});

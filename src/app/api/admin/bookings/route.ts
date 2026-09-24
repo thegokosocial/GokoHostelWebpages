@@ -2558,15 +2558,16 @@ export async function POST(req: NextRequest) {
     const raw = e?.message || "Internal server error";
     if (e?.status === 409 || e?.status === 400) return NextResponse.json({ error: raw }, { status: e.status });
     if (/Receiving bank|Selected receiving bank/.test(raw)) return NextResponse.json({ error: raw }, { status: 400 });
-    const databaseError = /D1|Failed query|SQLITE_/i.test(raw);
-    const msg = databaseError ? "Database temporarily unavailable. Please try again." : "Internal server error";
+    // Only real blips — not every Drizzle "Failed query" (constraints, BEGIN, schema).
+    const transientDb = /SQLITE_BUSY|SQLITE_LOCKED|network error|socket hang up|ECONNRESET/i.test(raw);
+    const msg = transientDb ? "Database temporarily unavailable. Please try again." : "Internal server error";
     return NextResponse.json({
       error: msg,
       debug: {
         requestId,
         action,
         stage,
-        type: databaseError ? "database" : (e?.name || "server"),
+        type: transientDb ? "database" : (e?.name || "server"),
         serverTime: new Date().toISOString(),
       },
     }, { status: 500, headers: { "x-goko-request-id": requestId } });

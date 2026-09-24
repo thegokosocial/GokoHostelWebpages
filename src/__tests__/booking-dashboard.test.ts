@@ -430,7 +430,10 @@ describe("Booking Calendar: sticky dates and row colour", () => {
     const toast = readFile("src/components/admin/AdminToast.tsx");
 
     expect(dashboard).toContain('showApiError({ response: calRes, data, action: "getCalendarData", endpoint: "/api/admin/bookings" }');
+    expect(dashboard).toContain('showApiError({ response: res, data, action, endpoint: "/api/admin/bookings" }');
     expect(route).toContain('stage = "calculate nightly availability"');
+    expect(route).toContain("SQLITE_BUSY|SQLITE_LOCKED|network error");
+    expect(route).not.toMatch(/databaseError = \/D1\|Failed query\|SQLITE_/);
     expect(route).toContain('"x-goko-request-id": requestId');
     expect(route).toContain("serverTime: new Date().toISOString()");
     expect(toast).toContain("Report ID:");
