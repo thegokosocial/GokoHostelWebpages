@@ -25,6 +25,10 @@ export type PushDeliverySummary = {
 
 type PushRecipient = { role: string; permissions: Record<string, boolean> };
 
+export function pushSubscriptionTargetsUser(subscription: { userLabel?: string | null }, usernames?: Set<string>) {
+  return !usernames || usernames.has(subscription.userLabel || "admin");
+}
+
 export function pushSubscriptionEligible(
   subscription: { userLabel?: string | null; mutedNotificationTypes?: string | null },
   notificationType: NotificationType,
@@ -92,7 +96,7 @@ export function buildPushPayload(payload: PushPayload) {
   };
 }
 
-async function sendPush(payload: PushPayload, allowedRoles?: Array<"admin" | "manager" | "staff">, endpoint?: string): Promise<PushDeliverySummary> {
+async function sendPush(payload: PushPayload, allowedRoles?: Array<"admin" | "manager" | "staff">, endpoint?: string, usernames?: Set<string>): Promise<PushDeliverySummary> {
   const summary: PushDeliverySummary = { attempted: 0, delivered: 0, expired: 0, failed: 0, suppressed: 0 };
   if (isOfflineMode()) return summary;
 
@@ -110,9 +114,10 @@ async function sendPush(payload: PushPayload, allowedRoles?: Array<"admin" | "ma
   const db = getDb();
   let subs = await db.select().from(pushSubscriptions);
   if (endpoint) subs = subs.filter((sub) => sub.endpoint === endpoint);
+  subs = subs.filter((sub) => pushSubscriptionTargetsUser(sub, usernames));
   if (subs.length === 0) return summary;
-  const userRows = await db.select({ username: users.username, role: users.role, permissions: users.permissions }).from(users);
-  const recipients = new Map<string, PushRecipient>(userRows.map((user) => {
+  const userRows = await db.select({ username: users.username, role: users.role, permissions: users.permissions, deletedAt: users.deletedAt }).from(users);
+  const recipients = new Map<string, PushRecipient>(userRows.filter((user) => !user.deletedAt).map((user) => {
     let permissions: Record<string, boolean> = {};
     try { permissions = JSON.parse(user.permissions || "{}"); } catch {}
     return [user.username, { role: user.role, permissions }];
@@ -184,16 +189,29 @@ export function sendPushToEndpoint(payload: PushPayload, endpoint: string): Prom
   return sendPush(payload, undefined, endpoint);
 }
 
-/** Keep Cloudflare requests fast without letting the Worker terminate delivery. */
-export async function dispatchPush(payload: PushPayload) {
-  const delivery = sendPushToAll(payload).catch((error) => {
+export function sendPushToUsers(payload: PushPayload, usernames: string[]): Promise<PushDeliverySummary> {
+  return sendPush(payload, undefined, undefined, new Set(usernames));
+}
+
+async function deferPush(delivery: Promise<PushDeliverySummary>) {
+  const safeDelivery = delivery.catch((error) => {
     console.error("Push dispatch failed:", error instanceof Error ? error.message : error);
     return { attempted: 0, delivered: 0, expired: 0, failed: 1, suppressed: 0 };
   });
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    getCloudflareContext().ctx.waitUntil(delivery);
+    getCloudflareContext().ctx.waitUntil(safeDelivery);
   } catch {
-    await delivery;
+    await safeDelivery;
   }
+}
+
+/** Keep Cloudflare requests fast without letting the Worker terminate delivery. */
+export async function dispatchPush(payload: PushPayload) {
+  await deferPush(sendPushToAll(payload));
+}
+
+export async function dispatchPushToUsers(payload: PushPayload, usernames: string[]) {
+  if (usernames.length === 0) return;
+  await deferPush(sendPushToUsers(payload, usernames));
 }

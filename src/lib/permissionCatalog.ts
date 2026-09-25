@@ -20,6 +20,7 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
       ["canReceiveBookingNotifications", "Receive booking notifications"],
       ["canReceiveCheckinNotifications", "Receive check-in notifications"],
       ["canReceiveFoodNotifications", "Receive food notifications"],
+      ["canReceiveTaskNotifications", "Receive task notifications"],
       ["canReceiveAttentionNotifications", "Receive attention notifications"],
       ["canReceiveOperationsNotifications", "Receive operations notifications"],
       ["canReceiveReminderNotifications", "Receive reminder notifications"],

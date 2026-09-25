@@ -62,7 +62,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `employee_attendance_history` | Attendance audit events; Audit-tab reads and manual audit cleanup follow the global retention policy. |
 | `salary_payments` | Plus auto `expenses` row. |
 | `expenses` | Bills. Drive links. `expense_date` is the accounting/ledger date; `created_at` remains the audit insertion timestamp. `created_month` follows `expense_date`. Purchase-task expenses have a unique nullable `task_id`. |
-| `tasks` | Assignable operational work. Login-user ownership, status, scheduling, notes, Drive attachment metadata, and soft archive. |
+| `tasks` | Assignable operational work. Login-user ownership, status, scheduling, notes, Drive attachment metadata, JSON follower usernames, and soft archive. Followers remain on the synced task row rather than a separate relation. |
 | `daily_income` | Manual income; `source_detail` labels Other entries. Also retains legacy `food_revenue_auto`. |
 | `daily_ledger` | Unique `(date, account_id)`. |
 
@@ -138,7 +138,7 @@ Internal native milestone: `native_inventory_holds` (0059) stores request/owner 
 |-------|------|
 | `settings` | Key-value (OAuth tokens, food hours, `image_validation`, `primary_server`). |
 | `users` | Staff. |
-| `tasks` | Staff work queue; nullable `assignee_user_id` points to `users`, with null meaning unassigned. |
+| `tasks` | Staff work queue; nullable `assignee_user_id` points to `users`, with null meaning unassigned; `follower_usernames` is a JSON array of stable active-user usernames used for completion recipients. |
 | `audit_log` | Who did what. Raw action, target, and details are retained; the Management Audit API adds friendly presentation fields and bounded reference-name enrichment without changing the table schema. |
 | `system_logs` | App errors/events. Structured error context is stored as sanitized JSON in `details`, correlated with `request_id`; last 30 days kept (pruned on insert and list). |
 | `api_stats` | Vision/Drive counters by month. |

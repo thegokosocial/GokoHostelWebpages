@@ -15,7 +15,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `settings` | 4 |
 | `api_stats` | 6 |
 | `users` | 13 |
-| `tasks` | 21 |
+| `tasks` | 22 |
 | `audit_log` | 8 |
 | `system_logs` | 7 |
 | `rate_scrapes` | 9 |
@@ -209,6 +209,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `status` | text | todo / in_progress / blocked / done |
 | `note` | text | Current shared note |
 | `attachments` | text | JSON Drive attachment metadata |
+| `follower_usernames` | text | JSON active-login usernames; completion notification recipients |
 | `completed_at` | text | Completion timestamp |
 | `completed_by` | text | Completion actor |
 | `created_by` | text | Actor username/display name |

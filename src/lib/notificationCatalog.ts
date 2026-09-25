@@ -29,6 +29,15 @@ export const NOTIFICATION_CATEGORIES = [
     events: [["food.new_order", "New food order"]],
   },
   {
+    id: "tasks",
+    label: "Tasks",
+    permission: "canReceiveTaskNotifications",
+    events: [
+      ["task.assigned", "Task assigned"],
+      ["task.completed", "Task completed"],
+    ],
+  },
+  {
     id: "attention",
     label: "Attention",
     permission: "canReceiveAttentionNotifications",

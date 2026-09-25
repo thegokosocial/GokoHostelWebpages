@@ -4,6 +4,7 @@ import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { addExpense, addAuditEntry, createTask, getTaskAssignees, getTaskById, getTaskExpense, getTasks, getUserById, getUserByUsername, updateTask, archiveTask } from "@/db/queries";
 import { isValidReconciliationDate } from "@/lib/reconciliation";
 import { todayIST } from "@/lib/utils";
+import { dispatchPushToUsers } from "@/lib/pushNotify";
 
 const STATUSES = new Set(["todo", "in_progress", "blocked", "done"]);
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
@@ -26,12 +27,24 @@ function validDate(value: unknown): value is string {
   return value === "" || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
 
-function presentTask(row: Awaited<ReturnType<typeof getTaskById>>) {
+type TaskUser = Awaited<ReturnType<typeof getTaskAssignees>>[number];
+
+function jsonUsernames(value: string | null | undefined): string[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? [...new Set(parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()))] : [];
+  } catch {
+    return [];
+  }
+}
+
+function presentTask(row: Awaited<ReturnType<typeof getTaskById>>, activeUsers: Map<string, TaskUser>) {
   if (!row) return null;
   const task = row.tasks;
   return {
     ...task,
     attachments: jsonAttachments(task.attachments),
+    followers: jsonUsernames(task.followerUsernames).map((name) => activeUsers.get(name)).filter(Boolean),
     assignee: row.users ? {
       id: row.users.id,
       username: row.users.username,
@@ -46,6 +59,39 @@ function presentTask(row: Awaited<ReturnType<typeof getTaskById>>) {
       expenseDate: row.expenses.expenseDate,
     } : null,
   };
+}
+
+function taskPushBody(title: string, actorName: string) {
+  return `${title} · by ${actorName}`;
+}
+
+async function resolveFollowers(value: unknown) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return null;
+  const users = await getTaskAssignees();
+  const active = new Map(users.map((user) => [user.username, user]));
+  const usernames = [...new Set(value.map((item) => item.trim()).filter(Boolean))];
+  if (usernames.some((name) => !active.has(name))) return null;
+  return usernames;
+}
+
+async function notifyTaskAssigned(taskId: number, title: string, actorName: string, usernames: string[]) {
+  await dispatchPushToUsers({
+    notificationType: "task.assigned",
+    title: "Task assigned",
+    body: taskPushBody(title, actorName),
+    url: "/admin?section=management&tab=tasks",
+    eventId: `task-assigned-${taskId}-${usernames.join("-")}`,
+  }, usernames);
+}
+
+async function notifyTaskCompleted(taskId: number, title: string, actorName: string, usernames: string[]) {
+  await dispatchPushToUsers({
+    notificationType: "task.completed",
+    title: "Task completed",
+    body: taskPushBody(title, actorName),
+    url: "/admin?section=management&tab=tasks",
+    eventId: `task-completed-${taskId}`,
+  }, usernames);
 }
 
 async function getActorUser(username: string | undefined) {
@@ -77,13 +123,15 @@ export async function POST(req: NextRequest) {
     if (gate === "admin_required") return taskError("Admin access required", 403);
     if (gate === "forbidden") return taskError("You don't have permission to perform this action", 403);
 
-    const actorName = username || auth.displayName || auth.role;
-    const actorUser = await getActorUser(username);
+    const actorName = auth.username || username || auth.displayName || auth.role;
+    const actorUser = await getActorUser(auth.username || username);
+    const actorUsername = actorUser?.username || auth.username || username;
 
     if (action === "listTasks") {
       const includeArchived = Boolean(rest.includeArchived && (auth.role === "admin" || auth.permissions.canManageTasks));
-      const rows = await getTasks({ includeArchived });
-      return NextResponse.json({ tasks: rows.map(presentTask).filter(Boolean), role: auth.role });
+      const [rows, activeUserRows] = await Promise.all([getTasks({ includeArchived }), getTaskAssignees()]);
+      const activeUsers = new Map(activeUserRows.map((user) => [user.username, user]));
+      return NextResponse.json({ tasks: rows.map((row) => presentTask(row, activeUsers)).filter(Boolean), role: auth.role });
     }
 
     if (action === "getTaskAssignees") {
@@ -101,6 +149,9 @@ export async function POST(req: NextRequest) {
       if (!validDate(rest.dueDate || "")) return taskError("dueDate must be YYYY-MM-DD");
       const assignee = assigneeUserId ? await getUserById(assigneeUserId) : null;
       if (hasAssignee && (!assignee || assignee.deletedAt)) return taskError("Assignee is not available", 404);
+      const resolvedFollowers = rest.followerUsernames === undefined ? null : await resolveFollowers(rest.followerUsernames);
+      if (rest.followerUsernames !== undefined && !resolvedFollowers) return taskError("Followers must be active users");
+      const followerUsernames = resolvedFollowers || [...new Set([actorUser && !actorUser.deletedAt ? actorUser.username : null, assignee?.username].filter((name): name is string => Boolean(name)))];
       const id = await createTask({
         title,
         description: typeof rest.description === "string" ? rest.description.trim().slice(0, 5000) : "",
@@ -109,10 +160,12 @@ export async function POST(req: NextRequest) {
         priority: rest.priority || "normal",
         dueDate: rest.dueDate || "",
         assigneeUserId,
+        followerUsernames: JSON.stringify(followerUsernames),
         createdBy: actorName,
         updatedBy: actorName,
       });
       await addAuditEntry({ username: actorName, action: "task_created", target: `task:${id}`, details: `${title} → ${assignee?.displayName || "Unassigned"}` });
+      if (id && assignee?.username && assignee.username !== actorUsername) await notifyTaskAssigned(id, title, actorName, [assignee.username]);
       return NextResponse.json({ success: true, id });
     }
 
@@ -144,12 +197,24 @@ export async function POST(req: NextRequest) {
       }
       await updateTask(taskId, data);
       await addAuditEntry({ username: actorName, action: "task_updated", target: `task:${taskId}`, details: JSON.stringify({ status: status || task.status, note: typeof rest.note === "string" ? rest.note.trim() : undefined }) });
+      if (task.status !== "done" && status === "done") {
+        await notifyTaskCompleted(taskId, task.title, actorName, jsonUsernames(task.followerUsernames).filter((name) => name !== actorUsername));
+      }
       return NextResponse.json({ success: true });
     }
 
     if (action === "updateTask") {
       if (task.deletedAt) return taskError("Archived tasks cannot be updated", 409);
       const data: Parameters<typeof updateTask>[1] = { updatedBy: actorName };
+      let nextAssignee = row.users;
+      let assigneeChanged = false;
+      let followerUsernames = jsonUsernames(task.followerUsernames);
+      if (rest.followerUsernames !== undefined) {
+        const resolved = await resolveFollowers(rest.followerUsernames);
+        if (!resolved) return taskError("Followers must be active users");
+        followerUsernames = resolved;
+        data.followerUsernames = JSON.stringify(followerUsernames);
+      }
       if (typeof rest.title === "string") {
         const title = rest.title.trim();
         if (!title || title.length > 200) return taskError("A title between 1 and 200 characters is required");
@@ -176,11 +241,19 @@ export async function POST(req: NextRequest) {
         const hasAssignee = rest.assigneeUserId !== null && String(rest.assigneeUserId).trim() !== "";
         if (!hasAssignee) {
           data.assigneeUserId = null;
+          nextAssignee = null;
+          assigneeChanged = task.assigneeUserId !== null;
         } else {
           const assigneeUserId = Number(rest.assigneeUserId);
           const assignee = validId(assigneeUserId) ? await getUserById(assigneeUserId) : null;
           if (!assignee || assignee.deletedAt) return taskError("Assignee is not available", 404);
           data.assigneeUserId = assigneeUserId;
+          nextAssignee = assignee;
+          assigneeChanged = task.assigneeUserId !== assigneeUserId;
+          if (assigneeChanged && !followerUsernames.includes(assignee.username)) {
+            followerUsernames = [...followerUsernames, assignee.username];
+            data.followerUsernames = JSON.stringify(followerUsernames);
+          }
         }
       }
       if (rest.status !== undefined) {
@@ -197,6 +270,12 @@ export async function POST(req: NextRequest) {
       if (typeof rest.note === "string") data.note = rest.note.trim().slice(0, 5000);
       await updateTask(taskId, data);
       await addAuditEntry({ username: actorName, action: "task_updated", target: `task:${taskId}`, details: JSON.stringify(rest) });
+      if (assigneeChanged && nextAssignee?.username && nextAssignee.username !== actorUsername) {
+        await notifyTaskAssigned(taskId, data.title || task.title, actorName, [nextAssignee.username]);
+      }
+      if (task.status !== "done" && rest.status === "done") {
+        await notifyTaskCompleted(taskId, data.title || task.title, actorName, followerUsernames.filter((name) => name !== actorUsername));
+      }
       return NextResponse.json({ success: true });
     }
 

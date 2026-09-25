@@ -70,7 +70,7 @@ describe("Tasks SQLite workflows", () => {
     const id = await createTask({ title: "Legacy purchase", taskType: "purchase", assigneeUserId: 1, createdBy: "admin", updatedBy: "admin" });
     const expenseId = await addExpense({ amount: 500, category: "Supplies", purpose: "Legacy", expenseDate: "2026-09-17", createdMonth: "2026-09", createdBy: "staff", taskId: id });
 
-    sqlite.exec(readMigration("0056_tasks_optional_assignee.sql"));
+    sqlite.exec(readMigration("0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql"));
     mocks.db = drizzle(sqlite, { schema });
 
     const task = await getTaskById(id!);
@@ -91,10 +91,32 @@ describe("Tasks SQLite workflows", () => {
   it("only returns active users as task assignees", async () => {
     expect((await getTaskAssignees()).map((user) => user.username)).toEqual(["staff"]);
   });
+
+  it("stores follower usernames on the synced task row", async () => {
+    const id = await createTask({ title: "Inspect room", followerUsernames: '["staff"]', createdBy: "admin", updatedBy: "admin" });
+    expect((await getTaskById(id!))?.tasks.followerUsernames).toBe('["staff"]');
+    await updateTask(id!, { followerUsernames: "[]", updatedBy: "admin" });
+    expect((await getTaskById(id!))?.tasks.followerUsernames).toBe("[]");
+  });
+
+  it("backfills active task followers and enables the new notification category", () => {
+    const legacy = new Database(":memory:");
+    legacy.exec(`
+      CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, permissions TEXT NOT NULL DEFAULT '{}', deleted_at TEXT);
+      CREATE TABLE tasks (id INTEGER PRIMARY KEY, assignee_user_id INTEGER, created_by TEXT NOT NULL, deleted_at TEXT);
+      INSERT INTO users VALUES (1, 'staff', '{"canViewTasks":true}', NULL), (2, 'manager', '{}', NULL), (3, 'deleted', '{}', '2026-09-17');
+      INSERT INTO tasks VALUES (10, 1, 'manager', NULL), (11, 3, 'deleted', NULL);
+    `);
+    legacy.exec(readMigration("0076_task_followers_and_notifications.sql"));
+    expect(JSON.parse((legacy.prepare("SELECT follower_usernames value FROM tasks WHERE id = 10").get() as { value: string }).value).sort()).toEqual(["manager", "staff"]);
+    expect(JSON.parse((legacy.prepare("SELECT follower_usernames value FROM tasks WHERE id = 11").get() as { value: string }).value)).toEqual([]);
+    expect(JSON.parse((legacy.prepare("SELECT permissions value FROM users WHERE id = 1").get() as { value: string }).value).canReceiveTaskNotifications).toBe(true);
+    legacy.close();
+  });
 });
 
 function readMigration(...files: string[]) {
-  return (files.length ? files : ["0055_tasks.sql", "0056_tasks_optional_assignee.sql"])
+  return (files.length ? files : ["0055_tasks.sql", "0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql"])
     .map((file) => readFileSync(`migrations/${file}`, "utf8"))
     .join("\n");
 }

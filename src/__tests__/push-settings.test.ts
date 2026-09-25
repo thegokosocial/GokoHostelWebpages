@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import * as ts from "typescript";
-import { NOTIFICATION_TYPE_IDS } from "@/lib/notificationCatalog";
+import { NOTIFICATION_CATEGORIES, NOTIFICATION_TYPE_IDS } from "@/lib/notificationCatalog";
 
 const mocks = vi.hoisted(() => ({ authenticateUser: vi.fn(), sendPushToEndpoint: vi.fn(), getUserByUsername: vi.fn() }));
 const db = vi.hoisted(() => {
@@ -96,7 +96,7 @@ describe("notification settings workflows", () => {
     mocks.getUserByUsername.mockResolvedValue({ role: "staff", permissions: "null" });
     const response = await pushPost({ json: async () => ({ action: "getPreferences", endpoint: "https://push.example/sub" }) } as never);
     expect(response.status).toBe(200);
-    expect((await response.json()).allowedCategories).toHaveLength(6);
+    expect((await response.json()).allowedCategories).toHaveLength(NOTIFICATION_CATEGORIES.length);
   });
 
   it("preserves hidden-category device choices while saving visible categories", async () => {
@@ -161,7 +161,7 @@ describe("notification settings workflows", () => {
       if (!name.endsWith("route.ts")) continue;
       const file = ts.createSourceFile(name, readFileSync(resolve(root, name), "utf8"), ts.ScriptTarget.Latest, true);
       function inspect(node: ts.Node) {
-        if (ts.isCallExpression(node) && ["dispatchPush", "sendPushToAll", "sendPushToRoles"].includes(node.expression.getText(file))) {
+        if (ts.isCallExpression(node) && ["dispatchPush", "dispatchPushToUsers", "sendPushToAll", "sendPushToRoles", "sendPushToUsers"].includes(node.expression.getText(file))) {
           const payload = node.arguments[0];
           expect(ts.isObjectLiteralExpression(payload), name).toBe(true);
           if (ts.isObjectLiteralExpression(payload)) {

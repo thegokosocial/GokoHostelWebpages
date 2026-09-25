@@ -394,6 +394,7 @@ export async function createTask(data: {
   title: string; description?: string; taskType?: string; category?: string;
   priority?: TaskPriority; dueDate?: string; assigneeUserId?: number | null;
   status?: TaskStatus; note?: string; attachments?: string; createdBy: string;
+  followerUsernames?: string;
   updatedBy: string;
 }) {
   const db = getDb();
@@ -408,6 +409,7 @@ export async function createTask(data: {
     status: data.status || "todo",
     note: data.note || "",
     attachments: data.attachments || "[]",
+    followerUsernames: data.followerUsernames || "[]",
     createdAt: now,
     updatedAt: now,
   })).returning({ id: tasks.id });
@@ -418,7 +420,7 @@ export async function updateTask(id: number, data: Partial<{
   title: string; description: string; taskType: string; category: string;
   priority: TaskPriority; dueDate: string; assigneeUserId: number | null;
   status: TaskStatus; note: string; attachments: string; completedAt: string;
-  completedBy: string; updatedBy: string;
+  completedBy: string; updatedBy: string; followerUsernames: string;
 }>) {
   return dbWrite(() => getDb().update(tasks).set(syncUpdate(data)).where(eq(tasks.id, id)), { idempotentWrite: true });
 }

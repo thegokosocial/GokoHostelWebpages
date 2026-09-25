@@ -300,6 +300,7 @@ export const tasks = sqliteTable("tasks", {
   status: text("status").notNull().default("todo"),
   note: text("note").notNull().default(""),
   attachments: text("attachments").notNull().default("[]"),
+  followerUsernames: text("follower_usernames").notNull().default("[]"),
   completedAt: text("completed_at").default(""),
   completedBy: text("completed_by").default(""),
   createdBy: text("created_by").notNull(),

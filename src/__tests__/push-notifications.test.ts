@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runInNewContext } from "node:vm";
 import * as fs from "fs";
 import * as path from "path";
-import { buildPushPayload, notificationDate, notificationFirstName, notificationFoodBody, notificationFoodItems, notificationReconciliationBody, notificationStayDates, pushSubscriptionEligible } from "@/lib/pushNotify";
+import { buildPushPayload, notificationDate, notificationFirstName, notificationFoodBody, notificationFoodItems, notificationReconciliationBody, notificationStayDates, pushSubscriptionEligible, pushSubscriptionTargetsUser } from "@/lib/pushNotify";
 import { allowedNotificationCategories, NOTIFICATION_CATEGORIES, NOTIFICATION_TYPE_IDS, parseMutedNotificationTypes, withDefaultNotificationPermissions } from "@/lib/notificationCatalog";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -237,6 +237,13 @@ describe("notification preference eligibility", () => {
     expect(pushSubscriptionEligible({ userLabel: "staff-a" }, "booking.new", all, ["admin", "manager"])).toBe(false);
     expect(pushSubscriptionEligible({ userLabel: "deleted" }, "booking.new", all)).toBe(false);
     expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes: JSON.stringify(NOTIFICATION_TYPE_IDS) }, "system.test", all)).toBe(true);
+  });
+
+  it("targets only subscriptions owned by the requested task recipients", () => {
+    const targets = new Set(["staff-a", "manager"]);
+    expect(pushSubscriptionTargetsUser({ userLabel: "staff-a" }, targets)).toBe(true);
+    expect(pushSubscriptionTargetsUser({ userLabel: "staff-b" }, targets)).toBe(false);
+    expect(pushSubscriptionTargetsUser({ userLabel: "staff-b" })).toBe(true);
   });
 
   it("maps every catalog event to its grant and device mute", () => {

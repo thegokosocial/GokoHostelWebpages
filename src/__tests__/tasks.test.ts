@@ -59,6 +59,9 @@ describe("Tasks implementation wiring", () => {
     const management = readFileSync("src/components/admin/AdminManagement.tsx", "utf8");
     const taskManagement = readFileSync("src/components/admin/ManagementTasks.tsx", "utf8");
     expect(schema).toContain('export const tasks = sqliteTable("tasks"');
+    expect(schema).toContain('followerUsernames: text("follower_usernames")');
+    expect(taskManagement).toContain("Followers");
+    expect(taskManagement).toContain("followerUsernames");
     expect(schema).toContain('taskId: integer("task_id")');
     expect(schema).toContain('assigneeUserId: integer("assignee_user_id").references');
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS tasks");

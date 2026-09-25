@@ -5,12 +5,13 @@ const mocks = vi.hoisted(() => ({
   auth: { role: "staff", displayName: "Staff", permissions: { canViewTasks: true } } as any,
   actor: { id: 1, username: "staff", displayName: "Staff", role: "staff", deletedAt: null },
   task: {
-    tasks: { id: 10, title: "Buy soap", description: "", taskType: "purchase", category: "Supplies", priority: "normal", dueDate: "", assigneeUserId: 1, status: "todo", note: "", attachments: "[]", completedAt: "", completedBy: "", createdBy: "admin", updatedBy: "admin", createdAt: "2026-09-17", updatedAt: "2026-09-17", deletedAt: null },
+    tasks: { id: 10, title: "Buy soap", description: "", taskType: "purchase", category: "Supplies", priority: "normal", dueDate: "", assigneeUserId: 1, status: "todo", note: "", attachments: "[]", followerUsernames: '["staff","manager"]', completedAt: "", completedBy: "", createdBy: "admin", updatedBy: "admin", createdAt: "2026-09-17", updatedAt: "2026-09-17", deletedAt: null },
     users: { id: 1, username: "staff", displayName: "Staff", role: "staff" },
     expenses: null,
   } as any,
   getTasks: vi.fn(), getTaskById: vi.fn(), getTaskAssignees: vi.fn(), getTaskExpense: vi.fn(), getUserById: vi.fn(), getUserByUsername: vi.fn(),
   createTask: vi.fn(), updateTask: vi.fn(), archiveTask: vi.fn(), addExpense: vi.fn(), addAuditEntry: vi.fn(),
+  dispatchPushToUsers: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: vi.fn(async () => mocks.auth) }));
@@ -22,6 +23,7 @@ vi.mock("@/db/queries", () => ({
 }));
 vi.mock("@/lib/reconciliation", () => ({ isValidReconciliationDate: vi.fn(() => true) }));
 vi.mock("@/lib/utils", () => ({ todayIST: () => "2026-09-17" }));
+vi.mock("@/lib/pushNotify", () => ({ dispatchPushToUsers: mocks.dispatchPushToUsers }));
 
 import { POST } from "@/app/api/admin/tasks/route";
 
@@ -40,11 +42,17 @@ beforeEach(() => {
   mocks.getTaskExpense.mockResolvedValue(null);
   mocks.getUserByUsername.mockResolvedValue(mocks.actor);
   mocks.getUserById.mockResolvedValue(mocks.actor);
+  mocks.getTaskAssignees.mockResolvedValue([
+    { id: 1, username: "staff", displayName: "Staff", role: "staff" },
+    { id: 3, username: "manager", displayName: "Manager", role: "manager" },
+    { id: 4, username: "other", displayName: "Other", role: "staff" },
+  ]);
   mocks.createTask.mockResolvedValue(22);
   mocks.addExpense.mockResolvedValue(31);
   mocks.updateTask.mockResolvedValue(undefined);
   mocks.archiveTask.mockResolvedValue(undefined);
   mocks.addAuditEntry.mockResolvedValue(undefined);
+  mocks.dispatchPushToUsers.mockResolvedValue(undefined);
   vi.clearAllMocks();
 });
 
@@ -62,6 +70,14 @@ describe("Tasks API mock workflows", () => {
     expect(response.status).toBe(200);
     expect(mocks.updateTask).toHaveBeenCalledWith(10, expect.objectContaining({ status: "done", note: "Bought and delivered", completedBy: "staff" }));
     expect(mocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "task_updated", target: "task:10" }));
+    expect(mocks.dispatchPushToUsers).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "task.completed" }), ["manager"]);
+  });
+
+  it("does not notify followers when an already-complete task is saved as done again", async () => {
+    mocks.task.tasks.status = "done";
+    const response = await POST(request({ action: "updateAssignedTask", taskId: 10, status: "done" }));
+    expect(response.status).toBe(200);
+    expect(mocks.dispatchPushToUsers).not.toHaveBeenCalled();
   });
 
   it("allows a task manager to create and archive a task", async () => {
@@ -71,9 +87,43 @@ describe("Tasks API mock workflows", () => {
     const createResponse = await POST(request({ action: "createTask", title: "Fix tap", assigneeUserId: 1, taskType: "general", priority: "high" }, "manager"));
     expect(createResponse.status).toBe(200);
     expect(mocks.createTask).toHaveBeenCalledWith(expect.objectContaining({ title: "Fix tap", assigneeUserId: 1, priority: "high" }));
+    expect(mocks.createTask).toHaveBeenCalledWith(expect.objectContaining({ followerUsernames: '["manager","staff"]' }));
+    expect(mocks.dispatchPushToUsers).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "task.assigned" }), ["staff"]);
     const archiveResponse = await POST(request({ action: "archiveTask", taskId: 10 }, "manager"));
     expect(archiveResponse.status).toBe(200);
     expect(mocks.archiveTask).toHaveBeenCalledWith(10, "manager");
+  });
+
+  it("honors an explicit follower list and rejects inactive follower names", async () => {
+    mocks.auth = { role: "manager", displayName: "Manager", permissions: { canManageTasks: true } };
+    mocks.actor = { id: 3, username: "manager", displayName: "Manager", role: "manager", deletedAt: null };
+    mocks.getUserByUsername.mockResolvedValue(mocks.actor);
+    mocks.getUserById.mockResolvedValue({ id: 1, username: "staff", displayName: "Staff", role: "staff", deletedAt: null });
+
+    const response = await POST(request({ action: "createTask", title: "Fix tap", assigneeUserId: 1, followerUsernames: [] }, "manager"));
+    expect(response.status).toBe(200);
+    expect(mocks.createTask).toHaveBeenCalledWith(expect.objectContaining({ followerUsernames: "[]" }));
+
+    const invalid = await POST(request({ action: "createTask", title: "Fix tap", followerUsernames: ["deleted-user"] }, "manager"));
+    expect(invalid.status).toBe(400);
+  });
+
+  it("adds and notifies a new assignee while preserving existing followers", async () => {
+    mocks.auth = { role: "manager", displayName: "Manager", permissions: { canManageTasks: true } };
+    mocks.getUserById.mockResolvedValue({ id: 4, username: "other", displayName: "Other", role: "staff", deletedAt: null });
+    const response = await POST(request({ action: "updateTask", taskId: 10, assigneeUserId: 4 }, "staff"));
+    expect(response.status).toBe(200);
+    expect(mocks.updateTask).toHaveBeenCalledWith(10, expect.objectContaining({ assigneeUserId: 4, followerUsernames: '["staff","manager","other"]' }));
+    expect(mocks.dispatchPushToUsers).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "task.assigned" }), ["other"]);
+  });
+
+  it("notifies final followers except the actor only on the first manager completion", async () => {
+    mocks.auth = { role: "manager", displayName: "Manager", permissions: { canManageTasks: true } };
+    mocks.actor = { id: 3, username: "manager", displayName: "Manager", role: "manager", deletedAt: null };
+    mocks.getUserByUsername.mockResolvedValue(mocks.actor);
+    const response = await POST(request({ action: "updateTask", taskId: 10, status: "done", followerUsernames: ["staff", "manager"] }, "manager"));
+    expect(response.status).toBe(200);
+    expect(mocks.dispatchPushToUsers).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "task.completed" }), ["staff"]);
   });
 
   it("allows a task manager to create a title-only unassigned task", async () => {
@@ -88,6 +138,13 @@ describe("Tasks API mock workflows", () => {
     }));
     expect(mocks.getUserById).not.toHaveBeenCalled();
     expect(mocks.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ details: "Review stock list → Unassigned" }));
+  });
+
+  it("returns only active follower summaries in task lists", async () => {
+    mocks.getTasks.mockResolvedValue([mocks.task]);
+    const response = await POST(request({ action: "listTasks" }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).tasks[0].followers.map((follower: { username: string }) => follower.username)).toEqual(["staff", "manager"]);
   });
 
   it("allows a task manager to clear an existing assignment", async () => {

@@ -107,7 +107,7 @@ Existing section selectors within Management use a shared wrapping style based o
 | `qrGenerator` | `qr-generator/` | `canUseQRGenerator` | |
 | `accountSettings` | `AccountSettings` | `canManageAccountSettings` | Employees can be deactivated; inactive employees can be removed from the roster while compensation, payroll, and attendance history is retained. |
 | `attendance` | `ManagementAttendance` | `canManageAttendance` | staff attendance, leave policy, calendar editing, and payroll summaries for roles granted the permission; attendance history is also available in Management → Audit → Attendance to users with `canViewAudit` |
-| `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; title-only tasks may remain unassigned until later; assigned users update their own tasks; task managers create, assign/reassign/unassign, archive, reopen, and record linked purchase expenses |
+| `tasks` | `ManagementTasks` | `canViewTasks` or `canManageTasks` | shared task queue; title-only tasks may remain unassigned until later; assigned users update their own tasks; task managers create, assign/reassign/unassign, select followers, archive, reopen, and record linked purchase expenses; assignment and first-completion notifications respect category/device preferences |
 | `serverSync` | `ServerSync` | admin only | `/api/sync` |
 | `channelManager` | `ChannelManager` | admin only | Aiosell config |
 | `bookingSettings` | `BookingSettings` | admin only; Cloudflare only | Revision-protected draft policies, credential-presence metadata, Payments & Readiness gateway configuration plus authenticated Razorpay ₹1 test checkout/ledger/recovery when gateway mode is test; invalid/conflicting drafts block editing with reload |
