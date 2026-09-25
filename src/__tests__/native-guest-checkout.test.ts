@@ -344,6 +344,18 @@ describe("prepareGuestCheckout", () => {
     });
   });
 
+  it("skips tax when website tax apply is off even if booking_tax_rate is set", async () => {
+    sqlite.prepare("UPDATE settings SET value = ? WHERE key = 'booking_tax_rate'").run("5");
+    sqlite.prepare("INSERT INTO settings (key, value) VALUES ('booking_tax_apply_website', '0')").run();
+    await prepareGuestCheckout(prepareInput());
+    // Two nights at ₹850 (stay is check-in+1 → check-in+3).
+    expect(sqlite.prepare("SELECT amount_tax, amount_before_tax, amount_total FROM bookings").get()).toEqual({
+      amount_tax: 0,
+      amount_before_tax: 1700,
+      amount_total: 1700,
+    });
+  });
+
   it("rejects missing or invalid persons", async () => {
     const { persons: _drop, ...without } = prepareInput();
     await expect(prepareGuestCheckout(without as never)).rejects.toThrow();

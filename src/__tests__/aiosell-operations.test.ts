@@ -929,11 +929,17 @@ describe("Channel Manager config API", () => {
 
   it("getConfig returns config", async () => {
     q.getChannelConfig.mockResolvedValue(activeConfig);
+    q.getSetting.mockResolvedValue(null);
     const res = await channelManagerPOST(jsonReq("http://localhost/api/admin/channel-manager", adminBody({
       action: "getConfig",
     })));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ config: activeConfig, bookingTaxRate: 5 });
+    expect(await res.json()).toEqual({
+      config: activeConfig,
+      bookingTaxRate: 5,
+      bookingTaxApplyWebsite: true,
+      bookingTaxApplyAdmin: true,
+    });
   });
 
   it("saveConfig writes booking_tax_rate", async () => {
@@ -941,9 +947,13 @@ describe("Channel Manager config API", () => {
       action: "saveConfig",
       config: { isActive: false, hotelCode: "GOKO-001", webhookSecret: "" },
       bookingTaxRate: 8,
+      bookingTaxApplyWebsite: true,
+      bookingTaxApplyAdmin: false,
     })));
     expect(res.status).toBe(200);
     expect(q.setSetting).toHaveBeenCalledWith("booking_tax_rate", "8");
+    expect(q.setSetting).toHaveBeenCalledWith("booking_tax_apply_website", "1");
+    expect(q.setSetting).toHaveBeenCalledWith("booking_tax_apply_admin", "0");
   });
 
   it("saveConfig writes booking_tax_rate 0", async () => {
@@ -958,12 +968,40 @@ describe("Channel Manager config API", () => {
 
   it("getConfig returns bookingTaxRate 0 when setting is 0", async () => {
     q.getChannelConfig.mockResolvedValue(activeConfig);
-    q.getSetting.mockResolvedValue("0");
+    q.getSetting.mockImplementation(async (key: string) => {
+      if (key === "booking_tax_rate") return "0";
+      return null;
+    });
     const res = await channelManagerPOST(jsonReq("http://localhost/api/admin/channel-manager", adminBody({
       action: "getConfig",
     })));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ config: activeConfig, bookingTaxRate: 0 });
+    expect(await res.json()).toEqual({
+      config: activeConfig,
+      bookingTaxRate: 0,
+      bookingTaxApplyWebsite: true,
+      bookingTaxApplyAdmin: true,
+    });
+  });
+
+  it("getConfig returns apply flags false when settings are 0", async () => {
+    q.getChannelConfig.mockResolvedValue(activeConfig);
+    q.getSetting.mockImplementation(async (key: string) => {
+      if (key === "booking_tax_rate") return "12";
+      if (key === "booking_tax_apply_website") return "0";
+      if (key === "booking_tax_apply_admin") return "0";
+      return null;
+    });
+    const res = await channelManagerPOST(jsonReq("http://localhost/api/admin/channel-manager", adminBody({
+      action: "getConfig",
+    })));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      config: activeConfig,
+      bookingTaxRate: 12,
+      bookingTaxApplyWebsite: false,
+      bookingTaxApplyAdmin: false,
+    });
   });
 
   it.each([

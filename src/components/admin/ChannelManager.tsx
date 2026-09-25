@@ -15,7 +15,7 @@ import {
   CheckCircleIcon, XCircleIcon, Loader2Icon, SendIcon,
   EyeIcon, EyeOffIcon,
 } from "lucide-react";
-import { bookingTaxPercent, DEFAULT_BOOKING_TAX_PERCENT } from "@/lib/bookingPricing";
+import { bookingTaxPercent, bookingTaxApplyEnabled, DEFAULT_BOOKING_TAX_PERCENT } from "@/lib/bookingPricing";
 import type { Role } from "./types";
 import { ManagementSalesChannels } from "./ManagementSalesChannels";
 import { ManagementBedConfig } from "./ManagementBedConfig";
@@ -178,6 +178,8 @@ function ConfigTab({ password, username }: { password: string; username?: string
   const { showError, showSuccess } = useAdminToast();
   const [config, setConfig] = useState<ChannelConfig>(DEFAULT_CONFIG);
   const [bookingTaxRate, setBookingTaxRate] = useState(DEFAULT_BOOKING_TAX_PERCENT);
+  const [bookingTaxApplyWebsite, setBookingTaxApplyWebsite] = useState(true);
+  const [bookingTaxApplyAdmin, setBookingTaxApplyAdmin] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -191,6 +193,8 @@ function ConfigTab({ password, username }: { password: string; username?: string
       const res = await apiCall("/api/admin/channel-manager", { action: "getConfig" });
       if (res.config) setConfig(res.config);
       if (res.bookingTaxRate != null) setBookingTaxRate(bookingTaxPercent(res.bookingTaxRate));
+      setBookingTaxApplyWebsite(bookingTaxApplyEnabled(res.bookingTaxApplyWebsite));
+      setBookingTaxApplyAdmin(bookingTaxApplyEnabled(res.bookingTaxApplyAdmin));
     } catch (e: any) { showError(e.message); }
     setLoading(false);
   };
@@ -198,7 +202,13 @@ function ConfigTab({ password, username }: { password: string; username?: string
   const saveConfig = async () => {
     setSaving(true);
     try {
-      await apiCall("/api/admin/channel-manager", { action: "saveConfig", config, bookingTaxRate });
+      await apiCall("/api/admin/channel-manager", {
+        action: "saveConfig",
+        config,
+        bookingTaxRate,
+        bookingTaxApplyWebsite,
+        bookingTaxApplyAdmin,
+      });
       showSuccess("Configuration saved");
     } catch (e: any) { showError(e.message); }
     setSaving(false);
@@ -283,7 +293,27 @@ function ConfigTab({ password, username }: { password: string; username?: string
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
           </div>
-          <p className="mt-1 text-[10px] text-muted-foreground">Applied to New Booking walk-in and Booking Engine totals. Default 5%.</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">Used only where the matching apply box below is checked. Default 5%.</p>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bookingTaxApplyWebsite}
+                onChange={(e) => setBookingTaxApplyWebsite(e.target.checked)}
+                className="rounded"
+              />
+              Apply tax rate for Online Goko website booking
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bookingTaxApplyAdmin}
+                onChange={(e) => setBookingTaxApplyAdmin(e.target.checked)}
+                className="rounded"
+              />
+              Apply tax rate for Admin bookings
+            </label>
+          </div>
         </div>
       </div>
 

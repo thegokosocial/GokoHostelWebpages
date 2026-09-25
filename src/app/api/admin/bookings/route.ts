@@ -52,9 +52,11 @@ import { dispatchPush, notificationFirstName, notificationDate, notificationStay
 import { presentAuditEntry } from "@/lib/auditPresentation";
 import {
   BOOKING_TAX_SETTING,
+  BOOKING_TAX_APPLY_ADMIN_SETTING,
   bookingDiscountRupees,
   bookingTaxPercent,
   bookingTotals,
+  effectiveBookingTaxPercent,
   parseGokoWalkin,
   stringifyGokoWalkin,
   walkinDiscountOnGross,
@@ -97,7 +99,10 @@ function channelSource(source?: string | null): boolean {
 }
 
 async function loadBookingTaxPercent(): Promise<number> {
-  return bookingTaxPercent(await getSetting(BOOKING_TAX_SETTING));
+  return effectiveBookingTaxPercent(
+    await getSetting(BOOKING_TAX_SETTING),
+    await getSetting(BOOKING_TAX_APPLY_ADMIN_SETTING),
+  );
 }
 
 function stayAmounts(gross: number, rawData: string | null | undefined, taxPercent: number) {

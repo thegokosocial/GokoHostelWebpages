@@ -11,9 +11,8 @@ import {
   getRatePlanMappings, getRoomTypeMappings, getSetting, transitionBookingStatus, unassignBookingBeds,
   unassignBookingBedsByBedIds, updateBookingFull, addBookingHistoryEntry, getBookingHistoryEntries,
 } from "@/db/queries";
-import { BOOKING_TAX_SETTING } from "@/lib/bookingPricing";
 import { generateGokoBookingId, generateGuestAccessToken, hashToken } from "@/lib/bookingReference";
-import { guestRateForStay, guestTaxPercent, searchGuestRooms } from "@/lib/guestBookingSearch";
+import { guestRateForStay, websiteBookingTaxPercent, searchGuestRooms } from "@/lib/guestBookingSearch";
 import {
   guestActionFlags, maskGuestEmail, maskGuestPhone, roomLinesFromAssignments, roomLinesFromQuote,
 } from "@/lib/guestBookingDetails";
@@ -504,7 +503,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     holdSeconds: policy.holdMinutes * 60,
   });
-  const taxBasisPoints = Math.round(guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)) * 100);
+  const taxBasisPoints = Math.round((await websiteBookingTaxPercent()) * 100);
   const accepted = await acceptNativeQuote({ requestKey: input.requestKey, ownerToken }, {
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     policyVersion, policy, taxBasisPoints, paymentChoice: input.paymentChoice,
@@ -1088,7 +1087,7 @@ async function buildAmendQuoteTotals(input: {
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     rooms: input.rooms, excludeBookingId: input.excludeBookingId,
   });
-  const taxBasisPoints = Math.round(guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)) * 100);
+  const taxBasisPoints = Math.round((await websiteBookingTaxPercent()) * 100);
   const quote = buildNativeBookingQuote({
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     policyVersion: input.policyVersion, policy: input.policy, taxBasisPoints,

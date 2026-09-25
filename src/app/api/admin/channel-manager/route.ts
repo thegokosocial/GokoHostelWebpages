@@ -9,7 +9,7 @@ import {
   getDailyRates, bulkUpsertDailyRates, getChannelSyncLogs,
   getAllDorms, getAllBeds, getSetting, setSetting,
 } from "@/db/queries";
-import { BOOKING_TAX_SETTING, bookingTaxPercent } from "@/lib/bookingPricing";
+import { BOOKING_TAX_SETTING, BOOKING_TAX_APPLY_WEBSITE_SETTING, BOOKING_TAX_APPLY_ADMIN_SETTING, bookingTaxPercent, bookingTaxApplyEnabled } from "@/lib/bookingPricing";
 import { logListQuery, logSafePage } from "@/lib/logRetention";
 import { getAiosellPropertyDetails, type AiosellConfig } from "@/lib/aiosell";
 import { sellableUnits } from "@/lib/inventoryAvailability";
@@ -43,7 +43,9 @@ export async function POST(req: NextRequest) {
       case "getConfig": {
         const cfg = await getChannelConfig();
         const bookingTaxRate = bookingTaxPercent(await getSetting(BOOKING_TAX_SETTING));
-        return NextResponse.json({ config: cfg ?? null, bookingTaxRate });
+        const bookingTaxApplyWebsite = bookingTaxApplyEnabled(await getSetting(BOOKING_TAX_APPLY_WEBSITE_SETTING));
+        const bookingTaxApplyAdmin = bookingTaxApplyEnabled(await getSetting(BOOKING_TAX_APPLY_ADMIN_SETTING));
+        return NextResponse.json({ config: cfg ?? null, bookingTaxRate, bookingTaxApplyWebsite, bookingTaxApplyAdmin });
       }
 
       case "saveConfig": {
@@ -60,6 +62,12 @@ export async function POST(req: NextRequest) {
         await upsertChannelConfig(configData);
         if (body.bookingTaxRate != null && body.bookingTaxRate !== "") {
           await setSetting(BOOKING_TAX_SETTING, String(bookingTaxPercent(body.bookingTaxRate)));
+        }
+        if (body.bookingTaxApplyWebsite !== undefined) {
+          await setSetting(BOOKING_TAX_APPLY_WEBSITE_SETTING, bookingTaxApplyEnabled(body.bookingTaxApplyWebsite) ? "1" : "0");
+        }
+        if (body.bookingTaxApplyAdmin !== undefined) {
+          await setSetting(BOOKING_TAX_APPLY_ADMIN_SETTING, bookingTaxApplyEnabled(body.bookingTaxApplyAdmin) ? "1" : "0");
         }
         return NextResponse.json({ success: true });
       }

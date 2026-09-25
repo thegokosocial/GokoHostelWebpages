@@ -1,5 +1,13 @@
 export const BOOKING_TAX_SETTING = "booking_tax_rate";
+export const BOOKING_TAX_APPLY_WEBSITE_SETTING = "booking_tax_apply_website";
+export const BOOKING_TAX_APPLY_ADMIN_SETTING = "booking_tax_apply_admin";
 export const DEFAULT_BOOKING_TAX_PERCENT = 5;
+
+export function directBookingRate(standardRupees: number, percent: number): number {
+  const standard = Math.max(1, Math.round(Number(standardRupees) || 0));
+  const discount = Math.min(80, Math.max(0, Math.round(Number(percent) || 0)));
+  return Math.max(1, Math.round((standard * (100 - discount)) / 100));
+}
 
 export type GokoWalkinPricing = {
   discount: number;
@@ -16,6 +24,22 @@ export function bookingTaxPercent(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return DEFAULT_BOOKING_TAX_PERCENT;
   return Math.min(100, n);
+}
+
+/** Absent/empty defaults on so existing installs keep applying tax until unchecked. */
+export function bookingTaxApplyEnabled(raw: unknown, defaultOn = true): boolean {
+  if (raw == null || raw === "") return defaultOn;
+  if (typeof raw === "boolean") return raw;
+  const s = String(raw).trim().toLowerCase();
+  if (s === "0" || s === "false" || s === "off" || s === "no") return false;
+  if (s === "1" || s === "true" || s === "on" || s === "yes") return true;
+  return defaultOn;
+}
+
+/** Rate when apply is on; 0 when apply is off (even if X% is set). */
+export function effectiveBookingTaxPercent(rateRaw: unknown, applyRaw: unknown): number {
+  if (!bookingTaxApplyEnabled(applyRaw)) return 0;
+  return bookingTaxPercent(rateRaw);
 }
 
 export function bookingDiscountRupees(

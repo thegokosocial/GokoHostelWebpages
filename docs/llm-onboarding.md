@@ -154,7 +154,7 @@ Any Framer node that sets `transform` (`modalVariants` scale/y, or `animate={{ y
 
 ### 9. Do not
 
-- `Number(x) || 5` on `food_tax_rate` or `booking_tax_rate` — **0 is 0%**. Use `foodTaxPercent` / `bookingTaxPercent`.
+- `Number(x) || 5` on `food_tax_rate` or `booking_tax_rate` — **0 is 0%**. Use `foodTaxPercent` / `bookingTaxPercent`. Website/admin GST also honor `booking_tax_apply_website` / `booking_tax_apply_admin` (absent → on); off forces 0% via `effectiveBookingTaxPercent` / `websiteBookingTaxPercent`.
 - SSR `/events` or `/community-area` (`force-static` + `/api/site`).
 - `db.transaction()` around `queries.ts` (`getDb()` inside).
 - OTA payment journal Cloudflare path: Drizzle `db.transaction()` / BEGIN/COMMIT — use `db.batch()` + NOT NULL CAS guard (`bookingPaymentJournal.ts`); Pi keeps sync `transaction`.

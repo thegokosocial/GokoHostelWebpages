@@ -5,7 +5,7 @@ import { getAllDorms, getAvailableBedsForRange, getRoomTypeMappings, getRatePlan
 import { beds as bedsTable } from "@/db/schema";
 import { sellableUnits, stayNights, type InventoryBedRef } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
-import { BOOKING_TAX_SETTING, DEFAULT_BOOKING_TAX_PERCENT } from "@/lib/bookingPricing";
+import { BOOKING_TAX_SETTING, BOOKING_TAX_APPLY_WEBSITE_SETTING, DEFAULT_BOOKING_TAX_PERCENT, bookingTaxApplyEnabled } from "@/lib/bookingPricing";
 import { WEBSITE_BOOKING_SETTINGS_KEY, readWebsiteBookingSettings, MAX_WEBSITE_BOOKING_BEDS } from "@/lib/websiteBookingSettings";
 import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
 
@@ -25,6 +25,13 @@ export function guestTaxPercent(raw: string | null) {
   if (raw === null) return DEFAULT_BOOKING_TAX_PERCENT;
   if (!raw.trim() || !Number.isFinite(Number(raw)) || Number(raw) < 0 || Number(raw) > 100) throw new Error("Invalid booking tax configuration");
   return Number(raw);
+}
+
+/** Website browse/checkout tax: 0 when apply-website is off; otherwise validated rate. */
+export async function websiteBookingTaxPercent() {
+  const apply = await getSetting(BOOKING_TAX_APPLY_WEBSITE_SETTING);
+  if (!bookingTaxApplyEnabled(apply)) return 0;
+  return guestTaxPercent(await getSetting(BOOKING_TAX_SETTING));
 }
 type RateRow = { date: string; rate: number; adult1Rate: number | null; adult2Rate: number | null; stopSell: number; minimumStay: number; maximumStay: number | null; closeOnArrival: number; closeOnDeparture: number; minimumAdvanceReservation: number | null; maximumAdvanceReservation: number | null };
 /** Only complete, unrestricted, positive integer server rates are displayable. Checkout is not an occupied night. */
@@ -115,7 +122,7 @@ export async function searchGuestRooms(input: unknown, opts?: { excludeBookingId
   } catch { /* advisory search must not fail closed on readiness checks */ }
   return {
     rooms, maxSelectedBeds: settings.maxSelectedBeds,
-    taxPercent: guestTaxPercent(await getSetting(BOOKING_TAX_SETTING)),
+    taxPercent: await websiteBookingTaxPercent(),
     nights: stayNights(stay.checkinDate, stay.checkoutDate).length,
     currency: "INR", priceBasis: "tax-inclusive-estimate",
     nativeCheckoutReady, paymentOptions,

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   bookingDiscountRupees,
   bookingTaxPercent,
+  bookingTaxApplyEnabled,
   bookingTotals,
+  effectiveBookingTaxPercent,
   parseGokoWalkin,
   patchGokoWalkin,
   stringifyGokoWalkin,
@@ -20,6 +22,26 @@ describe("bookingPricing", () => {
     expect(bookingTaxPercent(0)).toBe(0);
     expect(bookingTaxPercent("0")).toBe(0);
     expect(bookingTaxPercent(150)).toBe(100);
+  });
+
+  it("apply flags default on and zero effective tax when off", () => {
+    expect(bookingTaxApplyEnabled(null)).toBe(true);
+    expect(bookingTaxApplyEnabled(undefined)).toBe(true);
+    expect(bookingTaxApplyEnabled("")).toBe(true);
+    expect(bookingTaxApplyEnabled("1")).toBe(true);
+    expect(bookingTaxApplyEnabled("0")).toBe(false);
+    expect(bookingTaxApplyEnabled(false)).toBe(false);
+    expect(effectiveBookingTaxPercent("5", null)).toBe(5);
+    expect(effectiveBookingTaxPercent("5", "0")).toBe(0);
+    expect(effectiveBookingTaxPercent("0", "1")).toBe(0);
+    expect(effectiveBookingTaxPercent(8, "false")).toBe(0);
+  });
+
+  it("sync allowlist includes booking tax apply keys", () => {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const src = readFileSync("src/lib/syncEngine.ts", "utf8");
+    expect(src).toContain('"booking_tax_apply_website"');
+    expect(src).toContain('"booking_tax_apply_admin"');
   });
 
   it("taxes 0% as zero, not the default 5%", () => {

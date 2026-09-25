@@ -621,6 +621,8 @@ describe("Booking calendar UI permissions match the API keys", () => {
     const cm = readFile("src/components/admin/ChannelManager.tsx");
     expect(cm).toContain("bookingTaxRate");
     expect(cm).toContain("Walk-in / offline GST");
+    expect(cm).toContain("Apply tax rate for Online Goko website booking");
+    expect(cm).toContain("Apply tax rate for Admin bookings");
     expect(cm).toContain("bookingTaxPercent(res.bookingTaxRate)");
     expect(cm).toContain('e.target.value === "" ? 0');
   });

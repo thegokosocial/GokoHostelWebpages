@@ -449,7 +449,7 @@ describe("Bookings calendar and rates workflows", () => {
     q.getRoomTypeMappings.mockResolvedValue([]);
     q.getRatePlanMappings.mockResolvedValue([]);
     q.getAllDailyRates.mockResolvedValue([]);
-    q.getSetting.mockResolvedValue("8");
+    q.getSetting.mockImplementation(async (key: string) => (key === "booking_tax_rate" ? "8" : null));
     const res = await POST(req({
       password: "x",
       action: "getAvailableBeds",
@@ -464,7 +464,7 @@ describe("Bookings calendar and rates workflows", () => {
     q.getRoomTypeMappings.mockResolvedValue([]);
     q.getRatePlanMappings.mockResolvedValue([]);
     q.getAllDailyRates.mockResolvedValue([]);
-    q.getSetting.mockResolvedValue("0");
+    q.getSetting.mockImplementation(async (key: string) => (key === "booking_tax_rate" ? "0" : null));
     const res = await POST(req({
       password: "x",
       action: "getAvailableBeds",
@@ -472,6 +472,50 @@ describe("Bookings calendar and rates workflows", () => {
       checkoutDate: "2026-09-02",
     }));
     expect((await res.json()).taxRate).toBe(0);
+  });
+
+  it("getAvailableBeds returns taxRate 0 when admin tax apply is off", async () => {
+    q.getAvailableBedsForRange.mockResolvedValue([]);
+    q.getRoomTypeMappings.mockResolvedValue([]);
+    q.getRatePlanMappings.mockResolvedValue([]);
+    q.getAllDailyRates.mockResolvedValue([]);
+    q.getSetting.mockImplementation(async (key: string) => {
+      if (key === "booking_tax_rate") return "5";
+      if (key === "booking_tax_apply_admin") return "0";
+      return null;
+    });
+    const res = await POST(req({
+      password: "x",
+      action: "getAvailableBeds",
+      checkinDate: "2026-09-01",
+      checkoutDate: "2026-09-02",
+    }));
+    expect((await res.json()).taxRate).toBe(0);
+  });
+
+  it("createBooking skips tax when admin tax apply is off", async () => {
+    q.addBooking.mockResolvedValue(81);
+    q.getSetting.mockImplementation(async (key: string) => {
+      if (key === "booking_tax_rate") return "5";
+      if (key === "booking_tax_apply_admin") return "0";
+      return null;
+    });
+    const res = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Walk-in",
+      platform: "walkin",
+      checkinDate: "2026-10-29",
+      checkoutDate: "2026-10-31",
+      staySubtotal: 1000,
+      persons: 1,
+    }));
+    expect(res.status).toBe(200);
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
+      amountBeforeTax: 1000,
+      amountTax: 0,
+      amountTotal: 1000,
+    }));
   });
 
   it("early checkOut shortens assigned nights to today", async () => {
