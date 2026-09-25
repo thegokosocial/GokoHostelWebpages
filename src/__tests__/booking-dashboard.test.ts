@@ -600,6 +600,17 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(picker).toContain("dormRateRanges");
   });
 
+  it("emphasizes booking total and remaining in the advance payment panel", () => {
+    const modal = readFile("src/components/admin/booking-dashboard/CreateBookingModal.tsx");
+    expect(modal).toContain("Booking total");
+    expect(modal).toContain("Remaining after advance");
+    expect(modal).toContain("text-base font-semibold tabular-nums tracking-tight text-foreground");
+    expect(modal).toContain("text-base font-semibold tabular-nums tracking-tight text-brand-green");
+    expect(modal).toContain("text-sm font-semibold tabular-nums tracking-tight text-foreground");
+    expect(modal).not.toContain(">Total amount<");
+    expect(modal).not.toContain(">Remaining amount<");
+  });
+
   it("walk-in New Booking has percent and amount discount tabs; tax is not hardcoded 12%", () => {
     const modal = readFile("src/components/admin/booking-dashboard/CreateBookingModal.tsx");
     expect(modal).toContain("% discount");

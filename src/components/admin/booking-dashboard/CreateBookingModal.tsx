@@ -431,9 +431,9 @@ export function CreateBookingModal({
             {platform === "walkin" && (
               <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
                 <Label className="text-xs">Advance Payment (Optional)</Label>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Total amount</span>
-                  <span className="font-semibold text-foreground">{formatCurrency(pricing.total)}</span>
+                <div className="flex items-baseline justify-between gap-2 rounded-md bg-background/70 px-2.5 py-1.5">
+                  <span className="text-xs text-muted-foreground">Booking total</span>
+                  <span className="text-base font-semibold tabular-nums tracking-tight text-foreground">{formatCurrency(pricing.total)}</span>
                 </div>
                 <Input
                   type="number"
@@ -467,9 +467,9 @@ export function CreateBookingModal({
                     {receiptAccounts.map((account) => <option key={account.id} value={account.id}>{account.nickname || account.name}</option>)}
                   </select>
                 )}
-                <div className="flex items-center justify-between border-t border-border pt-2 text-xs">
-                  <span className="text-muted-foreground">Remaining amount</span>
-                  <span className="font-semibold text-foreground">{formatCurrency(Math.max(0, pricing.total - (Number.isFinite(parsedAdvance) ? parsedAdvance : 0)))}</span>
+                <div className="flex items-baseline justify-between gap-2 border-t border-border pt-2">
+                  <span className="text-xs text-muted-foreground">Remaining after advance</span>
+                  <span className="text-base font-semibold tabular-nums tracking-tight text-brand-green">{formatCurrency(Math.max(0, pricing.total - (Number.isFinite(parsedAdvance) ? parsedAdvance : 0)))}</span>
                 </div>
                 {advanceAmount !== "" && !validAdvance && <p className="text-xs text-destructive">Enter a valid advance amount and receiving account.</p>}
               </div>
@@ -588,9 +588,9 @@ export function CreateBookingModal({
                       <span className="text-foreground">{formatCurrency(pricing.tax)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between border-t border-border pt-1 font-semibold">
-                    <span className="text-foreground">Total</span>
-                    <span className="text-foreground">{formatCurrency(pricing.total)}</span>
+                  <div className="flex items-baseline justify-between border-t border-border pt-1.5">
+                    <span className="text-sm font-semibold text-foreground">Total</span>
+                    <span className="text-sm font-semibold tabular-nums tracking-tight text-foreground">{formatCurrency(pricing.total)}</span>
                   </div>
                 </div>
               </div>
