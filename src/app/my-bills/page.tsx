@@ -43,6 +43,8 @@ type BillBrandingPublic = {
   taxRate: number;
 };
 
+type GuestChoice = { scope: "hostel" | "walkin"; name: string; nameKey?: string };
+
 function formatPhone(digits: string): string {
   if (digits.length <= 5) return digits;
   return digits.slice(0, 5) + " " + digits.slice(5);
@@ -82,6 +84,7 @@ function MyBillsContent() {
   const [error, setError] = useState("");
   const [unpaidOrders, setUnpaidOrders] = useState<BillOrder[]>([]);
   const [paidOrders, setPaidOrders] = useState<BillOrder[]>([]);
+  const [guestChoices, setGuestChoices] = useState<GuestChoice[]>([]);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [billBranding, setBillBranding] = useState<BillBrandingPublic>(DEFAULT_PUBLIC_BRANDING);
 
@@ -107,13 +110,24 @@ function MyBillsContent() {
     setSubmitted(true);
   }, []);
 
-  const fetchBillsByPhone = useCallback(async (phoneDigits: string) => {
+  const fetchBillsByPhone = useCallback(async (phoneDigits: string, choice?: GuestChoice) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/food/bills?phone=${encodeURIComponent(phoneDigits)}`);
+      const params = new URLSearchParams({ phone: phoneDigits });
+      if (choice) {
+        params.set("scope", choice.scope);
+        if (choice.nameKey) params.set("guest", choice.nameKey);
+      }
+      const res = await fetch(`/api/food/bills?${params.toString()}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to fetch");
+      if (data.requiresGuestSelection) {
+        setGuestChoices(data.guestChoices || []);
+        setSubmitted(false);
+        return;
+      }
+      setGuestChoices([]);
       applyBillsPayload({ ...data, viaToken: false, phone: phoneDigits });
     } catch {
       setError("Unable to load bills. Please try again.");
@@ -158,6 +172,7 @@ function MyBillsContent() {
     const raw = stripNonDigits(e.target.value);
     setPhone(raw);
     setError("");
+    setGuestChoices([]);
   };
 
   const toggleOrder = (key: string) => {
@@ -191,6 +206,7 @@ function MyBillsContent() {
     setViaToken(false);
     setUnpaidOrders([]);
     setPaidOrders([]);
+    setGuestChoices([]);
     setError("");
     localStorage.removeItem("gokoFoodPhone");
     if (tokenParam) {
@@ -246,6 +262,26 @@ function MyBillsContent() {
             >
               Look up by phone instead
             </button>
+          </div>
+        ) : !submitted && guestChoices.length > 0 ? (
+          <div className="rounded-2xl bg-white/95 dark:bg-card/95 p-6 shadow-xl dark:shadow-none backdrop-blur-sm">
+            <h2 className="text-lg font-semibold text-brand-green-dark dark:text-brand-green">Choose your bill</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">This number is used for more than one guest.</p>
+            <div className="mt-4 space-y-2">
+              {guestChoices.map((choice) => (
+                <button
+                  key={`${choice.scope}:${choice.nameKey || "stay"}`}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void fetchBillsByPhone(phone, choice)}
+                  className="flex w-full items-center justify-between rounded-xl border border-brand-mist px-4 py-3 text-left hover:bg-brand-sand/60 disabled:opacity-50"
+                >
+                  <span className="font-medium text-brand-green-dark dark:text-brand-green">{choice.name}</span>
+                  <span className="text-xs text-gray-500">{choice.scope === "hostel" ? "Hostel stay" : "Walk-in"}</span>
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={handleChangeNumber} className="mt-4 text-sm font-medium text-brand-green">Use another number</button>
           </div>
         ) : !submitted ? (
           <motion.form

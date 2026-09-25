@@ -28,6 +28,7 @@ import { gatewayExpectedNetPaise } from "@/lib/platformReceivables";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { bookingEventMethod, paiseToRupees } from "@/lib/bookingPaymentJournal";
 import { collectInBatches } from "@/lib/dbBatch";
+import { walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 
 function extractDriveFileId(link: string): string | null {
   const match = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -564,7 +565,7 @@ export async function POST(req: NextRequest) {
           // Group hostel guests by checkinId, walk-ins by name+phone
           const key = order.checkinId
             ? `checkin:${order.checkinId}`
-            : `walkin:${(order.guestName || "").toLowerCase().trim()}:${(order.guestPhone || "").trim()}`;
+            : `walkin:${walkinOrderGroupKey(order)}`;
 
           const existing = guestMap.get(key);
           if (existing) {

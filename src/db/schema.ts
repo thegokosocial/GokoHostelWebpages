@@ -614,6 +614,7 @@ export const foodBillShareTokens = sqliteTable("food_bill_share_tokens", {
   token: text("token").primaryKey(),
   phone: text("phone").notNull(),
   checkinId: integer("checkin_id"),
+  walkinNameKey: text("walkin_name_key"),
   expiresAt: text("expires_at").notNull(),
   createdBy: text("created_by").notNull().default(""),
   createdAt: text("created_at").notNull(),

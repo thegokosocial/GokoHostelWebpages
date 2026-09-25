@@ -22,6 +22,7 @@ import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
 import { foodAmountPaid, foodDue, foodPaymentStatus } from "@/lib/foodPaymentBalance";
+import { latestWalkinOrder, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
 
 async function withBillBranding(
@@ -946,8 +947,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         const list = paidByHostel.get(order.checkinId) || [];
         list.push(order); paidByHostel.set(order.checkinId, list);
       } else {
-        const isTable = order.roomInfo && /^Table \d+$/i.test(order.roomInfo);
-        const key = isTable ? `table_${order.roomInfo}` : (order.guestPhone || `_no_phone_${order.id}`);
+        const key = walkinOrderGroupKey(order);
         const list = paidByWalkin.get(key) || [];
         list.push(order); paidByWalkin.set(key, list);
       }
@@ -1007,8 +1007,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
     const walkinMap = new Map<string, Order[]>();
     for (const order of walkinOrders) {
-      const isTable = order.roomInfo && /^Table \d+$/i.test(order.roomInfo);
-      const key = isTable ? `table_${order.roomInfo}` : (order.guestPhone || `_no_phone_${order.id}`);
+      const key = walkinOrderGroupKey(order);
       if (!walkinMap.has(key)) walkinMap.set(key, []);
       walkinMap.get(key)!.push(order);
     }
@@ -1021,12 +1020,13 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       const latest = groupOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, "");
       const earliest = groupOrders.reduce((min, o) => !min || o.createdAt < min ? o.createdAt : min, "");
       const isTableGroup = groupKey.startsWith("table_");
+      const displayOrder = latestWalkinOrder(groupOrders);
       result.push({
         key: `walkin_${groupKey}`,
-        guestName: groupOrders[0].guestName,
+        guestName: displayOrder.guestName,
         guestType: "walkin",
-        contactInfo: isTableGroup ? "" : (groupKey.startsWith("_no_phone_") ? "" : groupKey),
-        roomInfo: isTableGroup ? groupOrders[0].roomInfo : "",
+        contactInfo: isTableGroup ? "" : displayOrder.guestPhone,
+        roomInfo: isTableGroup ? displayOrder.roomInfo : "",
         orders: groupOrders,
         totalAmount: groupOrders.reduce((s, o) => s + o.total, 0),
         totalSubtotal: groupOrders.reduce((s, o) => s + o.subtotal, 0),
@@ -1316,7 +1316,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     }
     setWhatsAppBusy(true);
     try {
-      const res = await apiCall({ action: "createBillShareLink", phone, checkinId: checkinId ?? undefined });
+      const res = await apiCall({ action: "createBillShareLink", phone, guestName, checkinId: checkinId ?? undefined });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         showError("WhatsApp", data.error || "Could not create bill link");
@@ -2413,7 +2413,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
         showError("WhatsApp", "No phone number for this guest");
         return;
       }
-      const res = await apiCall({ action: "createBillShareLink", phone: normalized, checkinId: g.checkinId || undefined });
+      const res = await apiCall({ action: "createBillShareLink", phone: normalized, guestName: g.guestName, checkinId: g.checkinId || undefined });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         showError("WhatsApp", data.error || "Could not create bill link");
@@ -2924,8 +2924,7 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
         if (!hostelMap.has(order.checkinId)) hostelMap.set(order.checkinId, []);
         hostelMap.get(order.checkinId)!.push(order);
       } else {
-        const isTable = order.roomInfo && /^Table \d+$/i.test(order.roomInfo);
-        const key = isTable ? `table_${order.roomInfo}` : (order.guestPhone || `_no_phone_${order.id}`);
+        const key = walkinOrderGroupKey(order);
         if (!walkinMap.has(key)) walkinMap.set(key, []);
         walkinMap.get(key)!.push(order);
       }
@@ -2968,12 +2967,13 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
       const onlineAmt = nonCancelled.filter(o => foodPaymentStatus(o) === "paid" && (o.paymentMethod === "online" || o.paymentMethod === "split")).reduce((s, o) => s + foodAmountPaid(o), 0);
       const totalAmt = nonCancelled.reduce((s, o) => s + o.total, 0);
       const isTableGroup = groupKey.startsWith("table_");
+      const displayOrder = latestWalkinOrder(effectiveOrders);
       result.push({
         key: `walkin_${groupKey}`,
-        guestName: effectiveOrders[0].guestName,
+        guestName: displayOrder.guestName,
         guestType: "walkin",
-        contactInfo: isTableGroup ? "" : (groupKey.startsWith("_no_phone_") ? "" : groupKey),
-        roomInfo: isTableGroup ? effectiveOrders[0].roomInfo : "",
+        contactInfo: isTableGroup ? "" : displayOrder.guestPhone,
+        roomInfo: isTableGroup ? displayOrder.roomInfo : "",
         orders: effectiveOrders,
         totalAmount: totalAmt,
         paidAmount: paidAmt,
@@ -3530,10 +3530,9 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
     const map = new Map<string, { guestName: string; guestType: string; orders: Order[]; total: number; paid: number; pending: number }>();
     for (const o of orders) {
       if (o.status === "cancelled") continue;
-      const isTable = o.roomInfo && /^Table \d+$/i.test(o.roomInfo);
       const key = o.guestType === "hostel" && o.checkinId
         ? `hostel_${o.checkinId}`
-        : isTable ? `table_${o.roomInfo}` : (o.guestPhone || `_${o.id}`);
+        : walkinOrderGroupKey(o);
       if (!map.has(key)) map.set(key, { guestName: o.guestName, guestType: o.guestType, orders: [], total: 0, paid: 0, pending: 0 });
       const g = map.get(key)!;
       g.orders.push(o);

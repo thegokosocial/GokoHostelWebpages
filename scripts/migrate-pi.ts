@@ -36,6 +36,7 @@ for (const file of files) {
     file === "0035_site_cms.sql"
     || file === "0041_splits.sql"
     || file === "0064_food_bill_share_tokens.sql"
+    || file === "0077_food_bill_walkin_identity.sql"
     || file === "0066_gateway_receivables.sql"
     || file === "0068_gateway_settlement_allocations.sql"
   ) {

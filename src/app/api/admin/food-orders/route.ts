@@ -35,7 +35,7 @@ import {
   createFoodBillShareToken,
 } from "@/db/queries";
 import { parseFoodCheckoutGraceDays, foodTaxPercent } from "@/lib/foodLookup";
-import { normalizePhone } from "@/lib/phoneUtils";
+import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { getDb } from "@/db";
@@ -50,6 +50,7 @@ import { auditDateBounds } from "@/lib/auditRetention";
 import { dbRead } from "@/lib/dbRetry";
 import { billShareExpiresAt, generateBillShareToken, publicBillShareUrl } from "@/lib/billShare";
 import { foodAmountPaid, foodDue, foodPaymentState } from "@/lib/foodPaymentBalance";
+import { latestWalkinOrder, normalizeWalkinGuestName, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
 
 export async function POST(req: NextRequest) {
@@ -1312,8 +1313,7 @@ export async function POST(req: NextRequest) {
             const list = hostelGroups.get(order.checkinId) || [];
             list.push(order); hostelGroups.set(order.checkinId, list);
           } else {
-            const table = order.roomInfo && /^Table \d+$/i.test(order.roomInfo);
-            const key = table ? `table_${order.roomInfo}` : (order.guestPhone || `_no_phone_${order.id}`);
+            const key = walkinOrderGroupKey(order);
             const list = walkinGroups.get(key) || [];
             list.push(order); walkinGroups.set(key, list);
           }
@@ -1330,10 +1330,11 @@ export async function POST(req: NextRequest) {
         }
         for (const [groupKey, grouped] of walkinGroups) {
           const table = groupKey.startsWith("table_");
+          const displayOrder = latestWalkinOrder(grouped);
           options.push({
-            key: `walkin_${groupKey}`, checkinId: null, guestType: "walkin", name: grouped[0].guestName,
-            contact: table || groupKey.startsWith("_no_phone_") ? "" : groupKey,
-            bedInfo: table ? (grouped[0].roomInfo || "") : "", orderIds: grouped.map((o) => o.id),
+            key: `walkin_${groupKey}`, checkinId: null, guestType: "walkin", name: displayOrder.guestName,
+            contact: table ? "" : displayOrder.guestPhone,
+            bedInfo: table ? (displayOrder.roomInfo || "") : "", orderIds: grouped.map((o) => o.id),
             tabTotal: grouped.reduce((sum, o) => sum + foodDue(o), 0), orderCount: grouped.length,
           });
         }
@@ -1376,8 +1377,7 @@ export async function POST(req: NextRequest) {
 
         const grouped: Record<string, { key: string; checkinId: number | null; guestName: string; guestPhone: string; roomInfo: string; orders: any[]; subtotal: number; amountDue: number }> = {};
         for (const o of withItems) {
-          const table = o.roomInfo && /^Table \d+$/i.test(o.roomInfo);
-          const groupKey = o.checkinId ? `hostel_${o.checkinId}` : `walkin_${table ? `table_${o.roomInfo}` : (o.guestPhone || `_no_phone_${o.id}`)}`;
+          const groupKey = o.checkinId ? `hostel_${o.checkinId}` : `walkin_${walkinOrderGroupKey(o)}`;
           if (!grouped[groupKey]) {
             grouped[groupKey] = {
               key: groupKey,
@@ -1414,17 +1414,40 @@ export async function POST(req: NextRequest) {
       }
 
       case "createBillShareLink": {
-        const { phone, checkinId } = rest;
+        const { phone, checkinId, guestName } = rest;
         const normalized = normalizePhone(String(phone || ""));
         if (!normalized || normalized.length < 7) {
           return NextResponse.json({ error: "A valid guest phone is required to share the bill" }, { status: 400 });
+        }
+        const scopedCheckinId = Number.isInteger(checkinId) ? checkinId : null;
+        const walkinNameKey = scopedCheckinId ? null : normalizeWalkinGuestName(String(guestName || ""));
+        if (!scopedCheckinId && !walkinNameKey) {
+          return NextResponse.json({ error: "A walk-in guest name is required to share the bill" }, { status: 400 });
+        }
+        if (scopedCheckinId) {
+          const rows = await getDb().select({ contact: checkins.contact }).from(checkins).where(eq(checkins.id, scopedCheckinId)).limit(1);
+          if (!rows[0] || !phonesMatch(rows[0].contact, normalized)) {
+            return NextResponse.json({ error: "The selected stay does not match this phone number" }, { status: 400 });
+          }
+        } else {
+          const candidates = await getDb().select({ guestName: foodOrders.guestName }).from(foodOrders).where(and(
+            eq(foodOrders.guestType, "walkin"),
+            sql`${foodOrders.status} != 'cancelled'`,
+            normalized.length === 10
+              ? sql`(${foodOrders.guestPhone} = ${normalized} OR ${foodOrders.guestPhone} LIKE ${"%" + normalized})`
+              : eq(foodOrders.guestPhone, normalized),
+          ));
+          if (!candidates.some((order) => normalizeWalkinGuestName(order.guestName) === walkinNameKey)) {
+            return NextResponse.json({ error: "No matching walk-in bill was found" }, { status: 404 });
+          }
         }
         const token = generateBillShareToken();
         const expiresAt = billShareExpiresAt(7);
         await createFoodBillShareToken({
           token,
           phone: normalized,
-          checkinId: Number.isInteger(checkinId) ? checkinId : null,
+          checkinId: scopedCheckinId,
+          walkinNameKey,
           expiresAt,
           createdBy: actorName,
         });

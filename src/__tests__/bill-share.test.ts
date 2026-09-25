@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import Database from "better-sqlite3";
 import {
   billShareExpiresAt,
   buildBillWhatsAppDraft,
@@ -86,6 +87,9 @@ describe("mock workflows (source contracts)", () => {
     expect(route).toMatch(/getValidFoodBillShareToken/);
     expect(route).toMatch(/viaToken/);
     expect(route).toMatch(/phone: viaToken \? undefined : normalized/);
+    expect(route).toMatch(/requiresGuestSelection/);
+    expect(route).toMatch(/walkinNameKey/);
+    expect(route).toMatch(/This bill link is no longer valid/);
   });
 
   it("Order Summary + Combined Bill mint share links through the shared staff launcher", () => {
@@ -97,6 +101,7 @@ describe("mock workflows (source contracts)", () => {
     expect(ui).toMatch(/GuestFoodBillCard/);
     expect(ui).toMatch(/embedQr:\s*false/);
     expect(ui).toMatch(/WhatsApp/);
+    expect(ui).toMatch(/guestName: g\.guestName/);
   });
 
   it("Combined Bill exposes permission-gated pay and discount actions for all preview orders", () => {
@@ -122,14 +127,35 @@ describe("mock workflows (source contracts)", () => {
     expect(ui).toMatch(/embedQr:\s*true/);
   });
 
-  it("migration 0064 + schema + Pi skip are Cloudflare-only", () => {
+  it("bill-share migrations + schema + Pi skips are Cloudflare-only", () => {
     const sql = readFileSync("migrations/0064_food_bill_share_tokens.sql", "utf8");
     expect(sql).toMatch(/CREATE TABLE food_bill_share_tokens/);
     const schema = readFileSync("src/db/schema.ts", "utf8");
     expect(schema).toMatch(/foodBillShareTokens/);
     const pi = readFileSync("scripts/migrate-pi.ts", "utf8");
     expect(pi).toMatch(/0064_food_bill_share_tokens\.sql/);
+    expect(pi).toMatch(/0077_food_bill_walkin_identity\.sql/);
     expect(pi).toMatch(/Cloudflare-only/);
+    const identitySql = readFileSync("migrations/0077_food_bill_walkin_identity.sql", "utf8");
+    expect(identitySql).toMatch(/ADD COLUMN walkin_name_key/);
+    expect(identitySql).toMatch(/WHERE checkin_id IS NULL/);
+    expect(identitySql).toMatch(/1970-01-01T00:00:00\.000Z/);
+  });
+
+  it("expires legacy walk-in links while preserving scoped hostel links", () => {
+    const db = new Database(":memory:");
+    db.exec(readFileSync("migrations/0064_food_bill_share_tokens.sql", "utf8"));
+    const insert = db.prepare("INSERT INTO food_bill_share_tokens (token, phone, checkin_id, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+    insert.run("walkin", "1234567890", null, "2099-01-01T00:00:00.000Z", "staff", "2026-09-25T00:00:00.000Z");
+    insert.run("hostel", "9876543210", 42, "2099-01-01T00:00:00.000Z", "staff", "2026-09-25T00:00:00.000Z");
+    db.exec(readFileSync("migrations/0077_food_bill_walkin_identity.sql", "utf8"));
+    expect(db.prepare("SELECT expires_at, walkin_name_key FROM food_bill_share_tokens WHERE token = 'walkin'").get()).toEqual({
+      expires_at: "1970-01-01T00:00:00.000Z", walkin_name_key: null,
+    });
+    expect(db.prepare("SELECT expires_at, walkin_name_key FROM food_bill_share_tokens WHERE token = 'hostel'").get()).toEqual({
+      expires_at: "2099-01-01T00:00:00.000Z", walkin_name_key: null,
+    });
+    db.close();
   });
 
   it("getCombinedBill backfills guestPhone from checkins when order phone empty", () => {

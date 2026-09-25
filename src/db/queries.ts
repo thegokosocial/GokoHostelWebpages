@@ -1501,13 +1501,14 @@ export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
 // --- Food bill share tokens (Cloudflare-only) ---
 
 export async function createFoodBillShareToken(data: {
-  token: string; phone: string; checkinId?: number | null; expiresAt: string; createdBy: string;
+  token: string; phone: string; checkinId?: number | null; walkinNameKey?: string | null; expiresAt: string; createdBy: string;
 }) {
   const db = getDb();
   return db.insert(foodBillShareTokens).values({
     token: data.token,
     phone: data.phone,
     checkinId: data.checkinId ?? null,
+    walkinNameKey: data.walkinNameKey ?? null,
     expiresAt: data.expiresAt,
     createdBy: data.createdBy,
     createdAt: new Date().toISOString(),
