@@ -77,4 +77,16 @@ describe("Tasks implementation wiring", () => {
     expect(management).toContain("canManageTasks");
     expect(taskManagement).toContain('option value="">Unassigned</option>');
   });
+
+  it("keeps task managers in one combined editor", () => {
+    const taskManagement = readFileSync("src/components/admin/ManagementTasks.tsx", "utf8");
+    expect(taskManagement).toContain("canManage && !task.deletedAt ? openEdit(task)");
+    expect(taskManagement).toContain('value={form.status}');
+    expect(taskManagement).toContain('value={form.note}');
+    expect(taskManagement).toContain("const closeForm = () => { setShowForm(false); setSelected(null); };");
+    expect(taskManagement).toContain('onClick={closeForm} disabled={saving}>Cancel');
+    expect(taskManagement).toContain("closeForm(); showSuccess(selected ? \"Task updated\" : \"Task created\")");
+    expect(taskManagement).toContain("selected.attachments.map");
+    expect(taskManagement).toContain("void archive(selected)");
+  });
 });
