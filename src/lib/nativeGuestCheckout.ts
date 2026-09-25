@@ -37,6 +37,7 @@ import {
 } from "@/lib/razorpay";
 import {
   readWebsiteBookingSettings, websiteBookingSettingsRevision, WEBSITE_BOOKING_SETTINGS_KEY,
+  MAX_WEBSITE_BOOKING_BEDS,
 } from "@/lib/websiteBookingSettings";
 import { mergeWebsiteCheckoutRaw, parseWebsiteCheckout } from "@/lib/websiteCheckoutSnapshot";
 import { todayIST } from "@/lib/utils";
@@ -204,6 +205,8 @@ const selectionSchema = z.object({
     email: z.string().trim().email().max(254),
     phone: z.string().trim().min(1).max(30),
   }).strict(),
+  /** Actual party size — not bed capacity. Enforced ≤ allocated sleeping capacity after allocate. */
+  persons: z.number().int().min(1).max(MAX_WEBSITE_BOOKING_BEDS * 2),
   rooms: roomsSchema,
 }).strict();
 const amendSelectionSchema = z.object({
@@ -459,7 +462,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   const input = selectionSchema.parse(raw);
   const requestHash = await sha(JSON.stringify({
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
-    paymentChoice: input.paymentChoice, rooms: input.rooms, guest: input.guest,
+    paymentChoice: input.paymentChoice, rooms: input.rooms, guest: input.guest, persons: input.persons,
   }));
   const db = getDb();
   const [existing] = await db.select().from(checkouts).where(eq(checkouts.requestKey, input.requestKey)).limit(1);
@@ -487,6 +490,13 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
     throw new GuestCheckoutError(`You can select at most ${policy.maxSelectedBeds} beds for a website booking`, 400);
   }
   const { bedIds, units } = await allocateGuestSelection(input);
+  const sleepingCapacity = units.reduce((n, u) => n + (u.type === "Double" ? 2 : 1), 0);
+  if (input.persons > sleepingCapacity) {
+    throw new GuestCheckoutError(
+      `Guests cannot exceed the sleeping capacity of ${sleepingCapacity} for the selected beds`,
+      400,
+    );
+  }
   const ownerToken = generateGuestAccessToken();
   const guestAccessToken = generateGuestAccessToken();
   const hold = await createNativeInventoryHold({
@@ -515,7 +525,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
     guestName: input.guest.name, contact: input.guest.phone, email: input.guest.email,
     platform: "Website", bookingRef: gokoId, gokoBookingId: gokoId,
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
-    roomType: roomLabel, persons: units.reduce((n, u) => n + (u.type === "Double" ? 2 : 1), 0),
+    roomType: roomLabel, persons: input.persons,
     status: "hold", source: "website", paymentStatus: quote.dueNowPaise >= 100 ? "pending" : "pay_at_property",
     amountBeforeTax: quote.beforeTaxRupees, amountTax: quote.taxRupees, amountTotal: quote.totalRupees,
     amountPaid: 0, currency: "INR", nightlyRate,
@@ -1459,7 +1469,7 @@ export async function fulfilGuestAmend(checkoutId: string, ownerToken?: string, 
       checkinDate: holdRow.checkinDate,
       checkoutDate: holdRow.checkoutDate,
       roomType: roomLabel,
-      persons: heldUnits.reduce((n, u) => n + (u.type === "Double" ? 2 : 1), 0),
+      persons: bookingBefore.persons,
       amountBeforeTax: quote.beforeTaxRupees,
       amountTax: quote.taxRupees,
       amountTotal: quote.totalRupees,

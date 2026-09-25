@@ -115,6 +115,7 @@ function selection(
     checkinDate,
     checkoutDate,
     paymentChoice,
+    persons: 1,
     guest: { name: "Workflow Guest", email: "workflow@example.test", phone: "+919876543210" },
     rooms: [{ roomId: "1-Bed", quantity: 1, ratePlanId: 1 }],
   };
@@ -494,6 +495,7 @@ describe("Native guest checkout end-to-end workflows", () => {
       checkinDate,
       checkoutDate,
       paymentChoice: "full",
+      persons: 1,
       guest: { name: "Mixed Guest", email: "mixed@example.test", phone: "+919876543210" },
       rooms: [
         { roomId: "1-Bed", quantity: 2, ratePlanId: 1 },

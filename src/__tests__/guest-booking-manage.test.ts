@@ -123,4 +123,15 @@ describe("Guest booking manage details", () => {
     expect(manage).toContain("Your stay was updated on");
     expect(manage).toContain("Any extra amount is due at the hostel");
   });
+
+  it("labels party size as Guests on confirmation and in email defaults", () => {
+    const manage = readFileSync("src/components/booking/GuestBookingManage.tsx", "utf8");
+    const details = readFileSync("src/lib/guestBookingDetails.ts", "utf8");
+    const templates = readFileSync("src/lib/bookingEmailTemplates.ts", "utf8");
+    expect(manage).toContain("Guests: {status.persons}");
+    expect(details).toContain("`  Guests: ${input.persons}`");
+    expect(templates).toContain("Guests: {PERSONS}");
+    expect(manage).not.toContain("Sleeps up to {status.persons}");
+    expect(details).not.toContain("Sleeps up to");
+  });
 });

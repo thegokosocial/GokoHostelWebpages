@@ -51,8 +51,12 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("Guest name <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
     expect(panel).toContain("Email <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
     expect(panel).toContain("Phone <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
+    expect(panel).toContain("Guests <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
     expect(panel).toContain("guestDetailsComplete");
-    expect(panel).toContain("Fill in guest name, email and phone to enable Pay now");
+    expect(panel).toContain("Fill in guest name, email, phone and guests to enable Pay now");
+    expect(panel).toContain("Guests cannot exceed Sleeps up to");
+    expect(panel).not.toContain("Live payments — real money");
+    expect(panel).not.toContain("Test-mode payments only");
     expect(panel).not.toContain("Ask Goko on WhatsApp");
   });
   it("uses large payment radio targets and stores only guestAccessToken", () => {
@@ -94,12 +98,27 @@ describe("Mobile-first booking layout contracts", () => {
   });
   it("fetches actual configured data in preview instead of injecting sample rates", () => {
     const previewPage = readFileSync("src/app/(marketing)/book/preview/page.tsx", "utf8");
-    const searchBody = panel.slice(panel.indexOf('async function search('), panel.indexOf('async function lookup('));
-    expect(searchBody).toContain('fetch(`/api/guest-booking/availability?${new URLSearchParams(stay)}');
-    expect(searchBody).not.toContain('if (preview)');
-    expect(searchBody).toContain('setMaxSelectedBeds(data.maxSelectedBeds)');
-    expect(previewPage).not.toContain('subtotalRupees'); expect(previewPage).not.toContain('rooms:');
-    expect(panel).not.toContain('Sample rate'); expect(panel).not.toContain('preview?.taxPercent');
-    expect(panel).toContain('Booking lookup and email sending are disabled in this preview.');
+    expect(panel).toContain("async function runAvailabilitySearch");
+    expect(panel).toContain('fetch(`/api/guest-booking/availability?${new URLSearchParams(next)}');
+    expect(panel).toContain("setMaxSelectedBeds(data.maxSelectedBeds)");
+    const searchBody = panel.slice(panel.indexOf("async function search("), panel.indexOf("async function lookup("));
+    expect(searchBody).not.toContain("if (preview)");
+    expect(searchBody).toContain('window.location.pathname === "/"');
+    expect(searchBody).toContain('window.location.assign(`/book?${q}`)');
+    expect(searchBody).toContain("await runAvailabilitySearch(stay)");
+    expect(previewPage).not.toContain("subtotalRupees"); expect(previewPage).not.toContain("rooms:");
+    expect(panel).not.toContain("Sample rate"); expect(panel).not.toContain("preview?.taxPercent");
+    expect(panel).toContain("Booking lookup and email sending are disabled in this preview.");
+  });
+
+  it("hands homepage Check availability off to /book with dates and auto-searches", () => {
+    expect(panel).toContain('window.location.pathname === "/"');
+    expect(panel).toContain("checkinDate: stay.checkinDate, checkoutDate: stay.checkoutDate");
+    expect(panel).toContain('window.location.assign(`/book?${q}`)');
+    expect(panel).toContain('window.location.pathname !== "/book"');
+    expect(panel).toContain('params.get("checkinDate")');
+    expect(panel).toContain('params.get("checkoutDate")');
+    expect(panel).toContain("autoSearchStarted");
+    expect(panel).toContain("void runAvailabilitySearch({ checkinDate, checkoutDate })");
   });
 });

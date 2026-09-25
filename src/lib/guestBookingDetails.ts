@@ -255,7 +255,7 @@ export function buildBookingEmailBody(input: {
     "",
     "Stay",
     `  ${input.checkinDate} → ${input.checkoutDate} (${input.nights} ${input.nights === 1 ? "night" : "nights"})`,
-    input.persons != null ? `  Sleeps up to ${input.persons}` : null,
+    input.persons != null ? `  Guests: ${input.persons}` : null,
     "",
     "Rooms",
     ...roomLines,

@@ -83,6 +83,7 @@ function prepareInput(overrides: Record<string, unknown> = {}) {
     ...dates,
     paymentChoice: "property" as const,
     guest,
+    persons: 1,
     rooms: [{ roomId: "1-Bed", quantity: 1, ratePlanId: 1 }],
     ...overrides,
   };
@@ -287,6 +288,10 @@ describe("prepareGuestCheckout", () => {
       ...input,
       guest: { ...guest, name: "Different Guest" },
     })).rejects.toThrow(/different checkout/);
+    await expect(prepareGuestCheckout({
+      ...input,
+      persons: 2,
+    })).rejects.toThrow(/different checkout/);
   });
 
   it("rejects when destination is not native", async () => {
@@ -318,6 +323,32 @@ describe("prepareGuestCheckout", () => {
     });
     expect(sqlite.prepare("SELECT count(*) n FROM native_booking_checkouts").get()).toEqual({ n: 0 });
     expect(sqlite.prepare("SELECT count(*) n FROM bookings").get()).toEqual({ n: 0 });
+  });
+
+  it("stores guest-entered persons and rejects over capacity", async () => {
+    await prepareGuestCheckout(prepareInput({
+      rooms: [
+        { roomId: "1-Bed", quantity: 1, ratePlanId: 1 },
+        { roomId: "1-Double", quantity: 1, ratePlanId: 1 },
+      ],
+      persons: 2, // capacity = 1 + 2 = 3
+    }));
+    expect(sqlite.prepare("SELECT persons FROM bookings").get()).toEqual({ persons: 2 });
+
+    await expect(prepareGuestCheckout(prepareInput({
+      rooms: [{ roomId: "1-Bed", quantity: 1, ratePlanId: 1 }],
+      persons: 2, // capacity 1
+    }))).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/sleeping capacity/i),
+    });
+  });
+
+  it("rejects missing or invalid persons", async () => {
+    const { persons: _drop, ...without } = prepareInput();
+    await expect(prepareGuestCheckout(without as never)).rejects.toThrow();
+    await expect(prepareGuestCheckout(prepareInput({ persons: 0 }))).rejects.toThrow();
+    await expect(prepareGuestCheckout(prepareInput({ persons: 1.5 }))).rejects.toThrow();
   });
 });
 

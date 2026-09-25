@@ -53,6 +53,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [taxPercent, setTaxPercent] = useState<number | null>(null);
   const [maxSelectedBeds, setMaxSelectedBeds] = useState<number | null>(null);
   const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
+  const [persons, setPersons] = useState(1);
   const [stay, setStay] = useState(preview?.stay ?? { checkinDate: "", checkoutDate: "" });
   const [searchedStay, setSearchedStay] = useState<typeof stay | null>(null);
   const [reference, setReference] = useState(""), [email, setEmail] = useState("");
@@ -123,13 +124,12 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     return () => { active = false; };
   }, []);
   const stayReady = Boolean(stay.checkinDate && stay.checkoutDate && stay.checkoutDate > stay.checkinDate);
-  async function search(event: FormEvent) {
-    event.preventDefault();
-    if (!stayReady) { setMessage("Choose your check-in and check-out dates."); return; }
+  const autoSearchStarted = useRef(false);
+  async function runAvailabilitySearch(next: { checkinDate: string; checkoutDate: string }) {
     setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false); setHoldExpiresAt(null); setCheckoutRequestKey(null);
     try {
-      const data = await readResponse(await fetch(`/api/guest-booking/availability?${new URLSearchParams(stay)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) }));
-      setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...stay });
+      const data = await readResponse(await fetch(`/api/guest-booking/availability?${new URLSearchParams(next)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) }));
+      setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...next });
       setNativeCheckoutReady(Boolean(data.nativeCheckoutReady));
       setPaymentOptions(data.paymentOptions || null);
       if (typeof data.paymentOptions?.requireLookupOtp === "boolean") setRequireLookupOtp(data.paymentOptions.requireLookupOtp);
@@ -139,6 +139,28 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       setPaymentChoice(choice);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not search. Try WhatsApp."); }
     finally { setBusy(false); }
+  }
+  useEffect(() => {
+    if (preview || autoSearchStarted.current || typeof window === "undefined") return;
+    if (window.location.pathname !== "/book") return;
+    const params = new URLSearchParams(window.location.search);
+    const checkinDate = params.get("checkinDate")?.trim() || "";
+    const checkoutDate = params.get("checkoutDate")?.trim() || "";
+    if (!checkinDate || !checkoutDate || checkoutDate <= checkinDate) return;
+    autoSearchStarted.current = true;
+    setStay({ checkinDate, checkoutDate });
+    void runAvailabilitySearch({ checkinDate, checkoutDate });
+  }, [preview]);
+  async function search(event: FormEvent) {
+    event.preventDefault();
+    if (!stayReady) { setMessage("Choose your check-in and check-out dates."); return; }
+    // Homepage hero is too tight for results — hand off dates to /book and auto-search there.
+    if (typeof window !== "undefined" && window.location.pathname === "/") {
+      const q = new URLSearchParams({ checkinDate: stay.checkinDate, checkoutDate: stay.checkoutDate });
+      window.location.assign(`/book?${q}`);
+      return;
+    }
+    await runAvailabilitySearch(stay);
   }
   async function lookup(event: FormEvent) {
     event.preventDefault(); setBusy(true); setMessage(""); setBooking(null); setManageUrl("");
@@ -281,7 +303,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       const payload = {
         requestKey,
         checkinDate: searchedStay.checkinDate, checkoutDate: searchedStay.checkoutDate,
-        paymentChoice, guest,
+        paymentChoice, guest, persons,
         rooms: rooms.filter((room) => selection[room.id]).map((room) => ({
           roomId: room.id, quantity: selection[room.id], ratePlanId: chosenRate(room)!.id,
         })),
@@ -396,7 +418,11 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const enquiry = searchedStay ? `Hi Goko, please confirm availability and rates for ${searchedStay.checkinDate} to ${searchedStay.checkoutDate}. Selection: ${rooms?.filter(room => selection[room.id]).map(room => `${selection[room.id]} × ${room.name} (${room.type === "Double" ? "double bed" : "dorm bed"})`).join(", ")}. Capacity up to ${capacity} guests; please confirm actual guest count with me.` : "";
   const holdSecondsLeft = holdExpiresAt ? Math.max(0, holdExpiresAt - nowTick) : null;
   const holdExpired = holdExpiresAt != null && holdSecondsLeft === 0;
-  const guestDetailsComplete = Boolean(guest.name.trim() && guest.email.trim() && guest.phone.trim());
+  const guestDetailsComplete = Boolean(
+    guest.name.trim() && guest.email.trim() && guest.phone.trim()
+    && Number.isInteger(persons) && persons >= 1 && persons <= capacity,
+  );
+  const guestsOverCapacity = Number.isInteger(persons) && capacity > 0 && persons > capacity;
   return <>
   <CheckoutWaitOverlay phase={checkoutWait} />
   <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
@@ -498,11 +524,29 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             <p className="mt-2">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate} · {selectedCount} {selectedCount === 1 ? "bed" : "beds"} · Sleeps up to {capacity}</p>
             <ul className="mt-3 space-y-2 text-sm">{rooms.filter(room => selection[room.id]).map(room => <li key={room.id}>{selection[room.id]} × {room.name} · {chosenRate(room)?.name} · {money(selection[room.id] * chosenRate(room)!.subtotalRupees)}</li>)}</ul>
             {totals && <dl className="mt-4 space-y-2 border-t border-brand-mist pt-3 text-sm"><div className="flex justify-between"><dt>Bed subtotal</dt><dd>{money(totals.beforeTax)}</dd></div><div className="flex justify-between"><dt>Estimated tax ({taxPercent}%)</dt><dd>{money(totals.tax)}</dd></div><div className="flex justify-between text-lg font-semibold"><dt>Estimated total</dt><dd>{money(totals.total)}</dd></div></dl>}
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <label className="text-sm">Guest name <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required autoComplete="name" maxLength={120} value={guest.name} onChange={e => setGuest(current => ({ ...current, name: e.target.value }))} /></label>
               <label className="text-sm">Email <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required type="email" autoComplete="email" maxLength={254} value={guest.email} onChange={e => setGuest(current => ({ ...current, email: e.target.value }))} /></label>
               <label className="text-sm">Phone <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required type="tel" autoComplete="tel" maxLength={30} value={guest.phone} onChange={e => setGuest(current => ({ ...current, phone: e.target.value }))} /></label>
+              <label className="text-sm">Guests <span className="text-brand-red" aria-hidden="true">*</span>
+                <input
+                  className={field}
+                  required
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={Math.max(1, capacity)}
+                  step={1}
+                  value={persons}
+                  onChange={e => setPersons(Number(e.target.value))}
+                />
+              </label>
             </div>
+            {guestsOverCapacity && (
+              <p role="status" className="mt-2 text-sm text-brand-red">
+                Guests cannot exceed Sleeps up to {capacity}.
+              </p>
+            )}
             {nativeCheckoutReady && paymentOptions ? <>
               {holdExpired ? (
                 <div className="mt-5 space-y-3">
@@ -540,7 +584,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
               {holdSecondsLeft != null && <p className="mt-3 text-xs" role="status">Hold expires in {Math.floor(holdSecondsLeft / 60)}:{String(holdSecondsLeft % 60).padStart(2, "0")}</p>}
               {!guestDetailsComplete && (
                 <p role="status" className="mt-4 text-sm text-brand-red">
-                  Fill in guest name, email and phone to enable Pay now. Mandatory fields are marked with *.
+                  Fill in guest name, email, phone and guests to enable Pay now. Mandatory fields are marked with *.
                 </p>
               )}
               {checkoutOutcome && (
@@ -596,11 +640,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                       : paymentChoice === "property" ? "Confirm reservation" : "Pay now"}
                 </button>
               </div>
-              <p className="mt-3 text-xs">
-                {paymentOptions.gatewayEnvironment === "live"
-                  ? "Live payments — real money. Card, UPI, netbanking and wallets via Razorpay Checkout."
-                  : "Test-mode payments only. Card, UPI, netbanking and wallets are available in Razorpay Checkout."}
-              </p>
                 </>
               )}
             </> : <>

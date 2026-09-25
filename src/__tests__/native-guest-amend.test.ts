@@ -95,6 +95,7 @@ function selection(paymentChoice: "advance" | "full" | "property" = "full", chec
   return {
     requestKey: crypto.randomUUID(),
     checkinDate, checkoutDate, paymentChoice,
+    persons: 1,
     guest: { name: "Amend Guest", email: "amend@example.test", phone: "+919876543210" },
     rooms: [{ roomId: "1-Bed", quantity: 1, ratePlanId: 1 }],
   };

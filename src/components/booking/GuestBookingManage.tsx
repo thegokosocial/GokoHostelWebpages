@@ -145,7 +145,7 @@ export function GuestBookingManage({ status, busy, onCancel }: Props) {
           </p>
         )}
         {status.persons != null && (
-          <p className="mt-1 text-sm text-brand-green">Sleeps up to {status.persons}</p>
+          <p className="mt-1 text-sm text-brand-green">Guests: {status.persons}</p>
         )}
       </div>
 
