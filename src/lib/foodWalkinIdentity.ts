@@ -11,12 +11,20 @@ export function normalizeWalkinGuestName(value: string | null | undefined): stri
   return String(value || "")
     .normalize("NFKC")
     .toLocaleLowerCase("en-IN")
-    .match(/[\p{L}\p{M}\p{N}]+/gu)
-    ?.join("") || "";
+    .trim()
+    .replace(/\s+/gu, " ");
+}
+
+export function normalizeWalkinPhoneKey(value: string | null | undefined): string {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  // Staff deliberately use 1–9 as reusable walk-in placeholders. The public
+  // phone validator rejects those, but grouping must retain them.
+  return normalizePhone(digits) || digits;
 }
 
 export function walkinIdentityKey(phone: string | null | undefined, name: string | null | undefined): string {
-  const normalizedPhone = normalizePhone(String(phone || ""));
+  const normalizedPhone = normalizeWalkinPhoneKey(phone);
   const normalizedName = normalizeWalkinGuestName(name);
   return normalizedPhone && normalizedName ? `${normalizedPhone}|${normalizedName}` : "";
 }

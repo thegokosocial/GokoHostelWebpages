@@ -164,4 +164,19 @@ describe("mock workflows (source contracts)", () => {
     expect(route).toMatch(/missingPhoneIds/);
     expect(route).toMatch(/guestPhone = contactById/);
   });
+
+  it("keeps hostel grouping on checkinId and applies name+phone only in walk-in branches", () => {
+    const adminRoute = readFileSync("src/app/api/admin/food-orders/route.ts", "utf8");
+    const adminUi = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
+    const expenses = readFileSync("src/app/api/admin/expenses/route.ts", "utf8");
+    const publicBills = readFileSync("src/app/api/food/bills/route.ts", "utf8");
+
+    expect(adminRoute).toContain('if (order.guestType === "hostel" && order.checkinId)');
+    expect(adminRoute).toContain('o.checkinId ? `hostel_${o.checkinId}` : `walkin_${walkinOrderGroupKey(o)}`');
+    expect(adminUi).toContain('if (order.guestType === "hostel" && order.checkinId)');
+    expect(adminUi).toContain('`hostel_${o.checkinId}`');
+    expect(expenses).toContain('order.checkinId\n            ? `checkin:${order.checkinId}`');
+    expect(publicBills).toContain('eq(foodOrders.guestType, "walkin")');
+    expect(publicBills).toContain('getGuestAllFoodOrders(selectedCheckinId)');
+  });
 });
