@@ -428,10 +428,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
     {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
     <div className="mb-5 grid grid-cols-2 gap-2 sm:flex" role="tablist" aria-label="Booking options">
-      {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "My booking"}</button>)}
+      {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "Find my booking"}</button>)}
     </div>
     {tab === "search" ? <div role="tabpanel" id="panel-search" aria-labelledby="tab-search">
-      <h2 className="font-display text-2xl font-bold">Find your bed by the beach</h2>
       <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-3">
         <label className="col-span-2 min-w-0 text-sm font-semibold lg:col-span-2">
           Dates
@@ -663,6 +662,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
           ? "Enter your confirmation number and the email used for your booking. We’ll email a verification code from booking@gokohostel.com."
           : "Enter your confirmation number and the email used for your booking to open it."}
       </p>
+      <p className="mt-2 text-sm text-brand-green-dark/80">
+        Currently we only support finding bookings made through the Goko website.
+      </p>
       <form onSubmit={lookup} className="mt-5 grid items-end gap-3 md:grid-cols-3">
         {!challengeId ? <><label className="text-sm font-semibold">Confirmation number<input className={field} required maxLength={120} disabled={busy} autoComplete="off" value={reference} onChange={e => setReference(e.target.value)} /></label><label className="text-sm font-semibold">Booking email<input className={field} required type="email" maxLength={254} disabled={busy} autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} /></label></> : <label className="text-sm font-semibold md:col-span-2">Email verification code<input className={field} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} disabled={busy} value={code} onChange={e => setCode(e.target.value)} /></label>}
         <button className={action} disabled={busy}>{busy ? "Please wait…" : challengeId ? "View booking" : requireLookupOtp ? "Send verification code" : "Find booking"}</button>
@@ -677,7 +679,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       </div>}
     </div>}
     <p role="status" aria-live="polite" className="mt-4 break-words text-sm">{message}</p>
-    <div className="mt-3 grid gap-2 border-t border-brand-mist pt-3 text-sm sm:flex sm:flex-wrap sm:gap-4"><a className="inline-flex min-h-12 items-center font-semibold underline" href="/booking-enquiry">Need help? Send an enquiry</a><a className="inline-flex min-h-12 items-center font-semibold underline" href={site.whatsAppUrl} target="_blank" rel="noopener noreferrer">Contact Goko</a></div>
   </div>
   </>;
 }

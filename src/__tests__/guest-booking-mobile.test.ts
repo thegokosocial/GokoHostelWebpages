@@ -39,7 +39,8 @@ describe("Mobile-first booking layout contracts", () => {
   it("temporarily suppresses overlapping floats only on phones, and cleans up observation", () => {
     expect(css).toMatch(/@media \(max-width: 767px\)\s*\{\s*body:has\(\[data-booking-in-view="true"\]\) \.goko-floating-bottom\s*\{\s*display: none/);
     expect(panel).toContain('setInView(entry.isIntersecting)'); expect(panel).toContain('observer.disconnect()');
-    expect(panel).toContain('Contact Goko');
+    expect(panel).not.toContain("Need help? Send an enquiry");
+    expect(panel).not.toContain(">Contact Goko<");
   });
   it("moves focus to review without enabling payment or changing privacy", () => {
     expect(panel).toContain('focus({ preventScroll: true })'); expect(panel).toContain('scroll-mt-24');
@@ -120,5 +121,14 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain('params.get("checkoutDate")');
     expect(panel).toContain("autoSearchStarted");
     expect(panel).toContain("void runAvailabilitySearch({ checkinDate, checkoutDate })");
+  });
+
+  it("declutters hero CTAs and booking panel copy; Find my booking notes website-only", () => {
+    expect(home).not.toContain("BookNowButton");
+    expect(home).not.toContain("Explore rooms");
+    expect(panel).not.toContain("Find your bed by the beach");
+    expect(panel).toContain("Find my booking");
+    expect(panel).not.toContain('"My booking"');
+    expect(panel).toContain("Currently we only support finding bookings made through the Goko website.");
   });
 });

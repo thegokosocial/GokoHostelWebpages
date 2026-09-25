@@ -2,8 +2,6 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { HeroBackdrop } from "@/components/media/HeroBackdrop";
-import { BookNowButton } from "@/components/booking/BookNowButton";
-import { ButtonLink } from "@/components/ui/button";
 import { Container } from "@/components/ui/Container";
 import { homeHero } from "@/content/home";
 import { heroLoopVideo } from "@/lib/site";
@@ -57,16 +55,6 @@ export function HomeHeroPremium() {
             <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/95 sm:text-lg md:text-xl">
               {homeHero.subtitle}
             </p>
-            <div className="mt-8 hidden flex-wrap gap-3 sm:flex">
-              <BookNowButton>{homeHero.ctaBook}</BookNowButton>
-              <ButtonLink
-                href="/stay"
-                variant="ctaOutline"
-                className="!border-white/50 !bg-white/12 !text-white hover:!bg-white/20"
-              >
-                Explore rooms
-              </ButtonLink>
-            </div>
           </div>
         ) : (
           <motion.div
@@ -97,20 +85,6 @@ export function HomeHeroPremium() {
             >
               {homeHero.subtitle}
             </motion.p>
-            <motion.div
-              className="mt-8 hidden flex-wrap gap-3 sm:flex"
-              variants={fadeUp}
-              custom={3}
-            >
-              <BookNowButton>{homeHero.ctaBook}</BookNowButton>
-              <ButtonLink
-                href="/stay"
-                variant="ctaOutline"
-                className="!border-white/50 !bg-white/12 !text-white hover:!bg-white/20"
-              >
-                Explore rooms
-              </ButtonLink>
-            </motion.div>
           </motion.div>
         )}
         <div className="mt-8"><BookingHeroPanel /></div>
