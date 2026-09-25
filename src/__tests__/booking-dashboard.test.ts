@@ -474,14 +474,16 @@ describe("Booking API: calendar enrich and rates batch", () => {
     expect(section).not.toContain("allBeds.find");
   });
 
-  it("loads check-in-day rates once via getAllDailyRates", () => {
+  it("loads stay-span rates once via getAllDailyRates and adminStayRateForStay", () => {
     const section = route.match(/action === "getAvailableBeds"[\s\S]*?action === "getBookingHistory"/)![0];
-    expect(section).toContain("getAllDailyRates(checkinDate, checkinDate)");
+    expect(section).toContain("getAllDailyRates(checkinDate, checkoutDate)");
+    expect(section).toContain("adminStayRateForStay");
+    expect(section).toContain("dormStayTotals");
+    expect(section).toContain("dormRateRanges");
     expect(section).toContain("getAvailableBedsForRange(checkinDate, checkoutDate, undefined, bookingId, Boolean(bookingId))");
     expect(section).not.toMatch(/await getDailyRates\(/);
-    expect(section).toContain("adult1Rate ?? rate.rate");
     expect(section).toContain("pool: b.pool");
-    expect(section).toMatch(/if \(rate\) \{\s*dormRates\[mapping\.dormId\] = rate\.adult1Rate \?\? rate\.rate;/);
+    expect(section).not.toContain("getAllDailyRates(checkinDate, checkinDate)");
   });
 
   it("excludes this stay's own beds from add-picker chips but still frees them for date revalidation", () => {
@@ -582,6 +584,20 @@ describe("Booking calendar UI permissions match the API keys", () => {
     const types = readFile("src/components/admin/booking-dashboard/types.ts");
     expect(types).toContain("physicalBedIds?: number[]");
     expect(types).toContain("capacity?: number");
+  });
+
+  it("walk-in New Booking uses stay calendar totals (not nightly × nights)", () => {
+    const modal = readFile("src/components/admin/booking-dashboard/CreateBookingModal.tsx");
+    expect(modal).toContain("Stay total for selected units");
+    expect(modal).toContain("dormStayTotals");
+    expect(modal).toContain("staySubtotal: stayTotal");
+    expect(modal).toContain("const gross = stayTotal");
+    expect(modal).toContain("(dormRates[u.dormId] || 0) * nightCount");
+    expect(modal).not.toContain("nightlyRate * nights");
+    expect(modal).not.toContain("Nightly total for selected units");
+    const picker = readFile("src/components/admin/booking-dashboard/AvailableBedsPicker.tsx");
+    expect(picker).toContain("formatAdminDormRateLabel");
+    expect(picker).toContain("dormRateRanges");
   });
 
   it("walk-in New Booking has percent and amount discount tabs; tax is not hardcoded 12%", () => {

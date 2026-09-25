@@ -65,13 +65,15 @@ export function CreateBookingModal({
     return initialCheckin?.checkoutDate || addCalendarDays(start, 1);
   });
   const [platform, setPlatform] = useState<"walkin" | "booking_engine">("walkin");
-  const [nightlyRate, setNightlyRate] = useState(500);
+  const [stayTotal, setStayTotal] = useState(0);
   const [specialRequests, setSpecialRequests] = useState("");
   const [persons, setPersons] = useState("1");
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const [availableUnits, setAvailableUnits] = useState<AvailableBedUnit[]>([]);
   const [loadingBeds, setLoadingBeds] = useState(false);
   const [dormRates, setDormRates] = useState<Record<number, number>>({});
+  const [dormStayTotals, setDormStayTotals] = useState<Record<number, number>>({});
+  const [dormRateRanges, setDormRateRanges] = useState<Record<number, { min: number; max: number }>>({});
   const [taxPercent, setTaxPercent] = useState(DEFAULT_BOOKING_TAX_PERCENT);
   const [discountMode, setDiscountMode] = useState<"percent" | "fixed">("percent");
   const [discountPercent, setDiscountPercent] = useState("");
@@ -90,14 +92,14 @@ export function CreateBookingModal({
 
   const nights = useMemo(() => getNights(checkinDate, checkoutDate), [checkinDate, checkoutDate]);
   const pricing = useMemo(() => {
-    const gross = nightlyRate * nights;
+    const gross = stayTotal;
     const discount = platform === "walkin"
       ? bookingDiscountRupees(gross, discountMode === "percent"
         ? { percent: discountPercent }
         : { amount: discountAmount })
       : 0;
     return bookingTotals(gross, { discount, taxPercent });
-  }, [nightlyRate, nights, platform, discountMode, discountPercent, discountAmount, taxPercent]);
+  }, [stayTotal, platform, discountMode, discountPercent, discountAmount, taxPercent]);
 
   useEffect(() => {
     if (!checkinDate || !checkoutDate || checkinDate >= checkoutDate) {
@@ -108,6 +110,9 @@ export function CreateBookingModal({
     setLoadingBeds(true);
     setSelectedUnits([]);
     setAvailableUnits([]);
+    setStayTotal(0);
+    setDormStayTotals({});
+    setDormRateRanges({});
     let cancelled = false;
     (async () => {
       try {
@@ -123,6 +128,8 @@ export function CreateBookingModal({
           const data = await res.json();
           setAvailableUnits(data.units || []);
           setDormRates(data.dormRates || {});
+          setDormStayTotals(data.dormStayTotals || {});
+          setDormRateRanges(data.dormRateRanges || {});
           if (data.taxRate != null) setTaxPercent(bookingTaxPercent(data.taxRate));
         } else {
           setAvailableUnits([]);
@@ -163,11 +170,19 @@ export function CreateBookingModal({
   const toggleBed = useCallback((key: string) => {
     setSelectedUnits((prev) => {
       const next = prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key];
-      const total = availableUnits.filter((u) => next.includes(u.key)).reduce((sum, u) => sum + (dormRates[u.dormId] || 0), 0);
-      if (total > 0) setNightlyRate(total);
+      const nightCount = Math.max(1, nights);
+      const total = availableUnits
+        .filter((u) => next.includes(u.key))
+        .reduce((sum, u) => {
+          const stay = dormStayTotals[u.dormId];
+          if (stay != null) return sum + stay;
+          // Fallback when stay totals missing: average nightly × nights (never treat average as stay total).
+          return sum + (dormRates[u.dormId] || 0) * nightCount;
+        }, 0);
+      setStayTotal(total);
       return next;
     });
-  }, [availableUnits, dormRates]);
+  }, [availableUnits, dormStayTotals, dormRates, nights]);
 
   const selectedUnitRows = availableUnits.filter((u) => selectedUnits.includes(u.key));
   const selectedCapacity = selectedUnitRows.reduce((sum, u) => sum + u.capacity, 0);
@@ -193,11 +208,16 @@ export function CreateBookingModal({
         checkinDate,
         checkoutDate,
         platform,
-        nightlyRate,
+        staySubtotal: stayTotal,
+        nightlyRate: nights > 0 ? Math.round(stayTotal / nights) : 0,
         specialRequests: specialRequests.trim(),
         persons: personCount,
         bedIds: availableUnits.filter((u) => selectedUnits.includes(u.key)).flatMap((u) => u.bedIds),
-        unitRates: Object.fromEntries(availableUnits.filter((u) => selectedUnits.includes(u.key)).map((u) => [u.key, dormRates[u.dormId] || 0])),
+        unitRates: Object.fromEntries(availableUnits.filter((u) => selectedUnits.includes(u.key)).map((u) => {
+          const stay = dormStayTotals[u.dormId];
+          const avg = stay != null && nights > 0 ? Math.round(stay / nights) : (dormRates[u.dormId] || 0);
+          return [u.key, avg];
+        })),
       };
       if (username) payload.username = username;
       if (platform === "walkin" && pricing.discount > 0) {
@@ -371,13 +391,13 @@ export function CreateBookingModal({
               </div>
             </div>
 
-            {/* Rate */}
+            {/* Rate — calendar sum for selected units (editable). Not multiplied by nights again. */}
             <div>
-              <Label className="text-xs">Nightly total for selected units</Label>
+              <Label className="text-xs">Stay total for selected units</Label>
               <Input
                 type="number"
-                value={nightlyRate}
-                onChange={(e) => setNightlyRate(Number(e.target.value) || 0)}
+                value={stayTotal}
+                onChange={(e) => setStayTotal(Number(e.target.value) || 0)}
                 className="mt-1 w-32"
                 min={0}
               />
@@ -390,6 +410,7 @@ export function CreateBookingModal({
                 units={availableUnits}
                 selectedKeys={selectedUnits}
                 dormRates={dormRates}
+                dormRateRanges={dormRateRanges}
                 loading={loadingBeds}
                 onToggle={toggleBed}
               />
@@ -548,7 +569,7 @@ export function CreateBookingModal({
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
-                      {formatCurrency(nightlyRate)} x {nights} night{nights !== 1 ? "s" : ""} · {selectedUnits.length} unit{selectedUnits.length !== 1 ? "s" : ""} · {validPersonCount ? personCount : "—"} guest{personCount !== 1 ? "s" : ""}
+                      Stay total · {nights} night{nights !== 1 ? "s" : ""} · {selectedUnits.length} unit{selectedUnits.length !== 1 ? "s" : ""} · {validPersonCount ? personCount : "—"} guest{personCount !== 1 ? "s" : ""}
                     </span>
                     <span className="text-foreground">{formatCurrency(pricing.gross)}</span>
                   </div>

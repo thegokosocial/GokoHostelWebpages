@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Loader2Icon, CheckIcon } from "lucide-react";
+import { formatAdminDormRateLabel } from "@/lib/adminBookingRates";
 
 export type AvailableBedUnit = {
   key: string;
@@ -18,6 +19,7 @@ export function AvailableBedsPicker({
   units,
   selectedKeys,
   dormRates,
+  dormRateRanges,
   loading,
   onToggle,
   emptyLabel = "No beds available for the selected dates",
@@ -25,6 +27,7 @@ export function AvailableBedsPicker({
   units: AvailableBedUnit[];
   selectedKeys: string[];
   dormRates: Record<number, number>;
+  dormRateRanges?: Record<number, { min: number; max: number }>;
   loading?: boolean;
   onToggle: (key: string) => void;
   emptyLabel?: string;
@@ -56,6 +59,10 @@ export function AvailableBedsPicker({
             const onlineN = dorm.beds.filter((b) => (b.pool ?? "online") === "online").length;
             const offlineN = dorm.beds.filter((b) => b.pool === "offline").length;
             const blockN = dorm.beds.filter((b) => b.pool === "block").length;
+            const range = dormRateRanges?.[dorm.id];
+            const rateLabel = range
+              ? formatAdminDormRateLabel(range.min, range.max)
+              : (dormRates[dorm.id] > 0 ? `₹${dormRates[dorm.id]}/night` : "");
             return (
               <div key={dorm.id} className="rounded-lg border border-border p-2">
                 <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -67,7 +74,7 @@ export function AvailableBedsPicker({
                     {offlineN > 0 && blockN > 0 && " · "}
                     {blockN > 0 && <span className="text-orange-600">{blockN} blocked</span>}
                     {onlineN === 0 && offlineN === 0 && blockN === 0 && `${dorm.beds.length} available`}
-                    {dormRates[dorm.id] ? ` · ₹${dormRates[dorm.id]}/night` : ""}
+                    {rateLabel ? ` · ${rateLabel}` : ""}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">

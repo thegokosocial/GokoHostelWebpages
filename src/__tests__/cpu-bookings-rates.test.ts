@@ -216,6 +216,108 @@ describe("Bookings calendar and rates workflows", () => {
     expect(pushIfOtaChanged).toHaveBeenCalled();
   });
 
+  it("createBooking prefers staySubtotal over nightlyRate × nights (no average drift)", async () => {
+    q.addBooking.mockResolvedValue(78);
+
+    const res = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Walk-in",
+      checkinDate: "2026-10-29",
+      checkoutDate: "2026-10-31",
+      nightlyRate: 575,
+      staySubtotal: 1151,
+      persons: 1,
+    }));
+    expect(res.status).toBe(200);
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
+      amountBeforeTax: 1151,
+      nightlyRate: 576, // round(1151/2) stored for legacy display
+    }));
+  });
+
+  it("createBooking rejects non-integer staySubtotal and still accepts legacy nightlyRate × nights", async () => {
+    q.addBooking.mockResolvedValue(79);
+    const bad = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Walk-in",
+      checkinDate: "2026-10-29",
+      checkoutDate: "2026-10-31",
+      staySubtotal: 1150.5,
+      persons: 1,
+    }));
+    expect(bad.status).toBe(400);
+    expect(q.addBooking).not.toHaveBeenCalled();
+
+    const legacy = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Walk-in",
+      checkinDate: "2026-10-29",
+      checkoutDate: "2026-10-31",
+      nightlyRate: 500,
+      persons: 1,
+    }));
+    expect(legacy.status).toBe(200);
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
+      amountBeforeTax: 1000, // 500 × 2 nights
+      nightlyRate: 500,
+    }));
+  });
+
+  it("createBooking applies walk-in discount on staySubtotal then tax", async () => {
+    q.addBooking.mockResolvedValue(80);
+    q.getSetting.mockResolvedValue("5");
+    const res = await POST(req({
+      password: "x",
+      action: "createBooking",
+      guestName: "Walk-in",
+      platform: "walkin",
+      checkinDate: "2026-10-29",
+      checkoutDate: "2026-10-31",
+      staySubtotal: 1000,
+      discountPercent: 10,
+      discountReason: "Loyalty Guest",
+      persons: 1,
+    }));
+    expect(res.status).toBe(200);
+    // 1000 − 10% = 900; tax 5% of 900 = 45; total 945
+    expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
+      amountBeforeTax: 900,
+      amountTax: 45,
+      amountTotal: 945,
+      nightlyRate: 500,
+    }));
+  });
+
+  it("getAvailableBeds uses adult2Rate when dorm has a double unit", async () => {
+    q.getAvailableBedsForRange.mockResolvedValue([
+      { id: 1, bedId: "D1", dormId: 2, dormName: "Dorm double", type: "Double", pool: "online" },
+      { id: 2, bedId: "D2", dormId: 2, dormName: "Dorm double", type: "Double", pool: "online" },
+    ]);
+    q.getAllBeds.mockResolvedValue([
+      { id: 1, bedId: "D1", dormId: 2, dormName: "Dorm double", type: "Double" },
+      { id: 2, bedId: "D2", dormId: 2, dormName: "Dorm double", type: "Double" },
+    ]);
+    q.getRoomTypeMappings.mockResolvedValue([{ id: 1, dormId: 2 }]);
+    q.getRatePlanMappings.mockResolvedValue([{ id: 10, roomMappingId: 1, isActive: 1 }]);
+    q.getAllDailyRates.mockResolvedValue([
+      { ratePlanId: 10, date: "2026-10-29", rate: 500, adult1Rate: 450, adult2Rate: 900 },
+      { ratePlanId: 10, date: "2026-10-30", rate: 500, adult1Rate: 450, adult2Rate: 900 },
+      { ratePlanId: 10, date: "2026-10-31", rate: 500, adult1Rate: 450, adult2Rate: 900 },
+    ]);
+    const json = await (await POST(req({
+      password: "x",
+      action: "getAvailableBeds",
+      checkinDate: "2026-10-29",
+      checkoutDate: "2026-10-31",
+    }))).json();
+    expect(json.dormStayTotals).toEqual({ 2: 1800 });
+    expect(json.dormRates).toEqual({ 2: 900 });
+    expect(json.dormRateRanges).toEqual({ 2: { min: 900, max: 900 } });
+  });
+
   it("forbids staff without canViewBookings", async () => {
     q.authenticateUser.mockResolvedValue({
       role: "staff",
@@ -263,7 +365,7 @@ describe("Bookings calendar and rates workflows", () => {
     expect(json.permissions).toEqual({});
   });
 
-  it("loads rates once and only records dorms with an active plan row", async () => {
+  it("loads stay-span rates once and only records dorms with an active plan row", async () => {
     q.getAvailableBedsForRange.mockResolvedValue([
       { id: 1, bedId: "E1", dormId: 9, dormName: "Exec", pool: "inventory" },
     ]);
@@ -280,8 +382,14 @@ describe("Bookings calendar and rates workflows", () => {
     ]);
     q.getAllDailyRates.mockResolvedValue([
       { ratePlanId: 37, date: "2026-09-01", rate: 999, adult1Rate: 0 },
+      { ratePlanId: 37, date: "2026-09-02", rate: 999, adult1Rate: 0 },
+      { ratePlanId: 37, date: "2026-09-03", rate: 999, adult1Rate: 0 },
       { ratePlanId: 38, date: "2026-09-01", rate: 500, adult1Rate: 500 },
+      { ratePlanId: 38, date: "2026-09-02", rate: 500, adult1Rate: 500 },
+      { ratePlanId: 38, date: "2026-09-03", rate: 500, adult1Rate: 500 },
       { ratePlanId: 41, date: "2026-09-01", rate: 1200, adult1Rate: null },
+      { ratePlanId: 41, date: "2026-09-02", rate: 1200, adult1Rate: null },
+      { ratePlanId: 41, date: "2026-09-03", rate: 1200, adult1Rate: null },
     ]);
 
     const res = await POST(req({
@@ -293,12 +401,47 @@ describe("Bookings calendar and rates workflows", () => {
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(q.getAllDailyRates).toHaveBeenCalledTimes(1);
-    expect(q.getAllDailyRates).toHaveBeenCalledWith("2026-09-01", "2026-09-01");
+    expect(q.getAllDailyRates).toHaveBeenCalledWith("2026-09-01", "2026-09-03");
     expect(q.getDailyRates).not.toHaveBeenCalled();
     expect(json.beds[0]).toMatchObject({ pool: "inventory", dormId: 9 });
+    // First active plan for dorm 9 is 37 (adult1Rate 0); dorm 11 uses rate 1200 × 2 nights.
     expect(json.dormRates).toEqual({ 9: 0, 11: 1200 });
+    expect(json.dormStayTotals).toEqual({ 9: 0, 11: 2400 });
+    expect(json.dormRateRanges).toEqual({
+      9: { min: 0, max: 0 },
+      11: { min: 1200, max: 1200 },
+    });
     expect(json.dormRates[10]).toBeUndefined();
     expect(json.taxRate).toBe(5);
+  });
+
+  it("sums different nightly rates across the stay for getAvailableBeds", async () => {
+    q.getAvailableBedsForRange.mockResolvedValue([
+      { id: 1, bedId: "D1", dormId: 1, dormName: "Dorm 1", type: "Bed", pool: "online" },
+    ]);
+    q.getAllBeds.mockResolvedValue([
+      { id: 1, bedId: "D1", dormId: 1, dormName: "Dorm 1", type: "Bed" },
+    ]);
+    q.getRoomTypeMappings.mockResolvedValue([{ id: 1, dormId: 1 }]);
+    q.getRatePlanMappings.mockResolvedValue([{ id: 10, roomMappingId: 1, isActive: 1 }]);
+    q.getAllDailyRates.mockResolvedValue([
+      { ratePlanId: 10, date: "2026-10-29", rate: 450, adult1Rate: 450, adult2Rate: null },
+      { ratePlanId: 10, date: "2026-10-30", rate: 700, adult1Rate: 700, adult2Rate: null },
+      { ratePlanId: 10, date: "2026-10-31", rate: 700, adult1Rate: 700, adult2Rate: null },
+    ]);
+
+    const res = await POST(req({
+      password: "x",
+      action: "getAvailableBeds",
+      checkinDate: "2026-10-29",
+      checkoutDate: "2026-10-31",
+    }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(q.getAllDailyRates).toHaveBeenCalledWith("2026-10-29", "2026-10-31");
+    expect(json.dormStayTotals).toEqual({ 1: 1150 });
+    expect(json.dormRates).toEqual({ 1: 575 });
+    expect(json.dormRateRanges).toEqual({ 1: { min: 450, max: 700 } });
   });
 
   it("getAvailableBeds returns the configured booking_tax_rate", async () => {

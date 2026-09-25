@@ -132,7 +132,7 @@ Management → Booking Settings → Payments & Readiness shows dynamic readiness
 | `index.tsx` | Calendar shell; Calendar, operational Table, and date-scoped All Bookings views |
 | `BookingCalendarGrid.tsx` | Bars by dorm/night |
 | `BookingDetailPanel.tsx` | Check-in/out (food-tab warn), Collect, OTA postpaid advance/refund/correction history, cancel/no-show with refund; website Razorpay IDs + orphan refund |
-| `CreateBookingModal.tsx` | Walk-in / engine; walk-in bookings include an optional advance-payment section between Special Requests and Discount. It records cash or online advance, selects an active online receiving account, and previews the remaining balance. |
+| `CreateBookingModal.tsx` | Walk-in / engine; stay total for selected units is the calendar sum of nightly rates (`dormStayTotals` from `getAvailableBeds`); bed chips show `₹A/night` or `₹A–B/night` when nights differ. Walk-in bookings include an optional advance-payment section between Special Requests and Discount. It records cash or online advance, selects an active online receiving account, and previews the remaining balance. |
 | `UnassignedBookings.tsx` | OTA leftover chips, Reject |
 | `BookingSearchBar.tsx` / `DateRangeSelector.tsx` / `BookingMobileDayView.tsx` / `BookingTableView.tsx` / `BookingTile.tsx` / `PlatformBadge.tsx` | chrome; All Bookings keeps the same row-click/detail-panel behavior, exposes every booking status, wraps its filters on narrow screens, and keeps the table header aligned at the top of its horizontal scroll container. Website (`platform=Website` / `booking_engine`) tiles show the Goko `/logo.png` badge |
 | `CheckInPopup.tsx` | Collected → `RecordPaymentModal`; Later = check-in unpaid |

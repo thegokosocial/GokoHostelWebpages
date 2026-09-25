@@ -7,6 +7,7 @@ import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { isRedundantOtaMoneyHistoryAction } from "@/lib/otaPaymentHistory";
 import { otaFingerprint, pushIfOtaChanged, type InventorySyncResult } from "@/lib/aiosellSync";
 import { occupiedNights, exclusiveEndDate, sellableUnits, assignedSlotsInUnit, expandRemovedBedIds, type InventoryPool } from "@/lib/inventoryAvailability";
+import { adminDormCapacity, adminStayRateForStay } from "@/lib/adminBookingRates";
 import {
   channelBedNeeds,
   channelNeedsAreMapped,
@@ -586,23 +587,31 @@ export async function POST(req: NextRequest) {
         });
       const slots = available.map((b) => ({ key: `slot:${b.id}`, label: b.bedId, dormId: b.dormId, dormName: b.dormName, type: "Bed" as const, capacity: 1, bedIds: [b.id], pool: b.pool || "online" }));
       const dormRates: Record<number, number> = {};
+      const dormStayTotals: Record<number, number> = {};
+      const dormRateRanges: Record<number, { min: number; max: number }> = {};
       const mappings = await getRoomTypeMappings();
       const ratePlans = await getRatePlanMappings();
-      const dayRates = await getAllDailyRates(checkinDate, checkinDate);
-      const ratesByPlan = new Map<number, (typeof dayRates)[number]>();
+      // Full stay span (incl. departure row unused for money) so multi-night calendar rates sum correctly.
+      const dayRates = await getAllDailyRates(checkinDate, checkoutDate);
+      const ratesByPlan = new Map<number, (typeof dayRates)[number][]>();
       for (const row of dayRates) {
-        if (!ratesByPlan.has(row.ratePlanId)) ratesByPlan.set(row.ratePlanId, row);
+        const list = ratesByPlan.get(row.ratePlanId) || [];
+        // First row wins per plan+date (matches prior check-in-day Map behavior).
+        if (!list.some((existing) => existing.date === row.date)) list.push(row);
+        ratesByPlan.set(row.ratePlanId, list);
       }
       for (const mapping of mappings) {
         const plans = ratePlans.filter((rp) => rp.roomMappingId === mapping.id && rp.isActive);
         if (plans.length === 0) continue;
-        const rate = ratesByPlan.get(plans[0].id);
-        if (rate) {
-          dormRates[mapping.dormId] = rate.adult1Rate ?? rate.rate;
-        }
+        const planRows = ratesByPlan.get(plans[0].id) || [];
+        const stay = adminStayRateForStay(planRows, checkinDate, checkoutDate, adminDormCapacity(units, mapping.dormId));
+        if (!stay) continue;
+        dormStayTotals[mapping.dormId] = stay.subtotalRupees;
+        dormRates[mapping.dormId] = stay.averageNightlyRupees;
+        dormRateRanges[mapping.dormId] = { min: stay.minRupees, max: stay.maxRupees };
       }
       const taxRate = await loadBookingTaxPercent();
-      return NextResponse.json({ beds, units, slots, dormRates, taxRate });
+      return NextResponse.json({ beds, units, slots, dormRates, dormStayTotals, dormRateRanges, taxRate });
     }
 
     if (action === "getBookingHistory") {
@@ -698,7 +707,7 @@ export async function POST(req: NextRequest) {
     // --- Create ---
 
     if (action === "createBooking") {
-      const { guestName, contact, email, checkinDate, checkoutDate, platform, nightlyRate, specialRequests, bedIds, persons, unitRates, discountPercent, discountAmount, discountReason, advanceAmount, advancePaymentMethod, advanceOnlineAccountId, checkinId } = body;
+      const { guestName, contact, email, checkinDate, checkoutDate, platform, nightlyRate, staySubtotal, specialRequests, bedIds, persons, unitRates, discountPercent, discountAmount, discountReason, advanceAmount, advancePaymentMethod, advanceOnlineAccountId, checkinId } = body;
       const sourceCheckinId = Number(checkinId);
       const sourceCheckin = Number.isInteger(sourceCheckinId) && sourceCheckinId > 0 ? await getCheckinById(sourceCheckinId) : null;
       if (checkinId !== undefined && (!sourceCheckin || sourceCheckin.status !== "active" || !["Walk-in", "Offline booking"].includes(sourceCheckin.bookingPlatform || "") || sourceCheckin.bookingResolution !== "pending")) {
@@ -754,7 +763,19 @@ export async function POST(req: NextRequest) {
       const src = platform || "walkin";
       if (sourceCheckin && src !== "walkin") return NextResponse.json({ error: "A check-in booking must remain a walk-in booking" }, { status: 400 });
       const taxPercent = await loadBookingTaxPercent();
-      const gross = (nightlyRate || 0) * nights * (explicitUnitPricing ? 1 : unitsCount);
+      // staySubtotal = sum of calendar nightly rates for selected units (avoids average×nights rupee drift).
+      const stayGross = staySubtotal === undefined || staySubtotal === "" || staySubtotal === null
+        ? null
+        : Number(staySubtotal);
+      if (stayGross !== null && (!Number.isInteger(stayGross) || stayGross < 0 || !Number.isSafeInteger(stayGross))) {
+        return NextResponse.json({ error: "Stay total must be a non-negative whole number" }, { status: 400 });
+      }
+      const gross = stayGross !== null
+        ? stayGross
+        : (nightlyRate || 0) * nights * (explicitUnitPricing ? 1 : unitsCount);
+      const storedNightlyRate = stayGross !== null && nights > 0
+        ? Math.round(stayGross / nights)
+        : (nightlyRate || 0);
       const discount = src === "walkin"
         ? bookingDiscountRupees(gross, { percent: discountPercent, amount: discountAmount })
         : 0;
@@ -792,7 +813,7 @@ export async function POST(req: NextRequest) {
         checkinDate,
         checkoutDate,
         persons: guestCount,
-        nightlyRate: nightlyRate || 0,
+        nightlyRate: storedNightlyRate,
         amountBeforeTax: totalBeforeTax,
         amountTax: tax,
         amountTotal: total,

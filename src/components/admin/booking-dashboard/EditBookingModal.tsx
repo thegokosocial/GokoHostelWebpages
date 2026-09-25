@@ -49,6 +49,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
   const [specialRequests, setSpecialRequests] = useState(booking.specialRequests || "");
   const [availableUnits, setAvailableUnits] = useState<AvailableBedUnit[]>([]);
   const [dormRates, setDormRates] = useState<Record<number, number>>({});
+  const [dormRateRanges, setDormRateRanges] = useState<Record<number, { min: number; max: number }>>({});
   const [taxPercent, setTaxPercent] = useState(DEFAULT_BOOKING_TAX_PERCENT);
   const [addUnitKeys, setAddUnitKeys] = useState<string[]>([]);
   const [removeBedIds, setRemoveBedIds] = useState<number[]>([]);
@@ -151,6 +152,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
         const rates = (data.dormRates || {}) as Record<number, number>;
         setAvailableUnits(units);
         setDormRates(rates);
+        setDormRateRanges((data.dormRateRanges || {}) as Record<number, { min: number; max: number }>);
         if (data.taxRate != null) setTaxPercent(bookingTaxPercent(data.taxRate));
         setAddUnitKeys((current) => {
           const next = current.filter((key) => units.some((unit) => unit.key === key));
@@ -304,6 +306,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
                 units={availableUnits}
                 selectedKeys={addUnitKeys}
                 dormRates={dormRates}
+                dormRateRanges={dormRateRanges}
                 loading={loadingUnits}
                 onToggle={toggleAddUnit}
                 emptyLabel="No additional complete rooms/beds are available for this stay."
