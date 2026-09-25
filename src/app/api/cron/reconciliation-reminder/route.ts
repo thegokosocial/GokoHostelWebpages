@@ -15,9 +15,9 @@ export async function POST(req: NextRequest) {
   if (status.isReconciled) return NextResponse.json({ sent: false, status });
 
   const delivery = await sendPushToRoles({
+    notificationType: "reminder.reconciliation_pending",
     title: "Reconciliation pending",
     body: notificationReconciliationBody(date, status.missingAccountNames.length),
-    category: "operations",
     eventId: `reconciliation-${date}`,
     tag: `reconciliation-${date}`,
     renotify: true,

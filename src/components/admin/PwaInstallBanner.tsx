@@ -132,6 +132,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
           }).then(async (res) => {
             if (res.ok) {
               setPushSubscribed(true);
+              window.dispatchEvent(new Event("goko:push-subscription-changed"));
             } else {
               setPushSubscribed(false);
               setPushError((await res.json()).error || "Notification subscription needs attention");
@@ -232,6 +233,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
       if (res.ok) {
         setPushSubscribed(true);
         setPushMessage("Notifications are enabled on this device.");
+        window.dispatchEvent(new Event("goko:push-subscription-changed"));
       } else {
         setPushError((await res.json()).error || "Could not enable notifications");
       }
@@ -248,10 +250,12 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     setPushError("");
     setPushMessage("");
     try {
+      const subscription = await swRegistration?.pushManager.getSubscription();
+      if (!subscription) throw new Error("This device is not subscribed");
       const res = await fetch("/api/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "test", password, username }),
+        body: JSON.stringify({ action: "test", password, username, endpoint: subscription.endpoint }),
       });
       const data = await res.json();
       if (!res.ok || !(data.delivery?.delivered > 0)) {
@@ -262,7 +266,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
     } catch {
       setPushError("Could not send the test notification. Please try again.");
     } finally { setPushAction(null); }
-  }, [password, username, pushAction]);
+  }, [password, username, pushAction, swRegistration]);
 
   const handleUnsubscribePush = useCallback(async () => {
     if (!swRegistration || pushAction) return;
@@ -281,6 +285,7 @@ export function PwaInstallBanner({ password, username }: { password: string; use
       if (!await subscription.unsubscribe()) throw new Error("Could not disable the browser subscription. Please try again.");
       setPushSubscribed(false);
       setPushMessage("Notifications are disabled on this device.");
+      window.dispatchEvent(new Event("goko:push-subscription-changed"));
     } catch (error) {
       setPushError(error instanceof Error ? error.message : "Could not disable notifications. Please try again.");
     } finally { setPushAction(null); }

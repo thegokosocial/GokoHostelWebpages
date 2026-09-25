@@ -127,12 +127,12 @@ export async function POST(req: NextRequest) {
       console.error("Reservation webhook error:", message);
       await logPull({ status: "failed", httpStatus: 500, errorMessage: message, response: { success: false, message: "Internal error processing reservation" }, request: body });
       await dispatchPush({
+        notificationType: "operations.channel_booking_sync_failed",
         title: "Channel Booking Sync Failed",
         body: `${payload.action} · ${payload.bookingId} · Open Management logs`,
         url: "/admin?section=management",
         eventId: `channel-reservation-failure-${payload.action}-${payload.bookingId}`,
         tag: "channel-reservation-failure",
-        category: "operations",
       });
       return respondError("Internal error processing reservation", 500);
     }
@@ -268,11 +268,11 @@ async function tryAutoAssignChannelBeds(
       performedBy: "channel_manager",
     });
     await dispatchPush({
+      notificationType: "attention.booking",
       title: "Booking Needs Attention",
       body: `${notificationFirstName(channelGuestName(payload.guest))} · Invalid stay dates from channel`,
       url: "/admin?section=bookings",
       eventId: `booking-invalid-dates-${bookingId}`,
-      category: "operations",
     });
     return;
   }
@@ -326,20 +326,20 @@ async function tryAutoAssignChannelBeds(
       performedBy: "channel_manager",
     });
     await dispatchPush({
+      notificationType: "operations.ota_inventory_reconciliation",
       title: "OTA Inventory Reconciliation Needed",
       body: `${notificationFirstName(channelGuestName(payload.guest))} · ${stay} · Aiosell accepted the booking but local online inventory is empty for ${room}.`,
       url: "/admin?section=inventory",
       eventId: `ota-inventory-reconciliation-${bookingId}`,
-      category: "operations",
       renotify: true,
     });
   }
   await dispatchPush({
+    notificationType: "attention.bed_assignment",
     title: "Booking Needs Bed Assignment",
     body: `${notificationFirstName(channelGuestName(payload.guest))} · ${payload.checkin || checkin} · ${result.reason || "No matching online bed"}`,
     url: "/admin?section=bookings",
     eventId: `booking-unassigned-${bookingId}`,
-    category: "operations",
   });
 }
 
@@ -378,11 +378,11 @@ async function handleNewBooking(payload: ReservationPayload) {
         existing.id, payload, payload.checkin || existing.checkinDate, payload.checkout || existing.checkoutDate,
       );
       await dispatchPush({
+        notificationType: "booking.rebooked",
         title: "Booking Rebooked",
         body: `${notificationFirstName(channelGuestName(payload.guest))} · ${payload.channel || "Channel"} · Check-in ${notificationDate(payload.checkin || existing.checkinDate)}`,
         url: "/admin?section=bookings",
         eventId: `booking-rebooked-${existing.id}-${payload.bookingId}`,
-        category: "booking",
       });
       return respondSuccess("Reservation Created Successfully");
     }
@@ -401,11 +401,11 @@ async function handleNewBooking(payload: ReservationPayload) {
     });
     await tryAutoAssignChannelBeds(bookingId, payload, fields.checkinDate, fields.checkoutDate);
     await dispatchPush({
+      notificationType: "booking.new",
       title: "New Booking",
       body: `${notificationFirstName(fields.guestName)} · ${fields.platform} · ${notificationStayDates(fields.checkinDate, fields.checkoutDate)}`,
       url: "/admin?section=bookings",
       eventId: `booking-created-${bookingId}-${payload.bookingId}`,
-      category: "booking",
     });
   }
 
@@ -527,11 +527,11 @@ async function handleModifyBooking(payload: ReservationPayload) {
   }
 
   await dispatchPush({
+    notificationType: "booking.modified",
     title: "Booking Modified",
     body: `${notificationFirstName(guestName)} · ${payload.channel || "Channel"} · ${notificationStayDates(newCheckin, newCheckout || existing.checkoutDate)}`,
     url: "/admin?section=bookings",
     eventId: `booking-modified-${existing.id}-${Date.now()}`,
-    category: "booking",
   });
 
   return respondSuccess("Reservation Modified Successfully");
@@ -599,21 +599,21 @@ async function handleCancelBooking(payload: ReservationPayload) {
   if (!alreadyClosed && affectedDates.length > 0) {
     await triggerInventoryPush(affectedDates).catch(async () => {
       await dispatchPush({
+        notificationType: "operations.inventory_sync_failed",
         title: "Inventory Sync Failed",
         body: "Channel cancellation saved, but availability push failed",
         url: "/admin?section=management",
         eventId: `inventory-channel-cancel-${existing.id}`,
         tag: "inventory-sync-failure",
-        category: "operations",
       });
     });
   }
   await dispatchPush({
+    notificationType: "booking.cancelled",
     title: "Booking Cancelled",
     body: `${notificationFirstName(existing.guestName)} · ${payload.channel || existing.platform || "Channel"} · ${notificationStayDates(existing.checkinDate, existing.checkoutDate)}`,
     url: "/admin?section=bookings",
     eventId: `booking-cancelled-${existing.id}-${payload.bookingId}`,
-    category: "booking",
   });
 
   return respondSuccess(alreadyClosed ? "Reservation already closed" : "Reservation Cancelled Successfully");

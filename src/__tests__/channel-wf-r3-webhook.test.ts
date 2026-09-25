@@ -155,7 +155,7 @@ describe("Round 3 webhook modify shrink / 0+0 / overflow / retry skip-list / can
       title: "OTA Inventory Reconciliation Needed",
       url: "/admin?section=inventory",
       eventId: "ota-inventory-reconciliation-42",
-      category: "operations",
+      notificationType: "operations.ota_inventory_reconciliation",
       renotify: true,
     }));
   });
@@ -197,7 +197,10 @@ describe("Round 3 webhook modify shrink / 0+0 / overflow / retry skip-list / can
       action: "Beds Auto-Assigned",
     }));
     expect(triggerInventoryPush).not.toHaveBeenCalled();
-    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({ title: "Booking Modified", category: "booking" }));
+    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Booking Modified",
+      notificationType: "booking.modified",
+    }));
   });
 
   it("modify occupancy 0+0 with existing.persons 2 uses 2 beds and does not shrink to 1", async () => {
@@ -289,7 +292,10 @@ describe("Round 3 webhook modify shrink / 0+0 / overflow / retry skip-list / can
     expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
       action: "Beds Auto-Assigned",
     }));
-    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({ title: "New Booking", category: "booking" }));
+    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({
+      title: "New Booking",
+      notificationType: "booking.new",
+    }));
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
@@ -309,7 +315,10 @@ describe("Round 3 webhook modify shrink / 0+0 / overflow / retry skip-list / can
       status: "cancelled",
       cancelledBy: "channel_manager",
     }));
-    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({ title: "Booking Cancelled", category: "booking" }));
+    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Booking Cancelled",
+      notificationType: "booking.cancelled",
+    }));
     expect(q.unassignBookingBeds).toHaveBeenCalledWith(9);
     expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06", "2026-09-07"]);
     expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({

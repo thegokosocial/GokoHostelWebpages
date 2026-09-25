@@ -15,6 +15,17 @@ export const PERMISSION_GROUPS: Array<{ label: string; options: PermissionOption
     ].map(([key, label]) => ({ key, label })),
   },
   {
+    label: "Notification Categories",
+    options: [
+      ["canReceiveBookingNotifications", "Receive booking notifications"],
+      ["canReceiveCheckinNotifications", "Receive check-in notifications"],
+      ["canReceiveFoodNotifications", "Receive food notifications"],
+      ["canReceiveAttentionNotifications", "Receive attention notifications"],
+      ["canReceiveOperationsNotifications", "Receive operations notifications"],
+      ["canReceiveReminderNotifications", "Receive reminder notifications"],
+    ].map(([key, label]) => ({ key, label })),
+  },
+  {
     label: "Check-in & Beds",
     options: [
       ["canAddCheckin", "Add check-ins"], ["canAssignBed", "Assign beds"],

@@ -1,16 +1,17 @@
 import { buildPushHTTPRequest } from "@pushforge/builder";
 import { getDb } from "@/db";
 import { pushSubscriptions, users } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { isOfflineMode } from "@/lib/runtime";
+import { allowedNotificationCategories, notificationCategoryFor, parseMutedNotificationTypes, type NotificationType } from "@/lib/notificationCatalog";
 
 type PushPayload = {
+  notificationType: NotificationType;
   title: string;
   body: string;
   url?: string;
   tag?: string;
   eventId?: string;
-  category?: "booking" | "food" | "checkin" | "operations" | "test";
   renotify?: boolean;
 };
 
@@ -19,7 +20,25 @@ export type PushDeliverySummary = {
   delivered: number;
   expired: number;
   failed: number;
+  suppressed: number;
 };
+
+type PushRecipient = { role: string; permissions: Record<string, boolean> };
+
+export function pushSubscriptionEligible(
+  subscription: { userLabel?: string | null; mutedNotificationTypes?: string | null },
+  notificationType: NotificationType,
+  recipients: Map<string, PushRecipient>,
+  allowedRoles?: string[],
+) {
+  const recipient = recipients.get(subscription.userLabel || "admin");
+  if (!recipient || allowedRoles && !allowedRoles.includes(recipient.role)) return false;
+  if (notificationType === "system.test") return true;
+  const category = notificationCategoryFor(notificationType);
+  return category !== "test"
+    && allowedNotificationCategories(recipient.role, recipient.permissions).includes(category)
+    && !parseMutedNotificationTypes(subscription.mutedNotificationTypes).includes(notificationType);
+}
 
 function clean(value: unknown, max: number) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
@@ -56,7 +75,8 @@ export function notificationFoodBody(name: string | null | undefined, items: Arr
 }
 
 export function buildPushPayload(payload: PushPayload) {
-  const category = payload.category || "operations";
+  const configuredCategory = notificationCategoryFor(payload.notificationType);
+  const category = configuredCategory === "attention" || configuredCategory === "reminder" ? "operations" : configuredCategory;
   const eventId = clean(payload.eventId, 120) || clean(payload.tag, 120) || crypto.randomUUID();
   return {
     title: clean(payload.title || "Goko", 80) || "Goko",
@@ -72,8 +92,8 @@ export function buildPushPayload(payload: PushPayload) {
   };
 }
 
-async function sendPush(payload: PushPayload, allowedRoles?: Array<"admin" | "manager" | "staff">): Promise<PushDeliverySummary> {
-  const summary: PushDeliverySummary = { attempted: 0, delivered: 0, expired: 0, failed: 0 };
+async function sendPush(payload: PushPayload, allowedRoles?: Array<"admin" | "manager" | "staff">, endpoint?: string): Promise<PushDeliverySummary> {
+  const summary: PushDeliverySummary = { attempted: 0, delivered: 0, expired: 0, failed: 0, suppressed: 0 };
   if (isOfflineMode()) return summary;
 
   const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
@@ -89,15 +109,19 @@ async function sendPush(payload: PushPayload, allowedRoles?: Array<"admin" | "ma
 
   const db = getDb();
   let subs = await db.select().from(pushSubscriptions);
-  if (allowedRoles) {
-    const roleRows = await db.select({ username: users.username, role: users.role })
-      .from(users)
-      .where(inArray(users.role, allowedRoles));
-    const allowedUsernames = new Set(roleRows.map((user) => user.username));
-    if (allowedRoles.includes("admin")) allowedUsernames.add("admin");
-    if (allowedRoles.includes("manager")) allowedUsernames.add("manager");
-    subs = subs.filter((sub) => allowedUsernames.has(sub.userLabel || ""));
-  }
+  if (endpoint) subs = subs.filter((sub) => sub.endpoint === endpoint);
+  if (subs.length === 0) return summary;
+  const userRows = await db.select({ username: users.username, role: users.role, permissions: users.permissions }).from(users);
+  const recipients = new Map<string, PushRecipient>(userRows.map((user) => {
+    let permissions: Record<string, boolean> = {};
+    try { permissions = JSON.parse(user.permissions || "{}"); } catch {}
+    return [user.username, { role: user.role, permissions }];
+  }));
+  if (!recipients.has("admin")) recipients.set("admin", { role: "admin", permissions: {} });
+  if (!recipients.has("manager")) recipients.set("manager", { role: "manager", permissions: {} });
+  const beforePreferences = subs.length;
+  subs = subs.filter((sub) => pushSubscriptionEligible(sub, payload.notificationType, recipients, allowedRoles));
+  summary.suppressed = beforePreferences - subs.length;
   summary.attempted = subs.length;
   if (subs.length === 0) return summary;
 
@@ -156,11 +180,15 @@ export function sendPushToRoles(
   return sendPush(payload, roles);
 }
 
+export function sendPushToEndpoint(payload: PushPayload, endpoint: string): Promise<PushDeliverySummary> {
+  return sendPush(payload, undefined, endpoint);
+}
+
 /** Keep Cloudflare requests fast without letting the Worker terminate delivery. */
 export async function dispatchPush(payload: PushPayload) {
   const delivery = sendPushToAll(payload).catch((error) => {
     console.error("Push dispatch failed:", error instanceof Error ? error.message : error);
-    return { attempted: 0, delivered: 0, expired: 0, failed: 1 };
+    return { attempted: 0, delivered: 0, expired: 0, failed: 1, suppressed: 0 };
   });
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");

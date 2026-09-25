@@ -36,7 +36,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `cash_payment_events` | 17 |
 | `daily_ledger` | 15 |
 | `expenses` | 21 |
-| `push_subscriptions` | 6 |
+| `push_subscriptions` | 7 |
 | `sync_log` | 10 |
 | `sync_conflicts` | 13 |
 | `review_requests` | 17 |
@@ -596,6 +596,7 @@ Cloudflare-only (migration 0064). Not Pi-synced; Pi migrator stamps the filename
 | `key_p256dh` | text | NOT NULL |
 | `key_auth` | text | NOT NULL |
 | `user_label` | text | default "" |
+| `muted_notification_types` | text | NOT NULL JSON array default `[]`; per-device event exclusions |
 | `created_at` | text | NOT NULL |
 
 ## `sync_log`

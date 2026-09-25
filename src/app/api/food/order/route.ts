@@ -239,11 +239,11 @@ export async function POST(req: NextRequest) {
 
     // 9. Push notification
     await dispatchPush({
+      notificationType: "food.new_order",
       title: "New Food Order",
       body: notificationFoodBody(guestName, validatedItems, tableNumber || roomInfo, total, requireApproval),
       url: "/admin?section=foodOrders",
       eventId: `food-order-${order.id}`,
-      category: "food",
     });
 
     // 10. Return success

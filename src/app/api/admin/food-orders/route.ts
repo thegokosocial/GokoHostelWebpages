@@ -372,11 +372,11 @@ export async function POST(req: NextRequest) {
           details: `Placed for ${guestName} (${guestType}), total ₹${(total / 100).toFixed(0)}`,
         });
         await dispatchPush({
+          notificationType: "food.new_order",
           title: "New Food Order",
           body: notificationFoodBody(guestName, validatedItems, roomInfo, total),
           url: "/admin?section=foodOrders",
           eventId: `admin-food-order-${order.id}`,
-          category: "food",
         });
         return NextResponse.json({ success: true, role, orderId: order.id, orderNumber: order.orderNumber, total });
       }

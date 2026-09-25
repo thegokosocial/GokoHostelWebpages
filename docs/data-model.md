@@ -144,7 +144,7 @@ Internal native milestone: `native_inventory_holds` (0059) stores request/owner 
 | `api_stats` | Vision/Drive counters by month. |
 | `rate_scrapes` | Competitor scrape jobs. |
 | `qr_history` | Saved QR configs. |
-| `push_subscriptions` | Web push. |
+| `push_subscriptions` | Per-browser web-push endpoint, authenticated owner, keys, and muted notification event IDs. |
 | `review_requests` / `review_feedback` | Review funnel. |
 | `food_bill_share_tokens` | Opaque My Bills WhatsApp links (`token`, phone, optional checkin_id, expires_at). Cloudflare-only (0064); not Pi-synced. |
 | `quick_link_sections` | Custom admin sections for reusable links and QR/image cards. |

@@ -10,6 +10,7 @@ import { PlusIcon, Trash2Icon, PencilIcon, ShieldIcon, ShieldCheckIcon } from "l
 import { cn } from "@/lib/utils";
 import type { Role } from "./types";
 import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
+import { withDefaultNotificationPermissions } from "@/lib/notificationCatalog";
 
 type User = {
   id: number;
@@ -95,7 +96,7 @@ export function ManagementUsers({ password, username, role }: { password: string
 
   const resetForm = () => {
     setFormUsername(""); setFormDisplayName(""); setFormPassword("");
-    setFormRole("staff"); setFormPermissions({});
+    setFormRole("staff"); setFormPermissions(withDefaultNotificationPermissions({}));
   };
 
   const startEdit = (user: User) => {
@@ -104,7 +105,7 @@ export function ManagementUsers({ password, username, role }: { password: string
     setFormDisplayName(user.displayName);
     setFormPassword("");
     setFormRole(user.role);
-    setFormPermissions(user.permissions || {});
+    setFormPermissions(withDefaultNotificationPermissions(user.permissions || {}));
     setShowForm(true);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };

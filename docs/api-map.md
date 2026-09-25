@@ -2,7 +2,7 @@
 
 Reviews `sendWhatsApp` retains its action/response contract but rejects invalid guest phone numbers (400) before creating/counting a request. It prepares a review link and increments preparation attempts, not confirmed sends. Native app launch/retry/copy is client-only; see [WhatsApp messaging](whatsapp-messaging.md).
 
-Push payloads and event producers are documented in [Push notifications](push-notifications.md). Guest/admin food-order pushes always include the first name alongside location. `/api/push` test delivery counts reflect push-service acceptance, not device display; subscribe/test/unsubscribe accept the current HttpOnly session after login (or legacy direct credentials during migration).
+Push payloads and event producers are documented in [Push notifications](push-notifications.md). Guest/admin food-order pushes always include the first name alongside location. `/api/push` supports subscribe, unsubscribe, current-device test, and per-endpoint preference read/update actions. Mutations verify authenticated endpoint ownership; test delivery counts reflect push-service acceptance, not device display.
 
 **Git-safe.** Auth: send env `ADMIN_PASSWORD` (value in [secrets-and-access.md](secrets-and-access.md)). RBAC: [auth-rbac.md](auth-rbac.md). 42 `route.ts` files under `src/app/api/`.
 
@@ -81,7 +81,7 @@ Native physical hold creation/release, read-only owner recovery (`getNativeInven
 | `/api/bookings/sync` | **env** admin or manager | Gmail OTA parse |
 | `/api/sync` | `ADMIN_PASSWORD` or `SYNC_SECRET` | Pi ↔ CF + failover + deploy/shutdown Pi |
 | `/api/cron/aiosell-inventory` | `Authorization: Bearer CRON_SECRET` | Scheduled retry of durable inventory_dirty rows; accepted pushes clear only the dirty cells sent |
-| `/api/push` | current admin session or legacy user credentials | Web push subscribe / send |
+| `/api/push` | current admin session or legacy user credentials | Web push subscribe/unsubscribe, current-device test, and device preference read/update |
 | `/api/auth/google/start` | admin password query/gate | OAuth start |
 | `/api/auth/google/callback` | Google | Stores refresh token |
 | `/api/aiosell/push-inventory` | user auth | Manual inventory push; successful remote pushes clear matching dirty inventory rows in bind-safe batches so large full-sync queues remain retryable without SQLite/D1 variable-limit failures. If remote acceptance succeeds but local cleanup fails, the response remains successful with `cleanupPending: true` and the rows remain retryable |

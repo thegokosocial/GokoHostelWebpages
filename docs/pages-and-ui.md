@@ -2,7 +2,7 @@
 
 Staff booking templates, review requests, and Admin Food Bills use [staff WhatsApp messaging](whatsapp-messaging.md). Each user selects Ask every time, Business, or regular/default WhatsApp in Management → My Preferences on that device. Android retains explicit links for both apps and a recoverable draft even when an automatic attempt fails. Review counters count preparation attempts, not launches. Public/guest WhatsApp links retain existing behavior.
 
-The admin header notification-settings dialog supports enable/test/disable with busy states and recoverable errors. Test success reports push-service acceptance; users confirm display on their device. See [Push notifications](push-notifications.md) for mobile rendering and Chrome-owned notices.
+The admin header notification-settings dialog supports enable/current-device test/disable with busy states and recoverable errors. Management → My Preferences shows the categories granted to that user and provides whole-category and individual event controls for the current browser/PWA. Test success reports push-service acceptance; users confirm display on their device. See [Push notifications](push-notifications.md) for recipient filtering, mobile rendering, and Chrome-owned notices.
 
 User-initiated async writes and submissions may use the shared `ActionProgressProvider` (`src/components/ui/ActionProgressProvider.tsx`). It is local to the current browser tab, blocks duplicate/conflicting interaction while the operation is active, shows a centered labelled spinner only after a short delay, and does not cover background polling or passive reads. Existing inline states remain where they provide row-, form-, or batch-specific context.
 

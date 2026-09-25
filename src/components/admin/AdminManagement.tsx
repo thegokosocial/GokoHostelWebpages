@@ -214,7 +214,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         </div>
       )}
       <div className="mt-6">
-        {tab === "preferences" && <ManagementPreferences username={username || "admin"} />}
+        {tab === "preferences" && <ManagementPreferences password={password} username={username || "admin"} />}
         {tab === "dorms" && <AdminSetup password={password} />}
         {tab === "users" && <ManagementUsers password={password} role={role} />}
         {tab === "backup" && <ManagementBackup password={password} role={role} />}

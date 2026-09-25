@@ -4,7 +4,7 @@ Guest photo-listings add no permission keys: dates-only availability remains pub
 
 Staff WhatsApp routing adds no permissions or aliases. Management → My Preferences is available to every authenticated admin-shell user, but does not expose any other Management tab to users lacking its existing gate. Booking-template, review preparation, and Food Bill gates remain authoritative; the prepared-draft panel is within the authenticated shell and retains drafts only for their owner. The app preference is device-local and keyed by username. See [WhatsApp messaging](whatsapp-messaging.md).
 
-Notification presentation changes preserve existing push recipients and `/api/push` authentication; after admin login, the notification dialog may authenticate with the current HttpOnly admin session after the client clears the password. No permission keys are added. Lock-screen food alerts use first names only. See [Push notifications](push-notifications.md).
+Notification delivery uses `canReceiveBookingNotifications`, `canReceiveCheckinNotifications`, `canReceiveFoodNotifications`, `canReceiveAttentionNotifications`, `canReceiveOperationsNotifications`, and `canReceiveReminderNotifications`. Admin assigns these category grants in Users; legacy DB users with none of the six keys keep all categories until explicitly configured. The user may further mute allowed events per device but cannot override an admin denial. `/api/push` derives endpoint ownership from the authenticated session. Lock-screen food alerts use first names only. See [Push notifications](push-notifications.md).
 
 **Git-safe.** Passwords: [secrets-and-access.md](secrets-and-access.md).
 
@@ -101,6 +101,8 @@ From `ManagementUsers.tsx`. Admin bypasses all. Putting a key in the UI **does n
 **Analytics:** `canViewAnalytics`
 
 **Tools:** `canUseQRGenerator`, `canManageAttendance`, `canViewQuickLinks`, `canManageTasks`
+
+**Notification categories:** `canReceiveBookingNotifications`, `canReceiveCheckinNotifications`, `canReceiveFoodNotifications`, `canReceiveAttentionNotifications`, `canReceiveOperationsNotifications`, `canReceiveReminderNotifications`. These are delivery grants rather than page/action authorization keys; the push sender enforces them before device preferences.
 
 `canManageInventory` gates the **Inventory** admin tab and `/api/admin/inventory`, plus stock controls inside Menu. Menu viewing and administration use the dedicated menu permissions above.
 `canCheckIn` / `canCheckOut` are grantable calendar controls. The booking API remains backward-compatible with `canAddBooking`. `canManageBookingContacts` permits staff to add, edit, and delete custom phone/email rows on any booking; PMS-origin rows are immutable, and this permission does not change food-tab, check-in identity, review, or payment lookup behavior.

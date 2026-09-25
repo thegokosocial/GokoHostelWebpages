@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { readStaffWhatsAppPreference, writeStaffWhatsAppPreference, type StaffWhatsAppPreference } from "@/lib/staffWhatsApp";
+import { NotificationPreferences } from "./NotificationPreferences";
 
-export function ManagementPreferences({ username }: { username: string }) {
+export function ManagementPreferences({ password, username }: { password: string; username: string }) {
   const [android, setAndroid] = useState(false);
   const [preference, setPreference] = useState<StaffWhatsAppPreference>("ask");
   const [saveError, setSaveError] = useState(false);
@@ -25,7 +26,7 @@ export function ManagementPreferences({ username }: { username: string }) {
     { value: "regular", label: android ? "Regular WhatsApp" : "Default WhatsApp", description: "Try regular/default WhatsApp automatically and keep recovery options available." },
   ];
 
-  return <div className="max-w-2xl rounded-2xl border border-brand-mist bg-white p-5 shadow-sm dark:bg-card dark:shadow-none">
+  return <div className="max-w-2xl space-y-5"><div className="rounded-2xl border border-brand-mist bg-white p-5 shadow-sm dark:bg-card dark:shadow-none">
     <h3 className="font-display text-lg font-bold text-brand-green-dark">My WhatsApp preference</h3>
     <p className="mt-1 text-sm text-muted-foreground">Saved only on this device for @{username}. You can still choose another app from every prepared message.</p>
     <div className="mt-4 grid gap-2">
@@ -35,5 +36,5 @@ export function ManagementPreferences({ username }: { username: string }) {
       </label>)}
     </div>
     {saveError && <p role="alert" className="mt-3 text-sm text-red-700">Could not save this preference on your device. Check that browser storage is enabled.</p>}
-  </div>;
+  </div><NotificationPreferences password={password} username={username} /></div>;
 }

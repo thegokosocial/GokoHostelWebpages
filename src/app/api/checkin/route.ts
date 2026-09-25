@@ -338,11 +338,11 @@ export async function POST(req: NextRequest) {
 
     if (!isOfflineMode()) {
       void Promise.resolve(dispatchPush({
+        notificationType: "checkin.new",
         title: "New Check-in",
         body: `${notificationFirstName(name)} · ${numberOfPersons} ${Number(numberOfPersons) === 1 ? "guest" : "guests"} · ${finalBookingId ? `Booking ${finalBookingId}` : bookingPlatform || "Walk-in"}`,
         url: "/admin?section=dashboard",
         eventId: `self-checkin-${finalBookingId || submittedAt}`,
-        category: "checkin",
       })).catch((pushErr: any) => {
         console.error("Check-in notification failed after save:", pushErr?.message || pushErr);
       });

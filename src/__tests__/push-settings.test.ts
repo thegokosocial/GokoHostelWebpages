@@ -1,17 +1,34 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import * as ts from "typescript";
+import { NOTIFICATION_TYPE_IDS } from "@/lib/notificationCatalog";
 
-const { authenticateSimple } = vi.hoisted(() => ({ authenticateSimple: vi.fn() }));
-const { sendPushToAll } = vi.hoisted(() => ({ sendPushToAll: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticateUser: vi.fn(), sendPushToEndpoint: vi.fn(), getUserByUsername: vi.fn() }));
+const db = vi.hoisted(() => {
+  const state = { rows: [{ endpoint: "https://push.example/sub", userLabel: "admin", mutedNotificationTypes: "[]" }] as any[] };
+  return {
+    state,
+    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(async () => state.rows.slice(0, 1)) })) })) })),
+    update: vi.fn(() => ({ set: vi.fn((values: any) => ({ where: vi.fn(async () => { if (state.rows[0]) Object.assign(state.rows[0], values); }) })) })),
+    insert: vi.fn(() => ({ values: vi.fn(async (values: any) => { state.rows.push(values); }) })),
+    delete: vi.fn(() => ({ where: vi.fn(async () => { state.rows = []; }) })),
+  };
+});
 
-vi.mock("@/lib/auth", () => ({ authenticateSimple }));
-vi.mock("@/lib/pushNotify", () => ({ sendPushToAll }));
+vi.mock("@/lib/auth", () => ({ authenticateUser: mocks.authenticateUser }));
+vi.mock("@/lib/pushNotify", () => ({ sendPushToEndpoint: mocks.sendPushToEndpoint }));
+vi.mock("@/db", () => ({ getDb: () => db }));
+vi.mock("@/db/queries", () => ({ getUserByUsername: mocks.getUserByUsername }));
 vi.mock("@/lib/runtime", () => ({ isOfflineMode: () => false }));
 
 import { POST as pushPost } from "@/app/api/push/route";
+
+beforeEach(() => {
+  db.state.rows = [{ endpoint: "https://push.example/sub", userLabel: "admin", mutedNotificationTypes: "[]" }];
+  vi.clearAllMocks();
+});
 
 // Execute the actual callbacks without introducing a DOM/test-renderer dependency.
 const source = ts.createSourceFile("PwaInstallBanner.tsx", readFileSync(new URL("../components/admin/PwaInstallBanner.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -29,6 +46,7 @@ function settings(action: string, overrides: Record<string, unknown> = {}) {
     password: "test-only", username: "admin", pushAction: null, subscribing: false, vapidPublicKey: "key",
     isIos: false, isStandalone: true,
     navigator: { serviceWorker: { ready: Promise.resolve() } }, swRegistration: { pushManager: { getSubscription } },
+    window: { dispatchEvent: vi.fn() }, Event: class { constructor(public type: string) {} },
     fetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({ delivery: { delivered: 1 } }) }),
     setPushAction: vi.fn(), setPushError: vi.fn(), setPushMessage: vi.fn(), setPushSubscribed: vi.fn(),
     setSubscribing: vi.fn(), setNotificationPermission: vi.fn(), setSwRegistration: vi.fn(),
@@ -42,24 +60,98 @@ function settings(action: string, overrides: Record<string, unknown> = {}) {
 
 describe("notification settings workflows", () => {
   it("accepts a current session after the client clears the login password", async () => {
-    authenticateSimple.mockResolvedValue(true);
-    sendPushToAll.mockResolvedValue({ delivered: 1 });
-    const response = await pushPost({ json: async () => ({ action: "test", password: "", username: "admin" }) } as never);
+    mocks.authenticateUser.mockResolvedValue({ role: "admin", username: "admin", displayName: "Admin", permissions: {} });
+    mocks.sendPushToEndpoint.mockResolvedValue({ delivered: 1 });
+    const response = await pushPost({ json: async () => ({ action: "test", password: "", username: "spoofed", endpoint: "https://push.example/sub" }) } as never);
 
     expect(response.status).toBe(200);
-    expect(authenticateSimple).toHaveBeenCalledWith("", "admin");
-    expect(sendPushToAll).toHaveBeenCalledTimes(1);
-    authenticateSimple.mockReset();
-    sendPushToAll.mockReset();
+    expect(mocks.authenticateUser).toHaveBeenCalledWith("", "spoofed");
+    expect(mocks.sendPushToEndpoint).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "system.test" }), "https://push.example/sub");
+    mocks.authenticateUser.mockReset();
+    mocks.sendPushToEndpoint.mockReset();
   });
 
   it("still rejects push actions without a valid session or credentials", async () => {
-    authenticateSimple.mockResolvedValue(false);
+    mocks.authenticateUser.mockResolvedValue(null);
     const response = await pushPost({ json: async () => ({ action: "test", password: "" }) } as never);
 
     expect(response.status).toBe(401);
-    expect(sendPushToAll).not.toHaveBeenCalled();
-    authenticateSimple.mockReset();
+    expect(mocks.sendPushToEndpoint).not.toHaveBeenCalled();
+    mocks.authenticateUser.mockReset();
+  });
+
+  it("returns only admin-granted categories for the owned endpoint", async () => {
+    db.state.rows[0].userLabel = "staff-a";
+    db.state.rows[0].mutedNotificationTypes = '["booking.modified"]';
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-a", displayName: "A", permissions: {} });
+    mocks.getUserByUsername.mockResolvedValue({ role: "staff", permissions: JSON.stringify({ canReceiveBookingNotifications: true, canReceiveFoodNotifications: false }) });
+    const response = await pushPost({ json: async () => ({ action: "getPreferences", endpoint: "https://push.example/sub" }) } as never);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ allowedCategories: ["booking"], mutedNotificationTypes: ["booking.modified"] });
+  });
+
+  it("treats valid non-object permission JSON as legacy grants instead of failing", async () => {
+    db.state.rows[0].userLabel = "staff-a";
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-a", displayName: "A", permissions: {} });
+    mocks.getUserByUsername.mockResolvedValue({ role: "staff", permissions: "null" });
+    const response = await pushPost({ json: async () => ({ action: "getPreferences", endpoint: "https://push.example/sub" }) } as never);
+    expect(response.status).toBe(200);
+    expect((await response.json()).allowedCategories).toHaveLength(6);
+  });
+
+  it("preserves hidden-category device choices while saving visible categories", async () => {
+    db.state.rows[0].userLabel = "staff-a";
+    db.state.rows[0].mutedNotificationTypes = '["food.new_order"]';
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-a", displayName: "A", permissions: {} });
+    mocks.getUserByUsername.mockResolvedValue({ role: "staff", permissions: JSON.stringify({ canReceiveBookingNotifications: true, canReceiveFoodNotifications: false }) });
+    const response = await pushPost({ json: async () => ({ action: "updatePreferences", endpoint: "https://push.example/sub", mutedNotificationTypes: ["booking.new"] }) } as never);
+    expect(response.status).toBe(200);
+    expect(JSON.parse(db.state.rows[0].mutedNotificationTypes)).toEqual(["food.new_order", "booking.new"]);
+  });
+
+  it("ignores known but disallowed event changes while retaining their saved choice", async () => {
+    db.state.rows[0].userLabel = "staff-a";
+    db.state.rows[0].mutedNotificationTypes = '["food.new_order"]';
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-a", displayName: "A", permissions: {} });
+    mocks.getUserByUsername.mockResolvedValue({ role: "staff", permissions: JSON.stringify({ canReceiveBookingNotifications: true, canReceiveFoodNotifications: false }) });
+    const response = await pushPost({ json: async () => ({ action: "updatePreferences", endpoint: "https://push.example/sub", mutedNotificationTypes: ["booking.modified"] }) } as never);
+    expect(response.status).toBe(200);
+    expect(JSON.parse(db.state.rows[0].mutedNotificationTypes)).toEqual(["food.new_order", "booking.modified"]);
+  });
+
+  it("rejects unknown notification IDs and endpoints owned by another user", async () => {
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-a", displayName: "A", permissions: {} });
+    const invalid = await pushPost({ json: async () => ({ action: "updatePreferences", endpoint: "https://push.example/sub", mutedNotificationTypes: ["future.event"] }) } as never);
+    expect(invalid.status).toBe(400);
+    const foreign = await pushPost({ json: async () => ({ action: "getPreferences", endpoint: "https://push.example/sub" }) } as never);
+    expect(foreign.status).toBe(404);
+  });
+
+  it("resets device choices when a browser subscription changes owner", async () => {
+    db.state.rows[0].userLabel = "staff-old";
+    db.state.rows[0].mutedNotificationTypes = '["booking.new"]';
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-new", displayName: "New", permissions: {} });
+    const response = await pushPost({ json: async () => ({ action: "subscribe", subscription: { endpoint: "https://push.example/sub", keys: { p256dh: "p", auth: "a" } } }) } as never);
+    expect(response.status).toBe(200);
+    expect(db.state.rows[0]).toMatchObject({ userLabel: "staff-new", mutedNotificationTypes: "[]" });
+  });
+
+  it("ignores a spoofed subscription label and preserves same-owner choices", async () => {
+    db.state.rows[0].userLabel = "staff-a";
+    db.state.rows[0].mutedNotificationTypes = '["booking.new"]';
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-a", displayName: "A", permissions: {} });
+    const response = await pushPost({ json: async () => ({ action: "subscribe", userLabel: "admin", subscription: { endpoint: "https://push.example/sub", keys: { p256dh: "new-p", auth: "new-a" } } }) } as never);
+    expect(response.status).toBe(200);
+    expect(db.state.rows[0]).toMatchObject({ userLabel: "staff-a", mutedNotificationTypes: '["booking.new"]', keyP256dh: "new-p", keyAuth: "new-a" });
+  });
+
+  it("does not test or unsubscribe an endpoint owned by another user", async () => {
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", username: "staff-a", displayName: "A", permissions: {} });
+    const testResponse = await pushPost({ json: async () => ({ action: "test", endpoint: "https://push.example/sub" }) } as never);
+    const unsubscribeResponse = await pushPost({ json: async () => ({ action: "unsubscribe", endpoint: "https://push.example/sub" }) } as never);
+    expect(testResponse.status).toBe(404);
+    expect(unsubscribeResponse.status).toBe(404);
+    expect(mocks.sendPushToEndpoint).not.toHaveBeenCalled();
   });
 
   it("keeps explicit useful content and event routing in every API push producer", () => {
@@ -74,8 +166,11 @@ describe("notification settings workflows", () => {
           expect(ts.isObjectLiteralExpression(payload), name).toBe(true);
           if (ts.isObjectLiteralExpression(payload)) {
             const fields = new Map(payload.properties.filter(ts.isPropertyAssignment).map((field) => [field.name.getText(file), field.initializer.getText(file)]));
-            for (const key of ["title", "body", "url", "category", "eventId"]) expect(fields.get(key), `${name}: ${key}`).toBeTruthy();
-            expect(fields.get("url"), name).toMatch(/^['"`]\/admin[?'"]/);
+            for (const key of ["notificationType", "title", "body", "url", "eventId"]) expect(fields.get(key), `${name}: ${key}`).toBeTruthy();
+            const types = [...(fields.get("notificationType") || "").matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
+            expect(types.length, `${name}: notificationType must use catalog literals`).toBeGreaterThan(0);
+            for (const type of types) expect(NOTIFICATION_TYPE_IDS, `${name}: unknown notificationType ${type}`).toContain(type);
+            expect(fields.get("url"), name).toMatch(/^['"`]\/admin(?:\?|['"`])/);
           }
           count++;
         }
@@ -90,6 +185,7 @@ describe("notification settings workflows", () => {
     await ui.run();
     expect(ui.setPushMessage).toHaveBeenCalledWith(expect.stringContaining("Push service accepted"));
     expect(ui.setPushAction).toHaveBeenLastCalledWith(null);
+    expect(ui.fetch).toHaveBeenCalledWith("/api/push", expect.objectContaining({ body: expect.stringContaining('"endpoint":"https://push.example/sub"') }));
   });
   it.each(["network", "invalid-json", "zero", "missing"])("handles test failure %s and clears busy state", async (failure) => {
     const fetch = vi.fn().mockImplementation(async () => {
@@ -176,6 +272,7 @@ describe("notification settings install and iOS contracts", () => {
     expect(uiSource).toContain("pushBlocked");
     expect(uiSource).toContain("navigator.serviceWorker.ready");
     expect(uiSource).toContain("Push does not work from a normal Safari tab");
+    expect(uiSource).toContain('dispatchEvent(new Event("goko:push-subscription-changed"))');
   });
 
   it("blocks iPhone Safari-tab enable and waits for service worker ready before subscribe", () => {

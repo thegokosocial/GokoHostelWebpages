@@ -150,12 +150,12 @@ async function pushIfGokoOccupancy(
   if (channelSource(source) || !before) return;
   await pushIfOtaChanged(before, dormIds, dates).catch(async () => {
     await dispatchPush({
+      notificationType: "operations.inventory_sync_failed",
       title: "Inventory Sync Failed",
       body: "A booking changed availability · Open Management logs",
       url: "/admin?section=management",
       eventId: `inventory-sync-${dormIds.sort().join("-")}-${dates[0] || "unknown"}`,
       tag: "inventory-sync-failure",
-      category: "operations",
     });
   });
 }
@@ -885,11 +885,11 @@ export async function POST(req: NextRequest) {
           performedBy: actingUser,
         });
         await dispatchPush({
+          notificationType: "booking.new",
           title: "New Booking",
           body: `${notificationFirstName(guestName)} · ${notificationStayDates(checkinDate, checkoutDate)} · ${guestCount} ${guestCount === 1 ? "guest" : "guests"}`,
           url: "/admin?section=bookings",
           eventId: `booking-created-${newBookingId}`,
-          category: "booking",
         });
         if (sourceCheckin) {
           const now = new Date().toISOString();
@@ -1124,11 +1124,11 @@ export async function POST(req: NextRequest) {
         performedBy: actingUser,
       });
       await dispatchPush({
+        notificationType: "checkin.guest_checked_in",
         title: "Guest Checked In",
         body: `${notificationFirstName(detail.booking.guestName)} · Booking ${detail.booking.gokoBookingId || detail.booking.bookingRef || `#${bookingId}`}`,
         url: "/admin?section=bookings",
         eventId: `booking-checkin-${bookingId}-${now}`,
-        category: "checkin",
       });
 
       return NextResponse.json({ success: true });
@@ -1592,19 +1592,19 @@ export async function POST(req: NextRequest) {
 
       const inventory = await pushIfOtaChanged(before, dormIds, cancelDates).catch((error) => ({ attempted: true, accepted: false, message: error?.message || "Aiosell inventory push failed" }));
       if (inventoryWarning(inventory)) await dispatchPush({
+        notificationType: "operations.inventory_sync_failed",
         title: "Inventory Sync Failed",
         body: "Cancellation saved, but channel availability needs attention",
         url: "/admin?section=management",
         eventId: `inventory-cancel-${bookingId}`,
         tag: "inventory-sync-failure",
-        category: "operations",
       });
       if (detail) await dispatchPush({
+        notificationType: fullCancel ? "booking.cancelled" : "booking.partially_cancelled",
         title: fullCancel ? "Booking Cancelled" : "Booking Partially Cancelled",
         body: `${notificationFirstName(detail.booking.guestName)} · ${notificationStayDates(detail.booking.checkinDate, detail.booking.checkoutDate)}`,
         url: "/admin?section=bookings",
         eventId: `booking-cancel-${bookingId}-${fullCancel ? "full" : selectedAssignmentIds?.join("-")}`,
-        category: "booking",
       });
       let reopenedCheckinIds: number[] = [];
       if (fullCancel && detail) {
@@ -1743,12 +1743,12 @@ export async function POST(req: NextRequest) {
 
       const inventory = await pushIfOtaChanged(before, dormIds, dates).catch((error) => ({ attempted: true, accepted: false, message: error?.message || "Aiosell inventory push failed" }));
       if (inventoryWarning(inventory)) await dispatchPush({
+        notificationType: "operations.inventory_sync_failed",
         title: "Inventory Sync Failed",
         body: "Guest-declined stay saved, but channel availability needs attention",
         url: "/admin?section=management",
         eventId: `inventory-guest-declined-${bookingId}`,
         tag: "inventory-sync-failure",
-        category: "operations",
       });
       return NextResponse.json({ success: true, warning: inventoryWarning(inventory) });
     }
@@ -1825,21 +1825,21 @@ export async function POST(req: NextRequest) {
         performedBy: actingUser,
       });
       await dispatchPush({
+        notificationType: "booking.no_show",
         title: "Booking Marked No-show",
         body: `${notificationFirstName(detail.booking.guestName)} · Check-in ${notificationDate(detail.booking.checkinDate)}`,
         url: "/admin?section=bookings",
         eventId: `booking-no-show-${bookingId}`,
-        category: "operations",
       });
 
       const inventory = await pushIfOtaChanged(before, dormIds, dates).catch((error) => ({ attempted: true, accepted: false, message: error?.message || "Aiosell inventory push failed" }));
       if (inventoryWarning(inventory)) await dispatchPush({
+        notificationType: "operations.inventory_sync_failed",
         title: "Inventory Sync Failed",
         body: "No-show saved, but channel availability needs attention",
         url: "/admin?section=management",
         eventId: `inventory-no-show-${bookingId}`,
         tag: "inventory-sync-failure",
-        category: "operations",
       });
       const warning = [noShowWarning, inventoryWarning(inventory)].filter(Boolean).join(". ");
       return NextResponse.json({ success: true, message: "Marked no-show", warning: warning || undefined });
@@ -1991,11 +1991,11 @@ export async function POST(req: NextRequest) {
 
       await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
       await dispatchPush({
+        notificationType: "booking.dates_changed",
         title: "Booking Dates Changed",
         body: `${notificationFirstName(detail.booking.guestName)} · Check-in ${notificationDate(oldCheckin)} → ${notificationDate(newCheckinDate)}`,
         url: "/admin?section=bookings",
         eventId: `booking-checkin-date-${bookingId}-${newCheckinDate}`,
-        category: "booking",
       });
       return NextResponse.json({ success: true });
     }
@@ -2117,11 +2117,11 @@ export async function POST(req: NextRequest) {
 
       await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
       await dispatchPush({
+        notificationType: "booking.dates_changed",
         title: "Booking Dates Changed",
         body: `${notificationFirstName(detail.booking.guestName)} · Check-out ${notificationDate(oldCheckout)} → ${notificationDate(newCheckoutDate)}`,
         url: "/admin?section=bookings",
         eventId: `booking-checkout-date-${bookingId}-${newCheckoutDate}`,
-        category: "booking",
       });
       return NextResponse.json({ success: true });
     }
@@ -2435,11 +2435,11 @@ export async function POST(req: NextRequest) {
 
       if (inventoryChanged) await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
       if (changes.length > 0) await dispatchPush({
+        notificationType: "booking.modified",
         title: "Booking Modified",
         body: `${notificationFirstName(detail.booking.guestName)} · ${changes.join("; ")}`,
         url: "/admin?section=bookings",
         eventId: `booking-edit-${bookingId}-${Date.now()}`,
-        category: "booking",
       });
       return NextResponse.json({ success: true });
     }

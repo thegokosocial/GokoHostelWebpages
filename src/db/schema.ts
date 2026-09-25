@@ -1038,6 +1038,7 @@ export const pushSubscriptions = sqliteTable("push_subscriptions", {
   keyP256dh: text("key_p256dh").notNull(),
   keyAuth: text("key_auth").notNull(),
   userLabel: text("user_label").default(""),
+  mutedNotificationTypes: text("muted_notification_types").notNull().default("[]"),
   createdAt: text("created_at").notNull(),
 }, (table) => [
   index("idx_push_endpoint").on(table.endpoint),

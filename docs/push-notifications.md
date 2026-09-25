@@ -1,8 +1,8 @@
 # Push notifications
 
-All app pushes use `src/lib/pushNotify.ts` and `public/sw.js`; no separate legacy display system is maintained. The header bell opens device notification settings, not an event inbox. Existing recipients and permissions are unchanged.
+All app pushes use `src/lib/pushNotify.ts`, the shared notification catalog, and `public/sw.js`; no separate legacy display system is maintained. The header bell manages install/enable/test/disable. Management → My Preferences lists only the notification categories granted by an administrator and lets the user mute a whole category or individual event on that browser/PWA.
 
-The dialog always shows an **Install app** section (admin bell only). Chrome/Android gets a native Install button when `beforeinstallprompt` is available, otherwise menu instructions. **iPhone/iPad have no install API** — the dialog shows Safari Share → Add to Home Screen steps (detects non-Safari browsers and offers a copyable `/admin` link). Already-installed sessions show a short confirmation. The public website does **not** advertise a web app manifest or Apple web-app meta — those live on `src/app/admin/layout.tsx` only (with `apple-touch-icon` and `apple-mobile-web-app-capable`) — so guests do not get browser install pop-ups. Service worker registration still runs on iOS Safari tabs so Add to Home Screen can attach a real app; Enable notifications stays disabled until the Home Screen app is open (iOS/iPadOS 16.4+). Subscribe waits for `navigator.serviceWorker.ready` before `pushManager.subscribe`. After admin login succeeds, the password is cleared from client state; `/api/push` therefore accepts the current HttpOnly admin session for subscribe, test, and disable actions.
+The dialog always shows an **Install app** section (admin bell only). Chrome/Android gets a native Install button when `beforeinstallprompt` is available, otherwise menu instructions. **iPhone/iPad have no install API** — the dialog shows Safari Share → Add to Home Screen steps (detects non-Safari browsers and offers a copyable `/admin` link). Already-installed sessions show a short confirmation. The public website does **not** advertise a web app manifest or Apple web-app meta — those live on `src/app/admin/layout.tsx` only (with `apple-touch-icon` and `apple-mobile-web-app-capable`) — so guests do not get browser install pop-ups. Service worker registration still runs on iOS Safari tabs so Add to Home Screen can attach a real app; Enable notifications stays disabled until the Home Screen app is open (iOS/iPadOS 16.4+). Subscribe waits for `navigator.serviceWorker.ready` before `pushManager.subscribe`. After admin login succeeds, the password is cleared from client state; `/api/push` accepts the current HttpOnly session. Test sends only to the requesting endpoint and bypasses preference filters.
 
 ## Event inventory
 
@@ -11,11 +11,16 @@ The dialog always shows an **Install app** section (admin bell only). Chrome/And
 | Food | New Food Order: guest ordering and admin-created orders |
 | Check-in | New Check-in: self-check-in and admin records; Guest Checked In: bookings |
 | Booking | New Booking, Booking Rebooked, Booking Modified, Booking Dates Changed, Booking Cancelled, Booking Partially Cancelled, Booking Marked No-show: admin bookings and/or Aiosell reservations |
-| Attention | Booking Needs Attention, Booking Needs Bed Assignment, OTA Inventory Reconciliation Needed, Channel Booking Sync Failed, Inventory Sync Failed: booking/PMS workflows |
+| Attention | Booking Needs Attention, Booking Needs Bed Assignment |
+| Operations | OTA Inventory Reconciliation Needed, Channel Booking Sync Failed, Inventory Sync Failed |
 | Reminder | Reconciliation pending: scheduled reminder, existing role-restricted recipients |
 | Test | Test Notification: notification settings `/api/push` test action |
 
 Food bodies always include the first name, items, room/bed or table when present, amount and approval requirement. Missing names use Guest. Item summaries are shortened to preserve identifying context. Full names, phone numbers and identity documents are not added to lock-screen content.
+
+## Recipient controls
+
+Delivery is the intersection of existing role restrictions, the administrator-granted category, and the device's muted event IDs. Notification category grants are active permission-catalog keys edited under Management → Users. Legacy DB users with no category keys retain all categories; once configured, explicit false values block that category server-side. Admin/environment system accounts retain all category grants. Device exclusions are stored on `push_subscriptions`; hidden categories are preserved when visible preferences are saved, so re-granting restores the previous device choice. Unknown/deleted users are ineligible, and deleting a DB user removes its subscriptions.
 
 ## Rendering and troubleshooting
 

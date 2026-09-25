@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { runInNewContext } from "node:vm";
 import * as fs from "fs";
 import * as path from "path";
-import { buildPushPayload, notificationDate, notificationFirstName, notificationFoodBody, notificationFoodItems, notificationReconciliationBody, notificationStayDates } from "@/lib/pushNotify";
+import { buildPushPayload, notificationDate, notificationFirstName, notificationFoodBody, notificationFoodItems, notificationReconciliationBody, notificationStayDates, pushSubscriptionEligible } from "@/lib/pushNotify";
+import { allowedNotificationCategories, NOTIFICATION_CATEGORIES, NOTIFICATION_TYPE_IDS, parseMutedNotificationTypes, withDefaultNotificationPermissions } from "@/lib/notificationCatalog";
 
 const ROOT = path.resolve(__dirname, "../..");
 
@@ -36,11 +37,11 @@ describe("push notification payloads", () => {
 
   it("keeps useful content, safe admin links, and unique event identity", () => {
     const payload = buildPushPayload({
+      notificationType: "booking.new",
       title: "  New   Booking ",
       body: "Ada · 2026-09-05–2026-09-08",
       url: "/admin?section=bookings",
       eventId: "booking-42",
-      category: "booking",
     });
 
     expect(payload).toMatchObject({
@@ -56,8 +57,8 @@ describe("push notification payloads", () => {
 
   it("falls back safely and keeps recurring operational alerts quiet", () => {
     const payload = buildPushPayload({
+      notificationType: "operations.channel_booking_sync_failed",
       title: " ", body: " ", url: "https://example.com", tag: "channel-failure",
-      category: "operations",
     });
     expect(payload.title).toBe("Goko");
     expect(payload.body).toBe("You have a new update");
@@ -80,7 +81,7 @@ describe("push notification payloads", () => {
   });
 
   it.each(["/administrator", "//evil.com/admin", "/admin\\evil", "/admin?x=\n"])("rejects unsafe sender link %s", (url) => {
-    expect(buildPushPayload({ title: "Order", body: "Update", url }).url).toBe("/admin");
+    expect(buildPushPayload({ notificationType: "food.new_order", title: "Order", body: "Update", url }).url).toBe("/admin");
   });
 
   it("executes normalization and preserves distinct legacy identities", async () => {
@@ -185,7 +186,7 @@ describe("push notification payloads", () => {
     expect(notificationStayDates("2026-09-03", "2026-09-04")).toBe("3 Sept → 4 Sept");
     expect(notificationReconciliationBody("2026-09-20", 2)).toBe("20 Sept has not been reconciled. 2 accounts are still pending.");
     expect(notificationReconciliationBody("2026-09-20", 1)).toBe("20 Sept has not been reconciled. 1 account is still pending.");
-    expect(buildPushPayload({ title: "Order", body: "x".repeat(500) }).body).toHaveLength(500);
+    expect(buildPushPayload({ notificationType: "food.new_order", title: "Order", body: "x".repeat(500) }).body).toHaveLength(500);
   });
 
   it("notifies for admin-created food orders and retries portable display options", () => {
@@ -194,5 +195,67 @@ describe("push notification payloads", () => {
     expect(adminOrders).toContain('eventId: `admin-food-order-${order.id}`');
     expect(adminOrders).toContain('title: "New Food Order"');
     expect(worker).toContain("{ body, data: { url } }");
+  });
+});
+
+describe("notification preference eligibility", () => {
+  const all = new Map([["staff-a", { role: "staff", permissions: {} }]]);
+
+  it("keeps every legacy category enabled and gives new users explicit grants", () => {
+    expect(allowedNotificationCategories("staff", {})).toEqual(NOTIFICATION_CATEGORIES.map((category) => category.id));
+    expect(allowedNotificationCategories("staff", null)).toEqual(NOTIFICATION_CATEGORIES.map((category) => category.id));
+    const defaults = withDefaultNotificationPermissions({ canViewBookings: true });
+    expect(defaults.canViewBookings).toBe(true);
+    for (const category of NOTIFICATION_CATEGORIES) expect(defaults[category.permission]).toBe(true);
+  });
+
+  it("enforces admin grants before per-device choices", () => {
+    const recipients = new Map([["staff-a", { role: "staff", permissions: { canReceiveBookingNotifications: true, canReceiveFoodNotifications: false } }]]);
+    expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes: "[]" }, "booking.new", recipients)).toBe(true);
+    expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes: "[]" }, "food.new_order", recipients)).toBe(false);
+    expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes: '["booking.new"]' }, "booking.new", recipients)).toBe(false);
+  });
+
+  it("treats the first category key as an explicit allowlist and keeps the admin bypass", () => {
+    expect(allowedNotificationCategories("staff", { canReceiveFoodNotifications: true })).toEqual(["food"]);
+    expect(allowedNotificationCategories("staff", { canReceiveFoodNotifications: false })).toEqual([]);
+    expect(allowedNotificationCategories("admin", { canReceiveFoodNotifications: false })).toEqual(NOTIFICATION_CATEGORIES.map((category) => category.id));
+  });
+
+  it.each([
+    ["legacy all-enabled", {}, "[]", "booking.new", true],
+    ["explicit booking grant", { canReceiveBookingNotifications: true, canReceiveFoodNotifications: false }, "[]", "booking.new", true],
+    ["admin food denial", { canReceiveBookingNotifications: true, canReceiveFoodNotifications: false }, "[]", "food.new_order", false],
+    ["device booking mute", { canReceiveBookingNotifications: true }, '["booking.new"]', "booking.new", false],
+    ["unrelated device mute", { canReceiveBookingNotifications: true }, '["booking.modified"]', "booking.new", true],
+  ] as const)("evaluates the %s delivery matrix", (_name, permissions, mutedNotificationTypes, type, expected) => {
+    const recipients = new Map([["staff-a", { role: "staff", permissions: { ...permissions } }]]);
+    expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes }, type, recipients)).toBe(expected);
+  });
+
+  it("combines role restrictions, ownership, and test bypass safely", () => {
+    expect(pushSubscriptionEligible({ userLabel: "staff-a" }, "booking.new", all, ["admin", "manager"])).toBe(false);
+    expect(pushSubscriptionEligible({ userLabel: "deleted" }, "booking.new", all)).toBe(false);
+    expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes: JSON.stringify(NOTIFICATION_TYPE_IDS) }, "system.test", all)).toBe(true);
+  });
+
+  it("maps every catalog event to its grant and device mute", () => {
+    for (const category of NOTIFICATION_CATEGORIES) {
+      const recipients = new Map([["staff-a", { role: "staff", permissions: { [category.permission]: true } }]]);
+      for (const [type] of category.events) {
+        expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes: "[]" }, type, recipients), type).toBe(true);
+        expect(pushSubscriptionEligible({ userLabel: "staff-a", mutedNotificationTypes: JSON.stringify([type]) }, type, recipients), type).toBe(false);
+      }
+    }
+  });
+
+  it("keeps attention and reminder wire behavior operational while grants remain distinct", () => {
+    expect(buildPushPayload({ notificationType: "attention.booking", title: "Attention", body: "x" })).toMatchObject({ category: "operations", renotify: false });
+    expect(buildPushPayload({ notificationType: "reminder.reconciliation_pending", title: "Reminder", body: "x", renotify: true })).toMatchObject({ category: "operations", renotify: true });
+  });
+
+  it("fails malformed and future muted values open without accepting unknown IDs", () => {
+    expect(parseMutedNotificationTypes("bad json")).toEqual([]);
+    expect(parseMutedNotificationTypes('["booking.new","future.event","booking.new"]')).toEqual(["booking.new"]);
   });
 });

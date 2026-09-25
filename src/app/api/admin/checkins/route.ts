@@ -27,14 +27,14 @@ import {
   getAllStats, incrementStat, getMonthKey,
   getAllBookings, getUpcomingBookings, addBooking, updateBookingStatus, deleteBooking, searchBookings, getCheckinById,
   createRateScrape, getLatestRateScrape, getRateScrapeById, updateRateScrape,
-  getAllUsers, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
+  getAllUsers, getUserById, getUserByUsername, createUser, updateUser, deleteUser as deleteUserById,
   getTasks,
   addAuditEntry, getAuditEntries, getInventoryAuditEntries, getAuditPresentationContext, getAuditEntriesBefore, deleteAuditEntriesBefore, getAuditRetention,
   addSystemLog, getSystemLogs,
   createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
 import { presentAuditEntry } from "@/lib/auditPresentation";
-import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments, platformReceivableEntries, platformSettlementAllocations } from "@/db/schema";
+import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignments, platformReceivableEntries, platformSettlementAllocations, pushSubscriptions } from "@/db/schema";
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 import { apiErrorBody, getRequestId } from "@/lib/apiError";
 import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
@@ -338,11 +338,11 @@ export async function POST(req: NextRequest) {
       await addAuditEntry({ username: actingUser, action: "checkin_add", target: e[3] || "unknown" });
       addSystemLog({ level: "info", source: "admin-api", message: `Check-in added: ${e[3] || "unknown"} by ${actingUser}` }).catch(() => {});
       await dispatchPush({
+        notificationType: "checkin.new",
         title: "New Check-in",
         body: `${notificationFirstName(String(e[3] || "Guest"))} · ${e[4] || 1} ${Number(e[4] || 1) === 1 ? "guest" : "guests"} · ${finalBookingId ? `Booking ${finalBookingId}` : platform || "Walk-in"}`,
         url: "/admin?section=dashboard",
         eventId: `admin-checkin-${finalBookingId || addData.submittedAt}`,
-        category: "checkin",
       });
       return NextResponse.json({ success: true });
     }
@@ -1335,7 +1335,9 @@ export async function POST(req: NextRequest) {
       if (assignedTasks.length > 0) {
         return NextResponse.json({ error: "Reassign all tasks before deleting this user" }, { status: 409 });
       }
+      const deletedUser = await getUserById(userId);
       await deleteUserById(userId);
+      if (deletedUser) await getDb().delete(pushSubscriptions).where(eq(pushSubscriptions.userLabel, deletedUser.username));
       await addAuditEntry({ username: actingUser, action: "user_deleted", target: `userId:${userId}` });
       return NextResponse.json({ success: true });
     }
