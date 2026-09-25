@@ -58,7 +58,7 @@ function rupeesToPaise(rupees: string): string {
 }
 
 export function AdminFoodSettings({ password, username, role }: { password: string; username?: string; role: Role }) {
-  const { showError } = useAdminToast();
+  const { showError, showSuccess } = useAdminToast();
   const [settings, setSettings] = useState<FoodSettings>({ ...DEFAULT_SETTINGS });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -130,10 +130,13 @@ export function AdminFoodSettings({ password, username, role }: { password: stri
       if (res.ok) {
         setSavedSettings({ ...settings });
         setDirty(false);
+        showSuccess("Food settings saved");
       } else {
-        const d = await res.json();
+        const d = await res.json().catch(() => ({}));
         showError("Failed to save settings", d.error);
       }
+    } catch (error) {
+      showError("Failed to save settings", error instanceof Error ? error.message : undefined);
     } finally {
       setSaving(false);
     }

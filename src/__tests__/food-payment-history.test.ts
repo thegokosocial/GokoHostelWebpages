@@ -156,4 +156,15 @@ describe("Payment History", () => {
     expect(source).toContain("await onConfirm");
     expect(source).toContain("setSaving(false)");
   });
+
+  it("confirms food settings only after a successful save and preserves failure feedback", () => {
+    const source = readFileSync("src/components/admin/AdminFoodSettings.tsx", "utf8");
+    const saveAll = source.slice(source.indexOf("const saveAll = async"), source.indexOf("const toggleBusyMode"));
+    expect(saveAll).toContain('if (res.ok)');
+    expect(saveAll).toContain('showSuccess("Food settings saved")');
+    expect(saveAll.indexOf('showSuccess("Food settings saved")')).toBeGreaterThan(saveAll.indexOf('if (res.ok)'));
+    expect(saveAll).toContain("setDirty(false)");
+    expect(saveAll).toContain('showError("Failed to save settings"');
+    expect(saveAll).toContain("catch (error)");
+  });
 });

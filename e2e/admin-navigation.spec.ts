@@ -172,6 +172,20 @@ test("desktop Management tabs still switch directly", async ({ page }) => {
   await expect(page).toHaveURL(/tab=rates/);
 });
 
+test("Food Settings confirms Save All completion", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToManagement(page);
+
+  await page.getByRole("button", { name: "Food Settings", exact: true }).click();
+  await page.locator('input[type="number"][min="1"][max="90"]').fill("30");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await page.getByRole("button", { name: "Save All" }).click();
+
+  await expect(page.getByText("Food settings saved")).toBeVisible();
+  await expect(page.getByText("Unsaved changes")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Save All" })).toBeDisabled();
+});
+
 test("Food Orders browser workflow stages a served quantity modification and saves it without a reason", async ({ page }) => {
   const requests: Array<Record<string, unknown>> = [];
   await mockFoodOrderWorkflow(page, requests);
