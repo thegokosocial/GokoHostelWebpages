@@ -19,6 +19,18 @@ import {
 import { todayIST } from "@/lib/utils";
 import { parseGokoWalkin } from "@/lib/bookingPricing";
 import { collectInBatches } from "@/lib/dbBatch";
+import {
+  cancellationRate,
+  collectionRate,
+  computeAdr,
+  computeRevpar,
+  daysInRangeInclusive,
+  nextCalendarDate,
+  outstandingBalance,
+  overlapNightCount,
+  percentDelta,
+  priorDateRange,
+} from "@/lib/analyticsMetrics";
 
 const ACTIVE_STAY_STATUSES = sql`${bookings.status} IN ('confirmed', 'checked_in', 'checked_out')`;
 const EXPECTED_ROOM_STATUSES = sql`${bookings.status} IN ('received', 'confirmed', 'checked_in', 'checked_out')`;
@@ -34,15 +46,7 @@ function utcExclusiveEnd(date: string) {
 }
 
 function nextDate(date: string) {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + 1);
-  return value.toISOString().slice(0, 10);
-}
-
-function nextMonth(date: string) {
-  const value = new Date(`${date.slice(0, 7)}-01T00:00:00Z`);
-  value.setUTCMonth(value.getUTCMonth() + 1);
-  return value.toISOString().slice(0, 10);
+  return nextCalendarDate(date);
 }
 
 function parseDate(value: unknown, fallback: string) {
@@ -52,7 +56,7 @@ function parseDate(value: unknown, fallback: string) {
 }
 
 function daysBetween(from: string, to: string) {
-  return Math.max(1, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1);
+  return daysInRangeInclusive(from, to);
 }
 
 function dateOnly(value: string) {
@@ -103,9 +107,7 @@ function roomClassForType(value: string) {
 }
 
 function nightCount(checkin: string, checkout: string, from: string, toExclusive: string) {
-  const overlapStart = Math.max(Date.parse(`${checkin}T00:00:00Z`), Date.parse(`${from}T00:00:00Z`));
-  const overlapEnd = Math.min(Date.parse(`${checkout}T00:00:00Z`), Date.parse(`${toExclusive}T00:00:00Z`));
-  return Math.max(0, Math.round((overlapEnd - overlapStart) / 86400000));
+  return overlapNightCount(checkin, checkout, from, toExclusive);
 }
 
 function hourInReportTimezone(timestamp: string) {
@@ -134,18 +136,27 @@ export async function POST(req: NextRequest) {
     const from = utcStart(fromDate);
     const to = utcExclusiveEnd(toDate);
     const stayToExclusive = nextDate(toDate);
-    const monthStart = `${toDate.slice(0, 8)}01`;
-    const monthEndExclusive = nextMonth(toDate);
-    const monthDays = Math.round((Date.parse(`${monthEndExclusive}T00:00:00Z`) - Date.parse(`${monthStart}T00:00:00Z`)) / 86400000);
+    const prior = priorDateRange(fromDate, toDate);
+    const priorFrom = utcStart(prior.fromDate);
+    const priorTo = utcExclusiveEnd(prior.toDate);
+    const priorStayToExclusive = nextDate(prior.toDate);
     const db = getDb();
     const bookingWhere = [gte(bookings.createdAt, from), lt(bookings.createdAt, to)];
     const stayWhere = [gte(bookings.checkinDate, fromDate), lt(bookings.checkinDate, stayToExclusive)];
+    const overlapWhere = [lt(bookings.checkinDate, stayToExclusive), sql`${bookings.checkoutDate} > ${fromDate}`];
+    const priorBookingWhere = [gte(bookings.createdAt, priorFrom), lt(bookings.createdAt, priorTo)];
+    const priorOverlapWhere = [lt(bookings.checkinDate, priorStayToExclusive), sql`${bookings.checkoutDate} > ${prior.fromDate}`];
     const foodWhere = [gte(foodOrders.createdAt, from), lt(foodOrders.createdAt, to)];
     const expenseWhere = [gte(expenses.createdAt, from), lt(expenses.createdAt, to)];
     const assignmentWhere = [
       eq(bookingBedAssignments.status, "assigned"),
       lt(bookingBedAssignments.checkinDate, stayToExclusive),
       sql`${bookingBedAssignments.checkoutDate} > ${fromDate}`,
+    ];
+    const priorAssignmentWhere = [
+      eq(bookingBedAssignments.status, "assigned"),
+      lt(bookingBedAssignments.checkinDate, priorStayToExclusive),
+      sql`${bookingBedAssignments.checkoutDate} > ${prior.fromDate}`,
     ];
     const getBlockRows = async () => {
       try {
@@ -171,8 +182,8 @@ export async function POST(req: NextRequest) {
       archivedStayRows,
       stayByDay,
       stayByRoomType,
-      expectedRoomRevenue,
-      archivedExpectedRows,
+      departuresSummary,
+      priorBookingSummary,
       bookingFinanceRows,
       stayRefundRows,
       foodRefundRows,
@@ -194,6 +205,10 @@ export async function POST(req: NextRequest) {
       bedRows,
       assignmentRows,
       blockRows,
+      priorStaySummary,
+      priorFoodSummary,
+      priorExpenseSummary,
+      priorAssignmentRows,
     ] = await Promise.all([
       db.select({
         total: sql<number>`COUNT(*)`,
@@ -260,11 +275,12 @@ export async function POST(req: NextRequest) {
         obtainedRevenue: sql<number>`COALESCE(SUM(MAX(0, ${bookings.amountPaid} - ${bookings.amountRefunded})), 0)`,
         nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${stayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${fromDate})))), 0)`,
         leadDays: sql<number>`COALESCE(SUM(MAX(0, julianday(${bookings.checkinDate}) - julianday(date(${bookings.createdAt}, '+05:30')))), 0)`,
-      }).from(bookings).where(and(...stayWhere, ACTIVE_STAY_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)),
+      }).from(bookings).where(and(...overlapWhere, EXPECTED_ROOM_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)),
       db.select().from(bookingCycleSnapshots).where(and(
-        gte(bookingCycleSnapshots.checkinDate, fromDate), lt(bookingCycleSnapshots.checkinDate, stayToExclusive),
+        lt(bookingCycleSnapshots.checkinDate, stayToExclusive),
+        sql`${bookingCycleSnapshots.checkoutDate} > ${fromDate}`,
         sql`${bookingCycleSnapshots.checkoutDate} > ${bookingCycleSnapshots.checkinDate}`,
-        sql`(${bookingCycleSnapshots.status} IN ('checked_in', 'checked_out') OR (${bookingCycleSnapshots.status} = 'cancelled' AND ${bookingCycleSnapshots.checkedInAt} != ''))`,
+        sql`(${bookingCycleSnapshots.status} IN ('received', 'confirmed', 'checked_in', 'checked_out') OR (${bookingCycleSnapshots.status} = 'cancelled' AND ${bookingCycleSnapshots.checkedInAt} != ''))`,
       )),
       db.select({ date: bookings.checkinDate, arrivals: sql<number>`COUNT(*)`, guests: sql<number>`COALESCE(SUM(${bookings.persons}), 0)`, revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal}), 0)` })
         .from(bookings).where(and(...stayWhere, ACTIVE_STAY_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)).groupBy(bookings.checkinDate).orderBy(bookings.checkinDate),
@@ -275,26 +291,20 @@ export async function POST(req: NextRequest) {
         guests: sql<number>`COALESCE(SUM(${bookings.persons}), 0)`,
         nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${stayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${fromDate})))), 0)`,
         revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal} * (MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${stayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${fromDate})))) / MAX(1, julianday(${bookings.checkoutDate}) - julianday(${bookings.checkinDate}))), 0)`,
-      }).from(bookings).where(and(...stayWhere, EXPECTED_ROOM_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`))
+      }).from(bookings).where(and(...overlapWhere, EXPECTED_ROOM_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`))
         .groupBy(sql`COALESCE(NULLIF(${bookings.roomType}, ''), 'unspecified')`, roomClassSql()).orderBy(sql`COUNT(*) DESC`),
       db.select({
-        stays: sql<number>`COUNT(*)`,
-        nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${monthEndExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${monthStart})))), 0)`,
-        revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal} * (MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${monthEndExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${monthStart})))) / MAX(1, julianday(${bookings.checkoutDate}) - julianday(${bookings.checkinDate}))), 0)`,
-        obtainedRevenue: sql<number>`COALESCE(SUM(MAX(0, ${bookings.amountPaid} - ${bookings.amountRefunded})), 0)`,
+        departures: sql<number>`COUNT(*)`,
       }).from(bookings).where(and(
-        lt(bookings.checkinDate, monthEndExclusive),
-        sql`${bookings.checkoutDate} > ${monthStart}`,
-        lt(bookings.createdAt, to),
+        gte(bookings.checkoutDate, fromDate),
+        lt(bookings.checkoutDate, stayToExclusive),
         EXPECTED_ROOM_STATUSES,
         sql`${bookings.checkoutDate} > ${bookings.checkinDate}`,
       )),
-      db.select().from(bookingCycleSnapshots).where(and(
-        lt(bookingCycleSnapshots.checkinDate, monthEndExclusive),
-        sql`${bookingCycleSnapshots.checkoutDate} > ${monthStart}`,
-        sql`${bookingCycleSnapshots.checkoutDate} > ${bookingCycleSnapshots.checkinDate}`,
-        sql`(${bookingCycleSnapshots.status} IN ('checked_in', 'checked_out') OR (${bookingCycleSnapshots.status} = 'cancelled' AND ${bookingCycleSnapshots.checkedInAt} != ''))`,
-      )),
+      db.select({
+        total: sql<number>`COUNT(*)`,
+        cancelled: sql<number>`SUM(CASE WHEN ${bookings.status} = 'cancelled' THEN 1 ELSE 0 END)`,
+      }).from(bookings).where(and(...priorBookingWhere)),
       db.select({ rawData: bookings.rawData, status: bookings.status }).from(bookings).where(and(...bookingWhere, sql`${bookings.status} != 'cancelled'`)),
       db.select({ id: bookings.id, bookingCycle: bookings.bookingCycle, amount: bookings.amountRefunded, source: bookings.source, otaPaymentTerms: bookings.otaPaymentTerms }).from(bookings).where(and(
         gte(bookings.refundedAt, from), lt(bookings.refundedAt, to), sql`${bookings.amountRefunded} > 0`,
@@ -333,6 +343,14 @@ export async function POST(req: NextRequest) {
       db.select({ id: beds.id, isBlocked: beds.isBlocked }).from(beds),
       db.select({ bedId: bookingBedAssignments.bedId, checkinDate: bookingBedAssignments.checkinDate, checkoutDate: bookingBedAssignments.checkoutDate }).from(bookingBedAssignments).innerJoin(bookings, eq(bookingBedAssignments.bookingId, bookings.id)).where(and(...assignmentWhere, sql`${bookings.status} NOT IN ('cancelled', 'guest_declined', 'no_show')`)),
       getBlockRows(),
+      db.select({
+        stays: sql<number>`COUNT(*)`,
+        revenue: sql<number>`COALESCE(SUM(${bookings.amountTotal} * (MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${priorStayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${prior.fromDate})))) / MAX(1, julianday(${bookings.checkoutDate}) - julianday(${bookings.checkinDate}))), 0)`,
+        nights: sql<number>`COALESCE(SUM(MAX(0, MIN(julianday(${bookings.checkoutDate}), julianday(${priorStayToExclusive})) - MAX(julianday(${bookings.checkinDate}), julianday(${prior.fromDate})))), 0)`,
+      }).from(bookings).where(and(...priorOverlapWhere, EXPECTED_ROOM_STATUSES, sql`${bookings.checkoutDate} > ${bookings.checkinDate}`)),
+      db.select({ gross: sql<number>`COALESCE(SUM(${foodOrders.total}), 0)` }).from(foodOrders).where(and(gte(foodOrders.createdAt, priorFrom), lt(foodOrders.createdAt, priorTo), sql`${foodOrders.status} != 'cancelled'`)),
+      db.select({ total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` }).from(expenses).where(and(gte(expenses.createdAt, priorFrom), lt(expenses.createdAt, priorTo))),
+      db.select({ bedId: bookingBedAssignments.bedId, checkinDate: bookingBedAssignments.checkinDate, checkoutDate: bookingBedAssignments.checkoutDate }).from(bookingBedAssignments).innerJoin(bookings, eq(bookingBedAssignments.bookingId, bookings.id)).where(and(...priorAssignmentWhere, sql`${bookings.status} NOT IN ('cancelled', 'guest_declined', 'no_show')`)),
     ]);
 
     // Apply linked corrections to the source event's report period even if sync
@@ -360,26 +378,33 @@ export async function POST(req: NextRequest) {
       };
     };
     const archivedStayMetrics = archivedStayRows.map((row) => snapshotMetrics(row, fromDate, stayToExclusive));
-    const archivedExpectedMetrics = archivedExpectedRows.map((row) => snapshotMetrics(row, monthStart, monthEndExclusive));
     const archivedGuests = archivedStayMetrics.reduce((sum, item) => sum + item.row.persons, 0);
     const archivedLeadDays = archivedStayMetrics.reduce((sum, item) => sum + item.leadDays, 0);
     const archivedCheckIns = archivedLifecycleRows.filter((row) => row.checkedInAt >= from && row.checkedInAt < to).length;
     const archivedCheckOuts = archivedLifecycleRows.filter((row) => row.checkedOutAt >= from && row.checkedOutAt < to).length;
 
     const dates = dateRange(fromDate, toDate);
+    const priorDates = dateRange(prior.fromDate, prior.toDate);
     const bedIds = bedRows.filter((row) => !row.isBlocked).map((row) => row.id);
     const bedIdSet = new Set(bedIds);
-    const occupancyByDate = dates.map((date) => {
-      const occupied = new Set(assignmentRows.filter((row) => bedIdSet.has(row.bedId) && row.checkinDate <= date && row.checkoutDate > date).map((row) => row.bedId));
+    const occupancyFor = (
+      rangeDates: string[],
+      rows: { bedId: number; checkinDate: string; checkoutDate: string }[],
+    ) => rangeDates.map((date) => {
+      const occupied = new Set(rows.filter((row) => bedIdSet.has(row.bedId) && row.checkinDate <= date && row.checkoutDate > date).map((row) => row.bedId));
       const blocked = new Set(blockRows.filter((row) => row.startDate <= date && row.endDate > date && bedIdSet.has(row.bedId)).map((row) => row.bedId));
       const available = Math.max(0, bedIds.length - blocked.size);
       const occupiedCount = [...occupied].filter((id) => !blocked.has(id)).length;
       return { date, occupiedBeds: occupiedCount, availableBeds: available, occupancy: available ? (occupiedCount / available) * 100 : null };
     });
+    const occupancyByDate = occupancyFor(dates, assignmentRows);
+    const priorOccupancyByDate = occupancyFor(priorDates, priorAssignmentRows);
 
     const bookingByDate = new Map(bookingByDay.map((row) => [dateOnly(String(row.date)), number(row.count)]));
     const arrivalsByDate = new Map(stayByDay.map((row) => [row.date, { arrivals: number(row.arrivals), guests: number(row.guests), revenue: number(row.revenue) }]));
     for (const item of archivedStayMetrics) {
+      // Arrivals trend stays check-in-date based; overlap snapshots that started before the range are excluded here.
+      if (item.row.checkinDate < fromDate || item.row.checkinDate >= stayToExclusive) continue;
       const date = item.row.checkinDate;
       const current = arrivalsByDate.get(date) || { arrivals: 0, guests: 0, revenue: 0 };
       current.arrivals += 1; current.guests += item.row.persons; current.revenue += item.row.amountTotalPaise / 100;
@@ -417,13 +442,14 @@ export async function POST(req: NextRequest) {
     const stayResult = staySummary[0] || { stays: 0, guests: 0, revenue: 0, obtainedRevenue: 0, nights: 0, leadDays: 0 };
     const foodResult = foodSummary[0] || { orders: 0, gross: 0, discounts: 0, paid: 0, pending: 0 };
     const expenseResult = expenseSummary[0] || { expenses: 0, total: 0 };
-    const expectedRoom = expectedRoomRevenue[0] || { stays: 0, nights: 0, revenue: 0, obtainedRevenue: 0 };
+    const departuresResult = departuresSummary[0] || { departures: 0 };
+    const priorBookingResult = priorBookingSummary[0] || { total: 0, cancelled: 0 };
+    const priorStayResult = priorStaySummary[0] || { stays: 0, revenue: 0, nights: 0 };
+    const priorFoodResult = priorFoodSummary[0] || { gross: 0 };
+    const priorExpenseResult = priorExpenseSummary[0] || { total: 0 };
     const archivedBookedStayValue = archivedStayMetrics.reduce((sum, item) => sum + item.revenue, 0);
     const archivedObtainedRoom = archivedStayMetrics.reduce((sum, item) => sum + item.obtained, 0);
     const archivedStayNights = archivedStayMetrics.reduce((sum, item) => sum + item.nights, 0);
-    const expectedArchivedRevenue = archivedExpectedMetrics.reduce((sum, item) => sum + item.revenue, 0);
-    const expectedArchivedNights = archivedExpectedMetrics.reduce((sum, item) => sum + item.nights, 0);
-    const expectedArchivedObtained = archivedExpectedMetrics.reduce((sum, item) => sum + item.obtained, 0);
     const paymentCorrections = new Map<string, (typeof postpaidOtaPaymentRows)[number][]>();
     for (const correction of [...postpaidOtaPaymentRows.filter((row) => row.eventType === "correction"), ...linkedPostpaidOtaCorrections]) {
       if (correction.correctsEventId) paymentCorrections.set(correction.correctsEventId, [...(paymentCorrections.get(correction.correctsEventId) || []), correction]);
@@ -460,6 +486,8 @@ export async function POST(req: NextRequest) {
     const foodRefunds = foodRefundRows.reduce((sum, row) => sum + Math.abs(number(row.amount)), 0);
     const availableBedNights = occupancyByDate.reduce((sum, row) => sum + row.availableBeds, 0);
     const occupiedBedNights = occupancyByDate.reduce((sum, row) => sum + row.occupiedBeds, 0);
+    const priorAvailableBedNights = priorOccupancyByDate.reduce((sum, row) => sum + row.availableBeds, 0);
+    const priorOccupiedBedNights = priorOccupancyByDate.reduce((sum, row) => sum + row.occupiedBeds, 0);
     // Booking amounts are stored in rupees; food and expenses are stored in paise.
     // Keep stay KPIs in rupees and convert only the combined activity view to paise.
     const totalRevenue = (bookedStayValue * 100) + foodRevenue;
@@ -467,9 +495,24 @@ export async function POST(req: NextRequest) {
     const nights = number(stayResult.nights) + archivedStayNights;
     const leadDayCount = number(stayResult.stays) + archivedStayMetrics.filter((item) => item.row.bookingCreatedAt).length;
     const averageLeadDays = leadDayCount ? (number(stayResult.leadDays) + archivedLeadDays) / leadDayCount : 0;
-    const adr = nights ? bookedStayValue / nights : 0;
-    const revpar = availableBedNights ? bookedStayValue / availableBedNights : 0;
+    const adr = computeAdr(bookedStayValue, nights);
+    const revpar = computeRevpar(bookedStayValue, availableBedNights);
     const averageStayLength = stayCount ? nights / stayCount : 0;
+    const arrivalsCount = number(stayEvents[0]?.checkIns) + archivedCheckIns;
+    // Arrivals by planned check-in date (stay lens), separate from lifecycle check-ins above.
+    const plannedArrivals = [...arrivalsByDate.values()].reduce((sum, row) => sum + row.arrivals, 0);
+    const departuresCount = number(departuresResult.departures);
+    const expectedRoomRevenueValue = bookedStayValue;
+    const expectedRoomObtained = obtainedRoomRevenue;
+    const expectedOutstanding = outstandingBalance(expectedRoomRevenueValue, expectedRoomObtained);
+    const cancelRate = cancellationRate(number(bookingResult.cancelled), number(bookingResult.total));
+    const collectRate = collectionRate(expectedRoomObtained, expectedRoomRevenueValue);
+    const priorBookedStayValue = number(priorStayResult.revenue);
+    const priorNights = number(priorStayResult.nights);
+    const priorAdr = computeAdr(priorBookedStayValue, priorNights);
+    const priorRevpar = computeRevpar(priorBookedStayValue, priorAvailableBedNights);
+    const priorOccupancyPct = priorAvailableBedNights ? (priorOccupiedBedNights / priorAvailableBedNights) * 100 : null;
+    const occupancyPct = availableBedNights ? (occupiedBedNights / availableBedNights) * 100 : null;
     const roomClassTotals = new Map<string, { stays: number; guests: number; nights: number; revenue: number }>();
     for (const row of stayByRoomType) {
       const roomClass = String(row.roomClass || "other");
@@ -500,6 +543,7 @@ export async function POST(req: NextRequest) {
     }
     const stayByWeekdayTotals = new Map(stayByWeekday.map((row) => [number(row.weekday), number(row.count)]));
     for (const item of archivedStayMetrics) {
+      if (item.row.checkinDate < fromDate || item.row.checkinDate >= stayToExclusive) continue;
       const weekday = new Date(`${item.row.checkinDate}T00:00:00Z`).getUTCDay();
       stayByWeekdayTotals.set(weekday, (stayByWeekdayTotals.get(weekday) || 0) + 1);
     }
@@ -509,26 +553,80 @@ export async function POST(req: NextRequest) {
     const combinedStayByRoomType = [...roomTypeTotals.values()].sort((a, b) => b.stays - a.stays);
 
     return NextResponse.json({
-      range: { fromDate, toDate, days, timezone: "Asia/Kolkata" },
+      range: { fromDate, toDate, days, timezone: "Asia/Kolkata", priorFromDate: prior.fromDate, priorToDate: prior.toDate },
       summary: {
-        bookings: number(bookingResult.total), plannedStays: stayCount,
-        actualCheckIns: number(stayEvents[0]?.checkIns) + archivedCheckIns, actualCheckOuts: number(stayEvents[0]?.checkOuts) + archivedCheckOuts, guests: number(stayResult.guests) + archivedGuests,
-        cancellations: number(bookingResult.cancelled), noShows: number(bookingResult.noShow), completedBookings: number(stayEvents[0]?.checkIns) + archivedCheckIns, bookedStayValue, obtainedRoomRevenue, foodRevenue, totalRevenue,
-        expenses: number(expenseResult.total), activityBalance: totalRevenue - number(expenseResult.total), foodOrders: number(foodResult.orders), foodPaid: number(foodResult.paid), foodPending: number(foodResult.pending),
-        expectedRoomRevenue: number(expectedRoom.revenue) + expectedArchivedRevenue,
-        expectedRoomObtainedRevenue: number(expectedRoom.obtainedRevenue) + expectedArchivedObtained,
-        expectedRoomStays: number(expectedRoom.stays) + archivedExpectedMetrics.length,
-        expectedRoomNights: number(expectedRoom.nights) + expectedArchivedNights,
-        expectedRoomMonth: monthStart.slice(0, 7), expectedRoomMonthDays: monthDays,
-      stayRefunds, foodRefunds, stayDiscounts, foodDiscounts: number(foodResult.discounts),
+        bookings: number(bookingResult.total),
+        plannedStays: stayCount,
+        onBooksStays: stayCount,
+        onBooksNights: nights,
+        arrivals: plannedArrivals,
+        departures: departuresCount,
+        actualCheckIns: arrivalsCount,
+        actualCheckOuts: number(stayEvents[0]?.checkOuts) + archivedCheckOuts,
+        guests: number(stayResult.guests) + archivedGuests,
+        cancellations: number(bookingResult.cancelled),
+        noShows: number(bookingResult.noShow),
+        completedBookings: arrivalsCount,
+        bookedStayValue,
+        obtainedRoomRevenue,
+        foodRevenue,
+        totalRevenue,
+        expenses: number(expenseResult.total),
+        activityBalance: totalRevenue - number(expenseResult.total),
+        foodOrders: number(foodResult.orders),
+        foodPaid: number(foodResult.paid),
+        foodPending: number(foodResult.pending),
+        expectedRoomRevenue: expectedRoomRevenueValue,
+        expectedRoomObtainedRevenue: expectedRoomObtained,
+        expectedRoomStays: stayCount,
+        expectedRoomNights: nights,
+        outstandingBalance: expectedOutstanding,
+        cancellationRate: cancelRate,
+        collectionRate: collectRate,
+        stayRefunds,
+        foodRefunds,
+        stayDiscounts,
+        foodDiscounts: number(foodResult.discounts),
         postpaidOtaCollectionsPaise: postpaidOtaCollectedPaise,
         postpaidOtaRefundsPaise: postpaidOtaRefundedPaise,
         postpaidOtaNetPaise: postpaidOtaCollectedPaise - postpaidOtaRefundedPaise,
         postpaidOtaCashNetPaise,
         postpaidOtaOnlineNetPaise,
-        averageDailyBookings: number(bookingResult.total) / days, averageDailyCompletedBookings: number(stayEvents[0]?.checkIns) / days, averageDailyRoomValue: obtainedRoomRevenue / days, averageDailyFoodSales: foodRevenue / days, averageDailyExpenses: number(expenseResult.total) / days,
-        occupiedBedNights: bedIds.length ? occupiedBedNights : null, availableBedNights: bedIds.length ? availableBedNights : null,
-        occupancy: availableBedNights ? (occupiedBedNights / availableBedNights) * 100 : null, adr, revpar, averageStayLength, averageLeadDays,
+        averageDailyBookings: number(bookingResult.total) / days,
+        averageDailyCompletedBookings: arrivalsCount / days,
+        averageDailyRoomValue: obtainedRoomRevenue / days,
+        averageDailyFoodSales: foodRevenue / days,
+        averageDailyExpenses: number(expenseResult.total) / days,
+        occupiedBedNights: bedIds.length ? occupiedBedNights : null,
+        availableBedNights: bedIds.length ? availableBedNights : null,
+        occupancy: occupancyPct,
+        adr,
+        revpar,
+        averageStayLength,
+        averageLeadDays,
+      },
+      comparison: {
+        fromDate: prior.fromDate,
+        toDate: prior.toDate,
+        bookings: number(priorBookingResult.total),
+        bookedStayValue: priorBookedStayValue,
+        onBooksStays: number(priorStayResult.stays),
+        onBooksNights: priorNights,
+        foodRevenue: number(priorFoodResult.gross),
+        expenses: number(priorExpenseResult.total),
+        occupancy: priorOccupancyPct,
+        adr: priorAdr,
+        revpar: priorRevpar,
+        deltas: {
+          bookings: percentDelta(number(bookingResult.total), number(priorBookingResult.total)),
+          bookedStayValue: percentDelta(bookedStayValue, priorBookedStayValue),
+          onBooksStays: percentDelta(stayCount, number(priorStayResult.stays)),
+          foodRevenue: percentDelta(foodRevenue, number(priorFoodResult.gross)),
+          expenses: percentDelta(number(expenseResult.total), number(priorExpenseResult.total)),
+          occupancy: occupancyPct === null || priorOccupancyPct === null ? null : percentDelta(occupancyPct, priorOccupancyPct),
+          adr: percentDelta(adr, priorAdr),
+          revpar: percentDelta(revpar, priorRevpar),
+        },
       },
       trend,
       bookings: {
@@ -568,19 +666,23 @@ export async function POST(req: NextRequest) {
       },
       dataQuality: { occupancy: bedIds.length > 0, actualFoodPrepTimes: false, otaCommission: false, expenseBusinessDate: false },
       definitions: {
-        bookedStayValue: "Prorated booking totals by overlapping stay nights; not cash collected or earned revenue",
+        bookedStayValue: "Prorated booking totals by nights overlapping the selected range; includes received/confirmed/checked-in/checked-out stays; not cash collected",
         foodSales: "Non-cancelled food order totals, grouped by order time",
         occupancy: "Assigned bed-nights divided by sellable bed-nights; permanently blocked beds and active date blocks are excluded",
-        adr: "Booked stay value divided by occupied bed-nights", revpar: "Booked stay value divided by available bed-nights",
+        adr: "Booked stay value divided by overlapping booked nights in the selected range",
+        revpar: "Booked stay value divided by available bed-nights",
         activityBalance: "Booked stay value plus food sales minus recorded expenses; not cash, profit, or accrual revenue",
-        receivedDate: "Bookings, food orders, and expenses use their created/recorded timestamp in Asia/Kolkata",
-        stayDate: "Stay metrics use guest check-in/check-out dates; checkout date is not a consumed night",
+        receivedDate: "Bookings received (pickup), food orders, and expenses use their created/recorded timestamp in Asia/Kolkata",
+        stayDate: "Arrivals use planned check-in date; checkout date is not a consumed night",
+        onBooks: "Non-cancelled stays whose nights overlap the selected range (received through checked-out)",
         bookingWindow: "Calendar days between booking creation date and check-in date",
         dailyAverages: "Daily values divided by the selected elapsed date range, including the end date",
-        expectedRoomRevenue: "Booked room value from received/confirmed/completed bookings recorded by the report end date, prorated to the selected report month; cancelled and no-show bookings are excluded",
-        obtainedRoomRevenue: "Amount paid so far on non-cancelled room bookings; room values are stored in rupees",
+        expectedRoomRevenue: "Same as booked stay value for the selected range: on-books room value prorated to overlapping nights",
+        obtainedRoomRevenue: "Amount paid so far on overlapping on-books stays (not night-prorated); room values are stored in rupees",
         postpaidOtaPayments: "Goko-collected INR pay-at-property OTA collections by payment business date, including pre-arrival advances; stored in paise and separate from stay-date revenue",
         refundsAndDiscounts: "Refunds use issued/receipt date; discounts use the booking/order recorded range because separate discount-event timestamps are not stored",
+        comparison: "Prior equal-length date window ending the day before the selected from date",
+        trendStayRevenue: "Daily trend stay value uses full amountTotal on the planned check-in date (arrival lens), not night-prorated overlap",
       },
       generatedAt: new Date().toISOString(),
     });

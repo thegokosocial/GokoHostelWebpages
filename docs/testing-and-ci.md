@@ -45,6 +45,7 @@ Dependency security checks use `npm audit`. Next stays on the supported 15.5 pat
 
 | File | Covers |
 |------|--------|
+| `analytics-metrics.test.ts` / `analytics-route-lenses.test.ts` | Pure overlap/ADR/prior-range/rate helpers; analytics API pickup vs on-books lenses, selected-range expected revenue, auth/validation, prior comparison, archive snapshots |
 | `rbac.test.ts` | Permission maps, including OTA collection vs refund/correction scopes and safe account choices for authorized payment/refund users |
 | `splits.test.ts` / `splits-wiring.test.ts` | Split math (incl. equal-with-Goko infer) + Pi/nav/edit wiring |
 | `stock-operations.test.ts` | Decrement / restore |
