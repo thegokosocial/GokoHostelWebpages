@@ -155,4 +155,17 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).not.toContain('const [persons, setPersons] = useState("1")');
     expect(panel).toContain("persons !== \"\" && Number.isInteger(Number(persons))");
   });
+
+  it("uses a frosted glass outer shell with solid nested surfaces and sticky estimate", () => {
+    expect(panel).toContain("goko-glass-panel");
+    expect(panel).toMatch(/className="goko-glass-panel min-w-0 rounded-2xl/);
+    expect(panel).not.toMatch(/data-booking-in-view=\{inView\} className="[^"]*bg-white/);
+    expect(panel).toContain('rounded-2xl border border-brand-green/20 bg-white');
+    expect(panel).toContain("bg-brand-green-dark");
+    expect(css).toContain(".goko-glass-panel");
+    expect(css).toContain("backdrop-filter: blur(20px) saturate(160%)");
+    expect(css).toContain("-webkit-backdrop-filter: blur(20px) saturate(160%)");
+    expect(css).toContain("prefers-reduced-transparency: reduce");
+    expect(css).toMatch(/@supports \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)/);
+  });
 });
