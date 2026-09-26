@@ -38,6 +38,7 @@ import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignm
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 import { apiErrorBody, getRequestId } from "@/lib/apiError";
 import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
+import { ensureDefaultFoodStaffPermissions } from "@/lib/foodStaffPermissions";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import { syncInsert } from "@/db/syncMeta";
 import { collectInBatches, uniqueInBatches } from "@/lib/dbBatch";
@@ -1357,7 +1358,10 @@ export async function POST(req: NextRequest) {
       const existing = await getUserByUsername(newUsername);
       if (existing) return NextResponse.json({ error: "Username already exists" }, { status: 409 });
       const passwordHash = await hashPassword(userPass);
-      await createUser({ username: newUsername, passwordHash, displayName, role: userRole || "staff", permissions: JSON.stringify(perms || {}) });
+      const normalizedPerms = ensureDefaultFoodStaffPermissions(
+        typeof perms === "object" && perms && !Array.isArray(perms) ? perms as Record<string, boolean> : {},
+      );
+      await createUser({ username: newUsername, passwordHash, displayName, role: userRole || "staff", permissions: JSON.stringify(normalizedPerms) });
       await addAuditEntry({ username: actingUser, action: "user_created", target: newUsername });
       return NextResponse.json({ success: true });
     }
@@ -1368,7 +1372,11 @@ export async function POST(req: NextRequest) {
       const data: any = {};
       if (displayName) data.displayName = displayName;
       if (userRole) data.role = userRole;
-      if (perms) data.permissions = JSON.stringify(perms);
+      if (perms) {
+        data.permissions = JSON.stringify(ensureDefaultFoodStaffPermissions(
+          typeof perms === "object" && !Array.isArray(perms) ? perms as Record<string, boolean> : {},
+        ));
+      }
       if (userPass) data.passwordHash = await hashPassword(userPass);
       await updateUser(userId, data);
       await addAuditEntry({ username: actingUser, action: "user_updated", target: `userId:${userId}` });

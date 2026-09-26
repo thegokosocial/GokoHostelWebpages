@@ -584,10 +584,25 @@ describe("admin market-pricing workflows", () => {
     expect(response.status).toBe(403);
     const body = await response.json();
     expect(body.code).toBe("permission_denied");
-    expect(body.requiredPermissions).toEqual(["canPlaceOrders", "canViewFoodOrders"]);
-    expect(body.error).toMatch(/canPlaceOrders|canViewFoodOrders/);
+    expect(body.requiredPermissions).toEqual(["canPlaceOrders"]);
+    expect(body.error).toMatch(/canPlaceOrders/);
     expect(body.howToFix).toMatch(/Management → Users/);
     expect(q.createFoodOrder).not.toHaveBeenCalled();
+  });
+
+  it("cancelUnpaidOrder is forbidden for view-only staff", async () => {
+    q.authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Timo",
+      permissions: { canViewFoodOrders: true, canPlaceOrders: true },
+    });
+    const response = await POST(actionReq("cancelUnpaidOrder", { orderId: 10 }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      code: "permission_denied",
+      requiredPermissions: ["canVoidFoodOrders"],
+    });
+    expect(q.updateFoodOrderStatus).not.toHaveBeenCalled();
   });
 
   it("placeOrderForGuest staff with canPlaceOrders is allowed", async () => {

@@ -1072,12 +1072,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const selectedGroupOrders = useMemo(() => selectedGroup
     ? [...getGroupOrders(selectedGroup)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : [], [selectedGroup, getGroupOrders]);
-  const canEditOrderItems = hasPermission(role || "staff", permissions || {}, "canEditFoodOrders")
-    || hasPermission(role || "staff", permissions || {}, "canPlaceOrders")
-    || hasPermission(role || "staff", permissions || {}, "canViewFoodOrders");
-  const canCancelFoodOrders = hasPermission(role || "staff", permissions || {}, "canVoidFoodOrders")
-    || hasPermission(role || "staff", permissions || {}, "canPlaceOrders")
-    || hasPermission(role || "staff", permissions || {}, "canViewFoodOrders");
+  const canEditOrderItems = hasPermission(role || "staff", permissions || {}, "canEditFoodOrders");
+  const canCancelFoodOrders = hasPermission(role || "staff", permissions || {}, "canVoidFoodOrders");
   // Mixed groups show only the unpaid orders in the bill. Fully paid groups still
   // open their complete paid bill so Print/Bill/Order More remain available.
   const billOrders = useMemo(() => {

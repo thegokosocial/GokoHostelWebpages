@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { authSessions } from "@/db/schema";
 import { getUserByUsername } from "@/db/queries";
 import type { AuthResult, KitchenAuthResult } from "@/lib/auth";
+import { grantAllFoodStaffPermissions } from "@/lib/foodStaffPermissions";
 
 export const AUTH_COOKIE = "goko_session";
 export type AuthScope = "admin" | "kitchen";
@@ -59,6 +60,7 @@ export async function getAuthSession(scope: AuthScope = "admin"): Promise<(AuthR
       const user = await getUserByUsername(row.username);
       if (!user) return null;
       try { permissions = JSON.parse(user.permissions || "{}"); } catch { permissions = {}; }
+      permissions = grantAllFoodStaffPermissions(permissions);
       const result = { username: user.username, role: (user.role as AuthResult["role"]) || "staff", displayName: user.displayName || user.username, permissions };
       void getDb().update(authSessions).set({ role: result.role, displayName: result.displayName, permissions: JSON.stringify(permissions), lastSeenAt: nowIso() }).where(eq(authSessions.tokenHash, row.tokenHash)).catch(() => {});
       return result;

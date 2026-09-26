@@ -37,11 +37,11 @@ const FOOD_ORDERS_PERMISSIONS: Record<string, ActionPerm> = {
   getGuestsWithTabs: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"], getGuestTab: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
   getGuestAllOrders: ["canViewFoodTabs", "canViewFoodOrders", "canMarkPaid"], getWalkinOrders: ["canViewFoodOrders", "canMarkPaid"],
   getCombinedBillOptions: ["canGenerateFoodBills", "canViewFoodOrders"], getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
-  updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"], cancelUnpaidOrder: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], placeOrderForGuest: ["canPlaceOrders", "canViewFoodOrders"],
-  voidItem: ["canVoidFoodOrders", "canPlaceOrders", "canViewFoodOrders"], updateItemQuantity: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
-  setFoodOrderItemPrice: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
-  saveOrderEdits: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
-  reassignOrder: ["canEditFoodOrders", "canPlaceOrders", "canViewFoodOrders"],
+  updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders"], cancelUnpaidOrder: "canVoidFoodOrders", placeOrderForGuest: "canPlaceOrders",
+  voidItem: "canVoidFoodOrders", updateItemQuantity: "canEditFoodOrders",
+  setFoodOrderItemPrice: "canEditFoodOrders",
+  saveOrderEdits: "canEditFoodOrders",
+  reassignOrder: "canEditFoodOrders",
   markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
   applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
   createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
@@ -325,10 +325,17 @@ describe("RBAC: Dual-key OR (fine-grained or today's coarse key)", () => {
     expect(checkPermission(role, {}, CHECKINS_PERMISSIONS, "checkoutBed")).toBe("forbidden");
   });
 
-  it("placeOrderForGuest allowed with canViewFoodOrders or canPlaceOrders", () => {
-    expect(checkPermission(role, { canViewFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "placeOrderForGuest")).toBe("allowed");
+  it("placeOrderForGuest requires canPlaceOrders (view alone is not enough)", () => {
+    expect(checkPermission(role, { canViewFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "placeOrderForGuest")).toBe("forbidden");
     expect(checkPermission(role, { canPlaceOrders: true }, FOOD_ORDERS_PERMISSIONS, "placeOrderForGuest")).toBe("allowed");
     expect(checkPermission(role, {}, FOOD_ORDERS_PERMISSIONS, "placeOrderForGuest")).toBe("forbidden");
+  });
+
+  it("cancel/void require canVoidFoodOrders; edits require canEditFoodOrders", () => {
+    expect(checkPermission(role, { canViewFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "cancelUnpaidOrder")).toBe("forbidden");
+    expect(checkPermission(role, { canVoidFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "cancelUnpaidOrder")).toBe("allowed");
+    expect(checkPermission(role, { canPlaceOrders: true }, FOOD_ORDERS_PERMISSIONS, "saveOrderEdits")).toBe("forbidden");
+    expect(checkPermission(role, { canEditFoodOrders: true }, FOOD_ORDERS_PERMISSIONS, "saveOrderEdits")).toBe("allowed");
   });
 
   it("bookings checkIn/checkOut allowed with canAddBooking or dedicated keys", () => {

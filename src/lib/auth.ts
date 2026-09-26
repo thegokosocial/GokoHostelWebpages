@@ -1,6 +1,7 @@
 import { getUserByUsername, getAllUsers, updateUser } from "@/db/queries";
 import type { UserRole } from "@/lib/actionPermissions";
 import { getAuthSession } from "@/lib/authSession";
+import { grantAllFoodStaffPermissions } from "@/lib/foodStaffPermissions";
 
 export type { UserRole };
 
@@ -66,12 +67,16 @@ export async function authenticateUser(password: string, username?: string): Pro
 
   if (!username) {
     if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) return { role: "admin", displayName: "Admin", username: "admin", permissions: {} };
-    if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD) return { role: "manager", displayName: "Manager", username: "manager", permissions: {} };
+    if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD) {
+      return { role: "manager", displayName: "Manager", username: "manager", permissions: grantAllFoodStaffPermissions({}) };
+    }
     return null;
   }
 
   if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD && username === "admin") return { role: "admin", displayName: "Admin", username: "admin", permissions: {} };
-  if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD && username === "manager") return { role: "manager", displayName: "Manager", username: "manager", permissions: {} };
+  if (process.env.MANAGER_PASSWORD && password === process.env.MANAGER_PASSWORD && username === "manager") {
+    return { role: "manager", displayName: "Manager", username: "manager", permissions: grantAllFoodStaffPermissions({}) };
+  }
 
   try {
     const user = await getUserByUsername(username);
@@ -83,7 +88,10 @@ export async function authenticateUser(password: string, username?: string): Pro
     }
     let permissions: Record<string, boolean> = {};
     try { permissions = JSON.parse(user.permissions || "{}"); } catch {}
-    return { role: (user.role as UserRole) || "manager", displayName: user.displayName || username, username, permissions };
+    const role = (user.role as UserRole) || "manager";
+    // Admins bypass maps; every other DB user always gets the full food set at auth time.
+    if (role !== "admin") permissions = grantAllFoodStaffPermissions(permissions);
+    return { role, displayName: user.displayName || username, username, permissions };
   } catch {
     return null;
   }

@@ -354,6 +354,55 @@ describe("POST /api/food/order", () => {
     expect(q.addFoodOrderItems).not.toHaveBeenCalled();
   });
 
+  it("does not abandon a paid incomplete orphan on totals mismatch", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.getFoodOrderByIdempotencyKey.mockResolvedValue({
+      id: 9, orderNumber: "F-9", subtotal: 203000, tax: 0, total: 203000, status: "placed", amountPaid: 203000, paymentStatus: "paid",
+    });
+    q.countFoodOrderItems.mockResolvedValue(0);
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(409);
+    expect(q.abandonIncompleteFoodOrder).not.toHaveBeenCalled();
+  });
+
+  it("uses tax rate 0 exactly (never falls back to 5%)", async () => {
+    mockSettings({ food_tax_rate: "0" });
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 10000, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.getNextOrderNumber.mockResolvedValue("F-10");
+    q.createFoodOrder.mockResolvedValue([{ id: 10, orderNumber: "F-10", total: 10000 }]);
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(200);
+    expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({ subtotal: 10000, tax: 0, total: 10000 }));
+  });
+
+  it("starts pending_approval when food_confirm_with_guest is true", async () => {
+    mockSettings({ food_confirm_with_guest: "true" });
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.getNextOrderNumber.mockResolvedValue("F-11");
+    q.createFoodOrder.mockResolvedValue([{ id: 11, orderNumber: "F-11", total: 105 }]);
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(200);
+    expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({ status: "pending_approval" }));
+  });
+
+  it("auto-marks ready when every line is trackInventory and status is placed", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 2, name: "Soap", price: 500, priceOnRequest: 0, isAvailable: 1, trackInventory: 1, stockQuantity: 5 });
+    q.getNextOrderNumber.mockResolvedValue("F-12");
+    q.createFoodOrder.mockResolvedValue([{ id: 12, orderNumber: "F-12", total: 525 }]);
+    const res = await postOrder(orderReq({ ...validOrder, items: [{ menuItemId: 2, quantity: 1 }] }));
+    expect(res.status).toBe(200);
+    expect(q.decrementStock).toHaveBeenCalledWith(2, 1);
+    expect(q.updateFoodOrderStatus).toHaveBeenCalledWith(12, "ready");
+  });
+
+  it("rejects unavailable menu items for guests", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 0, trackInventory: 0, stockQuantity: 0 });
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: expect.stringMatching(/unavailable/i) });
+    expect(q.createFoodOrder).not.toHaveBeenCalled();
+  });
+
   it("keeps a stable client idempotency key until success in FoodCart", async () => {
     const source = readFile("src/components/food/FoodCart.tsx");
     expect(source).toMatch(/useState\(\(\) => crypto\.randomUUID\(\)\)/);
