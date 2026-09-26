@@ -7,7 +7,6 @@
  * Environment variables (set by GitHub Action):
  *   SCRAPE_ID, CITY, START_DATE, END_DATE, PROPERTY_TYPE, API_URL, API_PASSWORD
  */
-
 const puppeteer = require("puppeteer");
 const { extractBookingCards } = require("./booking-rate-parser");
 const { writeFile } = require("node:fs/promises");
@@ -28,6 +27,8 @@ const PROPERTY_TYPE_IDS = {
   homestays: "ht_id=222",
 };
 
+const CALLBACK_RETRIES = 3;
+
 function generateDates(start, end) {
   const dates = [];
   const current = new Date(start);
@@ -42,6 +43,37 @@ function generateDates(start, end) {
 function buildUrl(city, checkin, checkout, propertyType) {
   const filter = PROPERTY_TYPE_IDS[propertyType] || PROPERTY_TYPE_IDS.hostels;
   return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}&group_adults=1&group_children=0&no_rooms=1&nflt=${filter}&selected_currency=INR&lang=en`;
+}
+
+async function postResults(status, results) {
+  let lastError;
+  for (let attempt = 1; attempt <= CALLBACK_RETRIES; attempt++) {
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: API_PASSWORD,
+          action: "updateRateScrapeResults",
+          scrapeId: parseInt(SCRAPE_ID, 10),
+          results: typeof results === "string" ? results : JSON.stringify(results),
+          status,
+        }),
+      });
+      if (res.ok) {
+        console.log(`✓ Posted status=${status}${attempt > 1 ? ` (attempt ${attempt})` : ""}.`);
+        return;
+      }
+      lastError = new Error(`Failed to post results: ${res.status}`);
+    } catch (err) {
+      lastError = err;
+    }
+    console.error(`Callback attempt ${attempt}/${CALLBACK_RETRIES} failed:`, lastError?.message || lastError);
+    if (attempt < CALLBACK_RETRIES) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  throw lastError || new Error("Failed to post results");
 }
 
 async function scrapeOnePage(browser, city, checkin, checkout, propertyType) {
@@ -93,7 +125,15 @@ async function main() {
   if (!SCRAPE_ID || !START_DATE || !END_DATE) {
     console.error("Missing required environment variables");
     process.exit(1);
+    return;
   }
+  if (!API_URL || !API_PASSWORD) {
+    console.error("API_URL and API_PASSWORD are required so results can update D1. Set them as GitHub Actions secrets.");
+    process.exit(1);
+    return;
+  }
+
+  await postResults("in_progress", "[]");
 
   const dates = generateDates(START_DATE, END_DATE);
   console.log(`Scraping ${dates.length} dates...\n`);
@@ -149,34 +189,8 @@ async function main() {
   const status = !hasPrices ? "failed" : failedDates.length ? "partial" : "done";
   const payload = { version: 2, properties: resultsArray, failedDates };
 
-  // Post results back to API
-  if (API_URL && API_PASSWORD) {
-    console.log("Posting results to API...");
-    try {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password: API_PASSWORD,
-          action: "updateRateScrapeResults",
-          scrapeId: parseInt(SCRAPE_ID),
-          results: JSON.stringify(payload),
-          status,
-        }),
-      });
-      if (res.ok) {
-        console.log("✓ Results posted successfully.");
-      } else {
-        throw new Error(`Failed to post results: ${res.status}`);
-      }
-    } catch (err) {
-      console.error("Error posting results:", err.message);
-      process.exitCode = 1;
-    }
-  } else {
-    console.log("\nNo API_URL set. Results (paste into D1 manually):");
-    console.log(JSON.stringify(payload, null, 2));
-  }
+  console.log("Posting results to API...");
+  await postResults(status, payload);
 }
 
 main().catch(async (err) => {
@@ -185,18 +199,10 @@ main().catch(async (err) => {
   // Post failure status back to API
   if (API_URL && API_PASSWORD && SCRAPE_ID) {
     try {
-      await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password: API_PASSWORD,
-          action: "updateRateScrapeResults",
-          scrapeId: parseInt(SCRAPE_ID),
-          results: "[]",
-          status: "failed",
-        }),
-      });
-    } catch {}
+      await postResults("failed", "[]");
+    } catch (postErr) {
+      console.error("Failed to post failure status:", postErr?.message || postErr);
+    }
   }
   process.exit(1);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAdminApi } from "./useAdminApi";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "./AdminLoading";
@@ -11,7 +11,12 @@ import { cn, localDateStr, todayIST } from "@/lib/utils";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import type { Role } from "./types";
 
-import { parseRateResults, rateScrapeDates, type RateResult } from "@/lib/rateScrapeResults";
+import { estimateRateScrapeMinutes, parseRateResults, rateScrapeDates, type RateResult } from "@/lib/rateScrapeResults";
+
+const POLL_MS = 10_000;
+const STUCK_PENDING_MS = 12 * 60_000;
+const LONG_RANGE_NIGHTS = 14;
+const ACTIONS_URL = "https://github.com/thegokosocial/GokoHostelWebpages/actions/workflows/scrape-rates.yml";
 
 type ScrapeData = {
   id: number;
@@ -27,12 +32,25 @@ type ScrapeData = {
   completedAt: string;
 };
 
-export function AdminCheckRates({ password, username, role }: { password: string; username?: string; role: Role }) {
+function applyScrapePayload(scrape: Record<string, unknown>): ScrapeData {
+  const parsed = parseRateResults(scrape.results);
+  return {
+    ...(scrape as unknown as ScrapeData),
+    results: parsed.properties,
+    failedDates: parsed.failedDates,
+    legacy: parsed.legacy,
+  };
+}
+
+export function AdminCheckRates({ password, username, role: _role }: { password: string; username?: string; role: Role }) {
   const { apiCall } = useAdminApi(password, username);
   const { showError, showApiError } = useAdminToast();
   const [loading, setLoading] = useState(false);
   const [scrapeData, setScrapeData] = useState<ScrapeData | null>(null);
   const [scraping, setScraping] = useState(false);
+  const [polling, setPolling] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const scrapeIdRef = useRef<number | null>(null);
 
   const [city, setCity] = useState("Gokarna");
   const [startDate, setStartDate] = useState(localDateStr(new Date()));
@@ -44,6 +62,10 @@ export function AdminCheckRates({ password, username, role }: { password: string
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
+    scrapeIdRef.current = scrapeData?.id ?? null;
+  }, [scrapeData?.id]);
+
+  useEffect(() => {
     let cancelled = false;
     const loadLatest = async () => {
       setLoading(true);
@@ -53,15 +75,7 @@ export function AdminCheckRates({ password, username, role }: { password: string
         if (!res.ok) throw new Error("Failed to load rates");
         const d = await res.json();
         if (cancelled) return;
-        if (d.scrape) {
-          const parsed = parseRateResults(d.scrape.results);
-          setScrapeData({
-            ...d.scrape,
-            results: parsed.properties,
-            failedDates: parsed.failedDates,
-            legacy: parsed.legacy,
-          });
-        }
+        if (d.scrape) setScrapeData(applyScrapePayload(d.scrape));
       } catch {
         if (!cancelled) showError("Failed to load rates");
       } finally { if (!cancelled) setLoading(false); }
@@ -72,6 +86,41 @@ export function AdminCheckRates({ password, username, role }: { password: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city, password, username]);
 
+  const pollStatus = async (opts?: { silent?: boolean }) => {
+    const id = scrapeIdRef.current;
+    if (id == null) return;
+    setPolling(true);
+    try {
+      const res = await apiCall({ action: "getRateScrapeStatus", scrapeId: id });
+      if (res.ok) {
+        const d = await res.json();
+        if (d.scrape) setScrapeData(applyScrapePayload(d.scrape));
+      } else if (!opts?.silent) {
+        const d = await res.json().catch(() => ({}));
+        showApiError({ response: res, data: d, action: "getRateScrapeStatus", endpoint: "/api/admin/checkins" }, "Could not check scrape status.");
+      }
+    } catch {
+      if (!opts?.silent) showError("Could not check scrape status.");
+    } finally {
+      setPolling(false);
+      setNow(Date.now());
+    }
+  };
+
+  // Auto-poll while the Action is queued or running.
+  useEffect(() => {
+    if (!scrapeData || !["pending", "in_progress"].includes(scrapeData.status)) return;
+    const tick = window.setInterval(() => {
+      void pollStatus({ silent: true });
+    }, POLL_MS);
+    const clock = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => {
+      window.clearInterval(tick);
+      window.clearInterval(clock);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrapeData?.id, scrapeData?.status, password, username]);
+
   const startScrape = async () => {
     setScraping(true);
     try {
@@ -81,6 +130,7 @@ export function AdminCheckRates({ password, username, role }: { password: string
       if (res.ok) {
         const d = await res.json();
         setScrapeData({ id: d.id, city, startDate, endDate, propertyType, status: "pending", results: [], createdAt: new Date().toISOString(), completedAt: "" });
+        setNow(Date.now());
       } else {
         const d = await res.json();
         showApiError({ response: res, data: d, action: "startRateScrape", endpoint: "/api/admin/checkins" }, "Could not start the rate scrape.");
@@ -88,24 +138,13 @@ export function AdminCheckRates({ password, username, role }: { password: string
     } finally { setScraping(false); }
   };
 
-  const pollStatus = async () => {
-    if (!scrapeData) return;
-    const res = await apiCall({ action: "getRateScrapeStatus", scrapeId: scrapeData.id });
-    if (res.ok) {
-      const d = await res.json();
-      if (d.scrape) {
-        const parsed = parseRateResults(d.scrape.results);
-        setScrapeData({
-          ...d.scrape,
-          results: parsed.properties,
-          failedDates: parsed.failedDates,
-          legacy: parsed.legacy,
-        });
-      }
-    }
-  };
-
   const dates = rateScrapeDates(scrapeData?.startDate || startDate, scrapeData?.endDate || endDate);
+  const nightCount = dates.length;
+  const etaMinutes = estimateRateScrapeMinutes(nightCount);
+  const pendingStuck = !!scrapeData
+    && scrapeData.status === "pending"
+    && now - new Date(scrapeData.createdAt).getTime() >= STUCK_PENDING_MS;
+  const selectedNights = rateScrapeDates(startDate, endDate).length;
 
   if (loading) return <AdminLoading message="Loading rates..." />;
 
@@ -151,6 +190,12 @@ export function AdminCheckRates({ password, username, role }: { password: string
           </div>
         </div>
 
+        {selectedNights > LONG_RANGE_NIGHTS && (
+          <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
+            {selectedNights} nights selected — scrape may take ~{estimateRateScrapeMinutes(selectedNights)} minutes. Prefer a shorter range for a quicker check.
+          </p>
+        )}
+
         {/* Advanced settings */}
         <div className="mt-3 border-t border-brand-mist pt-3">
           <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className="text-[11px] font-medium text-brand-green-dark/40 hover:text-brand-green">
@@ -188,9 +233,31 @@ export function AdminCheckRates({ password, username, role }: { password: string
           scrapeData.status === "failed" && "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400",
         )}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              {scrapeData.status === "pending" && <p>Scrape queued. The GitHub Action will process it shortly. Check back in ~3 minutes.</p>}
-              {scrapeData.status === "in_progress" && <p>Scrape in progress... fetching rates from Booking.com.</p>}
+            <div className="space-y-1">
+              {scrapeData.status === "pending" && !pendingStuck && (
+                <p>
+                  Scrape queued. The GitHub Action will start shortly
+                  {nightCount > 0 ? ` (~${etaMinutes} min for ${nightCount} night${nightCount === 1 ? "" : "s"})` : ""}.
+                  Status refreshes automatically.
+                </p>
+              )}
+              {scrapeData.status === "pending" && pendingStuck && (
+                <p>
+                  Still queued after ~{Math.round(STUCK_PENDING_MS / 60_000)} minutes — the Action may not be reporting back.
+                  Check{" "}
+                  <a href={ACTIONS_URL} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                    GitHub Actions → Scrape Booking.com Rates
+                  </a>
+                  {" "}and repo secrets <code className="text-[11px]">API_URL</code> / <code className="text-[11px]">API_PASSWORD</code>
+                  {" "}(password must match Worker <code className="text-[11px]">ADMIN_PASSWORD</code>).
+                </p>
+              )}
+              {scrapeData.status === "in_progress" && (
+                <p>
+                  Scrape in progress… fetching rates from Booking.com
+                  {nightCount > 0 ? ` (~${etaMinutes} min for ${nightCount} night${nightCount === 1 ? "" : "s"})` : ""}.
+                </p>
+              )}
               {scrapeData.status === "done" && <p>Scrape completed at {new Date(scrapeData.completedAt).toLocaleString()} — showing {scrapeData.results.length} properties.</p>}
               {scrapeData.status === "partial" && <p>Scrape partially completed. Some prices could not be verified.</p>}
               {!!scrapeData.failedDates?.length && <p>Incomplete dates: {scrapeData.failedDates.join(", ")}</p>}
@@ -198,8 +265,9 @@ export function AdminCheckRates({ password, username, role }: { password: string
             </div>
             <div className="flex flex-wrap gap-2">
               {(scrapeData.status === "pending" || scrapeData.status === "in_progress") && (
-                <Button type="button" variant="ctaOutline" onClick={pollStatus}>
-                  <RefreshCwIcon className="mr-1 h-3.5 w-3.5" /> Check Status
+                <Button type="button" variant="ctaOutline" onClick={() => void pollStatus()} disabled={polling}>
+                  {polling ? <Loader2Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCwIcon className="mr-1 h-3.5 w-3.5" />}
+                  Check Status
                 </Button>
               )}
               {scrapeData.status === "failed" && (

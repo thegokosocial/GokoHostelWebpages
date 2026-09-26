@@ -35,6 +35,17 @@ jobs:
         with:
           node-version: 20
 
+      - name: Require API callback secrets
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          API_PASSWORD: ${{ secrets.API_PASSWORD }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$API_PASSWORD" ]; then
+            echo "API_URL and API_PASSWORD repository secrets are required so the scraper can update D1."
+            echo "API_PASSWORD must match the Worker ADMIN_PASSWORD (admin_only action)."
+            exit 1
+          fi
+
       - name: Install Puppeteer
         run: npm install puppeteer
 

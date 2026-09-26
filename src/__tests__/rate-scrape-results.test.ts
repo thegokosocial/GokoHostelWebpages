@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRateResults, rateScrapeDates } from "@/lib/rateScrapeResults";
+import { estimateRateScrapeMinutes, parseRateResults, rateScrapeDates } from "@/lib/rateScrapeResults";
 
 describe("rate scrape compatibility and dates", () => {
   const properties = [{ property: "Goko", rating: null, prices: { "2026-09-16": 500 } }];
@@ -25,5 +25,10 @@ describe("rate scrape compatibility and dates", () => {
   it("handles year boundaries and invalid ranges", () => {
     expect(rateScrapeDates("2026-12-31", "2027-01-02")).toEqual(["2026-12-31", "2027-01-01"]);
     expect(rateScrapeDates("2026-09-17", "2026-09-16")).toEqual([]);
+  });
+  it("estimates scrape ETA with a 3-minute floor", () => {
+    expect(estimateRateScrapeMinutes(1)).toBe(3);
+    expect(estimateRateScrapeMinutes(18)).toBe(3);
+    expect(estimateRateScrapeMinutes(65)).toBe(11);
   });
 });

@@ -12,6 +12,7 @@ const getAuditEntries = vi.hoisted(() => vi.fn());
 const getInventoryAuditEntries = vi.hoisted(() => vi.fn());
 const getAuditPresentationContext = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
 const createRateScrape = vi.hoisted(() => vi.fn());
+const updateRateScrape = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth", () => ({
   authenticateUser,
@@ -57,7 +58,7 @@ vi.mock("@/db/queries", () => ({
   createRateScrape,
   getLatestRateScrape: vi.fn(),
   getRateScrapeById: vi.fn(),
-  updateRateScrape: vi.fn(),
+  updateRateScrape,
   getAllUsers: vi.fn(),
   getUserByUsername: vi.fn(),
   createUser: vi.fn(),
@@ -97,6 +98,7 @@ describe("Checkins auth-vs-list workflows", () => {
     getCheckinsByDateRange.mockReset();
     getSystemLogs.mockReset();
     createRateScrape.mockReset();
+    updateRateScrape.mockReset();
     getAuditEntries.mockReset();
     getInventoryAuditEntries.mockReset();
     getAuditPresentationContext.mockReset();
@@ -163,6 +165,53 @@ describe("Checkins auth-vs-list workflows", () => {
       retryable: false,
     });
     expect(createRateScrape).not.toHaveBeenCalled();
+  });
+
+  it("accepts in_progress heartbeats without completedAt or result payload", async () => {
+    authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    updateRateScrape.mockResolvedValue(undefined);
+    const res = await POST(req({
+      password: "x",
+      action: "updateRateScrapeResults",
+      scrapeId: 7,
+      status: "in_progress",
+      results: "[]",
+    }));
+    expect(res.status).toBe(200);
+    expect(updateRateScrape).toHaveBeenCalledWith(7, { status: "in_progress" });
+    expect(updateRateScrape.mock.calls[0][1]).not.toHaveProperty("completedAt");
+  });
+
+  it("rejects invalid rate scrape statuses", async () => {
+    authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    const res = await POST(req({
+      password: "x",
+      action: "updateRateScrapeResults",
+      scrapeId: 7,
+      status: "queued",
+      results: "[]",
+    }));
+    expect(res.status).toBe(400);
+    expect(updateRateScrape).not.toHaveBeenCalled();
+  });
+
+  it("writes terminal scrape results with completedAt", async () => {
+    authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    updateRateScrape.mockResolvedValue(undefined);
+    const results = JSON.stringify({ version: 2, properties: [], failedDates: [] });
+    const res = await POST(req({
+      password: "x",
+      action: "updateRateScrapeResults",
+      scrapeId: 9,
+      status: "done",
+      results,
+    }));
+    expect(res.status).toBe(200);
+    expect(updateRateScrape).toHaveBeenCalledWith(9, expect.objectContaining({
+      status: "done",
+      results,
+      completedAt: expect.any(String),
+    }));
   });
 
   it("loads month rows for list after a permitted login, not for auth", async () => {

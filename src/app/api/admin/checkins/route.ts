@@ -1545,15 +1545,23 @@ export async function POST(req: NextRequest) {
     if (action === "updateRateScrapeResults") {
       const { scrapeId, results, status: scrapeStatus } = rest;
       if (!isValidId(scrapeId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+      const nextStatus = scrapeStatus || "done";
+      if (!["done", "partial", "failed", "in_progress"].includes(nextStatus)) {
+        return NextResponse.json({ error: "Invalid scrape results" }, { status: 400 });
+      }
+      // Heartbeat from the GitHub Action while Puppeteer runs — no completedAt / results yet.
+      if (nextStatus === "in_progress") {
+        await updateRateScrape(scrapeId, { status: "in_progress" });
+        return NextResponse.json({ success: true });
+      }
       try {
         parseRateResults(results);
-        if (scrapeStatus && !["done", "partial", "failed"].includes(scrapeStatus)) throw new Error("Invalid status");
       } catch {
         return NextResponse.json({ error: "Invalid scrape results" }, { status: 400 });
       }
       await updateRateScrape(scrapeId, {
         results: typeof results === "string" ? results : JSON.stringify(results),
-        status: scrapeStatus || "done",
+        status: nextStatus,
         completedAt: new Date().toISOString(),
       });
       return NextResponse.json({ success: true });

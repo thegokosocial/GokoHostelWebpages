@@ -100,7 +100,7 @@ Existing section selectors within Management use a shared wrapping style based o
 | `logs` | `ManagementLogs` | `canViewLogs` | PMS + system read views; log-level configuration remains admin-only. Import `pmsLogSummary` not `pmsLog`. |
 | `health` | `ManagementHealth` | admin only | |
 | `history` | `AdminBedHistory` | management access | visible to non-admin |
-| `rates` | `AdminCheckRates` | management access | competitor scrape; visible |
+| `rates` | `AdminCheckRates` | management access | competitor scrape via GitHub Action; auto-polls `getRateScrapeStatus` while `pending`/`in_progress`; range-aware ETA; stuck-queue messaging links to Actions + `API_URL`/`API_PASSWORD` secrets; API actions remain `admin_only` |
 | `menu` | `AdminMenuManagement` | `canViewMenu`; actions: `canManageMenuCategories`, `canManageMenuItems`, `canToggleMenuAvailability`, `canManageInventory` | Management → Food Settings → Menu; `/api/admin/food` per-action map; Menu Items can be searched live by English/Kannada item or category name; selected items may use price-on-request with an indicative range |
 | `website` | `AdminWebsite` | admin only | CMS; Cloudflare only |
 | `foodSettings` | `AdminFoodSettings` | `canManageFoodSettings` | Management → Food Settings → General; `/api/admin/food` kitchen/tax/hours |

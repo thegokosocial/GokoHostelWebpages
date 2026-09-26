@@ -30,7 +30,7 @@ flowchart LR
 | Goko native booking / Razorpay | Native foundation + authenticated test preview | `/book` enquiry only; Booking Settings draft policies plus isolated ₹1 simulated Standard Checkout, API verification, durable test webhook/refund recovery; live guest fulfilment/settlement remain pending; [details](integrations-razorpay.md) |
 | WhatsApp | Enquiry + food | `wa.me/919833624363` |
 | FRRO | Form C | Staff portal login **not in env**; local Playwright |
-| GitHub | Rate scrape | `GITHUB_TOKEN` Worker secret |
+| GitHub | Rate scrape | Worker `GITHUB_TOKEN` (+ optional `GITHUB_REPO`) dispatches `scrape-rates.yml`; Action secrets `API_URL` / `API_PASSWORD` callback to D1 (`in_progress` then terminal status) |
 | GTM | Analytics | `GTM-WM3M8ZKP` on marketing layout only |
 | Web Push | Kitchen/admin alerts | VAPID — often unset (no-op) |
 

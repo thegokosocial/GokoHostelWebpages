@@ -34,3 +34,9 @@ export function rateScrapeDates(start: string, end: string): string[] {
   }
   return dates;
 }
+
+/** Rough ETA for the GitHub Action (~10s/night floor; minimum 3 minutes). */
+export function estimateRateScrapeMinutes(nightCount: number): number {
+  const nights = Math.max(0, Math.floor(nightCount));
+  return Math.max(3, Math.ceil((nights * 10) / 60));
+}

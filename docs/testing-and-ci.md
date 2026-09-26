@@ -94,7 +94,7 @@ Dependency security checks use `npm audit`. Next stays on the supported 15.5 pat
 
 Error-handling changes must cover the shared API error contract, HTTP status/code mapping, request-ID propagation, safe diagnostic redaction, retry classification, and representative route/UI failures. Preserve legacy `error` fields and verify that non-idempotent mutations are not retried by default.
 
-Rate scrape: `scrape-rates.yml` workflow_dispatch only. Needs GitHub secrets `API_URL`, `API_PASSWORD`.
+Rate scrape: `scrape-rates.yml` workflow_dispatch only. Needs GitHub secrets `API_URL` (full POST URL to `/api/admin/checkins`) and `API_PASSWORD` (must equal Worker `ADMIN_PASSWORD` — the callback is `admin_only`). The workflow fails closed if those secrets are empty. The scraper posts `in_progress` when it starts, then `done` / `partial` / `failed` with retries; missing secrets or a failed callback exits non-zero. Admin Check Rates auto-polls status every 10s and surfaces a stuck-queue hint after ~12 minutes still on `pending`.
 Food-order regression coverage must include batch quantity edits across multiple lines, paid/partial refund behavior, the unpaid-only red-X cancellation confirmation, and server rejection of paid/partial whole-order cancellation.
 
 Food-order saves must pass `food-edits-d1-runtime.test.ts` against disposable Miniflare/workerd D1, including atomic rollback, concurrent stock claims, idempotent retries, paid/partial/unpaid edits, refunds, large orders, and the synchronous Pi fallback. Transaction mocks alone cannot validate production D1. The Food Orders Playwright workflows verify a single Save changes action, multi-line summaries, no-op reversal, and failed-save retries retaining their operation ID.
