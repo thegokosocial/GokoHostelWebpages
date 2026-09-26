@@ -35,6 +35,7 @@ export const NOTIFICATION_CATEGORIES = [
     events: [
       ["task.assigned", "Task assigned"],
       ["task.completed", "Task completed"],
+      ["task.status_changed", "Task status changed"],
     ],
   },
   {

@@ -6,7 +6,7 @@ import * as schema from "@/db/schema";
 
 const mocks = vi.hoisted(() => ({ db: null as any }));
 vi.mock("@/db", () => ({ getDb: () => mocks.db }));
-import { addExpense, archiveTask, createTask, getTaskAssignees, getTaskById, getTaskExpense, getTasks, updateTask } from "@/db/queries";
+import { addExpense, archiveTask, createTask, deleteTaskHard, getTaskAssignees, getTaskById, getTaskExpense, getTasks, unlinkExpenseFromTask, updateTask } from "@/db/queries";
 
 describe("Tasks SQLite workflows", () => {
   let sqlite: InstanceType<typeof Database>;
@@ -71,7 +71,7 @@ describe("Tasks SQLite workflows", () => {
     const id = await createTask({ title: "Legacy purchase", taskType: "purchase", assigneeUserId: 1, createdBy: "admin", updatedBy: "admin" });
     const expenseId = await addExpense({ amount: 500, category: "Supplies", purpose: "Legacy", expenseDate: "2026-09-17", createdMonth: "2026-09", createdBy: "staff", taskId: id });
 
-    sqlite.exec(readMigration("0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql"));
+    sqlite.exec(readMigration("0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql", "0082_task_notes_and_shopping.sql"));
     mocks.db = drizzle(sqlite, { schema });
 
     const task = await getTaskById(id!);
@@ -100,6 +100,50 @@ describe("Tasks SQLite workflows", () => {
     expect((await getTaskById(id!))?.tasks.followerUsernames).toBe("[]");
   });
 
+  it("stores notes journal and shopping items on the synced task row", async () => {
+    const id = await createTask({
+      title: "Market run",
+      taskType: "shopping",
+      notes: JSON.stringify([{ id: "n1", body: "Start early", authorUsername: "admin", createdAt: "2026-09-17T00:00:00.000Z" }]),
+      shoppingItems: JSON.stringify([{ id: "i1", label: "Milk", bought: false }]),
+      createdBy: "admin",
+      updatedBy: "admin",
+    });
+    const row = await getTaskById(id!);
+    expect(JSON.parse(row!.tasks.notes)).toHaveLength(1);
+    expect(JSON.parse(row!.tasks.shoppingItems)[0].label).toBe("Milk");
+  });
+
+  it("hard-deletes a task after unlinking its expense", async () => {
+    const id = await createTask({ title: "Buy soap", taskType: "purchase", assigneeUserId: 1, createdBy: "admin", updatedBy: "admin" });
+    await addExpense({ amount: 1250, category: "Supplies", purpose: "Soap", expenseDate: "2026-09-17", createdMonth: "2026-09", createdBy: "staff", taskId: id });
+    await unlinkExpenseFromTask(id!);
+    expect((await getTaskExpense(id!))).toBeNull();
+    const expenseStillThere = sqlite.prepare("SELECT id, task_id FROM expenses WHERE id = 1").get() as { id: number; task_id: number | null };
+    expect(expenseStillThere.task_id).toBeNull();
+    await deleteTaskHard(id!);
+    expect(await getTaskById(id!)).toBeNull();
+  });
+
+  it("adds notes and shopping_items columns via 0082", () => {
+    const db = new Database(":memory:");
+    db.exec(`
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY, title TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+        follower_usernames TEXT NOT NULL DEFAULT '[]'
+      );
+      INSERT INTO tasks VALUES (1, 'x', 'old', '[]');
+    `);
+    db.exec(readMigration("0082_task_notes_and_shopping.sql"));
+    const row = db.prepare("SELECT notes, shopping_items, note FROM tasks WHERE id = 1").get() as {
+      notes: string; shopping_items: string; note: string;
+    };
+    expect(row.notes).toBe("[]");
+    expect(row.shopping_items).toBe("[]");
+    expect(row.note).toBe("old");
+    db.close();
+  });
+
   it("backfills active task followers and enables the new notification category", () => {
     const legacy = new Database(":memory:");
     legacy.exec(`
@@ -117,7 +161,7 @@ describe("Tasks SQLite workflows", () => {
 });
 
 function readMigration(...files: string[]) {
-  return (files.length ? files : ["0055_tasks.sql", "0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql"])
+  return (files.length ? files : ["0055_tasks.sql", "0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql", "0082_task_notes_and_shopping.sql"])
     .map((file) => readFileSync(`migrations/${file}`, "utf8"))
     .join("\n");
 }

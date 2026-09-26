@@ -9,8 +9,12 @@ const TASK_PERMISSIONS: Record<string, ActionPerm> = {
   createTask: "canManageTasks",
   updateTask: "canManageTasks",
   updateAssignedTask: ["canViewTasks", "canManageTasks"],
+  addTaskNote: ["canViewTasks", "canManageTasks"],
+  setShoppingItems: "canManageTasks",
+  toggleShoppingItem: ["canViewTasks", "canManageTasks"],
   archiveTask: "canManageTasks",
   reopenTask: "canManageTasks",
+  deleteArchivedTask: "admin_only",
   createTaskExpense: "canAddExpense",
 };
 
@@ -26,6 +30,8 @@ describe("Tasks permissions", () => {
     expect(actionAllowed("staff", { canManageTasks: true }, TASK_PERMISSIONS.createTaskExpense)).toBe("forbidden");
     expect(actionAllowed("staff", { canAddExpense: true }, TASK_PERMISSIONS.createTaskExpense)).toBe("allowed");
     expect(actionAllowed("admin", {}, TASK_PERMISSIONS.createTask)).toBe("allowed");
+    expect(actionAllowed("manager", { canManageTasks: true }, TASK_PERMISSIONS.deleteArchivedTask)).toBe("admin_required");
+    expect(actionAllowed("admin", {}, TASK_PERMISSIONS.deleteArchivedTask)).toBe("allowed");
   });
 });
 
@@ -33,11 +39,15 @@ describe("Tasks implementation wiring", () => {
   it("keeps the task API ownership and lifecycle guards server-side", () => {
     const route = readFileSync("src/app/api/admin/tasks/route.ts", "utf8");
     expect(route).toContain('updateAssignedTask: ["canViewTasks", "canManageTasks"]');
+    expect(route).toContain('addTaskNote: ["canViewTasks", "canManageTasks"]');
+    expect(route).toContain('toggleShoppingItem: ["canViewTasks", "canManageTasks"]');
+    expect(route).toContain('deleteArchivedTask: "admin_only"');
     expect(route).toContain('createTaskExpense: "canAddExpense"');
     expect(route).toContain("actorUser.id !== task.assigneeUserId");
     expect(route).toContain("Archived tasks cannot be updated");
     expect(route).toContain("Only a task manager can reopen a completed task");
     expect(route).toContain("This task already has a linked expense");
+    expect(route).toContain("task.status_changed");
   });
 
   it("limits bill uploads and requires assignment or task management access", () => {
@@ -60,8 +70,14 @@ describe("Tasks implementation wiring", () => {
     const taskManagement = readFileSync("src/components/admin/ManagementTasks.tsx", "utf8");
     expect(schema).toContain('export const tasks = sqliteTable("tasks"');
     expect(schema).toContain('followerUsernames: text("follower_usernames")');
+    expect(schema).toContain('notes: text("notes")');
+    expect(schema).toContain('shoppingItems: text("shopping_items")');
     expect(taskManagement).toContain("Followers");
     expect(taskManagement).toContain("followerUsernames");
+    expect(taskManagement).toContain("Shopping list");
+    expect(taskManagement).toContain("addTaskNote");
+    expect(taskManagement).toContain("toggleShoppingItem");
+    expect(taskManagement).toContain("deleteArchivedTask");
     expect(schema).toContain('taskId: integer("task_id")');
     expect(schema).toContain('assigneeUserId: integer("assignee_user_id").references');
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS tasks");
@@ -78,15 +94,19 @@ describe("Tasks implementation wiring", () => {
     expect(taskManagement).toContain('option value="">Unassigned</option>');
   });
 
-  it("keeps task managers in one combined editor", () => {
+  it("keeps task managers in one combined editor with notes journal and shopping list", () => {
     const taskManagement = readFileSync("src/components/admin/ManagementTasks.tsx", "utf8");
+    const catalog = readFileSync("src/lib/notificationCatalog.ts", "utf8");
     expect(taskManagement).toContain("canManage && !task.deletedAt ? openEdit(task)");
     expect(taskManagement).toContain('value={form.status}');
-    expect(taskManagement).toContain('value={form.note}');
+    expect(taskManagement).toContain("NotesStack");
+    expect(taskManagement).toContain("NoteComposer");
+    expect(taskManagement).toContain('option value="shopping">Shopping list</option>');
     expect(taskManagement).toContain("const closeForm = () => { setShowForm(false); setSelected(null); };");
     expect(taskManagement).toContain('onClick={closeForm} disabled={saving}>Cancel');
     expect(taskManagement).toContain("closeForm(); showSuccess(selected ? \"Task updated\" : \"Task created\")");
     expect(taskManagement).toContain("selected.attachments.map");
     expect(taskManagement).toContain("void archive(selected)");
+    expect(catalog).toContain('["task.status_changed", "Task status changed"]');
   });
 });

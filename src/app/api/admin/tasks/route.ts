@@ -1,14 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
-import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
-import { addExpense, addAuditEntry, createTask, getTaskAssignees, getTaskById, getTaskExpense, getTasks, getUserById, getUserByUsername, updateTask, archiveTask } from "@/db/queries";
+import { actionAllowed, type ActionPerm, type UserRole } from "@/lib/actionPermissions";
+import {
+  addExpense, addAuditEntry, createTask, getTaskAssignees, getTaskById, getTaskExpense,
+  getTasks, getUserById, getUserByUsername, updateTask, archiveTask, unlinkExpenseFromTask, deleteTaskHard,
+} from "@/db/queries";
 import { isValidReconciliationDate } from "@/lib/reconciliation";
 import { todayIST } from "@/lib/utils";
 import { dispatchPushToUsers } from "@/lib/pushNotify";
+import {
+  TASK_TYPES,
+  appendTaskNoteEntry,
+  buildShoppingItemsFromInput,
+  canCollaborateOnTask,
+  parseShoppingItems,
+  parseTaskNotes,
+  toggleShoppingItemInList,
+} from "@/lib/taskNotesShopping";
 
 const STATUSES = new Set(["todo", "in_progress", "blocked", "done"]);
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
-const TASK_TYPES = new Set(["general", "purchase"]);
+const TASK_TYPE_SET = new Set<string>(TASK_TYPES);
+const STATUS_LABELS: Record<string, string> = {
+  todo: "To do",
+  in_progress: "In progress",
+  blocked: "Blocked",
+  done: "Done",
+};
 
 function validId(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
@@ -41,8 +59,12 @@ function jsonUsernames(value: string | null | undefined): string[] {
 function presentTask(row: Awaited<ReturnType<typeof getTaskById>>, activeUsers: Map<string, TaskUser>) {
   if (!row) return null;
   const task = row.tasks;
+  const notes = parseTaskNotes(task.notes);
+  const legacyNote = typeof task.note === "string" ? task.note.trim() : "";
   return {
     ...task,
+    notes: notes.length > 0 ? notes : (legacyNote ? [{ id: `legacy-${task.id}`, body: legacyNote, authorUsername: task.updatedBy || task.createdBy, createdAt: task.updatedAt || task.createdAt }] : []),
+    shoppingItems: parseShoppingItems(task.shoppingItems),
     attachments: jsonAttachments(task.attachments),
     followers: jsonUsernames(task.followerUsernames).map((name) => activeUsers.get(name)).filter(Boolean),
     assignee: row.users ? {
@@ -94,12 +116,45 @@ async function notifyTaskCompleted(taskId: number, title: string, actorName: str
   }, usernames);
 }
 
+async function notifyTaskStatusChanged(taskId: number, title: string, actorName: string, fromStatus: string, toStatus: string, usernames: string[]) {
+  await dispatchPushToUsers({
+    notificationType: "task.status_changed",
+    title: "Task status changed",
+    body: `${title} · ${STATUS_LABELS[fromStatus] || fromStatus} → ${STATUS_LABELS[toStatus] || toStatus} · by ${actorName}`,
+    url: "/admin?section=management&tab=tasks",
+    eventId: `task-status-${taskId}-${toStatus}-${Date.now()}`,
+  }, usernames);
+}
+
+async function notifyStatusTransition(opts: {
+  taskId: number;
+  title: string;
+  actorName: string;
+  actorUsername?: string | null;
+  followerUsernames: string[];
+  fromStatus: string;
+  toStatus: string;
+}) {
+  if (opts.fromStatus === opts.toStatus) return;
+  const recipients = opts.followerUsernames.filter((name) => name !== opts.actorUsername);
+  if (recipients.length === 0) return;
+  if (opts.fromStatus !== "done" && opts.toStatus === "done") {
+    await notifyTaskCompleted(opts.taskId, opts.title, opts.actorName, recipients);
+    return;
+  }
+  await notifyTaskStatusChanged(opts.taskId, opts.title, opts.actorName, opts.fromStatus, opts.toStatus, recipients);
+}
+
 async function getActorUser(username: string | undefined) {
   return username ? getUserByUsername(username) : null;
 }
 
 function taskError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function isManager(auth: { role: UserRole; permissions: Record<string, boolean> }) {
+  return auth.role === "admin" || actionAllowed(auth.role, auth.permissions, "canManageTasks") === "allowed";
 }
 
 export async function POST(req: NextRequest) {
@@ -115,8 +170,12 @@ export async function POST(req: NextRequest) {
       createTask: "canManageTasks",
       updateTask: "canManageTasks",
       updateAssignedTask: ["canViewTasks", "canManageTasks"],
+      addTaskNote: ["canViewTasks", "canManageTasks"],
+      setShoppingItems: "canManageTasks",
+      toggleShoppingItem: ["canViewTasks", "canManageTasks"],
       archiveTask: "canManageTasks",
       reopenTask: "canManageTasks",
+      deleteArchivedTask: "admin_only",
       createTaskExpense: "canAddExpense",
     };
     const gate = actionAllowed(auth.role, auth.permissions, ACTION_PERMISSIONS[action]);
@@ -126,6 +185,7 @@ export async function POST(req: NextRequest) {
     const actorName = auth.username || username || auth.displayName || auth.role;
     const actorUser = await getActorUser(auth.username || username);
     const actorUsername = actorUser?.username || auth.username || username;
+    const canManage = isManager(auth);
 
     if (action === "listTasks") {
       const includeArchived = Boolean(rest.includeArchived && (auth.role === "admin" || auth.permissions.canManageTasks));
@@ -142,9 +202,10 @@ export async function POST(req: NextRequest) {
       const title = typeof rest.title === "string" ? rest.title.trim() : "";
       const hasAssignee = rest.assigneeUserId !== undefined && rest.assigneeUserId !== null && String(rest.assigneeUserId).trim() !== "";
       const assigneeUserId = hasAssignee ? Number(rest.assigneeUserId) : null;
+      const taskType = rest.taskType || "general";
       if (!title || title.length > 200) return taskError("A title between 1 and 200 characters is required");
       if (hasAssignee && !validId(assigneeUserId)) return taskError("Assignee must be a valid user");
-      if (!TASK_TYPES.has(rest.taskType || "general")) return taskError("Invalid task type");
+      if (!TASK_TYPE_SET.has(taskType)) return taskError("Invalid task type");
       if (!PRIORITIES.has(rest.priority || "normal")) return taskError("Invalid priority");
       if (!validDate(rest.dueDate || "")) return taskError("dueDate must be YYYY-MM-DD");
       const assignee = assigneeUserId ? await getUserById(assigneeUserId) : null;
@@ -152,15 +213,23 @@ export async function POST(req: NextRequest) {
       const resolvedFollowers = rest.followerUsernames === undefined ? null : await resolveFollowers(rest.followerUsernames);
       if (rest.followerUsernames !== undefined && !resolvedFollowers) return taskError("Followers must be active users");
       const followerUsernames = resolvedFollowers || [...new Set([actorUser && !actorUser.deletedAt ? actorUser.username : null, assignee?.username].filter((name): name is string => Boolean(name)))];
+      let shoppingItems = "[]";
+      if (taskType === "shopping") {
+        const built = buildShoppingItemsFromInput(rest.shoppingItems ?? []);
+        if (!built.ok) return taskError(built.error);
+        shoppingItems = built.json;
+      }
       const id = await createTask({
         title,
         description: typeof rest.description === "string" ? rest.description.trim().slice(0, 5000) : "",
-        taskType: rest.taskType || "general",
+        taskType,
         category: typeof rest.category === "string" ? rest.category.trim().slice(0, 100) : "",
         priority: rest.priority || "normal",
         dueDate: rest.dueDate || "",
         assigneeUserId,
         followerUsernames: JSON.stringify(followerUsernames),
+        notes: "[]",
+        shoppingItems,
         createdBy: actorName,
         updatedBy: actorName,
       });
@@ -175,30 +244,125 @@ export async function POST(req: NextRequest) {
     if (!row) return taskError("Task not found", 404);
     const task = row.tasks;
 
+    const collaborator = canCollaborateOnTask({
+      canManage,
+      actorUserId: actorUser?.id,
+      actorUsername,
+      assigneeUserId: task.assigneeUserId,
+      followerUsernamesJson: task.followerUsernames,
+    });
+
+    if (action === "addTaskNote") {
+      if (task.deletedAt) return taskError("Archived tasks cannot receive notes", 409);
+      if (!collaborator) return taskError("Only managers, the assignee, or followers can add notes", 403);
+      if (!actorUsername) return taskError("A signed-in username is required to add notes", 403);
+      const appended = appendTaskNoteEntry(task.notes, typeof rest.body === "string" ? rest.body : "", actorUsername);
+      if (!appended.ok) return taskError(appended.error);
+      await updateTask(taskId, { notes: appended.json, updatedBy: actorName });
+      await addAuditEntry({ username: actorName, action: "task_note_added", target: `task:${taskId}`, details: appended.notes[appended.notes.length - 1]?.id || "" });
+      return NextResponse.json({ success: true, notes: appended.notes });
+    }
+
+    if (action === "setShoppingItems") {
+      if (task.deletedAt) return taskError("Archived tasks cannot be updated", 409);
+      if (task.taskType !== "shopping" && rest.taskType !== "shopping") return taskError("Only shopping list tasks have shopping items");
+      const built = buildShoppingItemsFromInput(rest.shoppingItems ?? [], task.shoppingItems);
+      if (!built.ok) return taskError(built.error);
+      const data: Parameters<typeof updateTask>[1] = { shoppingItems: built.json, updatedBy: actorName };
+      if (task.taskType !== "shopping") data.taskType = "shopping";
+      const allBought = built.items.length > 0 && built.items.every((item) => item.bought);
+      const fromStatus = task.status;
+      let toStatus = fromStatus;
+      if (allBought && fromStatus !== "done") {
+        data.status = "done";
+        data.completedAt = new Date().toISOString();
+        data.completedBy = actorName;
+        toStatus = "done";
+      } else if (!allBought && fromStatus === "done" && built.items.some((item) => !item.bought)) {
+        data.status = "in_progress";
+        data.completedAt = "";
+        data.completedBy = "";
+        toStatus = "in_progress";
+      }
+      await updateTask(taskId, data);
+      await addAuditEntry({ username: actorName, action: "task_shopping_set", target: `task:${taskId}`, details: `${built.items.length} items` });
+      await notifyStatusTransition({
+        taskId,
+        title: task.title,
+        actorName,
+        actorUsername,
+        followerUsernames: jsonUsernames(task.followerUsernames),
+        fromStatus,
+        toStatus,
+      });
+      return NextResponse.json({ success: true, shoppingItems: built.items, status: toStatus });
+    }
+
+    if (action === "toggleShoppingItem") {
+      if (task.deletedAt) return taskError("Archived tasks cannot be updated", 409);
+      if (task.taskType !== "shopping") return taskError("Only shopping list tasks have shopping items");
+      if (!collaborator) return taskError("Only managers, the assignee, or followers can update shopping items", 403);
+      if (!actorUsername) return taskError("A signed-in username is required", 403);
+      const itemId = typeof rest.itemId === "string" ? rest.itemId : "";
+      const toggled = toggleShoppingItemInList(task.shoppingItems, itemId, actorUsername);
+      if (!toggled.ok) return taskError(toggled.error);
+      const fromStatus = task.status;
+      let toStatus = fromStatus;
+      const data: Parameters<typeof updateTask>[1] = { shoppingItems: toggled.json, updatedBy: actorName };
+      if (toggled.allBought && fromStatus !== "done") {
+        data.status = "done";
+        data.completedAt = new Date().toISOString();
+        data.completedBy = actorName;
+        toStatus = "done";
+      } else if (toggled.anyOpen && fromStatus === "done") {
+        data.status = "in_progress";
+        data.completedAt = "";
+        data.completedBy = "";
+        toStatus = "in_progress";
+      }
+      await updateTask(taskId, data);
+      await addAuditEntry({ username: actorName, action: "task_shopping_toggled", target: `task:${taskId}`, details: itemId });
+      await notifyStatusTransition({
+        taskId,
+        title: task.title,
+        actorName,
+        actorUsername,
+        followerUsernames: jsonUsernames(task.followerUsernames),
+        fromStatus,
+        toStatus,
+      });
+      return NextResponse.json({ success: true, shoppingItems: toggled.items, status: toStatus });
+    }
+
     if (action === "updateAssignedTask") {
       if (task.deletedAt) return taskError("Archived tasks cannot be updated", 409);
       if (!actorUser || actorUser.id !== task.assigneeUserId) return taskError("Only the assigned user can update this task", 403);
-      const canManage = auth.role === "admin" || actionAllowed(auth.role, auth.permissions, "canManageTasks") === "allowed";
       const status = rest.status;
       if (status !== undefined && !STATUSES.has(status)) return taskError("Invalid task status");
       if (task.status === "done" && status !== undefined && status !== "done" && !canManage) {
         return taskError("Only a task manager can reopen a completed task", 403);
       }
-      const nextStatus = status || task.status;
       const data: Parameters<typeof updateTask>[1] = { updatedBy: actorName };
       if (status !== undefined) data.status = status;
-      if (typeof rest.note === "string") data.note = rest.note.trim().slice(0, 5000);
       if (status === "done") {
         data.completedAt = new Date().toISOString();
         data.completedBy = actorName;
-      } else if (status && nextStatus !== "done") {
+      } else if (status && status !== "done") {
         data.completedAt = "";
         data.completedBy = "";
       }
       await updateTask(taskId, data);
-      await addAuditEntry({ username: actorName, action: "task_updated", target: `task:${taskId}`, details: JSON.stringify({ status: status || task.status, note: typeof rest.note === "string" ? rest.note.trim() : undefined }) });
-      if (task.status !== "done" && status === "done") {
-        await notifyTaskCompleted(taskId, task.title, actorName, jsonUsernames(task.followerUsernames).filter((name) => name !== actorUsername));
+      await addAuditEntry({ username: actorName, action: "task_updated", target: `task:${taskId}`, details: JSON.stringify({ status: status || task.status }) });
+      if (status !== undefined) {
+        await notifyStatusTransition({
+          taskId,
+          title: task.title,
+          actorName,
+          actorUsername,
+          followerUsernames: jsonUsernames(task.followerUsernames),
+          fromStatus: task.status,
+          toStatus: status,
+        });
       }
       return NextResponse.json({ success: true });
     }
@@ -222,12 +386,20 @@ export async function POST(req: NextRequest) {
       }
       if (typeof rest.description === "string") data.description = rest.description.trim().slice(0, 5000);
       if (typeof rest.category === "string") data.category = rest.category.trim().slice(0, 100);
+      const nextType = rest.taskType !== undefined ? rest.taskType : task.taskType;
       if (rest.taskType !== undefined) {
-        if (!TASK_TYPES.has(rest.taskType)) return taskError("Invalid task type");
+        if (!TASK_TYPE_SET.has(rest.taskType)) return taskError("Invalid task type");
         if (rest.taskType === "general" && task.taskType === "purchase" && row.expenses) {
           return taskError("A purchase task with a recorded expense cannot become a general task", 409);
         }
         data.taskType = rest.taskType;
+        if (rest.taskType !== "shopping") data.shoppingItems = "[]";
+      }
+      if (rest.shoppingItems !== undefined || (rest.taskType === "shopping" && rest.shoppingItems === undefined && task.taskType !== "shopping")) {
+        if (nextType !== "shopping") return taskError("Only shopping list tasks have shopping items");
+        const built = buildShoppingItemsFromInput(rest.shoppingItems ?? [], task.shoppingItems);
+        if (!built.ok) return taskError(built.error);
+        data.shoppingItems = built.json;
       }
       if (rest.priority !== undefined) {
         if (!PRIORITIES.has(rest.priority)) return taskError("Invalid priority");
@@ -267,14 +439,21 @@ export async function POST(req: NextRequest) {
           data.completedBy = "";
         }
       }
-      if (typeof rest.note === "string") data.note = rest.note.trim().slice(0, 5000);
       await updateTask(taskId, data);
-      await addAuditEntry({ username: actorName, action: "task_updated", target: `task:${taskId}`, details: JSON.stringify(rest) });
+      await addAuditEntry({ username: actorName, action: "task_updated", target: `task:${taskId}`, details: JSON.stringify({ ...rest, note: undefined }) });
       if (assigneeChanged && nextAssignee?.username && nextAssignee.username !== actorUsername) {
         await notifyTaskAssigned(taskId, data.title || task.title, actorName, [nextAssignee.username]);
       }
-      if (task.status !== "done" && rest.status === "done") {
-        await notifyTaskCompleted(taskId, data.title || task.title, actorName, followerUsernames.filter((name) => name !== actorUsername));
+      if (rest.status !== undefined) {
+        await notifyStatusTransition({
+          taskId,
+          title: data.title || task.title,
+          actorName,
+          actorUsername,
+          followerUsernames,
+          fromStatus: task.status,
+          toStatus: rest.status,
+        });
       }
       return NextResponse.json({ success: true });
     }
@@ -288,8 +467,26 @@ export async function POST(req: NextRequest) {
 
     if (action === "reopenTask") {
       if (task.deletedAt) return taskError("Archived tasks cannot be reopened", 409);
+      const fromStatus = task.status;
       await updateTask(taskId, { status: "todo", completedAt: "", completedBy: "", updatedBy: actorName });
       await addAuditEntry({ username: actorName, action: "task_reopened", target: `task:${taskId}`, details: task.title });
+      await notifyStatusTransition({
+        taskId,
+        title: task.title,
+        actorName,
+        actorUsername,
+        followerUsernames: jsonUsernames(task.followerUsernames),
+        fromStatus,
+        toStatus: "todo",
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "deleteArchivedTask") {
+      if (!task.deletedAt) return taskError("Only archived tasks can be permanently deleted", 409);
+      await unlinkExpenseFromTask(taskId);
+      await deleteTaskHard(taskId);
+      await addAuditEntry({ username: actorName, action: "task_hard_deleted", target: `task:${taskId}`, details: task.title });
       return NextResponse.json({ success: true });
     }
 

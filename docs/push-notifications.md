@@ -11,7 +11,7 @@ The dialog always shows an **Install app** section (admin bell only). Chrome/And
 | Food | New Food Order: guest ordering and admin-created orders |
 | Check-in | New Check-in: self-check-in and admin records; Guest Checked In: bookings |
 | Booking | New Booking, Booking Rebooked, Booking Modified, Booking Dates Changed, Booking Cancelled, Booking Partially Cancelled, Booking Marked No-show: admin bookings and/or Aiosell reservations |
-| Tasks | Task Assigned: newly assigned user; Task Completed: task followers on the first transition to done |
+| Tasks | Task Assigned: newly assigned user; Task Completed: followers on first transition to done; Task Status Changed: followers on other status transitions including reopen |
 | Attention | Booking Needs Attention, Booking Needs Bed Assignment |
 | Operations | OTA Inventory Reconciliation Needed, Channel Booking Sync Failed, Inventory Sync Failed |
 | Reminder | Reconciliation pending: scheduled reminder, existing role-restricted recipients |
@@ -21,7 +21,7 @@ Food bodies always include the first name, items, room/bed or table when present
 
 ## Recipient controls
 
-Delivery is the intersection of event recipients, existing role restrictions, the administrator-granted category, and the device's muted event IDs. Notification category grants are active permission-catalog keys edited under Management → Users. Legacy DB users with no category keys retain all categories; migration 0076 enables the Tasks category for existing active users, and new users receive it with the other defaults. Once configured, explicit false values block that category server-side. Admin/environment system accounts retain all category grants. Device exclusions are stored on `push_subscriptions`; hidden categories are preserved when visible preferences are saved, so re-granting restores the previous device choice. Unknown/deleted users are ineligible, and deleting a DB user removes its subscriptions. Task assignment is targeted to the new assignee; task completion is targeted to the task's active followers, with the actor excluded.
+Delivery is the intersection of event recipients, existing role restrictions, the administrator-granted category, and the device's muted event IDs. Notification category grants are active permission-catalog keys edited under Management → Users. Legacy DB users with no category keys retain all categories; migration 0076 enables the Tasks category for existing active users, and new users receive it with the other defaults. Once configured, explicit false values block that category server-side. Admin/environment system accounts retain all category grants. Device exclusions are stored on `push_subscriptions`; hidden categories are preserved when visible preferences are saved, so re-granting restores the previous device choice. Unknown/deleted users are ineligible, and deleting a DB user removes its subscriptions. Task assignment is targeted to the new assignee; task completion and other status changes are targeted to the task's active followers, with the actor excluded.
 
 ## Rendering and troubleshooting
 

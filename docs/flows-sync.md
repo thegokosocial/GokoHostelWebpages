@@ -14,7 +14,7 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 ## What syncs
 
-**With soft-delete:** checkins, dorms, beds, bookings, menu_categories, menu_items, food_orders, accounts, vendors, employees, expenses, daily_income, users, tasks, platform_payment_profiles. Task follower usernames travel inside the task row, so they use the same last-write-wins task conflict behavior and require no separate relation remapping.
+**With soft-delete:** checkins, dorms, beds, bookings, menu_categories, menu_items, food_orders, accounts, vendors, employees, expenses, daily_income, users, tasks, platform_payment_profiles. Task follower usernames and notes/shopping JSON travel inside the task row, so they use the same last-write-wins task conflict behavior and require no separate relation remapping.
 
 **Append-only:** bed_history, food_order_items, order_modifications, salary_payments, daily_ledger, qr_history, booking_cycle_snapshots, booking_payment_events, guest_receipts, cash_payment_events, platform_receivable_entries, platform_settlements, platform_settlement_allocations. OTA and ordinary cash payment events merge by stable event/sync identity rather than last-write-wins. Cash-event polymorphic food/booking source IDs are remapped after their parent rows. After OTA event sync and FK remapping, both runtimes rebuild the affected booking-cycle projections. Journal-backed receipts resolve their booking through the stable payment-event link; older booking receipts still use booking sync-ID mapping. Website native checkout/payment tables and `gateway_settlement_allocations` are Cloudflare-only and omitted from Pi sync.
 

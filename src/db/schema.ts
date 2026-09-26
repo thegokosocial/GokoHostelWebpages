@@ -301,6 +301,8 @@ export const tasks = sqliteTable("tasks", {
   assigneeUserId: integer("assignee_user_id").references(() => users.id),
   status: text("status").notNull().default("todo"),
   note: text("note").notNull().default(""),
+  notes: text("notes").notNull().default("[]"),
+  shoppingItems: text("shopping_items").notNull().default("[]"),
   attachments: text("attachments").notNull().default("[]"),
   followerUsernames: text("follower_usernames").notNull().default("[]"),
   completedAt: text("completed_at").default(""),

@@ -401,7 +401,8 @@ export async function getTaskById(id: number) {
 export async function createTask(data: {
   title: string; description?: string; taskType?: string; category?: string;
   priority?: TaskPriority; dueDate?: string; assigneeUserId?: number | null;
-  status?: TaskStatus; note?: string; attachments?: string; createdBy: string;
+  status?: TaskStatus; note?: string; notes?: string; shoppingItems?: string;
+  attachments?: string; createdBy: string;
   followerUsernames?: string;
   updatedBy: string;
 }) {
@@ -416,6 +417,8 @@ export async function createTask(data: {
     dueDate: data.dueDate || "",
     status: data.status || "todo",
     note: data.note || "",
+    notes: data.notes || "[]",
+    shoppingItems: data.shoppingItems || "[]",
     attachments: data.attachments || "[]",
     followerUsernames: data.followerUsernames || "[]",
     createdAt: now,
@@ -427,7 +430,8 @@ export async function createTask(data: {
 export async function updateTask(id: number, data: Partial<{
   title: string; description: string; taskType: string; category: string;
   priority: TaskPriority; dueDate: string; assigneeUserId: number | null;
-  status: TaskStatus; note: string; attachments: string; completedAt: string;
+  status: TaskStatus; note: string; notes: string; shoppingItems: string;
+  attachments: string; completedAt: string;
   completedBy: string; updatedBy: string; followerUsernames: string;
 }>) {
   return dbWrite(() => getDb().update(tasks).set(syncUpdate(data)).where(eq(tasks.id, id)), { idempotentWrite: true });
@@ -435,6 +439,14 @@ export async function updateTask(id: number, data: Partial<{
 
 export async function archiveTask(id: number, updatedBy: string) {
   return dbWrite(() => getDb().update(tasks).set(syncUpdate({ deletedAt: new Date().toISOString(), updatedBy })).where(eq(tasks.id, id)), { idempotentWrite: true });
+}
+
+export async function unlinkExpenseFromTask(taskId: number) {
+  return dbWrite(() => getDb().update(expenses).set(syncUpdate({ taskId: null })).where(eq(expenses.taskId, taskId)), { idempotentWrite: true });
+}
+
+export async function deleteTaskHard(id: number) {
+  return dbWrite(() => getDb().delete(tasks).where(eq(tasks.id, id)), { idempotentWrite: true });
 }
 
 export async function getTaskExpense(taskId: number) {

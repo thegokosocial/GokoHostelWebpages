@@ -62,7 +62,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 | `employee_attendance_history` | Attendance audit events; Audit-tab reads and manual audit cleanup follow the global retention policy. |
 | `salary_payments` | Plus auto `expenses` row. |
 | `expenses` | Bills. Drive links. `expense_date` is the accounting/ledger date; `created_at` remains the audit insertion timestamp. `created_month` follows `expense_date`. Purchase-task expenses have a unique nullable `task_id`. |
-| `tasks` | Assignable operational work. Login-user ownership, status, scheduling, notes, Drive attachment metadata, JSON follower usernames, and soft archive. Followers remain on the synced task row rather than a separate relation. |
+| `tasks` | Assignable operational work. Login-user ownership, status, scheduling, append-only notes JSON, shopping-items JSON (shopping type), Drive attachment metadata, JSON follower usernames, and soft archive. Followers remain on the synced task row rather than a separate relation. |
 | `daily_income` | Manual income; `source_detail` labels Other entries. Also retains legacy `food_revenue_auto`. |
 | `daily_ledger` | Unique `(date, account_id)`. |
 
