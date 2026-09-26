@@ -76,6 +76,11 @@ function AdminPageInner() {
   const [cpSuccess, setCpSuccess] = useState("");
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
 
+  useEffect(() => {
+    // Close after section URL commits so Base UI Sheet focus-restore cannot cancel router.push.
+    setMobileMenuOpen(false);
+  }, [section]);
+
   const handleChangePassword = async () => {
     await runAction("Saving password…", async () => {
       setCpError("");
@@ -355,9 +360,11 @@ function AdminPageInner() {
                     key={item.id}
                     type="button"
                     onClick={() => {
-                      // Navigate first; defer Sheet close so Base UI focus-restore cannot cancel router.push.
+                      if (section === item.id) {
+                        setMobileMenuOpen(false);
+                        return;
+                      }
                       setSection(item.id);
-                      queueMicrotask(() => setMobileMenuOpen(false));
                     }}
                     className={cn(
                       "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",

@@ -422,7 +422,7 @@ test("general task: create → followers → note → edit → done (status noti
   await editDialog.getByLabel(/Title/i).fill("Fix lobby light ASAP");
   await editDialog.locator("label").filter({ hasText: "Status" }).locator("select").selectOption("done");
   await editDialog.getByRole("button", { name: /^Save$/ }).click();
-  await expect(page.getByText("Task updated")).toBeVisible();
+  await expect(page.getByText("Task updated").first()).toBeVisible();
 
   const update = api.last("updateTask");
   expect(update?.body).toMatchObject({
@@ -457,7 +457,7 @@ test("purchase task: create → edit → note → done → expense pending → r
   const editDialog = page.locator(".fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Edit task" }) });
   await editDialog.getByLabel(/Title/i).fill("Buy mop heads (xl)");
   await editDialog.getByRole("button", { name: /^Save$/ }).click();
-  await expect(page.getByText("Task updated")).toBeVisible();
+  await expect(page.getByText("Task updated").first()).toBeVisible();
 
   const edited = page.locator("div.rounded-xl", { has: page.getByRole("heading", { name: "Buy mop heads (xl)" }) });
   await edited.getByPlaceholder("Add a note").fill("Got quote from Local Mart");
@@ -468,7 +468,7 @@ test("purchase task: create → edit → note → done → expense pending → r
   const doneDialog = page.locator(".fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Edit task" }) });
   await doneDialog.locator("label").filter({ hasText: "Status" }).locator("select").selectOption("done");
   await doneDialog.getByRole("button", { name: /^Save$/ }).click();
-  await expect(page.getByText("Task updated")).toBeVisible();
+  await expect(page.getByText("Task updated").first()).toBeVisible();
   await expect(page.getByText("Expense pending")).toBeVisible();
   expect(api.last("updateTask")?.body.status).toBe("done");
 

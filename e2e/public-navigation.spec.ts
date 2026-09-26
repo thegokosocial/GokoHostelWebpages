@@ -14,6 +14,9 @@ const publicRoutes = [
 ] as const;
 
 test.describe("public website navigation", () => {
+  // Ten marketing pages + hero video hydrate; keep above default 30s so goto is not aborted mid-flight.
+  test.describe.configure({ mode: "serial", timeout: 120_000 });
+
   test("renders the public route set without server errors", async ({ page }) => {
     // Hero loop videos can keep document `load` open for tens of seconds in CI; DOM is enough.
     for (const route of publicRoutes) {

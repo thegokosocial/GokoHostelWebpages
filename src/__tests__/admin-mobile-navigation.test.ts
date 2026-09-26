@@ -25,7 +25,9 @@ describe("admin mobile navigation", () => {
     expect(adminPage).toContain('className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"');
     expect(adminPage).toContain("bg-white/95 p-0 backdrop-blur-md dark:bg-zinc-900/95");
     expect(adminPage).toContain("setSection(item.id);");
-    expect(adminPage).toContain("queueMicrotask(() => setMobileMenuOpen(false))");
+    expect(adminPage).toContain("setMobileMenuOpen(false);");
+    expect(adminPage).toContain("}, [section]);");
+    expect(adminPage).not.toContain("queueMicrotask(() => setMobileMenuOpen(false))");
   });
 
   it("keeps the Management selector below global navigation with a dimmed dismiss layer and high open stacking", () => {
