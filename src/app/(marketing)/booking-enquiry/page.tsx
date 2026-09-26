@@ -22,6 +22,7 @@ export default function BookingEnquiryPage() {
         subtitle="Tell us your dates and vibe — we’ll help you choose the right bed."
         image="/images/IMG_3345.jpg"
         imageAlt="Goko Hostel beds and community space"
+        pageKey="booking-enquiry"
       />
       <section className="py-16 md:py-24">
         <Container>

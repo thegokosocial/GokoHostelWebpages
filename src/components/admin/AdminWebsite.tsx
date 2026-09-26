@@ -28,6 +28,7 @@ import {
   managementSectionTabsClass,
   managementSectionTabInactiveClass,
 } from "./managementSectionTabs";
+import { AdminHeroVideos } from "./AdminHeroVideos";
 
 type EventRow = {
   id: number;
@@ -92,7 +93,7 @@ function discardUnsavedMedia(urls: string[], keep: string[], password: string, u
 
 export function AdminWebsite({ password, username, role }: { password: string; username?: string; role: Role }) {
   const { showError, showSuccess } = useAdminToast();
-  const [tab, setTab] = useState<"events" | "community">("events");
+  const [tab, setTab] = useState<"events" | "community" | "heroes">("events");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -331,7 +332,7 @@ export function AdminWebsite({ password, username, role }: { password: string; u
     setShowSpaceForm(true);
   };
 
-  const liveHref = tab === "events" ? "/events" : "/community-area";
+  const liveHref = tab === "events" ? "/events" : tab === "community" ? "/community-area" : "/";
 
   return (
     <div className="flex flex-col gap-6">
@@ -342,18 +343,24 @@ export function AdminWebsite({ password, username, role }: { password: string; u
             What guests see on Events and Community Area. Photos preview here; they go live when you save.
           </p>
         </div>
-        <a
-          href={liveHref}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 self-start rounded-full border border-brand-mist bg-white px-3 py-1.5 text-xs font-medium text-brand-green hover:bg-brand-sand/60"
-        >
-          View live page <ExternalLinkIcon className="size-3.5" />
-        </a>
+        {tab !== "heroes" ? (
+          <a
+            href={liveHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 self-start rounded-full border border-brand-mist bg-white px-3 py-1.5 text-xs font-medium text-brand-green hover:bg-brand-sand/60"
+          >
+            View live page <ExternalLinkIcon className="size-3.5" />
+          </a>
+        ) : null}
       </div>
 
       <div className={managementSectionTabsClass} role="tablist" aria-label="Website pages">
-        {(["events", "community"] as const).map((id) => (
+        {([
+          ["events", "Events"],
+          ["community", "Community Area"],
+          ["heroes", "Hero Videos"],
+        ] as const).map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -366,10 +373,14 @@ export function AdminWebsite({ password, username, role }: { password: string; u
               tab === id ? managementSectionTabActiveClass : managementSectionTabInactiveClass
             )}
           >
-            {id === "events" ? "Events" : "Community Area"}
+            {label}
           </button>
         ))}
       </div>
+
+      {tab === "heroes" && (
+        <AdminHeroVideos password={password} username={username} />
+      )}
 
       {tab === "events" && (
         <div className="flex flex-col gap-8">
@@ -382,7 +393,7 @@ export function AdminWebsite({ password, username, role }: { password: string; u
             <div className="flex flex-col gap-4 p-4 md:p-6">
               <div>
                 <h4 className="font-display text-base font-semibold text-brand-green-dark">Page look</h4>
-                <p className="text-xs text-brand-green-dark/55">Hero still is the fallback when video does not play. Looping video stays in code.</p>
+                <p className="text-xs text-brand-green-dark/55">Hero still is the fallback when video does not play. Hero video is managed in the Hero Videos tab.</p>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Hero title" value={eventsCopy.hero.title} onChange={(v) => setEventsCopy({ ...eventsCopy, hero: { ...eventsCopy.hero, title: v } })} />
@@ -468,7 +479,7 @@ export function AdminWebsite({ password, username, role }: { password: string; u
                   <Area label="Hero subtitle" value={communityCopy.hero.subtitle} onChange={(v) => setCommunityCopy({ ...communityCopy, hero: { ...communityCopy.hero, subtitle: v } })} />
                 </div>
                 <div className="md:col-span-2">
-                  <SiteImageField label="Hero still (video stays in code)" value={communityCopy.hero.ribbonImage} kind="hero" folder="heroes" password={password} username={username} onBusy={onBusy} disabled={locked} onChange={(url) => setCommunityCopy((prev) => ({ ...prev, hero: { ...prev.hero, ribbonImage: url } }))} />
+                  <SiteImageField label="Hero still (video in Hero Videos tab)" value={communityCopy.hero.ribbonImage} kind="hero" folder="heroes" password={password} username={username} onBusy={onBusy} disabled={locked} onChange={(url) => setCommunityCopy((prev) => ({ ...prev, hero: { ...prev.hero, ribbonImage: url } }))} />
                 </div>
               </div>
 

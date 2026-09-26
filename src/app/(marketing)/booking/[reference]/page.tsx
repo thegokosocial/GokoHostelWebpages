@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { site } from "@/lib/site";
+import { PageRibbon } from "@/components/layout/PageRibbon";
 import { GuestBookingManage, type GuestBookingStatus } from "@/components/booking/GuestBookingManage";
+import { heroLoopVideo } from "@/lib/site";
 
 export default function BookingConfirmationPage() {
   const params = useParams<{ reference: string }>();
@@ -73,37 +74,42 @@ export default function BookingConfirmationPage() {
   }
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-brand-green-dark sm:py-16">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-green">Goko Hostel</p>
-      <h1 className="mt-2 font-display text-3xl font-bold leading-tight sm:text-4xl">Your booking</h1>
-      <p className="mt-2 text-sm text-brand-green sm:text-base">
-        Keep this confirmation for check-in. For changes or cancellations, copy your details and WhatsApp us from the card below.
-      </p>
+    <>
+      <PageRibbon
+        title="Your booking"
+        subtitle="Keep this confirmation for check-in. For changes or cancellations, copy your details and WhatsApp us from the card below."
+        image="/images/IMG_3345.jpg"
+        imageAlt="Palm trees near Goko Hostel"
+        heroVideo={heroLoopVideo}
+        pageKey="booking-confirmation"
+        className="min-h-[52vh] md:min-h-[56vh]"
+      />
+      <main className="mx-auto max-w-xl px-4 py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-brand-green-dark sm:py-12">
+        {busy && !status && <p className="text-sm">Loading your confirmation…</p>}
 
-      {busy && !status && <p className="mt-8 text-sm">Loading your confirmation…</p>}
+        {status && (
+          <GuestBookingManage
+            status={status}
+            busy={busy}
+            onCancel={status.canCancel ? cancel : undefined}
+          />
+        )}
 
-      {status && (
-        <GuestBookingManage
-          status={status}
-          busy={busy}
-          onCancel={status.canCancel ? cancel : undefined}
-        />
-      )}
+        {message && (
+          <p role="status" className="mt-5 rounded-xl bg-brand-sand px-4 py-3 text-sm leading-relaxed">
+            {message}
+          </p>
+        )}
 
-      {message && (
-        <p role="status" className="mt-5 rounded-xl bg-brand-sand px-4 py-3 text-sm leading-relaxed">
-          {message}
-        </p>
-      )}
-
-      <div className="mt-8">
-        <Link
-          className="inline-flex min-h-12 w-full items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold sm:w-auto"
-          href="/book"
-        >
-          Back to booking
-        </Link>
-      </div>
-    </main>
+        <div className="mt-8">
+          <Link
+            className="inline-flex min-h-12 w-full items-center justify-center rounded-lg border border-brand-green px-5 py-3 text-center font-semibold sm:w-auto"
+            href="/book"
+          >
+            Back to booking
+          </Link>
+        </div>
+      </main>
+    </>
   );
 }

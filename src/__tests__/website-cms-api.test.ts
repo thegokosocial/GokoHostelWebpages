@@ -30,6 +30,13 @@ vi.mock("@/db/siteQueries", () => ({
   getSitePageCopy: vi.fn(),
   upsertSitePageCopy: vi.fn(),
   countMediaUrlRefs: vi.fn(),
+  getSiteHeroVideos: vi.fn(),
+  getSiteHeroVideoById: vi.fn(),
+  addSiteHeroVideo: vi.fn(),
+  deleteSiteHeroVideo: vi.fn(),
+  countPageHeroRefs: vi.fn(),
+  getSitePageHeroes: vi.fn(),
+  upsertSitePageHero: vi.fn(),
 }));
 
 vi.mock("@/lib/mediaR2", () => ({
@@ -70,6 +77,8 @@ describe("sync engine isolation", () => {
     expect(tables).not.toContain("site_events");
     expect(tables).not.toContain("site_community_spaces");
     expect(tables).not.toContain("site_page_copy");
+    expect(tables).not.toContain("site_hero_videos");
+    expect(tables).not.toContain("site_page_heroes");
   });
 });
 
@@ -98,6 +107,18 @@ describe("POST /api/admin/website", () => {
     vi.mocked(siteQueries.deleteSiteCommunitySpace).mockResolvedValue(undefined as never);
     vi.mocked(siteQueries.upsertSitePageCopy).mockResolvedValue(undefined as never);
     vi.mocked(siteQueries.countMediaUrlRefs).mockResolvedValue(0);
+    vi.mocked(siteQueries.getSiteHeroVideos).mockResolvedValue([]);
+    vi.mocked(siteQueries.getSitePageHeroes).mockResolvedValue([]);
+    vi.mocked(siteQueries.countPageHeroRefs).mockResolvedValue(0);
+    vi.mocked(siteQueries.getSiteHeroVideoById).mockResolvedValue(null as never);
+    vi.mocked(siteQueries.addSiteHeroVideo).mockImplementation(async (data) => ({
+      ...data,
+      createdAt: "t",
+      updatedAt: "t",
+    }) as never);
+    vi.mocked(siteQueries.upsertSitePageHero).mockImplementation(async (page, desktopVideoId, mobileVideoId) => ({
+      page, desktopVideoId, mobileVideoId, updatedAt: "t",
+    }) as never);
     vi.mocked(deleteMediaKeys).mockResolvedValue(undefined);
   });
 
@@ -463,6 +484,86 @@ describe("POST /api/admin/website", () => {
     expect(deleteMediaKeys).toHaveBeenCalledWith(["community/old.jpg"]);
   });
 
+  it("getHeroVideos returns libraries, builtins, and resolved page map", async () => {
+    const res = await call({ action: "getHeroVideos", password: "x" });
+    expect(res.status).toBe(200);
+    expect(res.body.builtins.length).toBe(4);
+    expect(res.body.pages.home.mp4).toContain("hero-a");
+    expect(res.body.pages.book.mp4).toContain("hero-a");
+    expect(res.body.pages["booking-confirmation"].mp4).toContain("hero-a");
+  });
+
+  it("savePageHero rejects cross-slot picks and accepts builtins", async () => {
+    const bad = await call({
+      action: "savePageHero",
+      password: "x",
+      page: "events",
+      desktopVideoId: "builtin:A:mobile",
+      mobileVideoId: "builtin:A:desktop",
+    });
+    expect(bad.status).toBe(400);
+
+    const ok = await call({
+      action: "savePageHero",
+      password: "x",
+      page: "booking-confirmation",
+      desktopVideoId: "builtin:A:desktop",
+      mobileVideoId: "builtin:A:mobile",
+    });
+    expect(ok.status).toBe(200);
+    expect(siteQueries.upsertSitePageHero).toHaveBeenCalledWith(
+      "booking-confirmation",
+      "builtin:A:desktop",
+      "builtin:A:mobile",
+    );
+  });
+
+  it("addHeroVideo requires hero-videos mp4 URL and delete blocks when referenced", async () => {
+    const badUrl = await call({
+      action: "addHeroVideo",
+      password: "x",
+      slot: "desktop",
+      url: "/api/media/events/x.mp4",
+    });
+    expect(badUrl.status).toBe(400);
+
+    const added = await call({
+      action: "addHeroVideo",
+      password: "x",
+      slot: "desktop",
+      url: "/api/media/hero-videos/2026-09-26-clip.mp4",
+      posterUrl: "/api/media/hero-videos/2026-09-26-clip.jpg",
+      label: "Clip",
+      bytes: 1000,
+      width: 1024,
+      height: 576,
+    });
+    expect(added.status).toBe(200);
+    expect(siteQueries.addSiteHeroVideo).toHaveBeenCalled();
+
+    vi.mocked(siteQueries.getSiteHeroVideoById).mockResolvedValue({
+      id: "vid-1",
+      slot: "desktop",
+      label: "Clip",
+      url: "/api/media/hero-videos/2026-09-26-clip.mp4",
+      posterUrl: "/api/media/hero-videos/2026-09-26-clip.jpg",
+      bytes: 1000,
+      width: 1024,
+      height: 576,
+      createdAt: "t",
+      updatedAt: "t",
+    } as never);
+    vi.mocked(siteQueries.countPageHeroRefs).mockResolvedValue(1);
+    const blocked = await call({ action: "deleteHeroVideo", password: "x", id: "vid-1" });
+    expect(blocked.status).toBe(400);
+    expect(siteQueries.deleteSiteHeroVideo).not.toHaveBeenCalled();
+
+    vi.mocked(siteQueries.countPageHeroRefs).mockResolvedValue(0);
+    const deleted = await call({ action: "deleteHeroVideo", password: "x", id: "vid-1" });
+    expect(deleted.status).toBe(200);
+    expect(siteQueries.deleteSiteHeroVideo).toHaveBeenCalledWith("vid-1");
+  });
+
   it("discards an unreferenced pending upload and ignores static paths", async () => {
     const media = await call({ action: "discardMedia", password: "x", url: "/api/media/events/pending.jpg" });
     expect(media.status).toBe(200);
@@ -519,14 +620,15 @@ describe("POST /api/admin/website/upload", () => {
     expect(putMediaObject).not.toHaveBeenCalled();
   });
 
-  it("rejects empty content-type and non-JPEG bytes", async () => {
+  it("accepts JPEG by magic bytes even with empty content-type; rejects non-JPEG bytes", async () => {
     const fd = new FormData();
     fd.set("password", "x");
     fd.set("folder", "events");
     fd.set("file", jpegFile(""));
     const emptyType = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
-    expect(emptyType.status).toBe(400);
+    expect(emptyType.status).toBe(200);
 
+    vi.mocked(putMediaObject).mockClear();
     const fd2 = new FormData();
     fd2.set("password", "x");
     fd2.set("folder", "events");
@@ -594,6 +696,38 @@ describe("POST /api/admin/website/upload", () => {
     expect(res.status).toBe(403);
     expect(putMediaObject).not.toHaveBeenCalled();
   });
+
+  it("stores an MP4 under hero-videos/ and accepts JPEG posters there", async () => {
+    // ISO BMFF: size(4) + 'ftyp' + brand
+    const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "hero-videos");
+    fd.set("file", new File([mp4], "clip.mp4", { type: "video/mp4" }));
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.url).toMatch(/^\/api\/media\/hero-videos\/\d{4}-\d{2}-\d{2}-[0-9a-f-]{36}\.mp4$/i);
+    expect(putMediaObject).toHaveBeenCalledWith(expect.stringMatching(/^hero-videos\/.+\.mp4$/), expect.anything(), "video/mp4");
+
+    const fdPoster = new FormData();
+    fdPoster.set("password", "x");
+    fdPoster.set("folder", "hero-videos");
+    fdPoster.set("file", jpegFile());
+    const poster = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fdPoster }));
+    expect(poster.status).toBe(200);
+    expect((await poster.json()).url).toMatch(/\.jpg$/i);
+  });
+
+  it("rejects non-mp4 bytes in hero-videos folder", async () => {
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "hero-videos");
+    fd.set("file", new File([new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])], "clip.mp4", { type: "video/mp4" }));
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    expect(res.status).toBe(400);
+    expect(putMediaObject).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/media/[...key]", () => {
@@ -641,6 +775,8 @@ describe("GET /api/site", () => {
     vi.mocked(siteQueries.getSiteEvents).mockResolvedValue([]);
     vi.mocked(siteQueries.getSiteCommunitySpaces).mockResolvedValue([]);
     vi.mocked(siteQueries.getSitePageCopy).mockResolvedValue(null as never);
+    vi.mocked(siteQueries.getSiteHeroVideos).mockResolvedValue([]);
+    vi.mocked(siteQueries.getSitePageHeroes).mockResolvedValue([]);
   });
 
   it("returns events JSON with a CDN cache header", async () => {
@@ -651,6 +787,15 @@ describe("GET /api/site", () => {
     expect(body.copy.hero.title).toBe(defaultEventsCopy.hero.title);
     expect(body.upcoming).toEqual([]);
     expect(body.past).toEqual([]);
+  });
+
+  it("returns resolved hero video map for page=heroes", async () => {
+    const res = await siteGET(new NextRequest("http://localhost/api/site?page=heroes"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toContain("s-maxage=60");
+    const body = await res.json();
+    expect(body.pages.home.mp4).toContain("/videos/hero/");
+    expect(body.pages["booking-confirmation"].mobileMp4).toContain("mobile");
   });
 
   it("returns community JSON", async () => {

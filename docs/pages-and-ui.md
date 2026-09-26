@@ -18,17 +18,21 @@ All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these 
 
 | Path | Content source | Hero video (typical) |
 |------|----------------|----------------------|
-| `/` | `src/content/home.ts` | loop A |
-| `/stay` | `stay.ts` + shared `content/rooms.ts` gallery (`stayGalleryById`) | hero B; four room cards (12-bed mixed, female, 8-bed luxury, double bed) |
-| `/story` | `story.ts` | default loop (omit prop) |
-| `/events` | D1 CMS + seed; `EventsPageLive` | still / no `heroVideo=` |
-| `/community-area` | D1 CMS + seed; `CommunityPageLive` | hero B |
-| `/how-to-reach` | content | hero B |
-| `/things-to-do` | content | `heroVideo={null}` still |
-| `/faqs` | content | hero B |
-| `/reviews` | content | default loop |
-| `/booking-enquiry` | form → WhatsApp or `POST /api/booking-enquiry` (Cloudflare Email Sending) | default loop |
-| `/book` | `BookingHeroPanel` in `PageRibbon` only (no lower-page copy block) | Native date/room checkout and payments not yet implemented |
+| `/` | `src/content/home.ts` | CMS `pageKey=home` (seed A) |
+| `/stay` | CMS stay + rooms gallery | CMS `pageKey=stay` (seed B) |
+| `/story` | `story.ts` | CMS `pageKey=story` (seed A) |
+| `/events` | D1 CMS + seed; `EventsPageLive` | CMS `pageKey=events` (seed A); still = `ribbonImage` |
+| `/community-area` | D1 CMS + seed; `CommunityPageLive` | CMS `pageKey=community` (seed B) |
+| `/how-to-reach` | content | CMS `pageKey=how-to-reach` (seed B) |
+| `/things-to-do` | content | CMS `pageKey=things-to-do` (seed A) |
+| `/faqs` | content | CMS `pageKey=faqs` (seed B) |
+| `/reviews` | content | CMS `pageKey=reviews` (seed A) |
+| `/booking-enquiry` | form → WhatsApp or email | CMS `pageKey=booking-enquiry` (seed A) |
+| `/book` (+ `/book/preview`, Find my booking tab) | `BookingHeroPanel` in `PageRibbon` | CMS `pageKey=book` (seed A) |
+| `/booking/[reference]` | confirmation / manage | CMS `pageKey=booking-confirmation` (seed A) |
+| `/self-checkin` | form | CMS `pageKey=self-checkin` (seed A) |
+
+Hero clips are assigned in Management → Website → **Hero Videos** (`GET /api/site?page=heroes`). `/quick-links` has no hero ribbon.
 
 `robots.ts` **disallows:** `/self-checkin`, `/admin`, `/api/`, `/food-order`, `/kitchen`, `/my-bills`, `/review/`.
 

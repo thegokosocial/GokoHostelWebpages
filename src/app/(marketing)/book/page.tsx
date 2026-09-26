@@ -12,6 +12,7 @@ export default function BookPage() {
       subtitle="A bed by the beach. A community to come home to."
       image="/images/IMG_3345.jpg"
       imageAlt="Palm trees near Goko Hostel"
+      pageKey="book"
     >
       <BookingHeroPanel />
     </PageRibbon>

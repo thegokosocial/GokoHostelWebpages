@@ -120,6 +120,8 @@ Internal native milestone: `native_inventory_holds` (0059) stores request/owner 
 | `site_events` | Cards; `is_past`; photos JSON. |
 | `site_community_spaces` | Space cards + icon name. |
 | `site_page_copy` | PK `page` = `events` \| `community`, JSON content. |
+| `site_hero_videos` | Desktop/mobile MP4 library (+ poster URL) in R2. |
+| `site_page_heroes` | Per-page desktop/mobile library id or `builtin:A\|B:…`. |
 
 ### Splits (Cloudflare D1 only — not on Pi)
 
@@ -210,7 +212,7 @@ Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kan
 
 ## What Pi never has
 
-`site_events`, `site_community_spaces`, `site_page_copy`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`, `food_bill_share_tokens`. Migrator skips `0035_site_cms.sql`, `0041_splits.sql`, and `0064_food_bill_share_tokens.sql` but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
+`site_events`, `site_community_spaces`, `site_page_copy`, `site_hero_videos`, `site_page_heroes`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`, `food_bill_share_tokens`. Migrator skips `0035_site_cms.sql`, `0041_splits.sql`, `0064_food_bill_share_tokens.sql`, and `0079_site_hero_videos.sql` (among other Cloudflare-only stamps) but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
 # Cloud-only guest booking verification
 
 The existing settings row `website_booking_settings_v1` JSON now includes `maxSelectedBeds` (integer 1–100; absent field defaults to 4). No new table/migration is needed for the browsing limit. Existing revision-protected admin saves retain payment fields; availability exposes only the public limit, never the full settings JSON.

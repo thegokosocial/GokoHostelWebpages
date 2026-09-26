@@ -26,6 +26,7 @@ export default function ReviewsPage() {
         subtitle="Real words from travellers who shared sunsets, meals, and dance floors with us."
         image="/images/IMG_7403.jpg"
         imageAlt="Guests at Goko Hostel"
+        pageKey="reviews"
       />
       <section className="goko-mesh py-16 md:py-24">
         <Container>

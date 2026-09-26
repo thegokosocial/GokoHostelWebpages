@@ -13,6 +13,7 @@ import {
   thingsToDoHero,
 } from "@/content/thingsToDo";
 import { buildMetadata } from "@/lib/seo";
+import { heroLoopVideo } from "@/lib/site";
 
 export const dynamic = "force-static";
 
@@ -30,7 +31,8 @@ export default function ThingsToDoPage() {
         subtitle={thingsToDoHero.subtitle}
         image="/images/IMG_7403.jpg"
         imageAlt="Beaches and things to do in Gokarna"
-        heroVideo={null}
+        heroVideo={heroLoopVideo}
+        pageKey="things-to-do"
       />
 
       <section className="py-16 md:py-24">

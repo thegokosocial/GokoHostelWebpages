@@ -31,6 +31,7 @@ export default function StoryPage() {
         subtitle={storyHero.subtitle}
         image="/images/story/pawan/WhatsApp%20Image%202025-12-06%20at%2010.33.37%20PM.jpeg"
         imageAlt="Founders at Goko Hostel"
+        pageKey="story"
       />
 
       <section className="py-16 md:py-24">

@@ -38,6 +38,7 @@ export function CommunityPageLive({ initial }: { initial: CommunityPageData }) {
         image={copy.hero.ribbonImage}
         imageAlt="Goko community space"
         heroVideo={heroVideoB}
+        pageKey="community"
       />
 
       <section className="py-16 md:py-24">

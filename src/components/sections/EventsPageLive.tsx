@@ -38,6 +38,7 @@ export function EventsPageLive({ initial }: { initial: EventsPageData }) {
         subtitle={copy.hero.subtitle}
         image={copy.hero.ribbonImage}
         imageAlt="Colour and celebration at Goko Hostel"
+        pageKey="events"
       />
       <section className="py-8">
         <Container>

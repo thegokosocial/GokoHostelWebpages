@@ -1,12 +1,24 @@
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { getDb } from "./index";
-import { dorms, roomTypeMapping, siteCommunitySpaces, siteEvents, sitePageCopy, sitePropertyContent, siteRoomContent } from "./schema";
+import {
+  dorms,
+  roomTypeMapping,
+  siteCommunitySpaces,
+  siteEvents,
+  siteHeroVideos,
+  sitePageCopy,
+  sitePageHeroes,
+  sitePropertyContent,
+  siteRoomContent,
+} from "./schema";
 
 export type SiteEventRow = typeof siteEvents.$inferSelect;
 export type SiteCommunitySpaceRow = typeof siteCommunitySpaces.$inferSelect;
 export type SitePageCopyRow = typeof sitePageCopy.$inferSelect;
 export type SiteRoomContentRow = typeof siteRoomContent.$inferSelect;
 export type SitePropertyContentRow = typeof sitePropertyContent.$inferSelect;
+export type SiteHeroVideoRow = typeof siteHeroVideos.$inferSelect;
+export type SitePageHeroRow = typeof sitePageHeroes.$inferSelect;
 
 function nowIso() {
   return new Date().toISOString();
@@ -172,5 +184,77 @@ export async function countMediaUrlRefs(url: string): Promise<number> {
     .where(or(sql`instr(${siteRoomContent.roomPhotos}, ${url}) > 0`, sql`instr(${siteRoomContent.washroomPhotos}, ${url}) > 0`));
   const [property] = await db.select({ n: sql<number>`count(*)` }).from(sitePropertyContent)
     .where(or(sql`instr(${sitePropertyContent.exteriorPhotos}, ${url}) > 0`, sql`instr(${sitePropertyContent.commonPhotos}, ${url}) > 0`, sql`instr(${sitePropertyContent.washroomPhotos}, ${url}) > 0`));
-  return Number(events?.n ?? 0) + Number(spaces?.n ?? 0) + Number(copy?.n ?? 0) + Number(rooms?.n ?? 0) + Number(property?.n ?? 0);
+  const [heroes] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(siteHeroVideos)
+    .where(or(eq(siteHeroVideos.url, url), eq(siteHeroVideos.posterUrl, url)));
+  return (
+    Number(events?.n ?? 0)
+    + Number(spaces?.n ?? 0)
+    + Number(copy?.n ?? 0)
+    + Number(rooms?.n ?? 0)
+    + Number(property?.n ?? 0)
+    + Number(heroes?.n ?? 0)
+  );
+}
+
+export async function getSiteHeroVideos() {
+  const db = getDb();
+  return db.select().from(siteHeroVideos).orderBy(asc(siteHeroVideos.slot), asc(siteHeroVideos.createdAt));
+}
+
+export async function getSiteHeroVideoById(id: string) {
+  const db = getDb();
+  const rows = await db.select().from(siteHeroVideos).where(eq(siteHeroVideos.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function addSiteHeroVideo(data: {
+  id: string;
+  slot: string;
+  label: string;
+  url: string;
+  posterUrl: string;
+  bytes: number;
+  width: number;
+  height: number;
+}) {
+  const db = getDb();
+  const now = nowIso();
+  await db.insert(siteHeroVideos).values({ ...data, createdAt: now, updatedAt: now });
+  return getSiteHeroVideoById(data.id);
+}
+
+export async function deleteSiteHeroVideo(id: string) {
+  const db = getDb();
+  await db.delete(siteHeroVideos).where(eq(siteHeroVideos.id, id));
+}
+
+export async function countPageHeroRefs(videoId: string): Promise<number> {
+  if (!videoId) return 0;
+  const db = getDb();
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(sitePageHeroes)
+    .where(or(eq(sitePageHeroes.desktopVideoId, videoId), eq(sitePageHeroes.mobileVideoId, videoId)));
+  return Number(row?.n ?? 0);
+}
+
+export async function getSitePageHeroes() {
+  const db = getDb();
+  return db.select().from(sitePageHeroes).orderBy(asc(sitePageHeroes.page));
+}
+
+export async function upsertSitePageHero(page: string, desktopVideoId: string, mobileVideoId: string) {
+  const db = getDb();
+  const now = nowIso();
+  await db
+    .insert(sitePageHeroes)
+    .values({ page, desktopVideoId, mobileVideoId, updatedAt: now })
+    .onConflictDoUpdate({
+      target: sitePageHeroes.page,
+      set: { desktopVideoId, mobileVideoId, updatedAt: now },
+    });
+  const rows = await db.select().from(sitePageHeroes).where(eq(sitePageHeroes.page, page)).limit(1);
+  return rows[0] || null;
 }

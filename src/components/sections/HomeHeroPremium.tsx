@@ -28,6 +28,7 @@ export function HomeHeroPremium() {
           image={homeHero.heroImage}
           imageAlt={homeHero.heroImageAlt}
           video={heroLoopVideo}
+          pageKey="home"
           priority
         />
       </div>

@@ -33,9 +33,9 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/food/lookup` | GET `?phone=` | none | Hostel vs walk-in |
 | `/api/food/status` | GET | none | Order status / guest orders |
 | `/api/food/bills` | GET `?phone=` or `?t=` | none | My bills; `?t=` resolves `food_bill_share_tokens` (404 if invalid/expired). Token responses set `viaToken` and omit `phone`. Includes `billBranding` (name, location, accent, upiId, qrUrl, footer, taxRate) |
-| `/api/site` | GET `?page=events\|community\|stay` | none | Sanitized CMS/accommodation JSON, `s-maxage=60`; `stay` includes mapped guest-facing rooms and property galleries |
+| `/api/site` | GET `?page=events\|community\|stay\|heroes` | none | Sanitized CMS/accommodation/hero JSON, `s-maxage=60`; `heroes` is resolved per-page desktop/mobile MP4 (+ optional webm) |
 | `/api/quick-links` | GET | none | Active guest links and QR/image cards |
-| `/api/media/[...key]` | GET | none | R2 image media; preserves stored content type |
+| `/api/media/[...key]` | GET | none | R2 media (JPEG/PNG/WebP/MP4); preserves content type; `Accept-Ranges` / 206 when R2 returns a range |
 | `/api/booking-enquiry` | POST JSON | none | Booking enquiry form → Cloudflare Email Sending (`booking@` auto-reply + `admin@` staff notification); honeypot `_hp`; 503 if `EMAIL` binding unavailable |
 | `/api/review` | POST | token in JSON | `getReviewRequest`, `submitRating`, `submitFeedback` |
 | `/api/form-c/[id]` | GET | token = `ADMIN_PASSWORD` | FRRO payload + photo |
@@ -67,8 +67,8 @@ Native physical hold creation/release, read-only owner recovery (`getNativeInven
 | `/api/admin/platform-settlements` | `canViewAccounts` for list; `canSettlePlatformPayments` for createSettlement/allocate/allocateBatch/refreshWebsiteFees; `canAdjustPlatformReceivables` for adjust/setWebsiteFees/recognizeMissing | OTA and website payment receivables (the Accounts UI filters the complete list by platform/check-in date and totals selected rows client-side), Razorpay fee refresh/manual null-fill, ops-only Sep-20+ `recognizeMissing` backfill (not in UI), payout records and batch allocations |
 | `/api/admin/splits` | per-action map, 403 on Pi | Staff/volunteer IOUs + Goko Accounts bridge |
 | `/api/admin/account-settings` | Per action: `canManageAccountSettings` or legacy `canManageAccounts` or admin; `getFoodReceiptAccounts` uses `canMarkPaid`; employee actions also accept `canManageEmployees` | Accounts, vendors, employees, salary; food payments receive a read-only active non-virtual account list; receipt defaults validate both active real accounts and return 400 for invalid selections; inactive employee removal tombstones the roster row and retains compensation/payroll/attendance history |
-| `/api/admin/website` | **admin role**, 403 on Pi | CMS JSON |
-| `/api/admin/website/upload` | `menu` → `canManageMenuItems`; `bills` → `canManageFoodSettings`; other folders admin-only; 403 on Pi, 503 if no R2 | CMS / quick-links / bill QR images |
+| `/api/admin/website` | **admin role**, 403 on Pi | CMS JSON; hero actions: `getHeroVideos`, `addHeroVideo`, `deleteHeroVideo`, `savePageHero` |
+| `/api/admin/website/upload` | `menu` → `canManageMenuItems`; `bills` → `canManageFoodSettings`; other folders admin-only; 403 on Pi, 503 if no R2 | CMS JPEG (5MB) / `hero-videos` MP4 (15MB) + poster JPEG / quick-links / bill QR |
 | `/api/admin/channel-manager` | admin role; `getSyncLogs` uses `canViewLogs` | Aiosell config, room/rate maps, daily rates, sync logs |
 | `/api/admin/analytics` | `canViewAnalytics` (admin/manager bypass) | Business analytics: pickup vs night-overlap on-books KPIs, prior-period `comparison`, food/expense/occupancy breakdowns |
 | `/api/admin/booking-settings` | admin role, 403 on Pi | `getSettings` returns draft/revision; `saveSettings` requires that revision and atomically preserves other fields; stale/missing revision → 409 `BOOKING_SETTINGS_CONFLICT`; invalid persisted drafts → 409 `BOOKING_SETTINGS_INVALID`; `checkGatewayReadiness` checks credential presence only, not provider connectivity; `getEmailTemplates` / `saveEmailTemplates` (setting `booking_email_templates`: confirmation subject+body wired to guest confirmation send; modified/cancelled reserved); `getSmsTemplates` / `saveSmsTemplates` (setting `booking_sms_templates`: body-only drafts, **not sent** yet) |

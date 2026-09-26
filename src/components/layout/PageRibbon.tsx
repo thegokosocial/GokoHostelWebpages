@@ -1,5 +1,6 @@
 import { HeroBackdrop } from "@/components/media/HeroBackdrop";
 import { cn } from "@/lib/utils";
+import type { HeroPageKey } from "@/lib/heroVideos";
 import { heroLoopVideo, type HeroLoopVideo } from "@/lib/site";
 import type { ReactNode } from "react";
 
@@ -10,8 +11,10 @@ type PageRibbonProps = {
   image?: string;
   imageAlt?: string;
   className?: string;
-  /** Set false to use only `image` (no loop). Defaults to legacy Webflow yard clip. */
+  /** Set null to use only `image` (no loop). Defaults to legacy Webflow yard clip. */
   heroVideo?: HeroLoopVideo | null;
+  /** Hydrates CMS assignment from `/api/site?page=heroes`. */
+  pageKey?: HeroPageKey;
   children?: ReactNode;
 };
 
@@ -22,6 +25,7 @@ export function PageRibbon({
   imageAlt = "",
   className,
   heroVideo = heroLoopVideo,
+  pageKey,
   children,
 }: PageRibbonProps) {
   return (
@@ -37,6 +41,7 @@ export function PageRibbon({
           image={image}
           imageAlt={imageAlt ?? title}
           video={heroVideo}
+          pageKey={pageKey}
           priority
         />
       </div>

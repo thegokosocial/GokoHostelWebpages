@@ -48,6 +48,7 @@ export default function FaqsPage() {
         image="/legacy-images/62f5bf7bfc22850018b36726-62f5bf7bfc228579eab3678c_home_faq.webp"
         imageAlt="Goko Hostel common area where guests relax and connect"
         heroVideo={heroVideoB}
+        pageKey="faqs"
       />
       <section className="py-16 md:py-24">
         <Container>

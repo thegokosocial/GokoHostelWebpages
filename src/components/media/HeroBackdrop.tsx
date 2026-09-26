@@ -4,24 +4,31 @@ import Image from "next/image";
 import { useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import type { HeroLoopVideo } from "@/lib/site";
+import type { HeroPageKey } from "@/lib/heroVideos";
+import { fetchPublicHeroVideos, peekHeroForPage } from "@/lib/fetchHeroVideos";
 
 type HeroBackdropProps = {
   /** Shown when video is off (`prefers-reduced-motion`) or as Next/Image optimization target for static export. Omit for solid gradient fallback. */
   image?: string;
   imageAlt?: string;
+  /** Seed / fallback until CMS hydrate (or final if no pageKey). */
   video?: HeroLoopVideo | null;
+  /** When set, hydrates live assignment from `/api/site?page=heroes` (keeps pages static). */
+  pageKey?: HeroPageKey;
   priority?: boolean;
 };
 
 export function HeroBackdrop({
   image,
   imageAlt,
-  video,
+  video: seedVideo,
+  pageKey,
   priority = true,
 }: HeroBackdropProps) {
   const reduceMotion = useReducedMotion();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [liveVideo, setLiveVideo] = useState<HeroLoopVideo | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia(
@@ -33,6 +40,19 @@ export function HeroBackdrop({
     return () => mq.removeEventListener("change", handler);
   }, []);
 
+  useEffect(() => {
+    if (!pageKey) return;
+    let active = true;
+    fetchPublicHeroVideos().then((data) => {
+      if (!active) return;
+      setLiveVideo(peekHeroForPage(data, pageKey));
+    });
+    return () => {
+      active = false;
+    };
+  }, [pageKey]);
+
+  const video = liveVideo ?? seedVideo ?? null;
   const showVideo = Boolean(video) && !reduceMotion;
 
   useEffect(() => {
@@ -46,6 +66,11 @@ export function HeroBackdrop({
     else v.addEventListener("canplay", play, { once: true });
     return () => v.removeEventListener("canplay", play);
   }, [showVideo, video, isMobile]);
+
+  const desktopWebm = video?.webm?.trim();
+  const mobileWebm = video?.mobileWebm?.trim();
+  const webmSrc = isMobile ? mobileWebm : desktopWebm;
+  const mp4Src = isMobile ? video?.mobileMp4 : video?.mp4;
 
   return (
     <div className="relative h-full min-h-full w-full">
@@ -76,14 +101,8 @@ export function HeroBackdrop({
           preload="metadata"
           aria-hidden
         >
-          <source
-            src={isMobile ? video!.mobileWebm : video!.webm}
-            type="video/webm"
-          />
-          <source
-            src={isMobile ? video!.mobileMp4 : video!.mp4}
-            type="video/mp4"
-          />
+          {webmSrc ? <source src={webmSrc} type="video/webm" /> : null}
+          {mp4Src ? <source src={mp4Src} type="video/mp4" /> : null}
         </video>
       )}
     </div>

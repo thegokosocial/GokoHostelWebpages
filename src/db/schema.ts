@@ -1368,6 +1368,30 @@ export const sitePropertyContent = sqliteTable("site_property_content", {
   updatedAt: text("updated_at").notNull().default(""),
 });
 
+/** Hero video library (Cloudflare-only; not synced to Pi). */
+export const siteHeroVideos = sqliteTable("site_hero_videos", {
+  id: text("id").primaryKey(),
+  slot: text("slot").notNull(),
+  label: text("label").notNull().default(""),
+  url: text("url").notNull(),
+  posterUrl: text("poster_url").notNull().default(""),
+  bytes: integer("bytes").notNull().default(0),
+  width: integer("width").notNull().default(0),
+  height: integer("height").notNull().default(0),
+  createdAt: text("created_at").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(""),
+}, (table) => [
+  index("idx_site_hero_videos_slot").on(table.slot),
+]);
+
+/** Per-page hero assignment (desktop + mobile library ids or builtin:* sentinels). */
+export const sitePageHeroes = sqliteTable("site_page_heroes", {
+  page: text("page").primaryKey(),
+  desktopVideoId: text("desktop_video_id").notNull().default(""),
+  mobileVideoId: text("mobile_video_id").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(""),
+});
+
 export const quickLinkSections = sqliteTable("quick_link_sections", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),

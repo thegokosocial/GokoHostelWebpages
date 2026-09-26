@@ -21,6 +21,7 @@ export default function SelfCheckinPage() {
           image={homeHero.heroImage}
           imageAlt={homeHero.heroImageAlt}
           video={heroLoopVideo}
+          pageKey="self-checkin"
           priority
         />
       </div>

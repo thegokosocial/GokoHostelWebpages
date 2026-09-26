@@ -32,6 +32,7 @@ export default function HowToReachPage() {
         image="/images/mahabaleshwar_temple.jpg"
         imageAlt="Travel to Gokarna"
         heroVideo={heroVideoB}
+        pageKey="how-to-reach"
       />
 
       <section className="goko-mesh goko-noise py-16 md:py-24">

@@ -206,19 +206,26 @@ describe("Workers CPU: marketing chrome split", () => {
     const backdrop = readFile("src/components/media/HeroBackdrop.tsx");
     expect(backdrop).not.toContain("requestIdleCallback");
     expect(backdrop).toContain("const showVideo = Boolean(video) && !reduceMotion;");
+    expect(backdrop).toContain("pageKey");
+    expect(backdrop).toContain("fetchPublicHeroVideos");
 
     const ribbon = readFile("src/components/layout/PageRibbon.tsx");
     expect(ribbon).toContain("heroVideo = heroLoopVideo");
+    expect(ribbon).toContain("pageKey");
 
     expect(readFile("src/components/sections/HomeHeroPremium.tsx")).toContain("video={heroLoopVideo}");
+    expect(readFile("src/components/sections/HomeHeroPremium.tsx")).toContain('pageKey="home"');
     expect(readFile("src/app/(marketing)/stay/page.tsx")).toContain("heroVideo={heroVideoB}");
-    expect(readFile("src/components/sections/EventsPageLive.tsx")).not.toMatch(/heroVideo=/);
+    expect(readFile("src/app/(marketing)/stay/page.tsx")).toContain('pageKey="stay"');
+    expect(readFile("src/components/sections/EventsPageLive.tsx")).toContain('pageKey="events"');
     expect(readFile("src/components/sections/CommunityPageLive.tsx")).toContain("heroVideo={heroVideoB}");
     expect(readFile("src/app/(marketing)/faqs/page.tsx")).toContain("heroVideo={heroVideoB}");
     expect(readFile("src/app/(marketing)/how-to-reach/page.tsx")).toContain("heroVideo={heroVideoB}");
-    expect(readFile("src/app/(marketing)/story/page.tsx")).not.toMatch(/heroVideo=/);
-    expect(readFile("src/app/(marketing)/reviews/page.tsx")).not.toMatch(/heroVideo=/);
-    expect(readFile("src/app/(marketing)/booking-enquiry/page.tsx")).not.toMatch(/heroVideo=/);
-    expect(readFile("src/app/(marketing)/things-to-do/page.tsx")).toContain("heroVideo={null}");
+    expect(readFile("src/app/(marketing)/story/page.tsx")).toContain('pageKey="story"');
+    expect(readFile("src/app/(marketing)/reviews/page.tsx")).toContain('pageKey="reviews"');
+    expect(readFile("src/app/(marketing)/booking-enquiry/page.tsx")).toContain('pageKey="booking-enquiry"');
+    expect(readFile("src/app/(marketing)/things-to-do/page.tsx")).toContain('pageKey="things-to-do"');
+    expect(readFile("src/app/(marketing)/things-to-do/page.tsx")).not.toContain("heroVideo={null}");
+    expect(readFile("src/app/(marketing)/booking/[reference]/page.tsx")).toContain('pageKey="booking-confirmation"');
   });
 });

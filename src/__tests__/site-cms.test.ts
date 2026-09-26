@@ -243,6 +243,7 @@ describe("Pi migrator", () => {
     expect(src).toMatch(/0077_food_bill_walkin_identity\.sql/);
     expect(src).toMatch(/0066_gateway_receivables\.sql/);
     expect(src).toMatch(/0068_gateway_settlement_allocations\.sql/);
+    expect(src).toMatch(/0079_site_hero_videos\.sql/);
   });
 });
 

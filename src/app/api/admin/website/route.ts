@@ -7,18 +7,32 @@ import { defaultCommunityCopy, defaultEventsCopy, mergeGallery, parseCommunityCo
 import {
   addSiteCommunitySpace,
   addSiteEvent,
+  addSiteHeroVideo,
   countMediaUrlRefs,
+  countPageHeroRefs,
   deleteSiteCommunitySpace,
   deleteSiteEvent,
+  deleteSiteHeroVideo,
   getSiteCommunitySpaceById,
   getSiteCommunitySpaces,
   getSiteEventById,
   getSiteEvents,
+  getSiteHeroVideoById,
+  getSiteHeroVideos,
   getSitePageCopy,
   updateSiteCommunitySpace,
   updateSiteEvent,
   upsertSitePageCopy,
+  upsertSitePageHero,
 } from "@/db/siteQueries";
+import {
+  isHeroPageKey,
+  sanitizeHeroMediaUrl,
+  validateAssignmentIds,
+  type HeroLibraryItem,
+  type HeroVideoSlot,
+} from "@/lib/heroVideos";
+import { loadHeroVideosAdminPayload } from "@/lib/loadHeroVideos";
 
 function jsonTags(input: unknown): string {
   if (Array.isArray(input)) return JSON.stringify(input.map((t) => String(t).trim()).filter(Boolean));
@@ -294,6 +308,83 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
+      case "getHeroVideos": {
+        return NextResponse.json(await loadHeroVideosAdminPayload());
+      }
+
+      case "addHeroVideo": {
+        const slot = String(params.slot || "") as HeroVideoSlot;
+        if (slot !== "desktop" && slot !== "mobile") {
+          return NextResponse.json({ error: "slot must be desktop or mobile" }, { status: 400 });
+        }
+        const url = sanitizeHeroMediaUrl(String(params.url || ""));
+        const posterRaw = String(params.posterUrl || "").trim();
+        const posterKey = mediaUrlToKey(posterRaw);
+        const posterUrl = posterKey?.startsWith("hero-videos/") && posterRaw.endsWith(".jpg") ? posterRaw : "";
+        if (!url || !url.includes(".mp4")) {
+          return NextResponse.json({ error: "Valid hero-videos MP4 URL is required" }, { status: 400 });
+        }
+        const label = String(params.label || "").trim().slice(0, 80) || (slot === "desktop" ? "Desktop clip" : "Mobile clip");
+        const id = crypto.randomUUID();
+        const row = await addSiteHeroVideo({
+          id,
+          slot,
+          label,
+          url,
+          posterUrl,
+          bytes: Math.max(0, Number(params.bytes) || 0),
+          width: Math.max(0, Number(params.width) || 0),
+          height: Math.max(0, Number(params.height) || 0),
+        });
+        return NextResponse.json({ ok: true, video: row });
+      }
+
+      case "deleteHeroVideo": {
+        const id = String(params.id || "").trim();
+        if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
+        if (id.startsWith("builtin:")) {
+          return NextResponse.json({ error: "Built-in videos cannot be deleted" }, { status: 400 });
+        }
+        const prev = await getSiteHeroVideoById(id);
+        if (!prev) return NextResponse.json({ error: "Video not found" }, { status: 404 });
+        if ((await countPageHeroRefs(id)) > 0) {
+          return NextResponse.json({ error: "Video is assigned to a page — unassign first" }, { status: 400 });
+        }
+        await deleteSiteHeroVideo(id);
+        await safeDeleteMediaKeys(collectMediaKeys([prev.url, prev.posterUrl]));
+        return NextResponse.json({ ok: true });
+      }
+
+      case "savePageHero": {
+        const page = String(params.page || "").trim();
+        if (!isHeroPageKey(page)) {
+          return NextResponse.json({ error: "Unknown page" }, { status: 400 });
+        }
+        const rows = await getSiteHeroVideos();
+        const libraryById = new Map<string, HeroLibraryItem>();
+        for (const row of rows) {
+          libraryById.set(row.id, {
+            id: row.id,
+            slot: row.slot === "mobile" ? "mobile" : "desktop",
+            label: row.label,
+            url: row.url,
+            posterUrl: row.posterUrl,
+            bytes: row.bytes,
+            width: row.width,
+            height: row.height,
+            builtin: false,
+          });
+        }
+        const checked = validateAssignmentIds(
+          String(params.desktopVideoId || ""),
+          String(params.mobileVideoId || ""),
+          libraryById,
+        );
+        if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+        const saved = await upsertSitePageHero(page, checked.desktopVideoId, checked.mobileVideoId);
+        return NextResponse.json({ ok: true, assignment: saved });
+      }
+
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
@@ -301,7 +392,7 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Internal server error";
     console.error("Website CMS error:", message);
     if (/no such table/i.test(message)) {
-      return NextResponse.json({ error: "Website tables missing — apply migration 0035" }, { status: 503 });
+      return NextResponse.json({ error: "Website tables missing — apply migration 0035 / 0079" }, { status: 503 });
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

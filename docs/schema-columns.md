@@ -58,6 +58,8 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `site_events` | 10 |
 | `site_community_spaces` | 8 |
 | `site_page_copy` | 3 |
+| `site_hero_videos` | 10 |
+| `site_page_heroes` | 4 |
 | `split_members` | 10 |
 | `split_groups` | 4 |
 | `split_group_members` | 3 |
@@ -900,6 +902,30 @@ Cloudflare-only (migration 0064). Not Pi-synced; Pi migrator stamps the filename
 | `page` | text | PK |
 | `content` | text | NOT NULL default "{}" |
 | `updated_at` | text | NOT NULL default "" |
+
+## `site_hero_videos`
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `id` | text | PK (UUID) |
+| `slot` | text | `desktop` \| `mobile` |
+| `label` | text | NOT NULL |
+| `url` | text | `/api/media/hero-videos/…mp4` |
+| `poster_url` | text | JPEG under `hero-videos/` |
+| `bytes` | integer | encoded size |
+| `width` | integer | |
+| `height` | integer | |
+| `created_at` | text | |
+| `updated_at` | text | |
+
+## `site_page_heroes`
+
+| SQL column | Type | Notes |
+|------------|------|-------|
+| `page` | text | PK (hero page key) |
+| `desktop_video_id` | text | library id or `builtin:A\|B:desktop` |
+| `mobile_video_id` | text | library id or `builtin:A\|B:mobile` |
+| `updated_at` | text | |
 
 ## `split_members`
 

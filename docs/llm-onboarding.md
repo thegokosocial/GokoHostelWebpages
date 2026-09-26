@@ -12,7 +12,7 @@ Handoff to another agent (not autopilot): [developing.md](developing.md#handoff-
 
 ## What is documented well
 
-- Product map, two runtimes (Cloudflare Worker + Pi SQLite), storage split (Drive PII vs R2 CMS).
+- Product map, two runtimes (Cloudflare Worker + Pi SQLite), storage split (Drive PII vs R2 CMS). Hero **videos** are CMS-assignable via Website → Hero Videos (`/api/site?page=heroes` + `pageKey` on `HeroBackdrop`); do not SSR marketing pages for hero data.
 - Decision records (action-POST, paise, no JWT, no D1 transactions around `getDb()`).
 - Table *catalog* (52 tables) and FK graph — not every column default.
 - Route list + exact `action` names + RBAC maps we verified **31 Aug 2026**.

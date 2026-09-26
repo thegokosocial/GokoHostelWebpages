@@ -26,7 +26,7 @@ vi.mock("@/db", () => ({ getDb: () => state.db }));
 
 const skippedPiMigrations = new Set([
   "0035_site_cms.sql", "0041_splits.sql", "0064_food_bill_share_tokens.sql", "0077_food_bill_walkin_identity.sql",
-  "0066_gateway_receivables.sql", "0068_gateway_settlement_allocations.sql",
+  "0066_gateway_receivables.sql", "0068_gateway_settlement_allocations.sql", "0079_site_hero_videos.sql",
 ]);
 let sqlite: SQLite.Database;
 let db: Database;

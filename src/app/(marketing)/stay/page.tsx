@@ -29,6 +29,7 @@ export default function StayPage() {
         image={stayHero.image}
         imageAlt="Goko Hostel stay"
         heroVideo={heroVideoB}
+        pageKey="stay"
       />
 
       <StayRoomsLive />

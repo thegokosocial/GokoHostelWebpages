@@ -241,5 +241,5 @@ Conventions: [conventions.md](conventions.md).
 6. `drizzle-kit generate` ≠ Wrangler `migrations/`.
 7. Pi hostname and deployment details are maintained in local-only notes.
 8. Form C fallback secret if `ADMIN_PASSWORD` unset.
-9. R2 GET always JPEG.
+9. R2 GET preserves stored content type (JPEG for CMS stills; `video/mp4` for hero clips).
 10. GitHub CI `next build` is not a Worker deploy.
