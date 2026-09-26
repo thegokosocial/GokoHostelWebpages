@@ -24,6 +24,7 @@ import { normalizePhone } from "@/lib/phoneUtils";
 import { foodAmountPaid, foodDue, foodPaymentStatus } from "@/lib/foodPaymentBalance";
 import { latestWalkinOrder, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
+import { formatTimeSince } from "@/lib/formatTimeSince";
 
 async function withBillBranding(
   password: string,
@@ -4440,19 +4441,6 @@ function DiscountModal({
       </div>
     </div>
   );
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatTimeSince(isoDate: string): string {
-  const diffMs = Date.now() - new Date(isoDate).getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "<1m";
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  const remainMins = mins % 60;
-  if (remainMins === 0) return `${hrs}h`;
-  return `${hrs}h ${remainMins}m`;
 }
 
 // ─── Shared Components ───────────────────────────────────────────────────────
