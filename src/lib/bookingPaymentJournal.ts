@@ -8,10 +8,12 @@ export type OtaPaymentKind = "collection" | "refund";
 
 export class BookingPaymentError extends Error {
   status: number;
-  constructor(message: string, status = 400) {
+  reason?: string;
+  constructor(message: string, status = 400, reason?: string) {
     super(message);
     this.name = "BookingPaymentError";
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -174,6 +176,15 @@ function computePaymentProjection(
   };
 }
 
+function paymentProjectionPaise(booking: OtaPaymentBooking, events: Parameters<typeof computePaymentProjection>[1]) {
+  const projection = computePaymentProjection(booking, events);
+  return {
+    projection,
+    collectedPaise: rupeesToPaise(projection.amountPaid),
+    refundedPaise: rupeesToPaise(projection.amountRefunded),
+  };
+}
+
 /** D1 atomic multi-statement commit. Map status NOT NULL CAS aborts to a reloadable 409. */
 async function commitOtaWrites(db: any, writes: any[]): Promise<void> {
   try {
@@ -299,22 +310,21 @@ async function recordOtaBookingPaymentD1(
   const openingRows = events.length === 0 ? buildOpeningRows(current, source) : [];
   if (openingRows.length) events = openingRows as typeof events;
 
-  const openingCollection = events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.amountPaise, 0);
-  const openingRefund = events.filter((e) => e.eventType === "refund").reduce((sum, e) => sum + e.amountPaise, 0);
-  if (Math.abs(rupeesToPaise(current.amountPaid) - openingCollection) > 0
-    || Math.abs(rupeesToPaise(current.amountRefunded) - openingRefund) > 0) {
-    throw new BookingPaymentError("The booking payment journal is not ready or needs reconciliation", 409);
+  const { collectedPaise, refundedPaise } = paymentProjectionPaise(current, events);
+  if (rupeesToPaise(current.amountPaid) !== collectedPaise
+    || rupeesToPaise(current.amountRefunded) !== refundedPaise) {
+    throw new BookingPaymentError("The booking payment journal is not ready or needs reconciliation", 409, "journal_projection_mismatch");
   }
 
   if (input.kind === "collection" && input.enforceDue !== false) {
-    const due = Math.max(0, rupeesToPaise(current.amountTotal) - (openingCollection - openingRefund));
+    const due = Math.max(0, rupeesToPaise(current.amountTotal) - (collectedPaise - refundedPaise));
     if (input.amountPaise > due) throw new BookingPaymentError("Payment exceeds the current balance", 409);
   }
   if (input.kind === "refund" && input.enforceRefundCap !== false) {
     const total = rupeesToPaise(current.amountTotal);
     const terminal = ["cancelled", "no_show"].includes(current.status)
       || ["cancelled", "no_show"].includes(String(input.statusUpdate?.status || ""));
-    const cap = Math.max(0, openingCollection - openingRefund - (terminal ? 0 : total));
+    const cap = Math.max(0, collectedPaise - refundedPaise - (terminal ? 0 : total));
     if (input.amountPaise > cap) throw new BookingPaymentError(`Refund exceeds the current refundable balance of ${paiseToRupees(cap).toFixed(2)}`, 409);
   }
 
@@ -336,14 +346,8 @@ async function recordOtaBookingPaymentD1(
     actor: input.actor, createdAt: now, syncUpdatedAt: now, syncSource: source,
   };
 
-  const collectionDelta = input.kind === "collection" ? input.amountPaise : 0;
-  const refundDelta = input.kind === "refund" ? input.amountPaise : 0;
-  const nextPaid = paiseToRupees(openingCollection + collectionDelta);
-  const nextRefunded = paiseToRupees(openingRefund + refundDelta);
+  const nextProjection = computePaymentProjection(current, [...events, event as typeof bookingPaymentEvents.$inferSelect]);
   const finalStatus = String(input.statusUpdate?.status || current.status);
-  const progressStatus = openingCollection + collectionDelta - openingRefund - refundDelta >= rupeesToPaise(current.amountTotal)
-    ? "paid"
-    : current.otaPaymentTerms || current.paymentStatus || "pay_at_hotel";
   const { status: _statusIgnored, ...statusRest } = (input.statusUpdate || {}) as Record<string, unknown>;
   const casPred = bookingCasPredicate(current);
 
@@ -351,15 +355,9 @@ async function recordOtaBookingPaymentD1(
   const writes: any[] = [];
   if (openingRows.length) writes.push(client.insert(bookingPaymentEvents).values(openingRows).onConflictDoNothing());
   writes.push(client.update(bookings).set({
-    amountPaid: nextPaid,
-    amountRefunded: nextRefunded,
-    paymentStatus: progressStatus,
+    ...nextProjection,
     paymentOverride: 1,
-    paymentMethod: summarizeTender(events, "collection", input),
-    cashReceived: paiseToRupees(events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.cashPaise, 0) + (input.kind === "collection" ? input.cashPaise : 0)),
     changeGiven: paiseToRupees(events.filter((e) => e.eventType === "collection").reduce((sum, e) => sum + e.changePaise, 0) + (input.kind === "collection" ? (input.changePaise || 0) : 0)),
-    refundMethod: input.kind === "refund" ? summarizeTender(events, "refund", input) : current.refundMethod,
-    refundCash: paiseToRupees(events.filter((e) => e.eventType === "refund").reduce((sum, e) => sum + Math.abs(e.cashPaise), 0) + (input.kind === "refund" ? input.cashPaise : 0)),
     refundedAt: input.kind === "refund" ? now : current.refundedAt,
     refundedBy: input.kind === "refund" ? input.actor : current.refundedBy,
     ...statusRest,
@@ -538,19 +536,18 @@ function recordOtaBookingPaymentPi(
     const events = tx.select().from(bookingPaymentEvents).where(and(
       eq(bookingPaymentEvents.bookingId, current.id), eq(bookingPaymentEvents.bookingCycle, current.bookingCycle),
     )).all();
-    const collected = events.filter((event: any) => event.eventType === "collection").reduce((sum: number, event: any) => sum + event.amountPaise, 0);
-    const refunded = events.filter((event: any) => event.eventType === "refund").reduce((sum: number, event: any) => sum + event.amountPaise, 0);
-    if (rupeesToPaise(current.amountPaid) !== collected || rupeesToPaise(current.amountRefunded) !== refunded) {
-      throw new BookingPaymentError("The booking payment journal is not ready or needs reconciliation", 409);
+    const { collectedPaise, refundedPaise } = paymentProjectionPaise(current, events);
+    if (rupeesToPaise(current.amountPaid) !== collectedPaise || rupeesToPaise(current.amountRefunded) !== refundedPaise) {
+      throw new BookingPaymentError("The booking payment journal is not ready or needs reconciliation", 409, "journal_projection_mismatch");
     }
     if (input.kind === "collection" && input.enforceDue !== false
-      && input.amountPaise > Math.max(0, rupeesToPaise(current.amountTotal) - (collected - refunded))) {
+      && input.amountPaise > Math.max(0, rupeesToPaise(current.amountTotal) - (collectedPaise - refundedPaise))) {
       throw new BookingPaymentError("Payment exceeds the current balance", 409);
     }
     if (input.kind === "refund" && input.enforceRefundCap !== false) {
       const terminal = ["cancelled", "no_show"].includes(current.status)
         || ["cancelled", "no_show"].includes(String(input.statusUpdate?.status || ""));
-      const cap = Math.max(0, collected - refunded - (terminal ? 0 : rupeesToPaise(current.amountTotal)));
+      const cap = Math.max(0, collectedPaise - refundedPaise - (terminal ? 0 : rupeesToPaise(current.amountTotal)));
       if (input.amountPaise > cap) throw new BookingPaymentError(`Refund exceeds the current refundable balance of ${paiseToRupees(cap).toFixed(2)}`, 409);
     }
     if (input.cashPaise > 0 && movementCoveredByClosePi(tx, null, businessDate)) {
@@ -572,22 +569,12 @@ function recordOtaBookingPaymentPi(
       actor: input.actor, createdAt: now, syncUpdatedAt: now, syncSource: source,
     };
     const collections = events.filter((event: any) => event.eventType === "collection");
-    const refunds = events.filter((event: any) => event.eventType === "refund");
-    const collectionDelta = input.kind === "collection" ? input.amountPaise : 0;
-    const refundDelta = input.kind === "refund" ? input.amountPaise : 0;
-    const nextPaid = paiseToRupees(collected + collectionDelta);
-    const nextRefunded = paiseToRupees(refunded + refundDelta);
-    const progressStatus = collected + collectionDelta - refunded - refundDelta >= rupeesToPaise(current.amountTotal)
-      ? "paid" : current.otaPaymentTerms || current.paymentStatus || "pay_at_hotel";
+    const nextProjection = computePaymentProjection(current, [...events, event]);
     const statusUpdate = input.statusUpdate || {};
     const changes = tx.update(bookings).set({
-      amountPaid: nextPaid, amountRefunded: nextRefunded, paymentStatus: progressStatus,
+      ...nextProjection,
       paymentOverride: 1,
-      paymentMethod: summarizeTender(events, "collection", input),
-      cashReceived: paiseToRupees(collections.reduce((sum: number, event: any) => sum + event.cashPaise, 0) + (input.kind === "collection" ? input.cashPaise : 0)),
       changeGiven: paiseToRupees(collections.reduce((sum: number, event: any) => sum + event.changePaise, 0) + (input.kind === "collection" ? (input.changePaise || 0) : 0)),
-      refundMethod: input.kind === "refund" ? summarizeTender(events, "refund", input) : current.refundMethod,
-      refundCash: paiseToRupees(refunds.reduce((sum: number, event: any) => sum + Math.abs(event.cashPaise), 0) + (input.kind === "refund" ? input.cashPaise : 0)),
       refundedAt: input.kind === "refund" ? now : current.refundedAt,
       refundedBy: input.kind === "refund" ? input.actor : current.refundedBy,
       status: statusUpdate.status || current.status, ...statusUpdate,
@@ -762,52 +749,11 @@ function rebuildBookingPaymentProjectionPi(tx: any, bookingId: number, bookingCy
   const events = tx.select().from(bookingPaymentEvents).where(and(
     eq(bookingPaymentEvents.bookingId, bookingId), eq(bookingPaymentEvents.bookingCycle, bookingCycle),
   )).all();
-  const collections = events.filter((event: any) => event.eventType === "collection");
-  const refunds = events.filter((event: any) => event.eventType === "refund");
-  const corrections = events.filter((event: any) => event.eventType === "correction");
-  const originals = new Map(events.map((event: any) => [event.eventId, event]));
-  const related = (type: string) => corrections.filter((event: any) => (originals.get(event.correctsEventId || "") as any)?.eventType === type);
-  const collectionCorrections = related("collection");
-  const refundCorrections = related("refund");
-  const collected = collections.reduce((sum: number, event: any) => sum + event.amountPaise, 0)
-    + collectionCorrections.reduce((sum: number, event: any) => sum + event.amountPaise, 0);
-  const refunded = refunds.reduce((sum: number, event: any) => sum + event.amountPaise, 0)
-    + refundCorrections.reduce((sum: number, event: any) => sum + event.amountPaise, 0);
-  const cashCollected = collections.reduce((sum: number, event: any) => sum + event.cashPaise, 0)
-    + collectionCorrections.reduce((sum: number, event: any) => sum + event.cashPaise, 0);
-  const onlineCollected = collections.reduce((sum: number, event: any) => sum + event.onlinePaise, 0)
-    + collectionCorrections.reduce((sum: number, event: any) => sum + event.onlinePaise, 0);
-  const cashRefunded = Math.max(0, -refunds.reduce((sum: number, event: any) => sum + event.cashPaise, 0)
-    - refundCorrections.reduce((sum: number, event: any) => sum + event.cashPaise, 0));
-  const onlineRefunded = Math.max(0, -refunds.reduce((sum: number, event: any) => sum + event.onlinePaise, 0)
-    - refundCorrections.reduce((sum: number, event: any) => sum + event.onlinePaise, 0));
-  const status = collected - refunded >= rupeesToPaise(booking.amountTotal) ? "paid" : booking.otaPaymentTerms || booking.paymentStatus || "pay_at_hotel";
   tx.update(bookings).set({
-    amountPaid: paiseToRupees(collected), amountRefunded: paiseToRupees(refunded),
-    paymentStatus: status, paymentOverride: 1,
-    paymentMethod: collections.some((event: any) => event.unknownPaise > 0) ? ""
-      : cashCollected > 0 && onlineCollected > 0 ? "split" : cashCollected > 0 ? "cash" : onlineCollected > 0 ? "online" : "",
-    cashReceived: paiseToRupees(cashCollected), refundCash: paiseToRupees(cashRefunded),
-    refundMethod: cashRefunded > 0 && onlineRefunded > 0 ? "split" : cashRefunded > 0 ? "cash" : onlineRefunded > 0 ? "online" : "",
+    ...computePaymentProjection(booking, events),
+    paymentOverride: 1,
     syncUpdatedAt: now, syncSource: source,
   }).where(and(eq(bookings.id, bookingId), eq(bookings.bookingCycle, bookingCycle))).run();
-}
-
-function summarizeTender(
-  events: Array<typeof bookingPaymentEvents.$inferSelect>,
-  kind: OtaPaymentKind,
-  added: { kind: OtaPaymentKind; cashPaise: number; onlinePaise: number },
-): string {
-  const matching = events.filter((event) => event.eventType === kind);
-  const signed = kind === "refund";
-  const cash = matching.reduce((sum, event) => sum + (signed ? Math.abs(event.cashPaise) : Math.max(0, event.cashPaise)), 0) + (added.kind === kind ? added.cashPaise : 0);
-  const online = matching.reduce((sum, event) => sum + (signed ? Math.abs(event.onlinePaise) : Math.max(0, event.onlinePaise)), 0) + (added.kind === kind ? added.onlinePaise : 0);
-  const unknown = matching.reduce((sum, event) => sum + event.unknownPaise, 0);
-  if (unknown > 0) return "";
-  if (cash && online) return "split";
-  if (cash) return "cash";
-  if (online) return "online";
-  return "";
 }
 
 async function insertOnlineReceipt(tx: Database, event: typeof bookingPaymentEvents.$inferInsert) {

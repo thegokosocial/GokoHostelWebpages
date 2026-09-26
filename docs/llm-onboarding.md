@@ -157,7 +157,7 @@ Any Framer node that sets `transform` (`modalVariants` scale/y, or `animate={{ y
 - `Number(x) || 5` on `food_tax_rate` or `booking_tax_rate` — **0 is 0%**. Use `foodTaxPercent` / `bookingTaxPercent`. Website/admin GST also honor `booking_tax_apply_website` / `booking_tax_apply_admin` (absent → on); off forces 0% via `effectiveBookingTaxPercent` / `websiteBookingTaxPercent`.
 - SSR `/events` or `/community-area` (`force-static` + `/api/site`).
 - `db.transaction()` around `queries.ts` (`getDb()` inside).
-- OTA payment journal Cloudflare path: Drizzle `db.transaction()` / BEGIN/COMMIT — use `db.batch()` + NOT NULL CAS guard (`bookingPaymentJournal.ts`); Pi keeps sync `transaction`.
+- OTA payment journal Cloudflare path: Drizzle `db.transaction()` / BEGIN/COMMIT — use `db.batch()` + NOT NULL CAS guard (`bookingPaymentJournal.ts`); Pi keeps sync `transaction`. Both paths and sync rebuilds must use the shared correction-aware projection; never recalculate gross collection/refund totals separately.
 - `drizzle-kit generate` as production SQL (`migrations/` only).
 - Deploy Worker from **GitHub Actions** CI (there is no `deploy-cloudflare.yml`). Dashboard **Workers Builds** on `goko-hostel-latest-webpage` **does** auto-deploy on push to `main` (`npm run cf:build`). A `tsc` error there leaves production on the last successful build.
 - Commit `docs/secrets-and-access.md` or `MAINTAINER.local.md`.

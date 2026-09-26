@@ -53,4 +53,13 @@ describe("D1 transaction regressions", () => {
     expect(catchBody).toContain("SQLITE_BUSY|SQLITE_LOCKED|network error");
     expect(catchBody).not.toMatch(/databaseError = \/D1\|Failed query\|SQLITE_/);
   });
+
+  it("returns safe structured diagnostics for OTA collection conflicts", () => {
+    const body = bookingsRoute.match(/if \(action === "collectOtaBookingPayment"\)[\s\S]*?(?=if \(action === "refundOtaBookingPayment"\))/)?.[0] || "";
+    expect(body).toContain('stage = "record OTA booking payment"');
+    expect(body).toContain("apiErrorBody({");
+    expect(body).toContain('code: error.status === 409 ? "CONFLICT" : "VALIDATION_ERROR"');
+    expect(body).toContain('details: error.reason ? { reason: error.reason } : undefined');
+    expect(body).toContain('headers: { "x-goko-request-id": requestId }');
+  });
 });

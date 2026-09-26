@@ -50,6 +50,7 @@ import { bookingAmountsFromRaw, recognizePlatformBooking, recordPlatformAdjustme
 import { getPendingFoodTab } from "@/lib/foodTabDb";
 import { dispatchPush, notificationFirstName, notificationDate, notificationStayDates } from "@/lib/pushNotify";
 import { presentAuditEntry } from "@/lib/auditPresentation";
+import { apiErrorBody } from "@/lib/apiError";
 import {
   BOOKING_TAX_SETTING,
   BOOKING_TAX_APPLY_ADMIN_SETTING,
@@ -1161,6 +1162,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "collectOtaBookingPayment") {
+      stage = "record OTA booking payment";
       const bookingId = Number(body.bookingId);
       if (!Number.isInteger(bookingId) || bookingId <= 0) return NextResponse.json({ error: "bookingId required" }, { status: 400 });
       const detail = await getBookingDetail(bookingId);
@@ -1194,7 +1196,17 @@ export async function POST(req: NextRequest) {
           balance: Math.max(0, (result.booking.amountTotal || 0) - (result.booking.amountPaid || 0) + (result.booking.amountRefunded || 0)),
         });
       } catch (error) {
-        if (error instanceof BookingPaymentError) return NextResponse.json({ error: error.message }, { status: error.status });
+        if (error instanceof BookingPaymentError) {
+          return NextResponse.json(apiErrorBody({
+            error: error.message,
+            code: error.status === 409 ? "CONFLICT" : "VALIDATION_ERROR",
+            requestId,
+            action,
+            stage,
+            retryable: false,
+            details: error.reason ? { reason: error.reason } : undefined,
+          }), { status: error.status, headers: { "x-goko-request-id": requestId } });
+        }
         throw error;
       }
     }

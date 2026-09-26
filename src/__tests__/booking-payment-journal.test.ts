@@ -53,6 +53,68 @@ async function addAccount(overrides: Partial<typeof accounts.$inferInsert> = {})
   return inserted[0].id;
 }
 
+async function runCorrectionFollowupScenarios(prefix: string) {
+  const accountId = await addAccount({ name: `${prefix} Bank` });
+
+  const fullBooking = await addBooking({ bookingRef: `${prefix}-full` });
+  const fullCollection = await recordOtaBookingPayment({
+    booking: fullBooking, eventId: `${prefix}-full-collection`, kind: "collection", amountPaise: 10000,
+    cashPaise: 10000, onlinePaise: 0, cashTenderPaise: 10000, actor: "frontdesk",
+  });
+  const fullyCorrected = await correctOtaBookingPayment({
+    booking: fullCollection.booking, eventId: `${prefix}-full-correction`, correctsEventId: `${prefix}-full-collection`,
+    amountPaise: 10000, cashPaise: 10000, onlinePaise: 0, note: "Wrong tender", actor: "manager",
+  });
+  const recollected = await recordOtaBookingPayment({
+    booking: fullyCorrected.booking, eventId: `${prefix}-recollection`, kind: "collection", amountPaise: 10000,
+    cashPaise: 0, onlinePaise: 10000, accountId, actor: "frontdesk",
+  });
+  expect(recollected.booking).toMatchObject({ amountPaid: 100, cashReceived: 0, paymentMethod: "online" });
+
+  const splitBooking = await addBooking({ bookingRef: `${prefix}-split` });
+  const split = await recordOtaBookingPayment({
+    booking: splitBooking, eventId: `${prefix}-split-collection`, kind: "collection", amountPaise: 10000,
+    cashPaise: 4000, onlinePaise: 6000, cashTenderPaise: 4000, accountId, actor: "frontdesk",
+  });
+  const partial = await correctOtaBookingPayment({
+    booking: split.booking, eventId: `${prefix}-split-correction`, correctsEventId: `${prefix}-split-collection`,
+    amountPaise: 3000, cashPaise: 1000, onlinePaise: 2000, note: "Partial correction", actor: "manager",
+  });
+  const splitFollowup = await recordOtaBookingPayment({
+    booking: partial.booking, eventId: `${prefix}-split-followup`, kind: "collection", amountPaise: 3000,
+    cashPaise: 3000, onlinePaise: 0, cashTenderPaise: 3000, actor: "frontdesk",
+  });
+  expect(splitFollowup.booking).toMatchObject({ amountPaid: 100, cashReceived: 60, paymentMethod: "split" });
+
+  const refundBooking = await addBooking({ bookingRef: `${prefix}-refund` });
+  const paid = await recordOtaBookingPayment({
+    booking: refundBooking, eventId: `${prefix}-refund-base`, kind: "collection", amountPaise: 20000,
+    cashPaise: 20000, onlinePaise: 0, cashTenderPaise: 20000, actor: "frontdesk",
+  });
+  const refunded = await recordOtaBookingPayment({
+    booking: paid.booking, eventId: `${prefix}-refund-first`, kind: "refund", amountPaise: 5000,
+    cashPaise: 5000, onlinePaise: 0, cashTenderPaise: 5000, actor: "frontdesk",
+    statusUpdate: { status: "cancelled" },
+  });
+  const refundCorrected = await correctOtaBookingPayment({
+    booking: refunded.booking, eventId: `${prefix}-refund-correction`, correctsEventId: `${prefix}-refund-first`,
+    amountPaise: 5000, cashPaise: 5000, onlinePaise: 0, note: "Refund was not made", actor: "manager",
+  });
+  const rerefunded = await recordOtaBookingPayment({
+    booking: refundCorrected.booking, eventId: `${prefix}-refund-second`, kind: "refund", amountPaise: 5000,
+    cashPaise: 5000, onlinePaise: 0, cashTenderPaise: 5000, actor: "frontdesk", allowedStatuses: ["cancelled"],
+  });
+  expect(rerefunded.booking).toMatchObject({ amountPaid: 200, amountRefunded: 50, refundCash: 50, refundMethod: "cash" });
+
+  const eventCount = (await db.select().from(bookingPaymentEvents)).length;
+  await db.update(bookings).set({ amountPaid: 99 }).where(eq(bookings.id, splitBooking.id));
+  await expect(recordOtaBookingPayment({
+    booking: splitFollowup.booking, eventId: `${prefix}-drift-rejected`, kind: "collection", amountPaise: 100,
+    cashPaise: 100, onlinePaise: 0, cashTenderPaise: 100, actor: "frontdesk",
+  })).rejects.toMatchObject({ status: 409, reason: "journal_projection_mismatch" });
+  expect(await db.select().from(bookingPaymentEvents)).toHaveLength(eventCount);
+}
+
 beforeEach(() => {
   vi.stubEnv("GOKO_RUNTIME", "pi");
   sqlite = new SQLite(":memory:");
@@ -72,6 +134,10 @@ afterEach(() => {
 });
 
 describe("OTA postpaid booking payment journal", () => {
+  it("supports correction-aware follow-up collections and refunds on Pi", async () => {
+    await runCorrectionFollowupScenarios("pi");
+  });
+
   it("uses exact paise and requires explicit OTA terms and INR source currency", async () => {
     expect(rupeesToPaise("472.50")).toBe(47250);
     expect(paiseToRupees(47250)).toBe(472.5);
@@ -357,6 +423,10 @@ describe("OTA payment journal Cloudflare D1 batch path", () => {
       for (const query of queries) results.push(await query);
       return results;
     };
+  });
+
+  it("supports correction-aware follow-up collections and refunds on Cloudflare", async () => {
+    await runCorrectionFollowupScenarios("cf");
   });
 
   it("records a partial online advance, idempotent retry, and guest receipt", async () => {
