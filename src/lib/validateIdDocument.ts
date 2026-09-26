@@ -340,8 +340,16 @@ function runTextValidation(
   guestName?: string,
   nationality?: string | null,
 ): ValidationResult {
+  // Unreadable OCR is not high-confidence junk — soft-accept for staff review.
   if (!text || text.trim().length < 10) {
-    return { valid: false, documentType: "unknown", confidence: "high", message: "Could not detect readable text. Please upload a clear photo of your ID." };
+    return {
+      valid: true,
+      documentType: "unknown",
+      confidence: "low",
+      needsDocReview: true,
+      layers: ["text_detection", "unreadable", "doc_review"],
+      message: "Could not read clear text from this upload. You can still submit — staff will verify manually.",
+    };
   }
 
   const layers: string[] = ["text_detection"];
@@ -362,25 +370,14 @@ function runTextValidation(
     const { type, matchCount } = detectDocumentType(text);
     const validIdTypes: DocumentType[] = ["aadhaar", "driving_licence", "passport"];
     if (!validIdTypes.includes(type) || matchCount === 0) {
-      layers.push("invalid_id");
-      const ambiguous = isAmbiguousWrongDoc(text);
-      if (ambiguous) {
-        layers.push("doc_review");
-        return {
-          valid: true,
-          documentType: "unknown",
-          confidence: "low",
-          needsDocReview: true,
-          layers,
-          message: `Document accepted for staff review. ${ALLOWED_ID_HINT}`,
-        };
-      }
+      layers.push("invalid_id", "doc_review");
       return {
-        valid: false,
+        valid: true,
         documentType: "unknown",
-        confidence: "high",
+        confidence: "low",
+        needsDocReview: true,
         layers,
-        message: `The uploaded document is not a valid ID. ${ALLOWED_ID_HINT}`,
+        message: `Document accepted for staff review. ${ALLOWED_ID_HINT}`,
       };
     }
 
@@ -398,27 +395,17 @@ function runTextValidation(
 
     const nameResult = checkNameMatchQuality(text, guestName);
     if (guestName && nameResult.quality === "none") {
-      if (matchCount < 2) {
-        layers.push("weak_id");
-        return {
-          valid: false,
-          documentType: type,
-          confidence: "medium",
-          nameMatch: false,
-          nameMatchQuality: "none",
-          layers,
-          message: `The uploaded document does not appear to be a valid ID. ${ALLOWED_ID_HINT}`,
-        };
-      }
+      if (matchCount < 2) layers.push("weak_id");
       layers.push("name_mismatch");
       return {
-        valid: false,
+        valid: true,
         documentType: type,
-        confidence: "high",
+        confidence: matchCount < 2 ? "medium" : "high",
         nameMatch: false,
         nameMatchQuality: "none",
+        needsDocReview: true,
         layers,
-        message: `Your name was not found on the ${type.replace("_", " ")}. Please upload your own ID document.`,
+        message: `Name on the ${type.replace("_", " ")} could not be matched automatically. You can still submit — staff will confirm.`,
       };
     }
 
@@ -435,19 +422,19 @@ function runTextValidation(
     }
 
     if (requiresAddress(type, nationality) && !hasAddressEvidence(text)) {
-      layers.push("address_missing");
+      layers.push("address_missing", "doc_review");
       const conf = matchCount >= 2 ? "high" : "medium";
       const addressMsg = type === "passport"
-        ? "Passport name found, but address was not. Please also upload the address page of your Indian passport."
-        : "Aadhaar name found, but address was not. Please also upload the back side showing your address.";
+        ? "Passport name found, but address was not. Please also upload the address page if you have it — you can still submit for staff review."
+        : "Aadhaar name found, but address was not. Please also upload the back side if you have it — you can still submit for staff review.";
       return {
-        valid: false,
+        valid: true,
         documentType: type,
         confidence: conf,
         nameMatch: nameResult.quality === "full",
         nameMatchQuality: nameResult.quality,
         needsBackSide: true,
-        needsDocReview: nameResult.quality === "partial" || needsDocReview,
+        needsDocReview: true,
         layers,
         message: addressMsg,
       };
@@ -483,10 +470,25 @@ function runTextValidation(
     if (type === "passport" && matchCount >= 1) {
       return { valid: true, documentType: "visa", confidence: "medium", layers, message: "Document accepted (passport with visa)." };
     }
-    return { valid: false, documentType: "unknown", confidence: "medium", layers, message: "Could not identify this as a valid visa document." };
+    layers.push("visa_unidentified");
+    return {
+      valid: true,
+      documentType: "unknown",
+      confidence: "low",
+      needsDocReview: true,
+      layers,
+      message: "Could not identify this as a visa automatically. You can still submit — staff will verify.",
+    };
   }
 
-  return { valid: false, documentType: "unknown", confidence: "low", message: "Validation failed." };
+  return {
+    valid: true,
+    documentType: "unknown",
+    confidence: "low",
+    needsDocReview: true,
+    layers: ["doc_review"],
+    message: "Document accepted for staff review.",
+  };
 }
 
 function unavailableResult(): ValidationResult {
@@ -655,7 +657,16 @@ export function verifiedFromIdValidation(result: {
   const layers = result.layers || [];
   if (layers.includes("validation_unavailable") || layers.includes("validation_skipped")) return "pending";
   if (result.spoofWarning || layers.includes("spoof_warning")) return "spoof_warning";
-  if (result.nameMatchQuality === "partial" || layers.includes("name_partial")) return "name_review";
-  if (result.needsDocReview || layers.includes("doc_review")) return "doc_review";
+  if (
+    result.nameMatchQuality === "partial"
+    || result.nameMatchQuality === "none"
+    || layers.includes("name_partial")
+    || layers.includes("name_mismatch")
+  ) {
+    return "name_review";
+  }
+  if (result.needsDocReview || layers.includes("doc_review") || layers.includes("unreadable") || layers.includes("visa_unidentified")) {
+    return "doc_review";
+  }
   return "yes";
 }

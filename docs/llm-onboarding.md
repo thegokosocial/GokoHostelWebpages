@@ -30,7 +30,7 @@ Handoff to another agent (not autopilot): [developing.md](developing.md#handoff-
 | Request/response bodies | the `route.ts` you are calling |
 | Admin UI behavior | the component in `src/components/admin/` |
 | Permission UI vs API mismatch | `ManagementUsers.tsx` **and** the route map |
-| Vision scoring | `src/lib/validateIdDocument.ts` — hard address for Aadhaar + Indian passport; foreign passport bio + visa only; high-conf reject PAN/voter/marksheet/clear RC (never false-reject real DL); partial name → `verified=name_review`; ambiguous doc → `doc_review`; soft `needsBackSide` was removed (must be `valid:false`). Pass `nationality` into `/api/validate-id`. No D1 schema change (`verified` text). |
+| Vision scoring | `src/lib/validateIdDocument.ts` — hard-reject only high-confidence junk (PAN/voter/marksheet/clear RC, SafeSearch, label junk, type mismatch). Soft-allow missing Aadhaar/Indian-passport address, name none/partial, unreadable OCR, weak/unknown ID, unidentified visa → `verified=name_review`/`doc_review`/`pending` for staff Vibe OK (never auto `vibe_matched`). Pass `nationality` into `/api/validate-id`. No D1 schema change (`verified` text). |
 | Inventory math | `src/lib/inventoryAvailability.ts` |
 | Stay collect / refund (rupees) | `src/lib/stayPayment.ts` |
 | Food tab (client vs DB) | `src/lib/foodTab.ts` vs `src/lib/foodTabDb.ts` |

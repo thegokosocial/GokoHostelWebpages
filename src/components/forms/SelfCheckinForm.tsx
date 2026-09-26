@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn, localDateStr } from "@/lib/utils";
+import { isStaffReviewValidation, messageFromCheckinFailure } from "@/lib/checkinSubmitError";
 import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 import { CameraIcon, UploadIcon, CheckCircle2Icon, XIcon } from "lucide-react";
 
@@ -84,7 +85,7 @@ function CountrySelect({
       {open && (
         <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-brand-mist bg-white dark:bg-card shadow-lift dark:shadow-none">
           {filtered.length === 0 ? (
-            <li className="px-4 py-3 text-sm text-brand-green-dark/60">
+            <li className="px-4 py-3 text-sm text-zinc-600">
               No country found
             </li>
           ) : (
@@ -92,8 +93,8 @@ function CountrySelect({
               <li
                 key={c}
                 className={cn(
-                  "cursor-pointer px-4 py-2.5 text-sm transition-colors hover:bg-brand-sand",
-                  c === value && "bg-brand-green/[0.06] font-medium text-brand-green"
+                  "cursor-pointer px-4 py-2.5 text-sm text-zinc-900 transition-colors hover:bg-brand-sand",
+                  c === value && "bg-brand-green-dark font-medium text-brand-gold"
                 )}
                 onPointerDown={(e) => {
                   e.preventDefault();
@@ -135,7 +136,7 @@ function MultiDocUpload({
   onRemove: (index: number) => void;
   onValidate?: () => void;
   validating?: boolean;
-  validationMsg?: { valid: boolean; message: string } | null;
+  validationMsg?: { valid: boolean; message: string; staffReview?: boolean } | null;
   helpText?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -157,7 +158,7 @@ function MultiDocUpload({
 
   return (
     <div>
-      <Label className="mb-2 block text-sm font-medium text-brand-green-dark">
+      <Label className="mb-2 block text-sm font-semibold text-zinc-900">
         {label}
       </Label>
 
@@ -168,7 +169,7 @@ function MultiDocUpload({
               {doc.file.type === "application/pdf" ? (
                 <div className="flex h-24 w-24 flex-col items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 shadow-soft dark:shadow-none">
                   <span className="text-2xl">PDF</span>
-                  <span className="mt-1 max-w-[5rem] truncate text-[9px] text-brand-green-dark/60">{doc.file.name}</span>
+                  <span className="mt-1 max-w-[5rem] truncate text-[9px] text-zinc-600">{doc.file.name}</span>
                 </div>
               ) : (
                 <img
@@ -193,17 +194,17 @@ function MultiDocUpload({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-mist bg-brand-sand/50 px-4 py-4 text-sm font-medium text-brand-green-dark transition-colors hover:border-brand-green/30 hover:bg-brand-sand"
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-400 bg-white/80 px-4 py-4 text-sm font-medium text-zinc-900 transition-colors hover:border-brand-green-dark/40 hover:bg-white"
         >
-          <UploadIcon className="h-5 w-5 text-brand-green" />
+          <UploadIcon className="h-5 w-5 text-brand-green-dark" />
           {files.length > 0 ? "Add more" : "Upload file"}
         </button>
         <button
           type="button"
           onClick={() => cameraInputRef.current?.click()}
-          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-brand-mist bg-brand-sand/50 px-4 py-4 text-sm font-medium text-brand-green-dark transition-colors hover:border-brand-green/30 hover:bg-brand-sand"
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-400 bg-white/80 px-4 py-4 text-sm font-medium text-zinc-900 transition-colors hover:border-brand-green-dark/40 hover:bg-white"
         >
-          <CameraIcon className="h-5 w-5 text-brand-green" />
+          <CameraIcon className="h-5 w-5 text-brand-green-dark" />
           Take photo
         </button>
       </div>
@@ -213,11 +214,11 @@ function MultiDocUpload({
           type="button"
           onClick={onValidate}
           disabled={validating}
-          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-brand-green/[0.08] px-4 py-2 text-sm font-medium text-brand-green transition-colors hover:bg-brand-green/[0.14] disabled:opacity-50"
+          className="mt-3 inline-flex items-center gap-2 rounded-lg border-2 border-brand-gold bg-brand-green-dark px-4 py-2.5 text-sm font-semibold text-brand-gold shadow-sm transition-colors hover:bg-brand-green-dark/90 disabled:opacity-50"
         >
           {validating ? (
             <>
-              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-green border-t-transparent" />
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-gold border-t-transparent" />
               Verifying...
             </>
           ) : (
@@ -227,8 +228,18 @@ function MultiDocUpload({
       )}
 
       {validationMsg && !validating && (
-        <p className={cn("mt-2 text-sm font-medium", validationMsg.valid ? "text-brand-green" : "text-brand-red")}>
-          {validationMsg.valid ? "✓ " : "✗ "}{validationMsg.message}
+        <p
+          className={cn(
+            "mt-2 text-sm font-semibold",
+            validationMsg.staffReview
+              ? "text-amber-800"
+              : validationMsg.valid
+                ? "text-zinc-900"
+                : "text-brand-red"
+          )}
+        >
+          {validationMsg.valid ? (validationMsg.staffReview ? "⚠ " : "✓ ") : "✗ "}
+          {validationMsg.message}
         </p>
       )}
 
@@ -249,7 +260,7 @@ function MultiDocUpload({
         onChange={(e) => handleFiles(e.target.files)}
       />
       {error && <p className="mt-1.5 text-xs text-brand-red">{error}</p>}
-      <p className="mt-1.5 text-xs text-brand-green-dark/50">
+      <p className="mt-1.5 text-xs text-zinc-600">
         {helpText || "Accepted: JPEG, PNG, WebP, PDF. Max 10 MB per file."}
       </p>
     </div>
@@ -294,10 +305,10 @@ function PreviousDocumentPreview({
     />
   ) : (
     <div className="flex h-24 w-24 flex-col items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 px-1 text-center shadow-soft dark:shadow-none">
-      <span className="text-[10px] text-brand-green-dark/70">
+      <span className="text-[10px] text-zinc-600">
         {canOpen ? "Preview unavailable" : `${label} on file`}
       </span>
-      {canOpen && <span className="mt-1 text-[10px] font-medium text-brand-green">Open document ↗</span>}
+      {canOpen && <span className="mt-1 text-[10px] font-medium text-brand-green-dark">Open document ↗</span>}
     </div>
   );
 
@@ -340,11 +351,11 @@ export function SelfCheckinForm() {
   const [success, setSuccess] = useState(false);
   const [idFiles, setIdFiles] = useState<DocFile[]>([]);
   const [visaFiles, setVisaFiles] = useState<DocFile[]>([]);
-  const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
+  const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string; staffReview?: boolean } | null>(null);
   const [validatingId, setValidatingId] = useState(false);
   const [idValidated, setIdValidated] = useState(false);
   const [idServerError, setIdServerError] = useState(false);
-  const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string } | null>(null);
+  const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string; staffReview?: boolean } | null>(null);
   const [validatingVisa, setValidatingVisa] = useState(false);
   const [visaServerError, setVisaServerError] = useState(false);
   const [validationEnabled, setValidationEnabled] = useState(true);
@@ -556,7 +567,11 @@ export function SelfCheckinForm() {
       const res = await fetch("/api/validate-id", { method: "POST", body: formData });
 
       if (res.status === 503 || res.status >= 500) {
-        setIdValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
+        setIdValidationMsg({
+          valid: false,
+          staffReview: true,
+          message: "Validation service temporarily unavailable. You can still submit — staff will verify manually.",
+        });
         setIdValidated(false);
         setIdServerError(true);
         return;
@@ -574,34 +589,34 @@ export function SelfCheckinForm() {
       const result = await res.json();
 
       if (result.valid) {
-        setIdValidationMsg({ valid: true, message: result.message });
+        const staffReview = isStaffReviewValidation(result);
+        setIdValidationMsg({ valid: true, staffReview, message: result.message });
         setIdValidated(true);
         setDetectedIdType(null);
-      } else if (result.needsBackSide || result.layers?.includes("address_missing")) {
-        // Keep front image so the guest can add the address side
-        setIdValidationMsg({ valid: false, message: result.message || "Please also upload the side of your ID that shows your address." });
+      } else if (result.layers?.includes("type_mismatch") && result.documentType !== "unknown") {
+        setIdValidationMsg({ valid: false, message: result.message });
+        setIdValidated(false);
+        setDetectedIdType(result.documentType);
+      } else if (result.layers?.some((l: string) => String(l).startsWith("unsupported_"))) {
+        setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
         setDetectedIdType(null);
+        setIdFiles([]);
+        setValue("idImages", null, { shouldValidate: true });
       } else {
+        // Remaining hard rejects (SafeSearch / label junk)
         setIdValidationMsg({ valid: false, message: result.message });
-        if (result.layers?.includes("type_mismatch") && result.documentType !== "unknown") {
-          setIdValidated(false);
-          setDetectedIdType(result.documentType);
-        } else if (result.layers?.some((l: string) => String(l).startsWith("unsupported_"))) {
-          // Wrong document type — clear so they re-upload the right ID
-          setIdValidated(false);
-          setDetectedIdType(null);
-          setIdFiles([]);
-          setValue("idImages", null, { shouldValidate: true });
-        } else {
-          setIdValidated(false);
-          setDetectedIdType(null);
-          setIdFiles([]);
-          setValue("idImages", null, { shouldValidate: true });
-        }
+        setIdValidated(false);
+        setDetectedIdType(null);
+        setIdFiles([]);
+        setValue("idImages", null, { shouldValidate: true });
       }
     } catch {
-      setIdValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
+      setIdValidationMsg({
+        valid: false,
+        staffReview: true,
+        message: "Validation service temporarily unavailable. You can still submit — staff will verify manually.",
+      });
       setIdValidated(false);
       setIdServerError(true);
     } finally {
@@ -653,20 +668,29 @@ export function SelfCheckinForm() {
       const res = await fetch("/api/validate-id", { method: "POST", body: formData });
 
       if (res.status === 503 || res.status >= 500) {
-        setVisaValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
+        setVisaValidationMsg({
+          valid: false,
+          staffReview: true,
+          message: "Validation service temporarily unavailable. You can still submit — staff will verify manually.",
+        });
         setVisaServerError(true);
         return;
       }
 
       const result = await res.json();
-      setVisaValidationMsg({ valid: result.valid, message: result.message });
+      const staffReview = isStaffReviewValidation(result);
+      setVisaValidationMsg({ valid: !!result.valid, staffReview: result.valid && staffReview, message: result.message });
 
       if (!result.valid) {
         setVisaFiles([]);
         setValue("visaImages", null, { shouldValidate: true });
       }
     } catch {
-      setVisaValidationMsg({ valid: false, message: "Validation service temporarily unavailable. You can still submit — staff will verify manually." });
+      setVisaValidationMsg({
+        valid: false,
+        staffReview: true,
+        message: "Validation service temporarily unavailable. You can still submit — staff will verify manually.",
+      });
       setVisaServerError(true);
     } finally {
       setValidatingVisa(false);
@@ -732,8 +756,8 @@ export function SelfCheckinForm() {
       });
 
       if (res.status === 422) {
-        const errData = await res.json();
-        setSubmitError(errData.error || "Document validation failed. Please upload a valid document.");
+        const errData = await res.json().catch(() => ({}));
+        setSubmitError(messageFromCheckinFailure(422, errData));
         if (errData.field === "visaImages") {
           setVisaFiles([]);
           setVisaValidationMsg({ valid: false, message: errData.error || "Visa rejected" });
@@ -745,7 +769,11 @@ export function SelfCheckinForm() {
         return;
       }
 
-      if (!res.ok) throw new Error("Submission failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setSubmitError(messageFromCheckinFailure(res.status, errData));
+        return;
+      }
 
       setSuccess(true);
       reset();
@@ -771,10 +799,10 @@ export function SelfCheckinForm() {
   if (step === "phone" && !success && !submitting) {
     return (
       <div className="goko-glass-panel mx-auto max-w-lg rounded-3xl p-6 shadow-card md:p-10">
-        <h2 className="font-display text-2xl font-bold text-brand-green md:text-3xl">
+        <h2 className="font-display text-2xl font-bold text-zinc-900 md:text-3xl">
           Guest Self Check-in
         </h2>
-        <p className="mt-2 text-sm text-brand-green-dark/70">
+        <p className="mt-2 text-sm text-zinc-700">
           Enter your mobile number to get started. If you&apos;ve stayed with us before, we&apos;ll load your details.
         </p>
 
@@ -817,7 +845,7 @@ export function SelfCheckinForm() {
           <button
             type="button"
             onClick={skipToForm}
-            className="block w-full text-center text-sm text-brand-green-dark/60 transition-colors hover:text-brand-green"
+            className="block w-full text-center text-sm text-zinc-600 transition-colors hover:text-zinc-900"
           >
             Skip, I&apos;m a new guest
           </button>
@@ -831,20 +859,20 @@ export function SelfCheckinForm() {
       <div className="goko-glass-panel mx-auto max-w-lg rounded-3xl p-6 shadow-card md:p-10">
         <div className="text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-green/10">
-            <CheckCircle2Icon className="h-8 w-8 text-brand-green" />
+            <CheckCircle2Icon className="h-8 w-8 text-brand-green-dark" />
           </div>
-          <h2 className="mt-5 font-display text-2xl font-bold text-brand-green">
+          <h2 className="mt-5 font-display text-2xl font-bold text-zinc-900">
             Check-in complete!
           </h2>
-          <p className="mt-2 text-brand-green-dark/80">
+          <p className="mt-2 text-zinc-700">
             Your check-in was saved successfully. Welcome to Goko Hostel — enjoy your stay!
           </p>
         </div>
 
         {/* Property Rules */}
         <div className="mt-6 rounded-2xl bg-brand-sand/50 p-5">
-          <h3 className="font-display text-base font-bold text-brand-green-dark">House Rules</h3>
-          <div className="mt-3 space-y-2 text-sm text-brand-green-dark/80">
+          <h3 className="font-display text-base font-bold text-zinc-900">House Rules</h3>
+          <div className="mt-3 space-y-2 text-sm text-zinc-700">
             <div className="flex gap-2"><span>🎒</span><p><strong>Solo Travelers & Small Groups (Max 4) Only.</strong> We don&apos;t accommodate large groups.</p></div>
             <div className="flex gap-2"><span>🎂</span><p><strong>Age Limit:</strong> 18 to 35 years only.</p></div>
             <div className="flex gap-2"><span>🌿</span><p><strong>Non-AC Property:</strong> We don&apos;t have air conditioning, but each bed has an individual fan.</p></div>
@@ -852,10 +880,10 @@ export function SelfCheckinForm() {
             <div className="flex gap-2"><span>🚫</span><p><strong>Strictly No:</strong> Hard liquor, drugs, outside food & drinks.</p></div>
           </div>
           <div className="mt-4 flex gap-4 rounded-xl bg-white dark:bg-card p-3 text-sm">
-            <div><strong className="text-brand-green">Check-in:</strong> <span className="text-brand-green-dark/70">12:00 Noon</span></div>
-            <div><strong className="text-brand-green">Check-out:</strong> <span className="text-brand-green-dark/70">10:00 AM</span></div>
+            <div><strong className="text-zinc-900">Check-in:</strong> <span className="text-zinc-700">12:00 Noon</span></div>
+            <div><strong className="text-zinc-900">Check-out:</strong> <span className="text-zinc-700">10:00 AM</span></div>
           </div>
-          <p className="mt-3 text-xs text-brand-green-dark/50">
+          <p className="mt-3 text-xs text-zinc-600">
             Goko Management reserves the right to cancel any booking if terms and conditions are not met.
           </p>
         </div>
@@ -871,7 +899,7 @@ export function SelfCheckinForm() {
           <button
             type="button"
             onClick={() => { setSuccess(false); setStep("phone"); setPhoneInput(""); }}
-            className="text-sm text-brand-green-dark/60 hover:text-brand-green"
+            className="text-sm text-zinc-600 hover:text-zinc-900"
           >
             Submit another check-in
           </button>
@@ -886,10 +914,10 @@ export function SelfCheckinForm() {
         <div className="mx-auto flex h-20 w-20 items-center justify-center">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
         </div>
-        <h2 className="mt-8 font-display text-2xl font-bold text-brand-green">
+        <h2 className="mt-8 font-display text-2xl font-bold text-zinc-900">
           Submitting your check-in...
         </h2>
-        <p className="mt-3 text-brand-green-dark/70">
+        <p className="mt-3 text-zinc-700">
           Uploading documents and saving your details. Please wait and do not press the submit button again.
         </p>
         <div className="mt-6 flex justify-center gap-1">
@@ -906,16 +934,16 @@ export function SelfCheckinForm() {
       onSubmit={handleSubmit(onSubmit)}
       className="goko-glass-panel mx-auto max-w-2xl rounded-3xl p-6 shadow-card md:p-10"
     >
-      <h2 className="font-display text-2xl font-bold text-brand-green md:text-3xl">
+      <h2 className="font-display text-2xl font-bold text-zinc-900 md:text-3xl">
         Guest Self Check-in
       </h2>
-      <p className="mt-2 text-sm text-brand-green-dark/70">
+      <p className="mt-2 text-sm text-zinc-700">
         Please fill in your details. Fields marked with <span className="text-brand-red">*</span> are required.
       </p>
 
       {returnGuest && (
         <div className="goko-glass-chip mt-4 rounded-2xl border border-brand-green/30 p-4">
-          <p className="text-sm font-medium text-brand-green">
+          <p className="text-sm font-medium text-zinc-900">
             Welcome back, {returnGuest.name}! We&apos;ve loaded your previous details. Please review and update if needed.
           </p>
         </div>
@@ -1108,7 +1136,7 @@ export function SelfCheckinForm() {
         <div>
           <Label htmlFor="contactNumber">Contact number <span className="text-brand-red">*</span></Label>
           <div className="flex gap-2">
-            <div className="flex h-8 w-[5rem] shrink-0 items-center justify-center rounded-lg border border-input bg-brand-sand/50 px-2 text-sm font-medium text-brand-green-dark">
+            <div className="flex h-8 w-[5rem] shrink-0 items-center justify-center rounded-lg border border-input bg-brand-sand/50 px-2 text-sm font-medium text-zinc-900">
               {countryDialCodes[nationality] || "+91"}
             </div>
             <Input
@@ -1143,7 +1171,7 @@ export function SelfCheckinForm() {
           <div>
             <Label htmlFor="emergencyPhone">Emergency contact phone <span className="text-brand-red">*</span></Label>
             <div className="flex gap-2">
-              <div className="flex h-8 w-[5rem] shrink-0 items-center justify-center rounded-lg border border-input bg-brand-sand/50 px-2 text-sm font-medium text-brand-green-dark">
+              <div className="flex h-8 w-[5rem] shrink-0 items-center justify-center rounded-lg border border-input bg-brand-sand/50 px-2 text-sm font-medium text-zinc-900">
                 {countryDialCodes[nationality] || "+91"}
               </div>
               <Input
@@ -1193,7 +1221,7 @@ export function SelfCheckinForm() {
         {/* Previous ID preview for return guests */}
         {prevIdCardLink && idFiles.length === 0 && (
           <div>
-            <Label className="mb-2 block text-sm font-medium text-brand-green-dark">
+            <Label className="mb-2 block text-sm font-medium text-zinc-900">
               ID document (from previous visit)
             </Label>
             <div className="mb-2 flex flex-wrap gap-3">
@@ -1201,7 +1229,7 @@ export function SelfCheckinForm() {
                 return <PreviousDocumentPreview key={i} link={link} label="Previous ID" index={i} />;
               })}
             </div>
-            <p className="text-xs text-brand-green-dark/50">
+            <p className="text-xs text-zinc-600">
               Your previous ID is on file. Upload new documents below only if you want to replace them.
             </p>
           </div>
@@ -1239,7 +1267,7 @@ export function SelfCheckinForm() {
         {/* Previous Visa preview for return guests */}
         {isForeignNationality(nationality) && prevVisaLink && visaFiles.length === 0 && (
           <div>
-            <Label className="mb-2 block text-sm font-medium text-brand-green-dark">
+            <Label className="mb-2 block text-sm font-medium text-zinc-900">
               Visa document (from previous visit)
             </Label>
             <div className="mb-2 flex flex-wrap gap-3">
@@ -1247,7 +1275,7 @@ export function SelfCheckinForm() {
                 return <PreviousDocumentPreview key={i} link={link} label="Previous visa" index={i} />;
               })}
             </div>
-            <p className="text-xs text-brand-green-dark/50">
+            <p className="text-xs text-zinc-600">
               Your previous visa is on file. Upload new documents below only if you want to replace them.
             </p>
           </div>
@@ -1271,7 +1299,7 @@ export function SelfCheckinForm() {
         {/* Foreign guest Form C fields */}
         {isForeignNationality(nationality) && (
           <div className="space-y-5 rounded-2xl border border-brand-green/20 dark:border-brand-green/30 bg-brand-green/[0.06] dark:bg-brand-green/10 p-5">
-            <p className="text-sm font-semibold text-brand-green-dark dark:text-brand-green">Additional details for foreign nationals (required for Form C)</p>
+            <p className="text-sm font-semibold text-zinc-900">Additional details for foreign nationals (required for Form C)</p>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>

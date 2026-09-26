@@ -54,12 +54,14 @@ describe("prod-scenario ID validation", () => {
     expect(parseDobFromOcr(SUGUMAR_AADHAAR_BOTH, "aadhaar")).toBe("02/06/1996");
   });
 
-  it("hard-blocks Likitha-style Aadhaar front without address", () => {
+  it("soft-allows Likitha-style Aadhaar front without address for staff review", () => {
     const result = validateIdFromText(LIKITHA_AADHAAR_FRONT, "id", "aadhaar", "Likitha P", "India");
-    expect(result.valid).toBe(false);
+    expect(result.valid).toBe(true);
     expect(result.needsBackSide).toBe(true);
     expect(result.layers).toContain("address_missing");
+    expect(result.layers).toContain("doc_review");
     expect(result.message).toMatch(/address/i);
+    expect(verifiedFromIdValidation(result)).toBe("doc_review");
   });
 
   it("rejects Pravallika-style DigiLocker PAN as PAN, not Aadhaar", () => {
@@ -102,11 +104,12 @@ describe("unsupported document rejects", () => {
 });
 
 describe("passport address by nationality", () => {
-  it("requires address page for Indian passport bio-only", () => {
+  it("requires address evidence for Indian passport bio-only but soft-allows for staff review", () => {
     const result = validateIdFromText(INDIAN_PASSPORT_BIO, "id", "passport", "Rahul Sharma", "India");
-    expect(result.valid).toBe(false);
+    expect(result.valid).toBe(true);
     expect(result.needsBackSide).toBe(true);
     expect(result.message).toMatch(/address page/i);
+    expect(verifiedFromIdValidation(result)).toBe("doc_review");
   });
 
   it("accepts Indian passport with address evidence", () => {
@@ -132,10 +135,12 @@ describe("name matching quality", () => {
     expect(result.nameMatchQuality).toBe("full");
   });
 
-  it("rejects when no name tokens match", () => {
+  it("soft-allows when no name tokens match for staff Vibe OK", () => {
     const result = validateIdFromText(idText, "id", "driving_licence", "Sameer Joshi", "India");
-    expect(result.valid).toBe(false);
+    expect(result.valid).toBe(true);
     expect(result.nameMatchQuality).toBe("none");
+    expect(result.layers).toContain("name_mismatch");
+    expect(verifiedFromIdValidation(result)).toBe("name_review");
   });
 
   it("accepts partial name match with name_partial for staff Vibe", () => {
@@ -154,10 +159,31 @@ describe("DigiLocker Aadhaar and verified mapping", () => {
     expect(result.documentType).toBe("aadhaar");
   });
 
-  it("maps validation_unavailable to pending", () => {
+  it("maps validation_unavailable to pending and name_mismatch to name_review", () => {
     expect(verifiedFromIdValidation({ layers: ["validation_unavailable"] })).toBe("pending");
     expect(verifiedFromIdValidation({ layers: ["doc_review"], needsDocReview: true })).toBe("doc_review");
     expect(verifiedFromIdValidation({ spoofWarning: true })).toBe("spoof_warning");
     expect(verifiedFromIdValidation({ layers: ["name_verified"] })).toBe("yes");
+    expect(verifiedFromIdValidation({ nameMatchQuality: "none", layers: ["name_mismatch"] })).toBe("name_review");
+    expect(verifiedFromIdValidation({ layers: ["unreadable", "doc_review"], needsDocReview: true })).toBe("doc_review");
+  });
+
+  it("soft-allows unreadable OCR and unidentified visa for staff review", () => {
+    const blank = validateIdFromText("abc", "id", "aadhaar", "Test User", "India");
+    expect(blank.valid).toBe(true);
+    expect(blank.layers).toContain("unreadable");
+    expect(verifiedFromIdValidation(blank)).toBe("doc_review");
+
+    const visa = validateIdFromText("random boarding pass text only here", "visa");
+    expect(visa.valid).toBe(true);
+    expect(visa.layers).toContain("visa_unidentified");
+    expect(verifiedFromIdValidation(visa)).toBe("doc_review");
+  });
+
+  it("still hard-rejects type mismatch so the guest can fix the dropdown", () => {
+    const result = validateIdFromText(SUGUMAR_AADHAAR_BOTH, "id", "passport", "Sugumar G", "India");
+    expect(result.valid).toBe(false);
+    expect(result.layers).toContain("type_mismatch");
+    expect(result.documentType).toBe("aadhaar");
   });
 });

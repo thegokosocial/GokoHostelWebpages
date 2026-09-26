@@ -63,9 +63,9 @@ Layering: panel more open than chips so nested panes read as frosted layers over
 |-------|----------|
 | CSS materials | `src/app/globals.css` (`.goko-glass-panel` / `-chip` / `-ink`) |
 | Booking shell, cards, sticky, Review | `src/components/booking/BookingHeroPanel.tsx` |
-| Self check-in page hero + form shells | `src/app/self-checkin/page.tsx`, `src/components/forms/SelfCheckinForm.tsx` |
+| Self check-in page hero + form shells | `src/app/self-checkin/page.tsx`, `src/components/forms/SelfCheckinForm.tsx` — zinc headings/labels on glass; **Verify document** = `bg-brand-green-dark` + `text-brand-gold` / `border-brand-gold`; **Complete Check-in** stays solid red CTA |
 | Opt-in date trigger | `src/components/dates/DateRangePicker.tsx` (`surface="glass"`) |
-| Source contracts | `src/__tests__/guest-booking-mobile.test.ts`, `src/__tests__/date-range-picker.test.ts`, `src/__tests__/cpu-lookup-checkin-workflows.test.ts` |
+| Source contracts | `src/__tests__/guest-booking-mobile.test.ts`, `src/__tests__/date-range-picker.test.ts`, `src/__tests__/cpu-lookup-checkin-workflows.test.ts`, `src/__tests__/self-checkin-soft-allow.test.ts`, `src/__tests__/self-checkin-workflow-e2e.test.ts` |
 | Guest booking product copy | [guest-booking-ui.md](guest-booking-ui.md) |
 | Guest check-in flow | [flows-guest-checkin.md](flows-guest-checkin.md) |
 
