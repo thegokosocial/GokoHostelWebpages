@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation } from "@/lib/validateIdDocument";
+import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation, requiresBothIdSides, bothSidesFileGateAllows } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
 import { addCheckin, getActiveCheckins, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
 
     const prevIdCardLink = formData.get("prevIdCardLink") as string || "";
     const prevVisaLink = formData.get("prevVisaLink") as string || "";
+    const clientIdValidation = (formData.get("clientIdValidation") as string || "").trim();
 
     const arrivedFromCountry = formData.get("arrivedFromCountry") as string || "";
     const arrivedFromCity = formData.get("arrivedFromCity") as string || "";
@@ -132,8 +133,9 @@ export async function POST(req: NextRequest) {
 
     const reusingPrevId = idImages.length === 0 && !!prevIdCardLink;
     const reusingPrevVisa = visaImages.length === 0 && !!prevVisaLink;
+    const skipVisionTrusted = clientIdValidation === "verified" && idImages.length > 0;
 
-    if (validationEnabled && !reusingPrevId && !isOfflineMode()) {
+    if (validationEnabled && !reusingPrevId && !skipVisionTrusted && !isOfflineMode()) {
       async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
         if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
           return { valid: false, documentType: "unknown" as const, confidence: "high" as const, message: "Only images and PDFs accepted" };
@@ -172,9 +174,40 @@ export async function POST(req: NextRequest) {
         if (!idValidation.valid) {
           return NextResponse.json({ error: idValidation.message, field: "idImages" }, { status: 422 });
         }
-        idVerifiedOverride = verifiedFromIdValidation(idValidation);
+        const visionSoftDown = (idValidation.layers || []).includes("validation_unavailable");
+        if (visionSoftDown) {
+          if (!bothSidesFileGateAllows({
+            idType,
+            nationality,
+            fileCount: idImages.length,
+            visionUnavailable: true,
+          })) {
+            return NextResponse.json({
+              error: requiresBothIdSides(idType, nationality)
+                ? "Validation service is unavailable. Please upload both the front and back of your ID (or a combined DigiLocker PDF), then try again."
+                : "Validation service is unavailable. Please try again shortly.",
+              field: "idImages",
+            }, { status: 422 });
+          }
+          validationFailed = true;
+        } else {
+          idVerifiedOverride = verifiedFromIdValidation(idValidation);
+        }
       } catch (valErr: any) {
         console.error("ID validation error:", valErr?.message);
+        if (!bothSidesFileGateAllows({
+          idType,
+          nationality,
+          fileCount: idImages.length,
+          visionUnavailable: true,
+        })) {
+          return NextResponse.json({
+            error: requiresBothIdSides(idType, nationality)
+              ? "Validation service is unavailable. Please upload both the front and back of your ID (or a combined DigiLocker PDF), then try again."
+              : "Validation service is unavailable. Please try again shortly.",
+            field: "idImages",
+          }, { status: 422 });
+        }
         validationFailed = true;
       }
 
@@ -208,6 +241,8 @@ export async function POST(req: NextRequest) {
           validationFailed = true;
         }
       }
+    } else if (skipVisionTrusted) {
+      idVerifiedOverride = "yes";
     }
 
     if (serverVisionCalls > 0) incrementStat("vision", serverVisionCalls).catch(() => {});

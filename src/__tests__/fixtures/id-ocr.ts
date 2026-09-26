@@ -26,6 +26,24 @@ Female
 Aadhaar
 `;
 
+/** Address/back side only — DOB/sex appear only on guardian lines (must hard-reject missing front). */
+export const DARSHAN_AADHAAR_BACK_ONLY = `
+Unique Identification Authority of India
+आधार
+Aadhaar
+VID: 9109 3342 7051 6579
+Address: S/O: Ramesh Chauhan, House No 12, Sector 5,
+Gurgaon, Haryana - 122001
+S/O: Ramesh Chauhan DOB: 15/03/1970
+Details as on: 01/01/2025
+`;
+
+export const AADHAAR_BACK_ADDRESS_ONLY = `
+Unique Identification Authority of India
+आधार
+Address: C/O Foo Bar, 44 MG Road, Bangalore Karnataka - 560001
+`;
+
 export const PRAVALLIKA_PAN = `
 PAN Verification Record
 PAN CARD

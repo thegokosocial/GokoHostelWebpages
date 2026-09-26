@@ -116,18 +116,21 @@ function validateRequest(fields: {
   return new NextRequest("http://localhost/api/validate-id", { method: "POST", body: fd });
 }
 
-/** Guest UI gate: submit unlocked after verify success or soft service error. */
+/** Guest UI gate: submit unlocked after verify success or soft service error (with both-sides file gate). */
 function guestCanSubmit(state: {
   validationEnabled: boolean;
   idValidated: boolean;
   idServerError: boolean;
   hasPrevId: boolean;
   hasIdFiles: boolean;
+  bothSidesRequired?: boolean;
+  idFileCount?: number;
 }) {
   if (!state.validationEnabled) return true;
   if (state.hasPrevId) return true;
+  if (state.idServerError && state.bothSidesRequired && (state.idFileCount ?? 0) < 2) return false;
   if (state.idValidated || state.idServerError) return true;
-  return !state.hasIdFiles; // no files yet → form validation handles required ID
+  return !state.hasIdFiles;
 }
 
 describe("self-check-in mock E2E workflows", () => {
@@ -187,8 +190,8 @@ describe("self-check-in mock E2E workflows", () => {
     });
   });
 
-  describe("soft-allow → staff review (do not block guest)", () => {
-    it("missing Aadhaar address soft-allows validate + check-in as doc_review", async () => {
+  describe("both-sides hard reject (Aadhaar / Indian passport)", () => {
+    it("rejects Aadhaar front-only (missing address) on validate and check-in", async () => {
       q.visionAnalyze.mockResolvedValue(visionOk(LIKITHA_AADHAAR_FRONT));
 
       const validateRes = await validateIdPOST(validateRequest({
@@ -197,17 +200,17 @@ describe("self-check-in mock E2E workflows", () => {
         nationality: "India",
       }));
       const validated = await validateRes.json();
-      expect(validated.valid).toBe(true);
+      expect(validated.valid).toBe(false);
       expect(validated.needsBackSide).toBe(true);
-      expect(isStaffReviewValidation(validated)).toBe(true);
-      expect(verifiedFromIdValidation(validated)).toBe("doc_review");
+      expect(validated.layers).toContain("address_missing");
+      expect(isStaffReviewValidation(validated)).toBe(false);
 
       const checkinRes = await checkinPOST(checkinRequest(baseFields({
         name: "Likitha P",
         contactNumber: "9000000001",
       })));
-      expect(checkinRes.status).toBe(200);
-      expect(q.addCheckin.mock.calls[0][0].verified).toBe("doc_review");
+      expect(checkinRes.status).toBe(422);
+      expect(q.addCheckin).not.toHaveBeenCalled();
     });
 
     it("name mismatch soft-allows as name_review for staff Vibe OK", async () => {
@@ -232,7 +235,7 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("name_review");
     });
 
-    it("Vision throw soft-allows check-in as pending", async () => {
+    it("Vision throw with 1 Aadhaar file hard-gates check-in (need both sides)", async () => {
       q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
 
       const validateRes = await validateIdPOST(validateRequest({
@@ -243,13 +246,35 @@ describe("self-check-in mock E2E workflows", () => {
       const validated = await validateRes.json();
       expect(validated.valid).toBe(true);
       expect(validated.layers).toContain("validation_unavailable");
-      expect(verifiedFromIdValidation(validated)).toBe("pending");
 
       q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
       const checkinRes = await checkinPOST(checkinRequest(baseFields({
         name: "Pawan Dhiran",
         contactNumber: "9000000003",
-      })));
+      }), [idFile("front.jpg")]));
+      expect(checkinRes.status).toBe(422);
+      const body = await checkinRes.json();
+      expect(body.error).toMatch(/front and back|DigiLocker/i);
+      expect(q.addCheckin).not.toHaveBeenCalled();
+    });
+
+    it("Vision throw with 2 Aadhaar files soft-allows check-in as pending", async () => {
+      q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
+      const checkinRes = await checkinPOST(checkinRequest(baseFields({
+        name: "Pawan Dhiran",
+        contactNumber: "9000000033",
+      }), [idFile("front.jpg"), idFile("back.jpg")]));
+      expect(checkinRes.status).toBe(200);
+      expect(q.addCheckin.mock.calls[0][0].verified).toBe("pending");
+    });
+
+    it("Vision throw with 1 DL file soft-allows check-in as pending", async () => {
+      q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
+      const checkinRes = await checkinPOST(checkinRequest(baseFields({
+        name: "Pawan Dhiran",
+        idType: "driving_licence",
+        contactNumber: "9000000034",
+      }), [idFile("dl.jpg")]));
       expect(checkinRes.status).toBe(200);
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("pending");
     });
@@ -353,6 +378,27 @@ describe("self-check-in mock E2E workflows", () => {
       })).toBe(true);
     });
 
+    it("blocks Vision-down Aadhaar submit until both sides are uploaded", () => {
+      expect(guestCanSubmit({
+        validationEnabled: true,
+        idValidated: false,
+        idServerError: true,
+        hasPrevId: false,
+        hasIdFiles: true,
+        bothSidesRequired: true,
+        idFileCount: 1,
+      })).toBe(false);
+      expect(guestCanSubmit({
+        validationEnabled: true,
+        idValidated: false,
+        idServerError: true,
+        hasPrevId: false,
+        hasIdFiles: true,
+        bothSidesRequired: true,
+        idFileCount: 2,
+      })).toBe(true);
+    });
+
     it("maps API failure bodies the way Complete Check-in should show them", () => {
       expect(messageFromCheckinFailure(500, { error: "Database temporarily unavailable. Please try again." }))
         .toBe("Database temporarily unavailable. Please try again.");
@@ -446,15 +492,27 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.visionAnalyze).not.toHaveBeenCalled();
     });
 
-    it("never auto-sets vibeMatched on soft-allow insert", async () => {
-      q.visionAnalyze.mockResolvedValue(visionOk(LIKITHA_AADHAAR_FRONT));
+    it("never auto-sets vibeMatched on name soft-allow insert", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(DL_WITH_TRANSPORT));
       await checkinPOST(checkinRequest(baseFields({
-        name: "Likitha P",
+        name: "Sameer Joshi",
+        idType: "driving_licence",
         contactNumber: "9000000014",
       })));
       const saved = q.addCheckin.mock.calls[0][0];
-      expect(saved.verified).toBe("doc_review");
+      expect(saved.verified).toBe("name_review");
       expect(saved.vibeMatched).toBeUndefined();
+    });
+
+    it("skips second Vision pass when clientIdValidation=verified", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(SUGUMAR_AADHAAR_BOTH));
+      const res = await checkinPOST(checkinRequest({
+        ...baseFields({ contactNumber: "9000000015" }),
+        clientIdValidation: "verified",
+      }));
+      expect(res.status).toBe(200);
+      expect(q.visionAnalyze).not.toHaveBeenCalled();
+      expect(q.addCheckin.mock.calls[0][0].verified).toBe("yes");
     });
   });
 });

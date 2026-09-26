@@ -69,7 +69,7 @@ sequenceDiagram
   Vis-->>P: valid or reason
   G->>P: Complete check-in
   P->>C: multipart
-  C->>Vis: re-check unless reused ID
+  C->>Vis: re-check unless reused ID or clientIdValidation=verified
   C->>Dr: month folder JPEG
   C->>DB: insert checkins status=active
   C-->>G: success

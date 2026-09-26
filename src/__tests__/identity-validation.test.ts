@@ -54,14 +54,13 @@ describe("prod-scenario ID validation", () => {
     expect(parseDobFromOcr(SUGUMAR_AADHAAR_BOTH, "aadhaar")).toBe("02/06/1996");
   });
 
-  it("soft-allows Likitha-style Aadhaar front without address for staff review", () => {
+  it("hard-rejects Likitha-style Aadhaar front without address (needs back)", () => {
     const result = validateIdFromText(LIKITHA_AADHAAR_FRONT, "id", "aadhaar", "Likitha P", "India");
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.needsBackSide).toBe(true);
     expect(result.layers).toContain("address_missing");
-    expect(result.layers).toContain("doc_review");
+    expect(result.layers).not.toContain("doc_review");
     expect(result.message).toMatch(/address/i);
-    expect(verifiedFromIdValidation(result)).toBe("doc_review");
   });
 
   it("rejects Pravallika-style DigiLocker PAN as PAN, not Aadhaar", () => {
@@ -104,12 +103,11 @@ describe("unsupported document rejects", () => {
 });
 
 describe("passport address by nationality", () => {
-  it("requires address evidence for Indian passport bio-only but soft-allows for staff review", () => {
+  it("hard-rejects Indian passport bio-only without address page", () => {
     const result = validateIdFromText(INDIAN_PASSPORT_BIO, "id", "passport", "Rahul Sharma", "India");
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.needsBackSide).toBe(true);
     expect(result.message).toMatch(/address page/i);
-    expect(verifiedFromIdValidation(result)).toBe("doc_review");
   });
 
   it("accepts Indian passport with address evidence", () => {

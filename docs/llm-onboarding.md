@@ -30,7 +30,7 @@ Handoff to another agent (not autopilot): [developing.md](developing.md#handoff-
 | Request/response bodies | the `route.ts` you are calling |
 | Admin UI behavior | the component in `src/components/admin/` |
 | Permission UI vs API mismatch | `ManagementUsers.tsx` **and** the route map |
-| Vision scoring | `src/lib/validateIdDocument.ts` — hard-reject only high-confidence junk (PAN/voter/marksheet/clear RC, SafeSearch, label junk, type mismatch). Soft-allow missing Aadhaar/Indian-passport address, name none/partial, unreadable OCR, weak/unknown ID, unidentified visa → `verified=name_review`/`doc_review`/`pending` for staff Vibe OK (never auto `vibe_matched`). Pass `nationality` into `/api/validate-id`. No D1 schema change (`verified` text). |
+| Vision scoring | `src/lib/validateIdDocument.ts` — hard-reject high-confidence junk (PAN/voter/marksheet/clear RC, SafeSearch, label junk, type mismatch) **and** missing Aadhaar/Indian-passport front or address (`front_missing` / `address_missing`). Soft-allow name none/partial, unreadable OCR, weak/unknown ID, unidentified visa → `verified=name_review`/`doc_review`/`pending` for staff Vibe OK (never auto `vibe_matched`). Vision-down check-in: Aadhaar/Indian passport need 2+ files (`bothSidesFileGateAllows`); trusted `clientIdValidation=verified` skips re-Vision. Pass `nationality` into `/api/validate-id`. No D1 schema change (`verified` text). |
 | Inventory math | `src/lib/inventoryAvailability.ts` |
 | Stay collect / refund (rupees) | `src/lib/stayPayment.ts` |
 | Food tab (client vs DB) | `src/lib/foodTab.ts` vs `src/lib/foodTabDb.ts` |

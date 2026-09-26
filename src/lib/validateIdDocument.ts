@@ -119,10 +119,73 @@ export type ValidationResult = {
   nameMatchQuality?: NameMatchQuality;
   layers?: string[];
   needsBackSide?: boolean;
+  needsFrontSide?: boolean;
   needsDocReview?: boolean;
   ocrText?: string;
   spoofWarning?: boolean;
 };
+
+export type IdSidesResult = {
+  requiresBothSides: boolean;
+  hasFront: boolean;
+  hasAddress: boolean;
+  missing: "front" | "address" | null;
+};
+
+/** Aadhaar or Indian passport must show both identity (front/bio) and address sides. */
+export function requiresBothIdSides(documentType: DocumentType | string, nationality?: string | null): boolean {
+  if (documentType === "aadhaar") return true;
+  if (documentType === "passport" && !isForeignNationality(nationality || "India")) return true;
+  return false;
+}
+
+/** Holder-side cues (DOB / sex). Guardian S/O lines alone do not count. */
+export function hasAadhaarFrontEvidence(text: string): boolean {
+  const nonGuardian = text
+    .split(/\n/)
+    .filter((line) => !GUARDIAN_PATTERN.test(line))
+    .join("\n");
+  if (/\b(dob|date\s*of\s*birth|year\s*of\s*birth)\b/i.test(nonGuardian)) return true;
+  if (/\b(male|female|transgender)\b/i.test(nonGuardian)) return true;
+  return false;
+}
+
+export function hasPassportBioEvidence(text: string): boolean {
+  if (/P<[A-Z]{3}/.test(text)) return true;
+  if (/\b(dob|date\s*of\s*birth)\b/i.test(text) && /passport/i.test(text)) return true;
+  if (countPatternHits(text, PASSPORT_PATTERNS) >= 2 && !/\baddress\b/i.test(text)) return true;
+  if (countPatternHits(text, PASSPORT_PATTERNS) >= 3) return true;
+  return false;
+}
+
+export function evaluateIdSides(
+  text: string,
+  documentType: DocumentType | string,
+  nationality?: string | null,
+): IdSidesResult {
+  const requiresBoth = requiresBothIdSides(documentType, nationality);
+  if (!requiresBoth) {
+    return { requiresBothSides: false, hasFront: true, hasAddress: true, missing: null };
+  }
+  const hasFront = documentType === "aadhaar"
+    ? hasAadhaarFrontEvidence(text)
+    : hasPassportBioEvidence(text);
+  const hasAddress = hasAddressEvidence(text);
+  const missing: "front" | "address" | null = !hasFront ? "front" : !hasAddress ? "address" : null;
+  return { requiresBothSides: true, hasFront, hasAddress, missing };
+}
+
+/** When Vision is down, Aadhaar / Indian passport need 2+ files (or a prior successful verify). */
+export function bothSidesFileGateAllows(opts: {
+  idType: string;
+  nationality?: string | null;
+  fileCount: number;
+  visionUnavailable: boolean;
+}): boolean {
+  if (!opts.visionUnavailable) return true;
+  if (!requiresBothIdSides(opts.idType, opts.nationality)) return true;
+  return opts.fileCount >= 2;
+}
 
 // --- Layer helpers ---
 
@@ -307,12 +370,6 @@ function hasAddressEvidence(text: string): boolean {
   return countPatternHits(text, ADDRESS_PATTERNS) >= 2;
 }
 
-function requiresAddress(documentType: DocumentType, nationality?: string | null): boolean {
-  if (documentType === "aadhaar") return true;
-  if (documentType === "passport" && !isForeignNationality(nationality || "India")) return true;
-  return false;
-}
-
 function detectDocumentType(text: string): { type: DocumentType; matchCount: number } {
   const checks: { type: DocumentType; patterns: RegExp[]; minStrong?: () => boolean }[] = [
     { type: "aadhaar", patterns: AADHAAR_PATTERNS, minStrong: () => hasStrongAadhaarCues(text) },
@@ -393,6 +450,38 @@ function runTextValidation(
     }
     layers.push("type_match");
 
+    // Both-sides hard rule before name soft-allow (blocks back-only surname matches).
+    if (requiresBothIdSides(type, nationality)) {
+      const sides = evaluateIdSides(text, type, nationality);
+      if (sides.missing === "front") {
+        layers.push("front_missing");
+        return {
+          valid: false,
+          documentType: type,
+          confidence: "high",
+          needsFrontSide: true,
+          layers,
+          message: type === "passport"
+            ? "Please also upload the passport bio page (photo + date of birth). Address page alone is not enough."
+            : "Please also upload the front of your Aadhaar (photo + date of birth). Address/back side alone is not enough.",
+        };
+      }
+      if (sides.missing === "address") {
+        layers.push("address_missing");
+        return {
+          valid: false,
+          documentType: type,
+          confidence: "high",
+          needsBackSide: true,
+          layers,
+          message: type === "passport"
+            ? "Passport bio found, but address was not. Please also upload the address page of your Indian passport."
+            : "Aadhaar front found, but address was not. Please also upload the back side showing your address.",
+        };
+      }
+      layers.push("both_sides_ok");
+    }
+
     const nameResult = checkNameMatchQuality(text, guestName);
     if (guestName && nameResult.quality === "none") {
       if (matchCount < 2) layers.push("weak_id");
@@ -419,25 +508,6 @@ function runTextValidation(
     if (isAmbiguousWrongDoc(text) && type === "driving_licence" && matchCount < 3) {
       needsDocReview = true;
       layers.push("doc_review");
-    }
-
-    if (requiresAddress(type, nationality) && !hasAddressEvidence(text)) {
-      layers.push("address_missing", "doc_review");
-      const conf = matchCount >= 2 ? "high" : "medium";
-      const addressMsg = type === "passport"
-        ? "Passport name found, but address was not. Please also upload the address page if you have it — you can still submit for staff review."
-        : "Aadhaar name found, but address was not. Please also upload the back side if you have it — you can still submit for staff review.";
-      return {
-        valid: true,
-        documentType: type,
-        confidence: conf,
-        nameMatch: nameResult.quality === "full",
-        nameMatchQuality: nameResult.quality,
-        needsBackSide: true,
-        needsDocReview: true,
-        layers,
-        message: addressMsg,
-      };
     }
 
     const conf = matchCount >= 2 ? "high" : "medium";

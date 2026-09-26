@@ -2,15 +2,16 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { checkinSchema, isForeignNationality, type CheckinFormData, BOOKING_PLATFORMS } from "@/lib/checkinSchema";
 import { countries } from "@/content/countries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn, localDateStr } from "@/lib/utils";
-import { isStaffReviewValidation, messageFromCheckinFailure } from "@/lib/checkinSubmitError";
-import { useActionProgress } from "@/components/ui/ActionProgressProvider";
+import { isStaffReviewValidation, messageFromCheckinFailure, messageFromCheckinCatch } from "@/lib/checkinSubmitError";
+import { isAcceptedIdFile, isHeicFile, bothSidesHelpText } from "@/lib/checkinIdUpload";
+import { requiresBothIdSides } from "@/lib/validateIdDocument";
 import { CameraIcon, UploadIcon, CheckCircle2Icon, XIcon } from "lucide-react";
 
 const countryDialCodes: Record<string, string> = {
@@ -128,6 +129,7 @@ function MultiDocUpload({
   validating,
   validationMsg,
   helpText,
+  showValidate,
 }: {
   label: string;
   error?: string;
@@ -138,6 +140,8 @@ function MultiDocUpload({
   validating?: boolean;
   validationMsg?: { valid: boolean; message: string; staffReview?: boolean } | null;
   helpText?: string;
+  /** When set, controls Verify visibility (e.g. dual slots where files live in the other slot). */
+  showValidate?: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -145,9 +149,9 @@ function MultiDocUpload({
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList) return;
     Array.from(fileList).forEach((file) => {
-      if (!file.type.startsWith("image/") && file.type !== "application/pdf") return;
-      if (file.size > 10 * 1024 * 1024) {
-        alert(`File "${file.name}" exceeds 10 MB limit. Please use a smaller file.`);
+      const check = isAcceptedIdFile(file);
+      if (!check.ok) {
+        alert(check.reason);
         return;
       }
       onAdd(file);
@@ -155,6 +159,8 @@ function MultiDocUpload({
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
+
+  const canValidate = onValidate && (showValidate ?? files.length > 0);
 
   return (
     <div>
@@ -169,6 +175,11 @@ function MultiDocUpload({
               {doc.file.type === "application/pdf" ? (
                 <div className="flex h-24 w-24 flex-col items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 shadow-soft dark:shadow-none">
                   <span className="text-2xl">PDF</span>
+                  <span className="mt-1 max-w-[5rem] truncate text-[9px] text-zinc-600">{doc.file.name}</span>
+                </div>
+              ) : !doc.preview ? (
+                <div className="flex h-24 w-24 flex-col items-center justify-center rounded-xl border border-brand-mist bg-brand-sand/50 px-1 shadow-soft dark:shadow-none">
+                  <span className="text-[10px] font-medium text-zinc-700">Image</span>
                   <span className="mt-1 max-w-[5rem] truncate text-[9px] text-zinc-600">{doc.file.name}</span>
                 </div>
               ) : (
@@ -209,7 +220,7 @@ function MultiDocUpload({
         </button>
       </div>
 
-      {files.length > 0 && onValidate && (
+      {canValidate && (
         <button
           type="button"
           onClick={onValidate}
@@ -335,7 +346,6 @@ type LookupData = {
 };
 
 export function SelfCheckinForm() {
-  const { runAction } = useActionProgress();
   const { date, time } = getNow();
 
   const [step, setStep] = useState<"phone" | "form">("phone");
@@ -349,7 +359,8 @@ export function SelfCheckinForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [idFiles, setIdFiles] = useState<DocFile[]>([]);
+  const [idFrontFiles, setIdFrontFiles] = useState<DocFile[]>([]);
+  const [idBackFiles, setIdBackFiles] = useState<DocFile[]>([]);
   const [visaFiles, setVisaFiles] = useState<DocFile[]>([]);
   const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string; staffReview?: boolean } | null>(null);
   const [validatingId, setValidatingId] = useState(false);
@@ -410,6 +421,25 @@ export function SelfCheckinForm() {
   const stayingDays = watch("stayingDays");
   const firstName = watch("firstName");
   const lastName = watch("lastName");
+
+  const bothSidesRequired = requiresBothIdSides(idType || "", nationality);
+  const idFiles = useMemo(
+    () => (bothSidesRequired ? [...idFrontFiles, ...idBackFiles] : idFrontFiles),
+    [bothSidesRequired, idFrontFiles, idBackFiles],
+  );
+  const prevIdOnly = Boolean(prevIdCardLink) && idFiles.length === 0;
+  const showDualIdSlots = bothSidesRequired && !prevIdOnly;
+
+  const syncIdImages = (front: DocFile[], back: DocFile[], bothSides: boolean) => {
+    const combined = bothSides ? [...front, ...back] : front;
+    setValue("idImages", combined.length > 0 ? combined.map((f) => f.file) : null, { shouldValidate: true });
+  };
+
+  const clearIdUploads = () => {
+    setIdFrontFiles([]);
+    setIdBackFiles([]);
+    setValue("idImages", null, { shouldValidate: true });
+  };
 
   useEffect(() => {
     if (isForeignNationality(nationality) && idType !== "passport") {
@@ -515,34 +545,60 @@ export function SelfCheckinForm() {
     setStep("form");
   };
 
-  const addIdFile = (file: File) => {
-    setPrevIdCardLink("");
-    setValue("prevIdCardLink", undefined);
-    setIdValidated(false);
-
-    if (file.type === "application/pdf") {
-      const newFiles = [...idFiles, { file, preview: "" }];
-      setIdFiles(newFiles);
-      setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
-      setIdValidationMsg(null);
-      if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
+  const appendDocFile = (
+    file: File,
+    current: DocFile[],
+    setFiles: (next: DocFile[]) => void,
+    afterAdd: (next: DocFile[]) => void,
+  ) => {
+    const finish = (preview: string) => {
+      const next = [...current, { file, preview }];
+      setFiles(next);
+      afterAdd(next);
+    };
+    if (file.type === "application/pdf" || isHeicFile(file)) {
+      finish("");
       return;
     }
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const newFiles = [...idFiles, { file, preview: e.target?.result as string }];
-      setIdFiles(newFiles);
-      setValue("idImages", newFiles.map((f) => f.file), { shouldValidate: true });
-      setIdValidationMsg(null);
-      if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
-    };
+    reader.onload = (e) => finish(e.target?.result as string);
     reader.readAsDataURL(file);
   };
 
-  const removeIdFile = (index: number) => {
-    const newFiles = idFiles.filter((_, i) => i !== index);
-    setIdFiles(newFiles);
-    setValue("idImages", newFiles.length > 0 ? newFiles.map((f) => f.file) : null, { shouldValidate: true });
+  const addIdFrontFile = (file: File) => {
+    setPrevIdCardLink("");
+    setValue("prevIdCardLink", undefined);
+    setIdValidated(false);
+    appendDocFile(file, idFrontFiles, setIdFrontFiles, (next) => {
+      syncIdImages(next, idBackFiles, bothSidesRequired);
+      setIdValidationMsg(null);
+      if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
+    });
+  };
+
+  const addIdBackFile = (file: File) => {
+    setPrevIdCardLink("");
+    setValue("prevIdCardLink", undefined);
+    setIdValidated(false);
+    appendDocFile(file, idBackFiles, setIdBackFiles, (next) => {
+      syncIdImages(idFrontFiles, next, true);
+      setIdValidationMsg(null);
+      if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
+    });
+  };
+
+  const removeIdFrontFile = (index: number) => {
+    const next = idFrontFiles.filter((_, i) => i !== index);
+    setIdFrontFiles(next);
+    syncIdImages(next, idBackFiles, bothSidesRequired);
+    if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
+    setIdValidationMsg(null);
+  };
+
+  const removeIdBackFile = (index: number) => {
+    const next = idBackFiles.filter((_, i) => i !== index);
+    setIdBackFiles(next);
+    syncIdImages(idFrontFiles, next, true);
     if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
     setIdValidationMsg(null);
   };
@@ -553,14 +609,14 @@ export function SelfCheckinForm() {
     setIdValidationMsg(null);
     setIdServerError(false);
     try {
-      const idType = watch("idType");
+      const currentIdType = watch("idType");
       const fn = watch("firstName");
       const ln = watch("lastName");
       const guestName = [fn, ln].filter(Boolean).join(" ").trim() || undefined;
       const formData = new FormData();
       idFiles.forEach((doc) => formData.append("file", doc.file));
       formData.append("category", "id");
-      if (idType) formData.append("idType", idType);
+      if (currentIdType) formData.append("idType", currentIdType);
       if (guestName) formData.append("guestName", guestName);
       if (nationality) formData.append("nationality", nationality);
 
@@ -581,35 +637,43 @@ export function SelfCheckinForm() {
         const errData = await res.json().catch(() => ({}));
         setIdValidationMsg({ valid: false, message: errData.error || "Invalid file. Please try a different image." });
         setIdValidated(false);
-        setIdFiles([]);
-        setValue("idImages", null, { shouldValidate: true });
+        clearIdUploads();
         return;
       }
 
       const result = await res.json();
+      const layers: string[] = result.layers || [];
+      const keepForOtherSide =
+        result.needsFrontSide
+        || result.needsBackSide
+        || layers.includes("front_missing")
+        || layers.includes("address_missing");
 
       if (result.valid) {
         const staffReview = isStaffReviewValidation(result);
         setIdValidationMsg({ valid: true, staffReview, message: result.message });
         setIdValidated(true);
         setDetectedIdType(null);
-      } else if (result.layers?.includes("type_mismatch") && result.documentType !== "unknown") {
-        setIdValidationMsg({ valid: false, message: result.message });
-        setIdValidated(false);
-        setDetectedIdType(result.documentType);
-      } else if (result.layers?.some((l: string) => String(l).startsWith("unsupported_"))) {
+      } else if (keepForOtherSide) {
+        // Guest already uploaded one side — keep files so they can add the other.
         setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
         setDetectedIdType(null);
-        setIdFiles([]);
-        setValue("idImages", null, { shouldValidate: true });
+      } else if (layers.includes("type_mismatch") && result.documentType !== "unknown") {
+        setIdValidationMsg({ valid: false, message: result.message });
+        setIdValidated(false);
+        setDetectedIdType(result.documentType);
+      } else if (layers.some((l: string) => String(l).startsWith("unsupported_"))) {
+        setIdValidationMsg({ valid: false, message: result.message });
+        setIdValidated(false);
+        setDetectedIdType(null);
+        clearIdUploads();
       } else {
         // Remaining hard rejects (SafeSearch / label junk)
         setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
         setDetectedIdType(null);
-        setIdFiles([]);
-        setValue("idImages", null, { shouldValidate: true });
+        clearIdUploads();
       }
     } catch {
       setIdValidationMsg({
@@ -628,21 +692,10 @@ export function SelfCheckinForm() {
     setPrevVisaLink("");
     setValue("prevVisaLink", undefined);
 
-    if (file.type === "application/pdf") {
-      const newFiles = [...visaFiles, { file, preview: "" }];
-      setVisaFiles(newFiles);
-      setValue("visaImages", newFiles.map((f) => f.file), { shouldValidate: true });
+    appendDocFile(file, visaFiles, setVisaFiles, (next) => {
+      setValue("visaImages", next.map((f) => f.file), { shouldValidate: true });
       setVisaValidationMsg(null);
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const newFiles = [...visaFiles, { file, preview: e.target?.result as string }];
-      setVisaFiles(newFiles);
-      setValue("visaImages", newFiles.map((f) => f.file), { shouldValidate: true });
-      setVisaValidationMsg(null);
-    };
-    reader.readAsDataURL(file);
+    });
   };
 
   const removeVisaFile = (index: number) => {
@@ -698,10 +751,9 @@ export function SelfCheckinForm() {
   };
 
   const onSubmit = async (data: CheckinFormData) => {
-    await runAction("Submitting check-in…", async () => {
-      setSubmitting(true);
-      setSubmitError("");
-      try {
+    setSubmitting(true);
+    setSubmitError("");
+    try {
       const formData = new FormData();
       formData.append("bookingPlatform", data.bookingPlatform);
       if (data.bookingId) formData.append("bookingId", data.bookingId);
@@ -722,6 +774,9 @@ export function SelfCheckinForm() {
         idFiles.forEach((doc) => {
           formData.append("idImages", doc.file);
         });
+        if (idValidated && !idServerError && validationEnabled) {
+          formData.append("clientIdValidation", "verified");
+        }
       } else if (prevIdCardLink) {
         formData.append("prevIdCardLink", prevIdCardLink);
       }
@@ -777,7 +832,8 @@ export function SelfCheckinForm() {
 
       setSuccess(true);
       reset();
-      setIdFiles([]);
+      setIdFrontFiles([]);
+      setIdBackFiles([]);
       setVisaFiles([]);
       setIdValidationMsg(null);
       setVisaValidationMsg(null);
@@ -788,12 +844,11 @@ export function SelfCheckinForm() {
       setReturnGuest(null);
       setPrevIdCardLink("");
       setPrevVisaLink("");
-      } catch {
-        setSubmitError("Something went wrong. Please try again or contact the front desk.");
-      } finally {
-        setSubmitting(false);
-      }
-    });
+    } catch (err) {
+      setSubmitError(messageFromCheckinCatch(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (step === "phone" && !success && !submitting) {
@@ -950,6 +1005,8 @@ export function SelfCheckinForm() {
       )}
 
       <div className="mt-8 space-y-6">
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Booking</p>
+
         {/* Date & Time */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -1016,6 +1073,8 @@ export function SelfCheckinForm() {
               )}
           </div>
         </div>
+
+        <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Personal details</p>
 
         {/* Name */}
         <div className="grid gap-4 sm:grid-cols-2">
@@ -1189,6 +1248,8 @@ export function SelfCheckinForm() {
           </div>
         </div>
 
+        <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">ID documents</p>
+
         {/* ID Type Selection */}
         <div>
           <Label htmlFor="idType">ID document type <span className="text-brand-red">*</span></Label>
@@ -1197,6 +1258,9 @@ export function SelfCheckinForm() {
             {...register("idType")}
             onChange={(e) => {
               setValue("idType", e.target.value as any, { shouldValidate: true });
+              setPrevIdCardLink("");
+              setValue("prevIdCardLink", undefined);
+              setIdValidated(false);
               if (detectedIdType && e.target.value === detectedIdType && idFiles.length > 0) {
                 setIdValidated(true);
                 setIdValidationMsg({ valid: true, message: `${detectedIdType.replace("_", " ")} detected. ID type updated.` });
@@ -1232,37 +1296,66 @@ export function SelfCheckinForm() {
             <p className="text-xs text-zinc-600">
               Your previous ID is on file. Upload new documents below only if you want to replace them.
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                setPrevIdCardLink("");
+                setValue("prevIdCardLink", undefined);
+                setIdValidated(false);
+                setIdValidationMsg(null);
+              }}
+              className="mt-2 text-xs font-medium text-brand-green-dark underline-offset-2 hover:underline"
+            >
+              Clear previous ID and upload new
+            </button>
           </div>
         )}
 
-        {/* ID Upload (multiple images/PDF) */}
-        <MultiDocUpload
-          label={
-            prevIdCardLink && idFiles.length === 0
-              ? "Upload new ID (optional)"
-              : isForeignNationality(nationality)
-                ? "Passport bio page *"
-                : watch("idType") === "driving_licence"
-                  ? "Driving Licence *"
-                  : "ID document (name + address) *"
-          }
-          error={errors.idImages?.message as string | undefined}
-          files={idFiles}
-          onAdd={addIdFile}
-          onRemove={removeIdFile}
-          onValidate={validationEnabled && !prevIdCardLink ? validateIdFiles : undefined}
-          validating={validatingId}
-          validationMsg={validationEnabled ? idValidationMsg : null}
-          helpText={
-            isForeignNationality(nationality)
-              ? "Upload your passport name/bio page. Address page is optional. Visa is required separately below. JPEG, PNG, WebP, PDF. Max 10 MB."
-              : watch("idType") === "driving_licence"
-                ? "Usually one clear photo of the licence is enough (name and address are often on the same side). JPEG, PNG, WebP, PDF. Max 10 MB."
-                : watch("idType") === "passport"
-                  ? "Upload the bio page and the address page of your Indian passport. JPEG, PNG, WebP, PDF. Max 10 MB."
-                  : "Upload Aadhaar so both name and address are visible (front + back, or one combined photo). JPEG, PNG, WebP, PDF. Max 10 MB."
-          }
-        />
+        {/* ID Upload — dual front/back when both sides required */}
+        {showDualIdSlots ? (
+          <div className="space-y-3">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MultiDocUpload
+                label={idType === "passport" ? "Bio page *" : "Front (photo + DOB) *"}
+                error={errors.idImages?.message as string | undefined}
+                files={idFrontFiles}
+                onAdd={addIdFrontFile}
+                onRemove={removeIdFrontFile}
+                onValidate={validationEnabled && !prevIdCardLink ? validateIdFiles : undefined}
+                showValidate={idFiles.length > 0}
+                validating={validatingId}
+                validationMsg={validationEnabled ? idValidationMsg : null}
+                helpText={bothSidesHelpText(idType, nationality)}
+              />
+              <MultiDocUpload
+                label={idType === "passport" ? "Address page *" : "Back (address) *"}
+                files={idBackFiles}
+                onAdd={addIdBackFile}
+                onRemove={removeIdBackFile}
+              />
+            </div>
+          </div>
+        ) : (
+          <MultiDocUpload
+            label={
+              prevIdCardLink && idFiles.length === 0
+                ? "Upload new ID (optional)"
+                : isForeignNationality(nationality)
+                  ? "Passport bio page *"
+                  : idType === "driving_licence"
+                    ? "Driving Licence *"
+                    : "ID document (name + address) *"
+            }
+            error={errors.idImages?.message as string | undefined}
+            files={idFrontFiles}
+            onAdd={addIdFrontFile}
+            onRemove={removeIdFrontFile}
+            onValidate={validationEnabled && !prevIdCardLink ? validateIdFiles : undefined}
+            validating={validatingId}
+            validationMsg={validationEnabled ? idValidationMsg : null}
+            helpText={bothSidesHelpText(idType, nationality)}
+          />
+        )}
 
         {/* Previous Visa preview for return guests */}
         {isForeignNationality(nationality) && prevVisaLink && visaFiles.length === 0 && (
@@ -1395,11 +1488,21 @@ export function SelfCheckinForm() {
             Please click &quot;Verify document&quot; before submitting
           </p>
         )}
+        {validationLoaded && validationEnabled && idServerError && bothSidesRequired && idFiles.length < 2 && !prevIdCardLink && (
+          <p className="mb-3 text-center text-sm text-brand-red">
+            Validation is offline — please upload both front and back (or a combined DigiLocker PDF), then submit.
+          </p>
+        )}
         <Button
           type="submit"
           variant="cta"
           className="w-full"
-          disabled={submitting || !validationLoaded || (validationEnabled && !idValidated && !idServerError && !prevIdCardLink)}
+          disabled={
+            submitting
+            || !validationLoaded
+            || (validationEnabled && !idValidated && !idServerError && !prevIdCardLink)
+            || (validationEnabled && idServerError && bothSidesRequired && idFiles.length < 2 && !prevIdCardLink)
+          }
         >
           {submitting ? "Submitting..." : !validationLoaded ? "Loading..." : "Complete Check-in"}
         </Button>

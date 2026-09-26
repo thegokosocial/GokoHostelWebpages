@@ -304,11 +304,13 @@ export type VisionAnalysis = {
 
 export async function visionAnalyze(fileBase64: string, mimeType: string = "image/jpeg"): Promise<VisionAnalysis> {
   const token = await getServiceAccountToken(["https://www.googleapis.com/auth/cloud-vision"]);
+  const visionTimeout = AbortSignal.timeout(12_000);
 
   if (mimeType === "application/pdf") {
     const res = await fetch("https://vision.googleapis.com/v1/files:annotate", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      signal: visionTimeout,
       body: JSON.stringify({
         requests: [{
           inputConfig: { content: fileBase64, mimeType: "application/pdf" },
@@ -327,6 +329,7 @@ export async function visionAnalyze(fileBase64: string, mimeType: string = "imag
   const res = await fetch("https://vision.googleapis.com/v1/images:annotate", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    signal: visionTimeout,
     body: JSON.stringify({
       requests: [{
         image: { content: fileBase64 },

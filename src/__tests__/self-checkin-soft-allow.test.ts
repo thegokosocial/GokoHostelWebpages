@@ -21,11 +21,13 @@ describe("checkin submit error mapping", () => {
     expect(messageFromCheckinFailure(500, {})).toMatch(/front desk/i);
   });
 
-  it("flags soft-accept outcomes as staff review", () => {
+  it("flags soft-accept outcomes as staff review (not hard side failures)", () => {
     expect(isStaffReviewValidation({ valid: true, nameMatchQuality: "none", layers: ["name_mismatch"] })).toBe(true);
-    expect(isStaffReviewValidation({ valid: true, needsDocReview: true, layers: ["address_missing", "doc_review"] })).toBe(true);
+    expect(isStaffReviewValidation({ valid: true, needsDocReview: true, layers: ["doc_review"] })).toBe(true);
     expect(isStaffReviewValidation({ valid: true, layers: ["name_verified"] })).toBe(false);
     expect(isStaffReviewValidation({ valid: false, layers: ["unsupported_pan"] })).toBe(false);
+    expect(isStaffReviewValidation({ valid: false, layers: ["address_missing"] })).toBe(false);
+    expect(isStaffReviewValidation({ valid: false, layers: ["front_missing"] })).toBe(false);
   });
 });
 
@@ -43,12 +45,32 @@ describe("self-checkin contrast and error surfacing contracts", () => {
 
   it("surfaces API errors for every failed submit status", () => {
     expect(form).toContain("messageFromCheckinFailure");
+    expect(form).toContain("messageFromCheckinCatch");
     expect(form).toContain("if (!res.ok)");
     expect(form).not.toContain('if (!res.ok) throw new Error("Submission failed")');
+    expect(form).not.toContain("useActionProgress");
+    expect(form).not.toContain("runAction");
+  });
+
+  it("skips re-Vision on submit after client verify and supports dual ID slots", () => {
+    expect(form).toContain('formData.append("clientIdValidation", "verified")');
+    expect(form).toContain("requiresBothIdSides");
+    expect(form).toContain("idFrontFiles");
+    expect(form).toContain("idBackFiles");
+    expect(form).toContain("isAcceptedIdFile");
+    expect(form).toContain("isHeicFile");
+    expect(form).toContain("bothSidesHelpText");
+    expect(form).toContain("Clear previous ID and upload new");
+    expect(form).toContain("Front (photo + DOB)");
+    expect(form).toContain("front_missing");
+    expect(form).toContain("address_missing");
+    expect(form).toContain("Validation is offline");
+    expect(form).toContain("bothSidesRequired && idFiles.length < 2");
   });
 
   it("keeps primary form headings on high-contrast zinc, not green-on-glass", () => {
     expect(form).toContain('font-display text-2xl font-bold text-zinc-900 md:text-3xl');
     expect(form).toContain("font-semibold text-zinc-900");
+    expect(form).toContain("text-xs font-semibold uppercase tracking-wide text-zinc-500");
   });
 });
