@@ -111,12 +111,16 @@ Calendar Cancel / No Show: `canDeleteBooking` (same as the API). Unassigned **Re
 
 Env manager (`MANAGER_PASSWORD`) → `permissions: {}` → **fails every gated action** except Unassigned Reject (`cancelBooking` of a stay with no assigned beds).
 
-### 5. Food Kannada sync drift
+### 5. Food order create is not atomic
+
+`createFoodOrder` then `addFoodOrderItems` are separate D1 writes (no `db.transaction()` — see D1 + `getDb()` bug). A header with `total > 0` and zero lines is an incomplete orphan. Guest/admin place paths compensate with `abandonIncompleteFoodOrder` (unpaid + no lines only), heal matching idempotent retries (`healed: true`), and 409 `incomplete_food_order` on mismatch. Order Summary shows `INCOMPLETE_FOOD_ORDER_BANNER`. Do not treat blank items as a UI render bug until `food_order_items` is checked.
+
+### 6. Food Kannada sync drift
 
 UI/settings: `food_kannada_kitchen_print`, `food_kannada_kitchen_display`.  
 `syncEngine` still syncs `food_kannada_labels`. Do not invent a third name.
 
-### 6. Session storage keys
+### 7. Session storage keys
 
 | Key | Where | Value |
 |-----|--------|--------|
@@ -125,11 +129,11 @@ UI/settings: `food_kannada_kitchen_print`, `food_kannada_kitchen_display`.
 | `gokoFoodCart` / `gokoFoodPhone` | localStorage | guest food; selected-category browsing uses independent category/item scrolling and does not change cart persistence |
 | `goko.splits.lastGroupId` | localStorage | last Splits group with ≥1 human |
 
-### 7. PWA failover
+### 8. PWA failover
 
 `public/sw.js` registered from admin (`PwaInstallBanner`, scope `/`). Polls `GET /api/failover-config`. If `failoverEnabled` + `pi_local_url`, intercepts GET/POST (not `/_next/` static) and fails over to Pi. Toggle is `/api/sync` `toggleFailover`, not the GET.
 
-### 8. Book now uses the saved guest booking link
+### 9. Book now uses the saved guest booking link
 
 Header/footer/mobile Book now → `BookingGateProvider` → `/api/booking/config` + `/api/booking/destination` → saved `channel_config.bookingEngineUrl`. Empty/invalid → Booking Enquiry. When destination is `/book` and `evaluateNativeCheckoutReadiness()` passes (migrations **0059–0063** + **0065** lease renew, `GOKO_NATIVE_HOLD_INTERNAL_ENABLED` + `GOKO_NATIVE_GUEST_CHECKOUT_ENABLED`, Razorpay credentials + webhook secret for the selected `gatewayEnvironment`), guests can checkout on `/book`.
 
@@ -137,7 +141,7 @@ Header/footer/mobile Book now → `BookingGateProvider` → `/api/booking/config
 
 Admin Booking Settings shows readiness blockers. Isolated ₹1 Razorpay preview (`0057`/`0058`, `RAZORPAY_TEST_PREVIEW_ENABLED`) remains separate from guest bookings. Flip Test ↔ Live in Booking Settings when live webhook + secrets are ready. See [guest-booking-ui.md](guest-booking-ui.md) and [flows-website-booking.md](flows-website-booking.md).
 
-### 8b. Bulk restriction auto-push is a patch
+### 9b. Bulk restriction auto-push is a patch
 
 `bulkSetRestrictions` writes one field on D1 (other flags stay per night) then `triggerRestrictionPush(dates, ids, restrictionPatch(type, value))`. Unknown/null min stay **400** — never fall through to a full snapshot (`?? undefined`). Aiosell `restrictions.*` fields are optional. Manual CM push (`/api/aiosell/push-rates` `includeRestrictions`, `/api/aiosell/push-inventory-restrictions`) is still a full snapshot (`minimumStay ?? null`, not `||`). `bulkSetAvailability` uses one bounded availability snapshot and writes the default inventory override per dorm/night. Its value is absolute remaining OTA/PMS inventory, converted with `overrideCeilingToSave` so online assignments and unassigned OTA holds remain protected; `clear` deletes only the default override. It triggers one mapped-dorm inventory push and leaves dirty rows for retry when PMS sync is not accepted.
 

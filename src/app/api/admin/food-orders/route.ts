@@ -11,6 +11,8 @@ import {
   createFoodOrder,
   getFoodOrderByIdempotencyKey,
   addFoodOrderItems,
+  countFoodOrderItems,
+  abandonIncompleteFoodOrder,
   addOrderModification,
   getNextOrderNumber,
   getMenuItemById,
@@ -54,6 +56,11 @@ import { foodAmountPaid, foodDue, foodPaymentState } from "@/lib/foodPaymentBala
 import { latestWalkinOrder, normalizeWalkinGuestName, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
+import {
+  FOOD_ORDER_CREATE_FAILED_MESSAGE,
+  foodOrderTotalsMatch,
+  isIncompleteFoodOrder,
+} from "@/lib/foodOrderCreate";
 
 export async function POST(req: NextRequest) {
   try {
@@ -283,17 +290,6 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: parsedKey.error }, { status: 400 });
         }
         const idempotencyKey = parsedKey.key;
-        const existingOrder = await getFoodOrderByIdempotencyKey(idempotencyKey);
-        if (existingOrder) {
-          return NextResponse.json({
-            success: true,
-            role,
-            orderId: existingOrder.id,
-            orderNumber: existingOrder.orderNumber,
-            total: existingOrder.total,
-            duplicate: true,
-          });
-        }
         const isTableOrder = roomInfo && /^Table \d+$/i.test(roomInfo);
         if (guestType === "walkin" && !guestPhone?.trim() && !isTableOrder) {
           return NextResponse.json({ error: "Phone number is required for walk-in orders" }, { status: 400 });
@@ -323,10 +319,78 @@ export async function POST(req: NextRequest) {
 
         const newItemsSubtotal = validatedItems.reduce((sum, i) => sum + i.lineTotal, 0);
         const taxRate = foodTaxPercent(await getSetting("food_tax_rate"));
-
         const subtotal = newItemsSubtotal;
         const tax = Math.round((subtotal * taxRate) / 100);
         const total = subtotal + tax;
+
+        async function finalizePlacedOrder(orderRow: { id: number; orderNumber: string; total: number }, opts?: { healed?: boolean; duplicate?: boolean }) {
+          for (const v of validatedItems) {
+            await decrementStock(v.menuItemId, v.quantity);
+          }
+          if (validatedItems.length > 0 && validatedItems.every((v) => v.trackInventory)) {
+            await updateFoodOrderStatus(orderRow.id, "ready");
+          }
+          await addAuditEntry({
+            username: actorName,
+            action: "food_order_placed",
+            target: `order:${orderRow.id}`,
+            details: `Placed for ${guestName} (${guestType}), total ₹${(total / 100).toFixed(0)}${opts?.healed ? " (healed incomplete create)" : ""}`,
+          });
+          await dispatchPush({
+            notificationType: "food.new_order",
+            title: "New Food Order",
+            body: notificationFoodBody(guestName, validatedItems, roomInfo, total),
+            url: "/admin?section=foodOrders",
+            eventId: `admin-food-order-${orderRow.id}`,
+          });
+          return NextResponse.json({
+            success: true,
+            role,
+            orderId: orderRow.id,
+            orderNumber: orderRow.orderNumber,
+            total: orderRow.total,
+            ...(opts?.duplicate ? { duplicate: true } : {}),
+            ...(opts?.healed ? { healed: true } : {}),
+          });
+        }
+
+        async function resolveExistingCreate(existing: NonNullable<Awaited<ReturnType<typeof getFoodOrderByIdempotencyKey>>>) {
+          const itemCount = await countFoodOrderItems(existing.id);
+          if (!isIncompleteFoodOrder(existing, itemCount)) {
+            return NextResponse.json({
+              success: true,
+              role,
+              orderId: existing.id,
+              orderNumber: existing.orderNumber,
+              total: existing.total,
+              duplicate: true,
+            });
+          }
+          if (!foodOrderTotalsMatch(existing, validatedItems, tax)) {
+            if (foodAmountPaid(existing) === 0) {
+              await abandonIncompleteFoodOrder(existing.id, actorName, "Incomplete create: totals do not match retry cart");
+            }
+            return NextResponse.json({
+              error: "Incomplete order could not be repaired. Cancel it and place again.",
+              code: "incomplete_food_order",
+              orderId: existing.id,
+              orderNumber: existing.orderNumber,
+            }, { status: 409 });
+          }
+          try {
+            await addFoodOrderItems(validatedItems.map((v) => ({
+              orderId: existing.id, menuItemId: v.menuItemId, itemName: v.itemName, itemPrice: v.itemPrice,
+              quantity: v.quantity, lineTotal: v.lineTotal, pricingStatus: v.pricingStatus, notes: v.notes,
+            })));
+          } catch (err) {
+            await abandonIncompleteFoodOrder(existing.id, actorName);
+            throw err;
+          }
+          return finalizePlacedOrder(existing, { healed: true });
+        }
+
+        const existingOrder = await getFoodOrderByIdempotencyKey(idempotencyKey);
+        if (existingOrder) return resolveExistingCreate(existingOrder);
 
         let resolvedPhone = normalizePhone(guestPhone || "");
         if (isTableOrder && !resolvedPhone) {
@@ -355,45 +419,23 @@ export async function POST(req: NextRequest) {
         } catch (err: unknown) {
           if (!isUniqueConstraintError(err)) throw err;
           const raced = await getFoodOrderByIdempotencyKey(idempotencyKey);
-          if (raced) {
-            return NextResponse.json({
-              success: true,
-              role,
-              orderId: raced.id,
-              orderNumber: raced.orderNumber,
-              total: raced.total,
-              duplicate: true,
-            });
-          }
+          if (raced) return resolveExistingCreate(raced);
           orderNumber = await getNextOrderNumber();
           const result = await createFoodOrder({ orderNumber, ...orderFields });
           order = result[0];
         }
 
-        await addFoodOrderItems(validatedItems.map((v) => ({ orderId: order.id, menuItemId: v.menuItemId, itemName: v.itemName, itemPrice: v.itemPrice, quantity: v.quantity, lineTotal: v.lineTotal, pricingStatus: v.pricingStatus, notes: v.notes })));
-
-        for (const v of validatedItems) {
-          await decrementStock(v.menuItemId, v.quantity);
+        try {
+          await addFoodOrderItems(validatedItems.map((v) => ({
+            orderId: order.id, menuItemId: v.menuItemId, itemName: v.itemName, itemPrice: v.itemPrice,
+            quantity: v.quantity, lineTotal: v.lineTotal, pricingStatus: v.pricingStatus, notes: v.notes,
+          })));
+        } catch (err) {
+          await abandonIncompleteFoodOrder(order.id, actorName);
+          return NextResponse.json({ error: FOOD_ORDER_CREATE_FAILED_MESSAGE }, { status: 500 });
         }
 
-        if (validatedItems.length > 0 && validatedItems.every((v) => v.trackInventory)) {
-          await updateFoodOrderStatus(order.id, "ready");
-        }
-
-        await addAuditEntry({
-          username: actorName,
-          action: "food_order_placed",
-          target: `order:${order.id}`,
-          details: `Placed for ${guestName} (${guestType}), total ₹${(total / 100).toFixed(0)}`,
-        });
-        await dispatchPush({
-          notificationType: "food.new_order",
-          title: "New Food Order",
-          body: notificationFoodBody(guestName, validatedItems, roomInfo, total),
-          url: "/admin?section=foodOrders",
-          eventId: `admin-food-order-${order.id}`,
-        });
-        return NextResponse.json({ success: true, role, orderId: order.id, orderNumber: order.orderNumber, total });
+        return finalizePlacedOrder(order);
       }
 
       case "getGuestTab": {

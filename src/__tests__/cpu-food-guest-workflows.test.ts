@@ -14,6 +14,8 @@ const q = vi.hoisted(() => ({
   getNextOrderNumber: vi.fn(),
   createFoodOrder: vi.fn(),
   addFoodOrderItems: vi.fn(),
+  countFoodOrderItems: vi.fn(),
+  abandonIncompleteFoodOrder: vi.fn(),
   getActiveCheckins: vi.fn(),
   getRecentlyCheckedOutGuests: vi.fn(),
   decrementStock: vi.fn(),
@@ -36,6 +38,8 @@ vi.mock("@/db/queries", () => ({
   getNextOrderNumber: q.getNextOrderNumber,
   createFoodOrder: q.createFoodOrder,
   addFoodOrderItems: q.addFoodOrderItems,
+  countFoodOrderItems: q.countFoodOrderItems,
+  abandonIncompleteFoodOrder: q.abandonIncompleteFoodOrder,
   getActiveCheckins: q.getActiveCheckins,
   getRecentlyCheckedOutGuests: q.getRecentlyCheckedOutGuests,
   decrementStock: q.decrementStock,
@@ -162,6 +166,11 @@ describe("POST /api/food/order", () => {
     for (const fn of Object.values(q)) fn.mockReset();
     q.dispatchPush.mockResolvedValue(undefined);
     q.getFoodOrderByIdempotencyKey.mockResolvedValue(null);
+    q.countFoodOrderItems.mockResolvedValue(1);
+    q.abandonIncompleteFoodOrder.mockResolvedValue({ abandoned: true, order: null });
+    q.addFoodOrderItems.mockResolvedValue(undefined);
+    q.decrementStock.mockResolvedValue(undefined);
+    q.updateFoodOrderStatus.mockResolvedValue(undefined);
     q.getActiveCheckins.mockResolvedValue([]);
     q.getRecentlyCheckedOutGuests.mockResolvedValue([]);
     mockSettings();
@@ -254,11 +263,16 @@ describe("POST /api/food/order", () => {
   });
 
   it("returns duplicate: true on an idempotencyKey hit without createFoodOrder", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
     q.getFoodOrderByIdempotencyKey.mockResolvedValue({
       id: 42,
       orderNumber: "F-42",
       total: 105,
+      subtotal: 100,
+      tax: 5,
+      status: "placed",
     });
+    q.countFoodOrderItems.mockResolvedValue(1);
     const key = "550e8400-e29b-41d4-a716-446655440000";
     const res = await postOrder(orderReq({ ...validOrder, idempotencyKey: key }));
     const json = await res.json();
@@ -286,13 +300,57 @@ describe("POST /api/food/order", () => {
   it("returns existing order when UNIQUE races on the same idempotencyKey", async () => {
     q.getFoodOrderByIdempotencyKey
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 7, orderNumber: "F-7", total: 105 });
+      .mockResolvedValueOnce({ id: 7, orderNumber: "F-7", total: 105, subtotal: 100, tax: 5, status: "placed" });
+    q.countFoodOrderItems.mockResolvedValue(1);
     q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
     q.getNextOrderNumber.mockResolvedValue("F-7");
     q.createFoodOrder.mockRejectedValueOnce(new Error("UNIQUE constraint failed: food_orders.idempotency_key"));
     const res = await postOrder(orderReq(validOrder));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ success: true, orderId: 7, duplicate: true });
+    expect(q.addFoodOrderItems).not.toHaveBeenCalled();
+  });
+
+  it("cancels the guest header when addFoodOrderItems fails after create", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.getNextOrderNumber.mockResolvedValue("F-9");
+    q.createFoodOrder.mockResolvedValue([{ id: 9, orderNumber: "F-9", total: 105 }]);
+    q.addFoodOrderItems.mockRejectedValueOnce(new Error("insert failed"));
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ error: expect.stringMatching(/cancelled|line items/i) });
+    expect(q.abandonIncompleteFoodOrder).toHaveBeenCalledWith(9, "guest");
+  });
+
+  it("heals an incomplete guest order on idempotent retry when totals match", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.getFoodOrderByIdempotencyKey.mockResolvedValue({
+      id: 9, orderNumber: "F-9", subtotal: 100, tax: 5, total: 105, status: "placed",
+    });
+    q.countFoodOrderItems.mockResolvedValue(0);
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ success: true, orderId: 9, healed: true });
+    expect(q.addFoodOrderItems).toHaveBeenCalled();
+    expect(q.createFoodOrder).not.toHaveBeenCalled();
+    expect(q.decrementStock).toHaveBeenCalled();
+    expect(q.dispatchPush).toHaveBeenCalled();
+  });
+
+  it("abandons a mismatched incomplete guest orphan instead of healing the wrong cart", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.getFoodOrderByIdempotencyKey.mockResolvedValue({
+      id: 9, orderNumber: "F-9", subtotal: 203000, tax: 0, total: 203000, status: "placed", amountPaid: 0,
+    });
+    q.countFoodOrderItems.mockResolvedValue(0);
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "incomplete_food_order", orderId: 9 });
+    expect(q.abandonIncompleteFoodOrder).toHaveBeenCalledWith(
+      9,
+      "guest",
+      "Incomplete create: totals do not match retry cart",
+    );
     expect(q.addFoodOrderItems).not.toHaveBeenCalled();
   });
 

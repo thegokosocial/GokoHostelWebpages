@@ -22,6 +22,7 @@ import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
 import { foodAmountPaid, foodDue, foodPaymentStatus } from "@/lib/foodPaymentBalance";
+import { INCOMPLETE_FOOD_ORDER_BANNER, isIncompleteFoodOrder } from "@/lib/foodOrderCreate";
 import { latestWalkinOrder, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
 import { formatTimeSince } from "@/lib/formatTimeSince";
@@ -1760,7 +1761,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     const displayItems = effectiveItems.map((item) => pendingChanges[item.id]
                       ? { ...item, quantity: pendingChanges[item.id].newQty, lineTotal: pendingChanges[item.id].newQty * item.itemPrice }
                       : item);
-                    const canCancelOrder = canCancelFoodOrders && order.status !== "cancelled" && foodAmountPaid(order) === 0 && order.items.some((item) => item.status !== "voided");
+                    const canCancelOrder = canCancelFoodOrders && order.status !== "cancelled" && foodAmountPaid(order) === 0
+                      && (order.items.length === 0 || order.items.some((item) => item.status !== "voided"));
+                    const orderIncomplete = isIncompleteFoodOrder(order, order.items.length);
                     const draftGross = displayItems.filter((item) => item.status !== "voided").reduce((sum, item) => sum + item.lineTotal, 0);
                     const draftSubtotal = Math.max(0, draftGross - Math.min(order.discount || 0, draftGross));
                     const inferredTaxRate = order.subtotal > 0 ? (order.tax / order.subtotal) * 100 : 0;
@@ -1853,6 +1856,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         </div>
                       </div>
                       <div className="mt-1.5 space-y-0.5">
+                        {orderIncomplete && (
+                          <p className="mb-1 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+                            {INCOMPLETE_FOOD_ORDER_BANNER}
+                          </p>
+                        )}
                         {displayItems.map((item) => {
                           const isVoided = item.status === "voided";
                           const isItemEditing = isEditing && !isVoided;

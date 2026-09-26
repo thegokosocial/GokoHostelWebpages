@@ -7,6 +7,8 @@ import {
   getNextOrderNumber,
   createFoodOrder,
   addFoodOrderItems,
+  countFoodOrderItems,
+  abandonIncompleteFoodOrder,
   getActiveCheckins,
   getRecentlyCheckedOutGuests,
   decrementStock,
@@ -17,6 +19,12 @@ import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
 import { isKitchenOpen, parseKitchenHours, formatSlotsForDisplay } from "@/lib/kitchenHours";
 import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
+import {
+  FOOD_ORDER_CREATE_FAILED_MESSAGE,
+  foodOrderTotalsMatch,
+  isIncompleteFoodOrder,
+} from "@/lib/foodOrderCreate";
+import { foodAmountPaid } from "@/lib/foodPaymentBalance";
 
 export async function POST(req: NextRequest) {
   try {
@@ -67,19 +75,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. Idempotency check
-    const existing = await getFoodOrderByIdempotencyKey(idempotencyKey);
-    if (existing) {
-      return NextResponse.json({
-        success: true,
-        orderId: existing.id,
-        orderNumber: existing.orderNumber,
-        total: existing.total,
-        duplicate: true,
-      });
-    }
-
-    // 2. Kitchen hours check
+    // 1. Kitchen hours check (before spending work on a duplicate key)
     const kitchenHoursStr = (await getSetting("food_kitchen_hours")) || "08:00-15:00,18:00-23:30";
     const kitchenStatus = isKitchenOpen(kitchenHoursStr);
 
@@ -95,7 +91,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2b. Busy mode check
+    // 2. Busy mode check
     const busyStr = await getSetting("food_kitchen_busy");
     if (busyStr === "true") {
       return NextResponse.json(
@@ -161,6 +157,78 @@ export async function POST(req: NextRequest) {
     const tax = Math.round((subtotal * taxRate) / 100);
     const total = subtotal + tax;
 
+    const actor = createdBy || "guest";
+    const isGuestOrder = !createdBy || createdBy === "guest";
+    const requireApproval = isGuestOrder && (await getSetting("food_confirm_with_guest")) === "true";
+    const initialStatus = requireApproval ? "pending_approval" : "placed";
+
+    async function finalizeGuestOrder(orderRow: { id: number; orderNumber: string; total: number }, opts?: { healed?: boolean; duplicate?: boolean }) {
+      for (const v of validatedItems) {
+        await decrementStock(v.menuItemId, v.quantity);
+      }
+      if (initialStatus === "placed" && validatedItems.length > 0 && validatedItems.every((v) => v.trackInventory)) {
+        await updateFoodOrderStatus(orderRow.id, "ready");
+      }
+      await dispatchPush({
+        notificationType: "food.new_order",
+        title: "New Food Order",
+        body: notificationFoodBody(guestName, validatedItems, tableNumber || roomInfo, total, requireApproval),
+        url: "/admin?section=foodOrders",
+        eventId: `food-order-${orderRow.id}`,
+      });
+      return NextResponse.json({
+        success: true,
+        orderId: orderRow.id,
+        orderNumber: orderRow.orderNumber,
+        total: orderRow.total,
+        ...(opts?.duplicate ? { duplicate: true } : {}),
+        ...(opts?.healed ? { healed: true } : {}),
+      });
+    }
+
+    async function resolveExistingCreate(existing: NonNullable<Awaited<ReturnType<typeof getFoodOrderByIdempotencyKey>>>) {
+      const itemCount = await countFoodOrderItems(existing.id);
+      if (!isIncompleteFoodOrder(existing, itemCount)) {
+        return NextResponse.json({
+          success: true,
+          orderId: existing.id,
+          orderNumber: existing.orderNumber,
+          total: existing.total,
+          duplicate: true,
+        });
+      }
+      if (!foodOrderTotalsMatch(existing, validatedItems, tax)) {
+        if (foodAmountPaid(existing) === 0) {
+          await abandonIncompleteFoodOrder(existing.id, actor, "Incomplete create: totals do not match retry cart");
+        }
+        return NextResponse.json({
+          error: "Incomplete order could not be repaired. Please place again.",
+          code: "incomplete_food_order",
+          orderId: existing.id,
+        }, { status: 409 });
+      }
+      try {
+        await addFoodOrderItems(validatedItems.map((v) => ({
+          orderId: existing.id,
+          menuItemId: v.menuItemId,
+          itemName: v.itemName,
+          itemPrice: v.itemPrice,
+          quantity: v.quantity,
+          lineTotal: v.lineTotal,
+          pricingStatus: v.pricingStatus,
+          notes: v.notes,
+        })));
+      } catch (err) {
+        await abandonIncompleteFoodOrder(existing.id, actor);
+        throw err;
+      }
+      return finalizeGuestOrder(existing, { healed: true });
+    }
+
+    // Idempotency after validation so incomplete headers can be healed with this cart
+    const existing = await getFoodOrderByIdempotencyKey(idempotencyKey);
+    if (existing) return resolveExistingCreate(existing);
+
     // 5. Tab limit check for hostel guests
     if (guestType === "hostel" && checkinId) {
       const tabLimitStr = await getSetting("food_tab_limit");
@@ -181,11 +249,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6-7. Generate order number and create order atomically
-    const isGuestOrder = !createdBy || createdBy === "guest";
-    const requireApproval = isGuestOrder && (await getSetting("food_confirm_with_guest")) === "true";
-    const initialStatus = requireApproval ? "pending_approval" : "placed";
-
+    // 6-7. Create order header then lines (compensate on line failure)
     let orderNumber = await getNextOrderNumber();
     let order: any;
 
@@ -204,7 +268,7 @@ export async function POST(req: NextRequest) {
       total,
       status: initialStatus,
       paymentStatus: guestType === "hostel" && checkinId ? "on_tab" : "pending",
-      createdBy: createdBy || "guest",
+      createdBy: actor,
     };
 
     try {
@@ -213,58 +277,31 @@ export async function POST(req: NextRequest) {
     } catch (err: unknown) {
       if (!isUniqueConstraintError(err)) throw err;
       const raced = await getFoodOrderByIdempotencyKey(idempotencyKey);
-      if (raced) {
-        return NextResponse.json({
-          success: true,
-          orderId: raced.id,
-          orderNumber: raced.orderNumber,
-          total: raced.total,
-          duplicate: true,
-        });
-      }
+      if (raced) return resolveExistingCreate(raced);
       orderNumber = await getNextOrderNumber();
       const result = await createFoodOrder({ ...orderData, orderNumber });
       order = result[0];
     }
 
-    await addFoodOrderItems(
-      validatedItems.map((v) => ({
-        orderId: order.id,
-        menuItemId: v.menuItemId,
-        itemName: v.itemName,
-        itemPrice: v.itemPrice,
-        quantity: v.quantity,
-        lineTotal: v.lineTotal,
-        pricingStatus: v.pricingStatus,
-        notes: v.notes,
-      }))
-    );
-
-    for (const v of validatedItems) {
-      await decrementStock(v.menuItemId, v.quantity);
+    try {
+      await addFoodOrderItems(
+        validatedItems.map((v) => ({
+          orderId: order.id,
+          menuItemId: v.menuItemId,
+          itemName: v.itemName,
+          itemPrice: v.itemPrice,
+          quantity: v.quantity,
+          lineTotal: v.lineTotal,
+          pricingStatus: v.pricingStatus,
+          notes: v.notes,
+        }))
+      );
+    } catch {
+      await abandonIncompleteFoodOrder(order.id, actor);
+      return NextResponse.json({ error: FOOD_ORDER_CREATE_FAILED_MESSAGE }, { status: 500 });
     }
 
-    // Auto-skip to "ready" if all items are inventory-tracked and order is placed (not pending)
-    if (initialStatus === "placed" && validatedItems.length > 0 && validatedItems.every((v) => v.trackInventory)) {
-      await updateFoodOrderStatus(order.id, "ready");
-    }
-
-    // 9. Push notification
-    await dispatchPush({
-      notificationType: "food.new_order",
-      title: "New Food Order",
-      body: notificationFoodBody(guestName, validatedItems, tableNumber || roomInfo, total, requireApproval),
-      url: "/admin?section=foodOrders",
-      eventId: `food-order-${order.id}`,
-    });
-
-    // 10. Return success
-    return NextResponse.json({
-      success: true,
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      total,
-    });
+    return finalizeGuestOrder(order);
   } catch (error: any) {
     const msg = error?.message || String(error);
     console.error("Food order error:", msg);

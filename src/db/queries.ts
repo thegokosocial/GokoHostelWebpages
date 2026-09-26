@@ -12,7 +12,7 @@ import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUD
 import { INVENTORY_AUDIT_ACTION_PREFIXES } from "@/lib/inventoryAudit";
 import type { AuditReferenceMaps } from "@/lib/auditPresentation";
 import { uniqueInBatches, collectInBatches } from "@/lib/dbBatch";
-import { foodDue } from "@/lib/foodPaymentBalance";
+import { foodAmountPaid, foodDue } from "@/lib/foodPaymentBalance";
 import { normalizePhone } from "@/lib/phoneUtils";
 
 // --- Check-ins ---
@@ -1348,6 +1348,37 @@ export async function getFoodOrderByIdempotencyKey(key: string) {
 export async function getFoodOrderItems(orderId: number) {
   const db = getDb();
   return db.select().from(foodOrderItems).where(eq(foodOrderItems.orderId, orderId));
+}
+
+export async function countFoodOrderItems(orderId: number): Promise<number> {
+  const db = getDb();
+  const rows = await db.select({ id: foodOrderItems.id }).from(foodOrderItems).where(eq(foodOrderItems.orderId, orderId));
+  return rows.length;
+}
+
+/** Cancel an unpaid header that never received line items (create compensation). */
+export async function abandonIncompleteFoodOrder(orderId: number, actor: string, reason = "Incomplete create: no line items") {
+  const order = await getFoodOrderById(orderId);
+  if (!order || order.status === "cancelled") return { abandoned: false as const, order };
+  if (foodAmountPaid(order) > 0) return { abandoned: false as const, order };
+  const itemCount = await countFoodOrderItems(orderId);
+  if (itemCount > 0) return { abandoned: false as const, order };
+  await updateFoodOrderStatus(orderId, "cancelled", reason);
+  await addOrderModification({
+    orderId,
+    action: "order_cancelled",
+    oldValue: order.status,
+    newValue: "cancelled",
+    reason,
+    modifiedBy: actor,
+  });
+  await addAuditEntry({
+    username: actor,
+    action: "food_order_create_failed",
+    target: `order:${orderId}`,
+    details: reason,
+  });
+  return { abandoned: true as const, order };
 }
 
 export async function getFoodOrderItemsBatch(orderIds: number[]) {

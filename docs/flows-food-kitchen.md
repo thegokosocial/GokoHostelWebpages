@@ -21,16 +21,16 @@ Server order of checks (`src/app/api/food/order/route.ts`):
 1. Required `guestName` + non-empty `items`; each qty integer 1–50.
 2. Required UUID `idempotencyKey` (`parseCreateIdempotencyKey`). Missing/invalid → 400.
 3. If `guestType === "hostel"`: phone must match that `checkinId` among active checkins, else recently checked-out within `food_checkout_grace_days`.
-4. Idempotency key → return existing order with `duplicate: true` (no second insert, stock, or push).
-5. Kitchen hours (`food_kitchen_hours`, default `08:00-15:00,18:00-23:30` IST) — closed → 400.
-6. `food_kitchen_busy === "true"` → **503**.
-7. Item availability + stock (`trackInventory` → `stockQuantity`).
+4. Kitchen hours (`food_kitchen_hours`, default `08:00-15:00,18:00-23:30` IST) — closed → 400.
+5. `food_kitchen_busy === "true"` → **503**.
+6. Item availability + stock (`trackInventory` → `stockQuantity`); compute subtotal/tax/total.
+7. Idempotency key lookup **after** validation: complete order → `{ duplicate: true }` (no second insert/stock/push). Incomplete header (`total > 0`, zero `food_order_items`, not cancelled) with matching totals → heal by inserting lines + stock/push (`healed: true`). Mismatched unpaid incomplete → `abandonIncompleteFoodOrder` + **409** `incomplete_food_order`.
 8. Tab limit (`food_tab_limit` paise, 0 = unlimited) for hostel guests.
-9. Create order + line items + `decrementStock` (`SET qty = qty - ?`). **No** `db.transaction()` (D1 + `getDb()` bug). On UNIQUE conflict, re-lookup the idempotency key before treating the failure as an `order_number` collision.
+9. Create order header then line items + `decrementStock` (`SET qty = qty - ?`). **No** `db.transaction()` (D1 + `getDb()` bug). If line insert fails, cancel the unpaid header via `abandonIncompleteFoodOrder` (refuses paid rows or rows that already have lines) and return 500 with create-failed copy. On UNIQUE conflict, re-lookup the idempotency key (same heal/duplicate path) before treating the failure as an `order_number` collision.
 10. If **every** line is `trackInventory` **and** status is `placed` (not pending_approval) → `updateFoodOrderStatus(..., "ready")` (skips kitchen cook steps).
 11. Fire-and-forget web push if VAPID is set.
 
-Guest `FoodCart` and admin Place Order (`placeOrderForGuest`) each mint one `crypto.randomUUID()` per attempt and regenerate **only after success**, so retries reuse the same key. Admin create requires the same UUID key and uses `food_orders.idempotency_key` (migration **0011**). Duplicate admin Place Order clicks therefore return `{ duplicate: true }` instead of a second billable order. This is **not** an RBAC issue — 403 permission denials happen before insert and do not auto-retry.
+Guest `FoodCart` and admin Place Order (`placeOrderForGuest`) each mint one `crypto.randomUUID()` per attempt and regenerate **only after success**, so retries reuse the same key. Admin create requires the same UUID key and uses `food_orders.idempotency_key` (migration **0011**). Duplicate admin Place Order clicks therefore return `{ duplicate: true }` instead of a second billable order. Incomplete orphans (header without lines) show `INCOMPLETE_FOOD_ORDER_BANNER` in Order Summary and remain cancellable when unpaid. This is **not** an RBAC issue — 403 permission denials happen before insert and do not auto-retry.
 
 Hostel + `checkinId`: payment `on_tab`. Else `pending`. Guest-created + `food_confirm_with_guest === "true"` → status `pending_approval`. Admin `placeOrderForGuest` starts `placed`.
 
