@@ -13,6 +13,7 @@ import {
   managementSectionTabsClass,
   managementSectionTabInactiveClass,
 } from "./managementSectionTabs";
+import { filterManagementNavGroups } from "./managementNavGroups";
 
 const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 
@@ -106,6 +107,7 @@ export function AdminManagement({ password, username, role, permissions = {}, in
     return items;
   }, []);
   const activeNavTab = navTabs.find((t) => t.active);
+  const mobileNavGroups = useMemo(() => filterManagementNavGroups(navTabs), [navTabs]);
 
   useEffect(() => {
     if (initialTab && visibleTabs.some((t) => t.id === initialTab)) {
@@ -150,10 +152,12 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         ))}
       </div>
 
-      {/* Mobile/Tablet dropdown */}
-      <div className="relative z-10 mt-4 lg:hidden">
+      {/* Mobile/Tablet dropdown — open wrap sits above page sticky chrome (z-10) but below admin nav (z-30) / Sheet (z-50) */}
+      <div className={cn("relative mt-4 lg:hidden", subMenuOpen ? "z-[26]" : "z-10")}>
         <button
           type="button"
+          aria-expanded={subMenuOpen}
+          aria-controls="management-mobile-nav"
           onClick={() => setSubMenuOpen(!subMenuOpen)}
           className="flex w-full items-center justify-between rounded-xl border border-brand-mist bg-white dark:bg-card px-4 py-3"
         >
@@ -165,24 +169,38 @@ export function AdminManagement({ password, username, role, permissions = {}, in
         </button>
         {subMenuOpen && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => setSubMenuOpen(false)} />
-            <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-[min(70dvh,32rem)] overflow-y-auto overscroll-contain rounded-xl border border-brand-mist bg-white dark:bg-card p-2 shadow-lg dark:shadow-none">
-              <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
-                {navTabs.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => { setTab(t.tab); setSubMenuOpen(false); }}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium transition-colors",
-                      t.active
-                        ? "bg-brand-green/10 text-brand-green"
-                        : "text-brand-green-dark/60 hover:bg-brand-sand/50"
-                    )}
-                  >
-                    {t.icon}
-                    {t.label}
-                  </button>
+            <div className="fixed inset-0 z-[25] bg-black/40" onClick={() => setSubMenuOpen(false)} aria-hidden />
+            <div
+              id="management-mobile-nav"
+              role="listbox"
+              aria-label="Management sections"
+              className="absolute left-0 right-0 top-full z-[26] mt-1 max-h-[min(70dvh,32rem)] overflow-y-auto overscroll-contain rounded-xl border border-brand-mist bg-white p-3 shadow-lg dark:bg-card dark:shadow-none"
+            >
+              <div className="space-y-3">
+                {mobileNavGroups.map((group) => (
+                  <div key={group.id}>
+                    <p className="mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-green-dark/40">{group.label}</p>
+                    <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+                      {group.tiles.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          role="option"
+                          aria-selected={t.active}
+                          onClick={() => { setTab(t.tab); setSubMenuOpen(false); }}
+                          className={cn(
+                            "flex min-h-[4.25rem] flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-center text-[10px] font-medium leading-tight transition-colors",
+                            t.active
+                              ? "bg-brand-green/10 text-brand-green"
+                              : "text-brand-green-dark/65 hover:bg-brand-sand/50"
+                          )}
+                        >
+                          <span className="[&>svg]:h-4 [&>svg]:w-4">{t.icon}</span>
+                          <span className="line-clamp-2">{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
