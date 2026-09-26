@@ -52,6 +52,7 @@ function paiseToRupees(paise: string): string {
 }
 
 function rupeesToPaise(rupees: string): string {
+  if (rupees.trim() === "") return "";
   const num = parseFloat(rupees.replace(/[^\d.]/g, ""));
   if (isNaN(num)) return "0";
   return String(Math.round(num * 100));
@@ -125,10 +126,13 @@ export function AdminFoodSettings({ password, username, role }: { password: stri
         action: "updateFoodSettings",
         settings: {
           ...settings,
+          food_tab_limit: settings.food_tab_limit || "0",
         },
       });
       if (res.ok) {
-        setSavedSettings({ ...settings });
+        const normalized = { ...settings, food_tab_limit: settings.food_tab_limit || "0" };
+        setSettings(normalized);
+        setSavedSettings(normalized);
         setDirty(false);
         showSuccess("Food settings saved");
       } else {

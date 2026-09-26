@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { cn, todayIST } from "@/lib/utils";
+import { numericDraftValue } from "@/lib/numericInput";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { motion, AnimatePresence } from "framer-motion";
 import { overlayVariants, modalVariants } from "@/lib/animations";
@@ -65,7 +66,7 @@ export function CreateBookingModal({
     return initialCheckin?.checkoutDate || addCalendarDays(start, 1);
   });
   const [platform, setPlatform] = useState<"walkin" | "booking_engine">("walkin");
-  const [stayTotal, setStayTotal] = useState(0);
+  const [stayTotal, setStayTotal] = useState("0");
   const [specialRequests, setSpecialRequests] = useState("");
   const [persons, setPersons] = useState("1");
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
@@ -92,7 +93,7 @@ export function CreateBookingModal({
 
   const nights = useMemo(() => getNights(checkinDate, checkoutDate), [checkinDate, checkoutDate]);
   const pricing = useMemo(() => {
-    const gross = stayTotal;
+    const gross = numericDraftValue(stayTotal);
     const discount = platform === "walkin"
       ? bookingDiscountRupees(gross, discountMode === "percent"
         ? { percent: discountPercent }
@@ -110,7 +111,7 @@ export function CreateBookingModal({
     setLoadingBeds(true);
     setSelectedUnits([]);
     setAvailableUnits([]);
-    setStayTotal(0);
+    setStayTotal("0");
     setDormStayTotals({});
     setDormRateRanges({});
     let cancelled = false;
@@ -179,7 +180,7 @@ export function CreateBookingModal({
           // Fallback when stay totals missing: average nightly × nights (never treat average as stay total).
           return sum + (dormRates[u.dormId] || 0) * nightCount;
         }, 0);
-      setStayTotal(total);
+      setStayTotal(String(total));
       return next;
     });
   }, [availableUnits, dormStayTotals, dormRates, nights]);
@@ -187,6 +188,7 @@ export function CreateBookingModal({
   const selectedUnitRows = availableUnits.filter((u) => selectedUnits.includes(u.key));
   const selectedCapacity = selectedUnitRows.reduce((sum, u) => sum + u.capacity, 0);
   const personCount = persons === "" ? NaN : Number(persons);
+  const parsedStayTotal = numericDraftValue(stayTotal);
   const validPersonCount = Number.isInteger(personCount) && personCount >= 1;
   const parsedAdvance = advanceAmount === "" ? 0 : Number(advanceAmount);
   const validAdvance = Number.isInteger(parsedAdvance) && parsedAdvance >= 0 && parsedAdvance <= pricing.total
@@ -208,8 +210,8 @@ export function CreateBookingModal({
         checkinDate,
         checkoutDate,
         platform,
-        staySubtotal: stayTotal,
-        nightlyRate: nights > 0 ? Math.round(stayTotal / nights) : 0,
+        staySubtotal: parsedStayTotal,
+        nightlyRate: nights > 0 ? Math.round(parsedStayTotal / nights) : 0,
         specialRequests: specialRequests.trim(),
         persons: personCount,
         bedIds: availableUnits.filter((u) => selectedUnits.includes(u.key)).flatMap((u) => u.bedIds),
@@ -397,7 +399,7 @@ export function CreateBookingModal({
               <Input
                 type="number"
                 value={stayTotal}
-                onChange={(e) => setStayTotal(Number(e.target.value) || 0)}
+                onChange={(e) => setStayTotal(e.target.value)}
                 className="mt-1 w-32"
                 min={0}
               />

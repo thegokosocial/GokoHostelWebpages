@@ -1,5 +1,7 @@
 # Pages and admin UI
 
+Numeric form controls keep an empty string while staff or guests are editing, so Backspace can fully clear the current value. Components convert the draft to the field's existing zero/default behavior only for calculations or save requests; positive-minimum fields remain invalid while empty.
+
 Staff booking templates, review requests, and Admin Food Bills use [staff WhatsApp messaging](whatsapp-messaging.md). Each user selects Ask every time, Business, or regular/default WhatsApp in Management → My Preferences on that device. Android retains explicit links for both apps and a recoverable draft even when an automatic attempt fails. Review counters count preparation attempts, not launches. Public/guest WhatsApp links retain existing behavior.
 
 The admin header notification-settings dialog supports enable/current-device test/disable with busy states and recoverable errors. Management → My Preferences shows the categories granted to that user and provides whole-category and individual event controls for the current browser/PWA. Test success reports push-service acceptance; users confirm display on their device. See [Push notifications](push-notifications.md) for recipient filtering, mobile rendering, and Chrome-owned notices.

@@ -16,6 +16,7 @@ import {
   EyeIcon, EyeOffIcon,
 } from "lucide-react";
 import { bookingTaxPercent, bookingTaxApplyEnabled, DEFAULT_BOOKING_TAX_PERCENT } from "@/lib/bookingPricing";
+import { numericDraftValue } from "@/lib/numericInput";
 import type { Role } from "./types";
 import { ManagementSalesChannels } from "./ManagementSalesChannels";
 import { ManagementBedConfig } from "./ManagementBedConfig";
@@ -177,7 +178,7 @@ function ConfigTab({ password, username }: { password: string; username?: string
   const { call: apiCall } = useChannelApi(password, username);
   const { showError, showSuccess } = useAdminToast();
   const [config, setConfig] = useState<ChannelConfig>(DEFAULT_CONFIG);
-  const [bookingTaxRate, setBookingTaxRate] = useState(DEFAULT_BOOKING_TAX_PERCENT);
+  const [bookingTaxRate, setBookingTaxRate] = useState(String(DEFAULT_BOOKING_TAX_PERCENT));
   const [bookingTaxApplyWebsite, setBookingTaxApplyWebsite] = useState(true);
   const [bookingTaxApplyAdmin, setBookingTaxApplyAdmin] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -192,7 +193,7 @@ function ConfigTab({ password, username }: { password: string; username?: string
     try {
       const res = await apiCall("/api/admin/channel-manager", { action: "getConfig" });
       if (res.config) setConfig(res.config);
-      if (res.bookingTaxRate != null) setBookingTaxRate(bookingTaxPercent(res.bookingTaxRate));
+      if (res.bookingTaxRate != null) setBookingTaxRate(String(bookingTaxPercent(res.bookingTaxRate)));
       setBookingTaxApplyWebsite(bookingTaxApplyEnabled(res.bookingTaxApplyWebsite));
       setBookingTaxApplyAdmin(bookingTaxApplyEnabled(res.bookingTaxApplyAdmin));
     } catch (e: any) { showError(e.message); }
@@ -205,7 +206,7 @@ function ConfigTab({ password, username }: { password: string; username?: string
       await apiCall("/api/admin/channel-manager", {
         action: "saveConfig",
         config,
-        bookingTaxRate,
+        bookingTaxRate: numericDraftValue(bookingTaxRate),
         bookingTaxApplyWebsite,
         bookingTaxApplyAdmin,
       });
@@ -289,7 +290,7 @@ function ConfigTab({ password, username }: { password: string; username?: string
               min="0"
               max="100"
               value={bookingTaxRate}
-              onChange={(e) => setBookingTaxRate(e.target.value === "" ? 0 : bookingTaxPercent(e.target.value))}
+              onChange={(e) => setBookingTaxRate(e.target.value)}
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
           </div>

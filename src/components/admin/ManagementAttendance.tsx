@@ -33,7 +33,7 @@ export function ManagementAttendance({ password, username, role, canManageAttend
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [summaries, setSummaries] = useState<Summary[]>([]);
   const [history, setHistory] = useState<History[]>([]);
-  const [policy, setPolicy] = useState({ monthlyCreditUnits: 4, carryCapUnits: 24, effectiveMonth: todayIST().slice(0, 7) });
+  const [policy, setPolicy] = useState({ monthlyCreditUnits: "2", carryCapUnits: "12", effectiveMonth: todayIST().slice(0, 7) });
   const [policies, setPolicies] = useState<Array<{ employeeId: number | null; effectiveMonth: string; monthlyCreditUnits: number; carryCapUnits: number }>>([]);
   const [policyEmployeeId, setPolicyEmployeeId] = useState("");
   const [calendarEmployeeId, setCalendarEmployeeId] = useState("");
@@ -53,7 +53,8 @@ export function ManagementAttendance({ password, username, role, canManageAttend
       const data = await res.json();
       if (!res.ok) return showError(data.error || "Could not load attendance");
       setEmployees(data.employees || []); setAttendance(data.attendance || []); setSummaries(data.summaries || []); setHistory(data.history || []);
-      setPolicy(data.policy || { monthlyCreditUnits: 4, carryCapUnits: 24, effectiveMonth: month });
+      const loadedPolicy = data.policy || { monthlyCreditUnits: 4, carryCapUnits: 24, effectiveMonth: month };
+      setPolicy({ monthlyCreditUnits: String(loadedPolicy.monthlyCreditUnits / 2), carryCapUnits: String(loadedPolicy.carryCapUnits / 2), effectiveMonth: loadedPolicy.effectiveMonth });
       setPolicies(data.policies || []);
     } catch { showError("Network error loading attendance"); } finally { setLoading(false); }
   }, [call, month, showError]);
@@ -101,7 +102,7 @@ export function ManagementAttendance({ password, username, role, canManageAttend
   const savePolicy = async () => {
     setSaving(true);
     try {
-      const res = await call({ action: "savePolicy", employeeId: policyEmployeeId || null, effectiveMonth: policy.effectiveMonth, monthlyCreditUnits: policy.monthlyCreditUnits, carryCapUnits: policy.carryCapUnits });
+      const res = await call({ action: "savePolicy", employeeId: policyEmployeeId || null, effectiveMonth: policy.effectiveMonth, monthlyCreditUnits: Math.round(Number(policy.monthlyCreditUnits || 0) * 2), carryCapUnits: Math.round(Number(policy.carryCapUnits || 0) * 2) });
       const data = await res.json();
       if (!res.ok) return showError(data.error || "Could not save leave policy");
       showSuccess("Leave policy saved"); await load();
@@ -129,10 +130,10 @@ export function ManagementAttendance({ password, username, role, canManageAttend
     <div className="rounded-xl border border-brand-mist bg-white p-4 dark:bg-card">
       <div className="flex items-center gap-2"><SettingsIcon className="h-4 w-4 text-brand-green" /><h4 className="text-sm font-semibold">Paid leave policy</h4></div>
       <div className="mt-3 grid gap-3 sm:grid-cols-4">
-        <label className="text-xs">Applies to<select value={policyEmployeeId} onChange={(e) => { const value = e.target.value; setPolicyEmployeeId(value); const selected = policies.filter((item) => String(item.employeeId ?? "") === value && item.effectiveMonth <= month).sort((a, b) => b.effectiveMonth.localeCompare(a.effectiveMonth))[0]; if (selected) setPolicy({ monthlyCreditUnits: selected.monthlyCreditUnits, carryCapUnits: selected.carryCapUnits, effectiveMonth: selected.effectiveMonth }); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"><option value="">All employees</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+        <label className="text-xs">Applies to<select value={policyEmployeeId} onChange={(e) => { const value = e.target.value; setPolicyEmployeeId(value); const selected = policies.filter((item) => String(item.employeeId ?? "") === value && item.effectiveMonth <= month).sort((a, b) => b.effectiveMonth.localeCompare(a.effectiveMonth))[0]; if (selected) setPolicy({ monthlyCreditUnits: String(selected.monthlyCreditUnits / 2), carryCapUnits: String(selected.carryCapUnits / 2), effectiveMonth: selected.effectiveMonth }); }} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"><option value="">All employees</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
         <label className="text-xs">Effective month<Input type="month" value={policy.effectiveMonth} onChange={(e) => setPolicy({ ...policy, effectiveMonth: e.target.value })} className="mt-1 h-8" /></label>
-        <label className="text-xs">Monthly paid leave<Input type="number" min="0" step="0.5" value={policy.monthlyCreditUnits / 2} onChange={(e) => setPolicy({ ...policy, monthlyCreditUnits: Math.round(Number(e.target.value) * 2) })} className="mt-1 h-8" /></label>
-        <label className="text-xs">Carry-forward cap<Input type="number" min="0" step="0.5" value={policy.carryCapUnits / 2} onChange={(e) => setPolicy({ ...policy, carryCapUnits: Math.round(Number(e.target.value) * 2) })} className="mt-1 h-8" /></label>
+        <label className="text-xs">Monthly paid leave<Input type="number" min="0" step="0.5" value={policy.monthlyCreditUnits} onChange={(e) => setPolicy({ ...policy, monthlyCreditUnits: e.target.value })} className="mt-1 h-8" /></label>
+        <label className="text-xs">Carry-forward cap<Input type="number" min="0" step="0.5" value={policy.carryCapUnits} onChange={(e) => setPolicy({ ...policy, carryCapUnits: e.target.value })} className="mt-1 h-8" /></label>
         <Button size="sm" className="mt-auto" disabled={saving} onClick={savePolicy}>Save policy</Button>
       </div>
     </div>

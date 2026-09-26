@@ -1,5 +1,7 @@
 # Tests and CI
 
+Numeric-input regression coverage verifies that editable `type="number"` controls store `event.target.value` as a string. Conversion with `Number`, parsing, clamping, or zero fallbacks belongs at calculation and submission boundaries so clearing a controlled input does not immediately render `0`.
+
 **Git-safe.**
 
 ```bash

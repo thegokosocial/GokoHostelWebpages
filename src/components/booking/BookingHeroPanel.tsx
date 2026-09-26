@@ -53,7 +53,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [taxPercent, setTaxPercent] = useState<number | null>(null);
   const [maxSelectedBeds, setMaxSelectedBeds] = useState<number | null>(null);
   const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
-  const [persons, setPersons] = useState(1);
+  const [persons, setPersons] = useState("1");
   const [stay, setStay] = useState(preview?.stay ?? { checkinDate: "", checkoutDate: "" });
   const [searchedStay, setSearchedStay] = useState<typeof stay | null>(null);
   const [reference, setReference] = useState(""), [email, setEmail] = useState("");
@@ -304,7 +304,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       const payload = {
         requestKey,
         checkinDate: searchedStay.checkinDate, checkoutDate: searchedStay.checkoutDate,
-        paymentChoice, guest, persons,
+        paymentChoice, guest, persons: Number(persons),
         rooms: rooms.filter((room) => selection[room.id]).map((room) => ({
           roomId: room.id, quantity: selection[room.id], ratePlanId: chosenRate(room)!.id,
         })),
@@ -421,9 +421,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const holdExpired = holdExpiresAt != null && holdSecondsLeft === 0;
   const guestDetailsComplete = Boolean(
     guest.name.trim() && guest.email.trim() && guest.phone.trim()
-    && Number.isInteger(persons) && persons >= 1 && persons <= capacity,
+    && persons !== "" && Number.isInteger(Number(persons)) && Number(persons) >= 1 && Number(persons) <= capacity,
   );
-  const guestsOverCapacity = Number.isInteger(persons) && capacity > 0 && persons > capacity;
+  const guestsOverCapacity = persons !== "" && Number.isInteger(Number(persons)) && capacity > 0 && Number(persons) > capacity;
   return <>
   <CheckoutWaitOverlay phase={checkoutWait} />
   <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
@@ -538,7 +538,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                   max={Math.max(1, capacity)}
                   step={1}
                   value={persons}
-                  onChange={e => setPersons(Number(e.target.value))}
+                  onChange={e => setPersons(e.target.value)}
                 />
               </label>
             </div>

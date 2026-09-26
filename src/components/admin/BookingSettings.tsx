@@ -8,6 +8,7 @@ import { NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
 import { RazorpayTestPreview } from "@/components/admin/RazorpayTestPreview";
 import { AccommodationContentManager } from "@/components/admin/AccommodationContentManager";
+import { numericDraftValue } from "@/lib/numericInput";
 import {
   BOOKING_EMAIL_KINDS,
   BOOKING_EMAIL_KIND_LABELS,
@@ -34,10 +35,12 @@ import {
 
 type Gateway = ReturnType<typeof gatewayConfiguration>;
 type Section = "policies" | "rooms" | "payments" | "emails" | "sms";
+type NumericSettingKey = "maxSelectedBeds" | "directBookingDiscountPercent" | "advancePercent" | "holdMinutes" | "unresolvedPaymentMaxMinutes" | "cancellationDeadlineHours" | "cancellationRefundPercent";
 
 export function BookingSettings({ password, username }: { password: string; username?: string }) {
   const [section, setSection] = useState<Section>("policies");
   const [settings, setSettings] = useState<WebsiteBookingSettings>({ ...DEFAULT_WEBSITE_BOOKING_SETTINGS });
+  const [numberDrafts, setNumberDrafts] = useState<Partial<Record<NumericSettingKey, string>>>({});
   const [emailTemplates, setEmailTemplates] = useState<BookingEmailTemplates>({ ...DEFAULT_BOOKING_EMAIL_TEMPLATES });
   const [smsTemplates, setSmsTemplates] = useState<BookingSmsTemplates>({ ...DEFAULT_BOOKING_SMS_TEMPLATES });
   const [emailKind, setEmailKind] = useState<BookingEmailKind>("confirmation");
@@ -70,7 +73,7 @@ export function BookingSettings({ password, username }: { password: string; user
     setBusy(true); setLoaded(false); setMessagesLoaded(false); setRevision(""); setMessage(""); setGateway(null);
     Promise.all([call("getSettings"), call("getEmailTemplates"), call("getSmsTemplates")]).then(([data, emails, sms]) => {
       if (active) {
-        setSettings(data.settings); setRevision(data.revision); setGateway(data.gateway);
+        setSettings(data.settings); setNumberDrafts({}); setRevision(data.revision); setGateway(data.gateway);
         setReadiness(data.readiness || null); setLoaded(true);
         if (emails.templates) setEmailTemplates(emails.templates);
         if (sms.templates) setSmsTemplates(sms.templates);
@@ -86,8 +89,10 @@ export function BookingSettings({ password, username }: { password: string; user
   async function save() {
     setBusy(true); setMessage("");
     try {
-      const data = await call("saveSettings", { settings, revision });
+      const submittedSettings = Object.entries(numberDrafts).reduce((next, [key, value]) => ({ ...next, [key]: numericDraftValue(value) }), settings);
+      const data = await call("saveSettings", { settings: submittedSettings, revision });
       setSettings(data.settings);
+      setNumberDrafts({});
       setRevision(data.revision);
       setGateway(data.gateway);
       setReadiness(data.readiness || null);
@@ -128,11 +133,12 @@ export function BookingSettings({ password, username }: { password: string; user
     finally { setBusy(false); }
   }
 
-  const numberField = (key: keyof WebsiteBookingSettings, label: string, min: number, max: number) => (
+  const numberValue = (key: NumericSettingKey) => numericDraftValue(numberDrafts[key] ?? String(settings[key]));
+  const numberField = (key: NumericSettingKey, label: string, min: number, max: number) => (
     <label className="grid gap-1 text-sm" key={key}>
       {label}
-      <Input type="number" min={min} max={max} step="1" value={Number(settings[key])}
-        onChange={(e) => setSettings({ ...settings, [key]: Number(e.target.value) })} />
+      <Input type="number" min={min} max={max} step="1" value={numberDrafts[key] ?? String(settings[key])}
+        onChange={(e) => setNumberDrafts((drafts) => ({ ...drafts, [key]: e.target.value }))} />
     </label>
   );
 
@@ -199,7 +205,7 @@ export function BookingSettings({ password, username }: { password: string; user
           <p className="mt-1 text-xs text-muted-foreground">Discount Goko website bookings from the mapped Inventory/Aiosell standard channel rate. OTA-only promotions can still differ.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,16rem)_1fr] sm:items-end">
             {numberField("directBookingDiscountPercent", "Direct booking discount (%)", 0, 80)}
-            <div className="rounded-xl bg-brand-sand/50 p-3 text-sm"><span className="text-muted-foreground line-through">₹1,000</span><strong className="ml-2 text-lg">₹{1000 - Number(settings.directBookingDiscountPercent) * 10}</strong><span className="ml-2 text-xs">direct</span></div>
+            <div className="rounded-xl bg-brand-sand/50 p-3 text-sm"><span className="text-muted-foreground line-through">₹1,000</span><strong className="ml-2 text-lg">₹{1000 - numberValue("directBookingDiscountPercent") * 10}</strong><span className="ml-2 text-xs">direct</span></div>
           </div>
         </section>
         <AccommodationContentManager password={password} username={username} />

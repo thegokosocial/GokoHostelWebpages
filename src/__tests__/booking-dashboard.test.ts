@@ -590,8 +590,8 @@ describe("Booking calendar UI permissions match the API keys", () => {
     const modal = readFile("src/components/admin/booking-dashboard/CreateBookingModal.tsx");
     expect(modal).toContain("Stay total for selected units");
     expect(modal).toContain("dormStayTotals");
-    expect(modal).toContain("staySubtotal: stayTotal");
-    expect(modal).toContain("const gross = stayTotal");
+    expect(modal).toContain("staySubtotal: parsedStayTotal");
+    expect(modal).toContain("const gross = numericDraftValue(stayTotal)");
     expect(modal).toContain("(dormRates[u.dormId] || 0) * nightCount");
     expect(modal).not.toContain("nightlyRate * nights");
     expect(modal).not.toContain("Nightly total for selected units");
@@ -624,7 +624,8 @@ describe("Booking calendar UI permissions match the API keys", () => {
     expect(cm).toContain("Apply tax rate for Online Goko website booking");
     expect(cm).toContain("Apply tax rate for Admin bookings");
     expect(cm).toContain("bookingTaxPercent(res.bookingTaxRate)");
-    expect(cm).toContain('e.target.value === "" ? 0');
+    expect(cm).toContain("setBookingTaxRate(e.target.value)");
+    expect(cm).toContain("bookingTaxRate: numericDraftValue(bookingTaxRate)");
   });
 
   it("lets the guest count be empty while editing and validates before create", () => {
