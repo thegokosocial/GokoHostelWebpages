@@ -113,7 +113,7 @@ Env manager (`MANAGER_PASSWORD`) → `permissions: {}` → **fails every gated a
 
 ### 5. Food order create is not atomic
 
-`createFoodOrder` then `addFoodOrderItems` are separate D1 writes (no `db.transaction()` — see D1 + `getDb()` bug). A header with `total > 0` and zero lines is an incomplete orphan. Guest/admin place paths compensate with `abandonIncompleteFoodOrder` (unpaid + no lines only), heal matching idempotent retries (`healed: true`), and 409 `incomplete_food_order` on mismatch. Order Summary shows `INCOMPLETE_FOOD_ORDER_BANNER`. Do not treat blank items as a UI render bug until `food_order_items` is checked.
+`createFoodOrder` then `addFoodOrderItems` are separate D1 writes (no `db.transaction()` — see D1 + `getDb()` bug). `addFoodOrderItems` chunks inserts (5 rows/statement) so carts with 9–12+ distinct lines stay under D1’s ~100 bind limit; failing to chunk caused incomplete orphans after compensate-cancel. A header with `total > 0` and zero lines is an incomplete orphan. Guest/admin place paths compensate with `abandonIncompleteFoodOrder` (unpaid + no lines only), heal matching idempotent retries (`healed: true`), and 409 `incomplete_food_order` on mismatch. Order Summary shows `INCOMPLETE_FOOD_ORDER_BANNER`. Do not treat blank items as a UI render bug until `food_order_items` is checked. **Remove Discount** uses `isFoodDiscountRemovable` (`discount > 0 && foodAmountPaid === 0`); do not strip discounts from orders with collected payment.
 
 ### 6. Food Kannada sync drift
 

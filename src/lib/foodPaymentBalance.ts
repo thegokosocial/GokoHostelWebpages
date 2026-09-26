@@ -25,3 +25,18 @@ export function foodDue(order: { total: number; amountPaid?: number | null; amou
 export function foodPaymentStatus(order: { total: number; amountPaid?: number | null; amountRefunded?: number | null }): FoodPaymentStatus {
   return foodPaymentState(order.total, foodAmountPaid(order)).paymentStatus;
 }
+
+/**
+ * Discount may be cleared when no real money was collected — unpaid tabs and
+ * 100%-zeroed rows that look "paid" only because total and amountPaid are both 0.
+ * Orders with foodAmountPaid > 0 keep their discount.
+ */
+export function isFoodDiscountRemovable(order: {
+  discount?: number | null;
+  total: number;
+  amountPaid?: number | null;
+  amountRefunded?: number | null;
+  paymentStatus?: string | null;
+}): boolean {
+  return (Number(order.discount) || 0) > 0 && foodAmountPaid(order) === 0;
+}

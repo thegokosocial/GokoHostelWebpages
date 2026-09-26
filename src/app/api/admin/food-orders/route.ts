@@ -52,7 +52,7 @@ import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
 import { auditDateBounds } from "@/lib/auditRetention";
 import { dbRead } from "@/lib/dbRetry";
 import { billShareExpiresAt, generateBillShareToken, publicBillShareUrl } from "@/lib/billShare";
-import { foodAmountPaid, foodDue, foodPaymentState } from "@/lib/foodPaymentBalance";
+import { foodAmountPaid, foodDue, foodPaymentState, isFoodDiscountRemovable } from "@/lib/foodPaymentBalance";
 import { latestWalkinOrder, normalizeWalkinGuestName, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
@@ -1090,7 +1090,13 @@ export async function POST(req: NextRequest) {
 
         let totalDiscount: number;
         if (discountPercent != null) {
-          const pct = Math.max(0, Math.min(100, Number(discountPercent)));
+          const pct = Number(discountPercent);
+          if (!Number.isFinite(pct) || pct < 0) {
+            return NextResponse.json({ error: "discountPercent must be between 0 and 100" }, { status: 400 });
+          }
+          if (pct > 100) {
+            return NextResponse.json({ error: "max discount % can be 100 itself" }, { status: 400 });
+          }
           totalDiscount = Math.round(discountableTotal * pct / 100);
         } else {
           totalDiscount = Math.max(0, Math.min(discountableTotal, Math.abs(Number(discountAmount))));
@@ -1154,23 +1160,38 @@ export async function POST(req: NextRequest) {
 
       case "removeDiscount": {
         const { orderIds: removeOrderIds } = rest;
-        if (!removeOrderIds || !Array.isArray(removeOrderIds) || removeOrderIds.length === 0) {
-          return NextResponse.json({ error: "orderIds required" }, { status: 400 });
-        }
-
-        const rmTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
-
         if (!Array.isArray(removeOrderIds) || removeOrderIds.length === 0 || removeOrderIds.some((id: unknown) => !Number.isInteger(id))) {
           return NextResponse.json({ error: "orderIds required" }, { status: 400 });
         }
         if (new Set(removeOrderIds).size !== removeOrderIds.length) return NextResponse.json({ error: "Duplicate orderIds are not allowed" }, { status: 400 });
+
+        const rmTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
         const existingOrders = await Promise.all(removeOrderIds.map((orderId: number) => getFoodOrderById(orderId)));
         if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
-        const rmItemsByOrder = await getFoodOrderItemsBatch(removeOrderIds);
+
+        // Only clear discounts with no real collection (unpaid + 100%-zeroed mistakes).
+        const removableIds = removeOrderIds.filter((oid: number, idx: number) => {
+          const order = existingOrders[idx];
+          return order && isFoodDiscountRemovable(order);
+        });
+        const blockedPaid = removeOrderIds.filter((oid: number, idx: number) => {
+          const order = existingOrders[idx];
+          return order && (Number(order.discount) || 0) > 0 && foodAmountPaid(order) > 0;
+        });
+        if (removableIds.length === 0) {
+          if (blockedPaid.length > 0) {
+            return NextResponse.json({
+              error: "Cannot remove discount on orders that already have payment collected. Refund or correct payment first.",
+            }, { status: 409 });
+          }
+          return NextResponse.json({ error: "No removable discounts on the selected orders" }, { status: 400 });
+        }
+
+        const rmItemsByOrder = await getFoodOrderItemsBatch(removableIds);
         const db = getDb() as any;
         const buildRemoveDiscountWrites = (client: any) => {
           const writes: any[] = [];
-          for (const oid of removeOrderIds) {
+          for (const oid of removableIds) {
             const items = rmItemsByOrder.get(oid) || [];
             const activeItems = items.filter((i) => i.status !== "voided");
             const grossSubtotal = activeItems.reduce((sum, i) => sum + i.lineTotal, 0);
@@ -1204,8 +1225,8 @@ export async function POST(req: NextRequest) {
             timestamp: new Date().toISOString(),
             username: actorName,
             action: "food_discount_removed",
-            target: `orders:${removeOrderIds.join(",")}`,
-            details: `Discount removed from ${removeOrderIds.length} order(s)`,
+            target: `orders:${removableIds.join(",")}`,
+            details: `Discount removed from ${removableIds.length} order(s)${blockedPaid.length ? `; skipped ${blockedPaid.length} with collected payment` : ""}`,
           }));
           return writes;
         };
@@ -1216,7 +1237,12 @@ export async function POST(req: NextRequest) {
             for (const write of buildRemoveDiscountWrites(tx)) await write;
           });
         }
-        return NextResponse.json({ success: true, role });
+        return NextResponse.json({
+          success: true,
+          role,
+          removedOrderIds: removableIds,
+          skippedPaidOrderIds: blockedPaid,
+        });
       }
 
       case "reassignOrder": {

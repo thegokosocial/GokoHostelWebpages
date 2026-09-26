@@ -111,7 +111,11 @@ describe("mock workflows (source contracts)", () => {
     expect(ui).toContain("canCombinedDiscount");
     expect(ui).toContain('action: "markOrderPaid", orderIds: combinedOrderIds');
     expect(ui).toContain("handleCombinedPayment(method, cashReceived, changeGiven, onlineAccountId, receiptId)");
-    expect(ui).toContain('action: "applyDiscount", orderIds: combinedOrderIds');
+    expect(ui).toContain('action: "applyDiscount", orderIds: combinedApplyOrderIds');
+    expect(ui).toContain('action: "removeDiscount", orderIds: combinedRemoveOrderIds');
+    expect(ui).toContain("isFoodDiscountRemovable");
+    expect(ui).toContain("combinedApplyOrderIds");
+    expect(ui).toContain("combinedRemoveOrderIds");
     expect(route).toContain("allocateFoodPayment");
     expect(route).toContain("const operationId = String(receiptId || crypto.randomUUID())");
     expect(route).toContain("receiptId: `${operationId}:food:${allocation.orderId}`");

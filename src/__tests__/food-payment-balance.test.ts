@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foodAmountPaid, foodDue, foodPaymentState, foodPaymentStatus } from "@/lib/foodPaymentBalance";
+import { foodAmountPaid, foodDue, foodPaymentState, foodPaymentStatus, isFoodDiscountRemovable } from "@/lib/foodPaymentBalance";
 
 describe("food payment balances", () => {
   it("preserves collected money and exposes only the revised due", () => {
@@ -38,5 +38,32 @@ describe("food payment balances", () => {
     expect(foodPaymentStatus({ total: 300, amountPaid: 100, amountRefunded: 0 })).toBe("partial");
     expect(foodPaymentStatus({ total: 300, amountPaid: 400, amountRefunded: 100 })).toBe("paid");
     expect(foodPaymentStatus({ total: 300, amountPaid: 0, amountRefunded: 0 })).toBe("pending");
+  });
+
+  it("marks 100%-zeroed mistake rows as removable and leaves collected payments alone", () => {
+    expect(isFoodDiscountRemovable({
+      discount: 61000,
+      total: 0,
+      amountPaid: 0,
+      paymentStatus: "paid",
+    })).toBe(true);
+    expect(isFoodDiscountRemovable({
+      discount: 5000,
+      total: 45000,
+      amountPaid: 0,
+      paymentStatus: "pending",
+    })).toBe(true);
+    expect(isFoodDiscountRemovable({
+      discount: 5000,
+      total: 45000,
+      amountPaid: 45000,
+      paymentStatus: "paid",
+    })).toBe(false);
+    expect(isFoodDiscountRemovable({
+      discount: 0,
+      total: 10000,
+      amountPaid: 0,
+      paymentStatus: "pending",
+    })).toBe(false);
   });
 });

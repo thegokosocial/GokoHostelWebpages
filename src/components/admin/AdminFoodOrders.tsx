@@ -21,7 +21,7 @@ import { RecordPaymentModal, PaymentDetailLabel } from "@/components/admin/Recor
 import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
-import { foodAmountPaid, foodDue, foodPaymentStatus } from "@/lib/foodPaymentBalance";
+import { foodAmountPaid, foodDue, foodPaymentStatus, isFoodDiscountRemovable } from "@/lib/foodPaymentBalance";
 import { INCOMPLETE_FOOD_ORDER_BANNER, isIncompleteFoodOrder } from "@/lib/foodOrderCreate";
 import { latestWalkinOrder, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
@@ -1677,7 +1677,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         {whatsAppBusy ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
                         WhatsApp
                       </button>
-                      {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
+                      {(hasPermission(role || "staff", permissions || {}, "canApplyFoodDiscounts")
+                        || hasPermission(role || "staff", permissions || {}, "canMarkPaid")) && (
                         <button
                           type="button"
                           onClick={() => setDiscountModalGroup(selectedGroup)}
@@ -2147,12 +2148,15 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       {/* Discount Modal */}
       {discountModalGroup && (() => {
         const discOrders = getGroupOrders(discountModalGroup);
-        const totalGroupDiscount = discOrders.reduce((s, o) => s + (o.discount || 0), 0);
-        const grossTotal = discOrders.reduce((s, o) => s + (o.discount || 0) + o.subtotal, 0);
+        const applyOrders = discOrders.filter((o) => foodDue(o) > 0);
+        const removeOrders = discOrders.filter((o) => isFoodDiscountRemovable(o));
+        const modalOrders = applyOrders.length > 0 ? applyOrders : removeOrders;
+        const removableDiscount = removeOrders.reduce((s, o) => s + (o.discount || 0), 0);
+        const grossTotal = modalOrders.reduce((s, o) => s + (o.discount || 0) + o.subtotal, 0);
         const exemptCategoryIds = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
         const menuItemCategoryMap = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
         let exemptTotal = 0;
-        for (const o of discOrders) {
+        for (const o of modalOrders) {
           for (const item of o.items) {
             if (item.status === "voided") continue;
             const catId = menuItemCategoryMap.get(item.menuItemId);
@@ -2167,22 +2171,34 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
             totalAmount={grossTotal}
             discountableAmount={discountableTotal}
             exemptAmount={exemptTotal}
-            currentDiscount={totalGroupDiscount}
+            currentDiscount={removableDiscount}
             guestName={discountModalGroup.guestName}
             onApply={async (data) => {
-              const orderIds = discOrders.map((o) => o.id);
-              const res = await apiCall({ action: "applyDiscount", orderIds, ...data });
-              if (res.ok) {
-                await refreshAfterEdit(discountModalGroup);
+              const orderIds = applyOrders.map((o) => o.id);
+              if (orderIds.length === 0) {
+                showError("Discount", "No unpaid orders to discount");
+                return;
               }
+              const res = await apiCall({ action: "applyDiscount", orderIds, ...data });
+              const body = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                showError("Discount", body.error || "Could not apply discount");
+                return;
+              }
+              showSuccess("Discount applied");
+              await refreshAfterEdit(discountModalGroup);
               setDiscountModalGroup(null);
             }}
-            onRemove={totalGroupDiscount > 0 ? async () => {
-              const orderIds = discOrders.map((o) => o.id);
+            onRemove={removableDiscount > 0 ? async () => {
+              const orderIds = removeOrders.map((o) => o.id);
               const res = await apiCall({ action: "removeDiscount", orderIds });
-              if (res.ok) {
-                await refreshAfterEdit(discountModalGroup);
+              const body = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                showError("Remove discount", body.error || "Could not remove discount");
+                return;
               }
+              showSuccess("Discount removed");
+              await refreshAfterEdit(discountModalGroup);
               setDiscountModalGroup(null);
             } : undefined}
             onClose={() => setDiscountModalGroup(null)}
@@ -2481,12 +2497,16 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   };
 
   const combinedOrders = preview?.guests.flatMap((g: any) => g.orders || []) || [];
-  const combinedOrderIds = combinedOrders.map((o: any) => o.id).filter((id: unknown): id is number => Number.isInteger(id));
-  const combinedGrossSubtotal = combinedOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0) + (o.discount || 0), 0);
-  const combinedDiscount = combinedOrders.reduce((sum: number, o: any) => sum + (o.discount || 0), 0);
+  const combinedApplyOrders = combinedOrders.filter((o: any) => foodDue(o) > 0);
+  const combinedRemoveOrders = combinedOrders.filter((o: any) => isFoodDiscountRemovable(o));
+  const combinedApplyOrderIds = combinedApplyOrders.map((o: any) => o.id).filter((id: unknown): id is number => Number.isInteger(id));
+  const combinedRemoveOrderIds = combinedRemoveOrders.map((o: any) => o.id).filter((id: unknown): id is number => Number.isInteger(id));
+  const combinedOrderIds = combinedApplyOrderIds;
+  const combinedGrossSubtotal = combinedApplyOrders.reduce((sum: number, o: any) => sum + (o.subtotal || 0) + (o.discount || 0), 0);
+  const combinedDiscount = combinedRemoveOrders.reduce((sum: number, o: any) => sum + (o.discount || 0), 0);
   const combinedExemptCategoryIds = new Set(categories.filter((c) => c.discountExempt).map((c) => c.id));
   const combinedMenuCategoryMap = new Map(menuItems.map((mi) => [mi.id, mi.categoryId]));
-  const combinedExemptSubtotal = combinedOrders.reduce((sum: number, o: any) => sum + (o.items || []).reduce((itemSum: number, i: any) => {
+  const combinedExemptSubtotal = combinedApplyOrders.reduce((sum: number, o: any) => sum + (o.items || []).reduce((itemSum: number, i: any) => {
     const categoryId = combinedMenuCategoryMap.get(i.menuItemId);
     return i.status !== "voided" && categoryId !== undefined && combinedExemptCategoryIds.has(categoryId) ? itemSum + (i.lineTotal || 0) : itemSum;
   }, 0), 0);
@@ -2754,7 +2774,11 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
           onApply={async (data) => {
             setActionBusy(true);
             try {
-              const res = await apiCall({ action: "applyDiscount", orderIds: combinedOrderIds, ...data });
+              if (combinedApplyOrderIds.length === 0) {
+                showError("Combined discount", "No unpaid orders to discount");
+                return;
+              }
+              const res = await apiCall({ action: "applyDiscount", orderIds: combinedApplyOrderIds, ...data });
               const body = await res.json().catch(() => ({}));
               if (!res.ok) { showError("Combined discount", body.error || "Could not apply discount"); return; }
               setDiscountOpen(false);
@@ -2765,7 +2789,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
           onRemove={combinedDiscount > 0 ? async () => {
             setActionBusy(true);
             try {
-              const res = await apiCall({ action: "removeDiscount", orderIds: combinedOrderIds });
+              const res = await apiCall({ action: "removeDiscount", orderIds: combinedRemoveOrderIds });
               const body = await res.json().catch(() => ({}));
               if (!res.ok) { showError("Combined discount", body.error || "Could not remove discount"); return; }
               setDiscountOpen(false);
@@ -4063,6 +4087,9 @@ export function formatAdminModification(mod: OrderModification): string {
     case "item_added":
       return `${actor} added ${mod.itemName} x${mod.newValue}`;
     case "discount":
+      if (mod.newValue === "discount removed") {
+        return `${actor} removed discount`;
+      }
       return `${actor} applied discount: ${mod.oldValue} → ${mod.newValue}`;
     case "order_approved":
       return `${actor} approved this order`;
@@ -4223,7 +4250,7 @@ function DiscountModal({
   onRemove?: () => void | Promise<void>;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<"percent" | "fixed">("percent");
+  const [mode, setMode] = useState<"percent" | "fixed">("fixed");
   const [percentInput, setPercentInput] = useState("");
   const [fixedInput, setFixedInput] = useState("");
   const [reason, setReason] = useState("");
@@ -4232,21 +4259,36 @@ function DiscountModal({
 
   const totalRupees = totalAmount / 100;
   const hasExemptItems = exemptAmount > 0;
+  const rawPercent = Number(percentInput);
+  const percentTooHigh = mode === "percent" && percentInput !== "" && Number.isFinite(rawPercent) && rawPercent > 100;
+  const percentValue = mode === "percent" && !percentTooHigh
+    ? Math.max(0, Number.isFinite(rawPercent) ? rawPercent : 0)
+    : 0;
 
   const discountPaise = mode === "percent"
-    ? Math.round(discountableAmount * (Math.min(100, Math.max(0, Number(percentInput) || 0)) / 100))
+    ? (percentTooHigh ? 0 : Math.round(discountableAmount * (percentValue / 100)))
     : Math.round(Math.min(discountableAmount, Math.max(0, (Number(fixedInput) || 0) * 100)));
 
   const newTotal = Math.max(0, totalAmount - discountPaise);
   const finalReason = reason === "Other" ? customReason : reason;
+  const highShare = discountableAmount > 0 && discountPaise >= Math.round(discountableAmount * 0.5);
 
-  const canApply = discountPaise > 0 && !saving;
+  const canApply = discountPaise > 0 && !saving && !percentTooHigh;
 
   const handleApply = async () => {
+    if (percentTooHigh) return;
+    if (highShare) {
+      const label = mode === "percent"
+        ? `${percentValue}%`
+        : `₹${(discountPaise / 100).toFixed(0)}`;
+      if (!window.confirm(`Apply a large discount (${label})? This cannot be undone except via Remove Discount.`)) {
+        return;
+      }
+    }
     setSaving(true);
     try {
       if (mode === "percent") {
-        await onApply({ discountPercent: Number(percentInput) || 0, reason: finalReason });
+        await onApply({ discountPercent: percentValue, reason: finalReason });
       } else {
         await onApply({ discountAmount: Math.round((Number(fixedInput) || 0) * 100), reason: finalReason });
       }
@@ -4283,9 +4325,9 @@ function DiscountModal({
             )}
           </div>
 
-          {/* Mode Tabs */}
+          {/* Mode Tabs — Fixed Amount first / default */}
           <div className="flex gap-1 border-b border-brand-mist px-5 pt-3 pb-0">
-            {([{ id: "percent" as const, label: "Percentage" }, { id: "fixed" as const, label: "Fixed Amount" }]).map((t) => (
+            {([{ id: "fixed" as const, label: "Fixed Amount" }, { id: "percent" as const, label: "Percentage" }]).map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -4304,6 +4346,22 @@ function DiscountModal({
 
           {/* Tab Content */}
           <div className="px-5 py-4 space-y-3">
+            {mode === "fixed" && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-brand-green-dark/70">Discount Amount (₹)</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  className="w-full rounded-lg border border-brand-mist px-3 py-2.5 text-lg font-semibold text-brand-green-dark focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  value={fixedInput}
+                  onChange={(e) => setFixedInput(e.target.value)}
+                  placeholder="0"
+                  autoFocus
+                />
+              </div>
+            )}
+
             {mode === "percent" && (
               <>
                 <div>
@@ -4313,12 +4371,22 @@ function DiscountModal({
                     inputMode="numeric"
                     min={0}
                     max={100}
-                    className="w-full rounded-lg border border-brand-mist px-3 py-2.5 text-lg font-semibold text-brand-green-dark focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    className={cn(
+                      "w-full rounded-lg border px-3 py-2.5 text-lg font-semibold text-brand-green-dark focus:outline-none focus:ring-1",
+                      percentTooHigh
+                        ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                        : "border-brand-mist focus:border-purple-500 focus:ring-purple-500"
+                    )}
                     value={percentInput}
                     onChange={(e) => setPercentInput(e.target.value)}
                     placeholder="0"
                     autoFocus
                   />
+                  {percentTooHigh && (
+                    <p className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                      max discount % can be 100 itself.
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {QUICK_PERCENTS.map((p) => (
@@ -4338,22 +4406,6 @@ function DiscountModal({
                   ))}
                 </div>
               </>
-            )}
-
-            {mode === "fixed" && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-brand-green-dark/70">Discount Amount (₹)</label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  className="w-full rounded-lg border border-brand-mist px-3 py-2.5 text-lg font-semibold text-brand-green-dark focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  value={fixedInput}
-                  onChange={(e) => setFixedInput(e.target.value)}
-                  placeholder="0"
-                  autoFocus
-                />
-              </div>
             )}
 
             {/* Reason */}
@@ -4426,7 +4478,7 @@ function DiscountModal({
               disabled={saving}
               className="rounded-lg border border-red-300 dark:border-red-800 px-3 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-40"
             >
-              Remove
+              Remove Discount
             </button>
           )}
           <button

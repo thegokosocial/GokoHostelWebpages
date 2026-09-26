@@ -29,6 +29,7 @@ test("Order Summary cash pay records markOrderPaid", async ({ page }) => {
 });
 
 test("Order Summary discount applies via Apply Discount", async ({ page }) => {
+  page.on("dialog", (dialog) => dialog.accept());
   const { foodRequests } = await mockAdminShell(page, {
     permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canMarkPaid: true, canApplyFoodDiscounts: true },
   });
@@ -41,10 +42,48 @@ test("Order Summary discount applies via Apply Discount", async ({ page }) => {
   await discountBtn.click();
   await expect(page.getByRole("heading", { name: "Apply Discount" })).toBeVisible({ timeout: 10_000 });
   const discountModal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Apply Discount" }) });
+  await expect(discountModal.getByRole("button", { name: "Fixed Amount" })).toHaveClass(/border-purple-600/);
+  await discountModal.getByRole("button", { name: "Percentage" }).click();
+  await discountModal.getByPlaceholder("0").fill("101");
+  await expect(discountModal.getByText("max discount % can be 100 itself.")).toBeVisible();
+  await expect(discountModal.getByRole("button", { name: "Apply Discount" })).toBeDisabled();
   await discountModal.getByPlaceholder("0").fill("10");
   await discountModal.locator("select").selectOption("Complimentary");
   await discountModal.getByRole("button", { name: "Apply Discount" }).click();
   await expect.poll(() => foodRequests.filter((r) => r.action === "applyDiscount")).toHaveLength(1);
+  expect(foodRequests.find((r) => r.action === "applyDiscount")?.orderIds).toEqual([10]);
+});
+
+test("Order Summary Remove Discount clears zero-collection discounts", async ({ page }) => {
+  const discounted = {
+    ...SAMPLE_ORDER,
+    discount: 20000,
+    discountReason: "Complimentary",
+    discountBy: "timo",
+    subtotal: 0,
+    tax: 0,
+    total: 0,
+    amountPaid: 0,
+    paymentStatus: "paid" as const,
+  };
+  const { foodRequests } = await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canMarkPaid: true, canApplyFoodDiscounts: true },
+    onFoodOrders: (body) => {
+      if (body.action === "getWalkinOrders") return { json: { orders: [discounted] } };
+      if (body.action === "listOrders" && body.status === "all_history") return { json: { orders: [discounted] } };
+      return null;
+    },
+  });
+  await loginAdmin(page);
+  const drawer = await openWalkinOrderDrawer(page);
+  await drawer.getByRole("button", { name: "Bill" }).click();
+  await expect(drawer.getByRole("button", { name: /^Discount/ })).toBeVisible({ timeout: 10_000 });
+  await drawer.getByRole("button", { name: /^Discount/ }).click();
+  await expect(page.getByRole("heading", { name: "Apply Discount" })).toBeVisible({ timeout: 10_000 });
+  const discountModal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Apply Discount" }) });
+  await discountModal.getByRole("button", { name: "Remove Discount" }).click();
+  await expect.poll(() => foodRequests.filter((r) => r.action === "removeDiscount")).toHaveLength(1);
+  expect(foodRequests.find((r) => r.action === "removeDiscount")).toMatchObject({ orderIds: [10] });
 });
 
 test("void line item stages cancel then saveOrderEdits", async ({ page }) => {
