@@ -250,6 +250,26 @@ describe("analytics route lenses", () => {
     expect(body.comparison.deltas.bookings).toBe(0);
   });
 
+  it("puts advance October stays on create-day pickup and check-in-day arrivals, not Oct pickup", async () => {
+    await addBooking({
+      createdAt: "2026-09-15T08:00:00.000+05:30",
+      checkinDate: "2026-10-02",
+      checkoutDate: "2026-10-04",
+      status: "confirmed",
+      amountTotal: 500,
+      amountPaid: 0,
+      bookingRef: "oct-advance",
+    });
+
+    const body = await (await POST(request({ password: "admin", fromDate: "2026-09-01", toDate: "2026-10-31" }))).json();
+    type TrendDay = { date: string; bookings: number; arrivals: number };
+    const byDate = new Map<string, TrendDay>(body.trend.map((row: TrendDay) => [row.date, row]));
+    expect(byDate.get("2026-09-15")!.bookings).toBeGreaterThanOrEqual(1);
+    expect(byDate.get("2026-10-02")!.bookings).toBe(0);
+    expect(byDate.get("2026-10-02")!.arrivals).toBe(1);
+    expect(body.definitions.trendPickup).toMatch(/creation day/i);
+  });
+
   it("allows manager access without canViewAnalytics", async () => {
     state.auth.mockResolvedValue({ role: "manager", displayName: "Manager", permissions: {} });
     const res = await POST(request({ password: "x", fromDate: "2026-09-29", toDate: "2026-10-03" }));

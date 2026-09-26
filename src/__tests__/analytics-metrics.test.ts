@@ -12,6 +12,7 @@ import {
   percentDelta,
   priorDateRange,
   prorateByOverlapNights,
+  shouldShowPickupOccupancyTip,
   showPickupZeroHint,
 } from "@/lib/analyticsMetrics";
 
@@ -109,6 +110,17 @@ describe("analyticsMetrics", () => {
       expect(showPickupZeroHint(0, 36)).toBe(true);
       expect(showPickupZeroHint(2, 36)).toBe(false);
       expect(showPickupZeroHint(0, 0)).toBe(false);
+    });
+
+    it("shows pickup tip when occupancy exists on zero-pickup days", () => {
+      expect(shouldShowPickupOccupancyTip([
+        { bookings: 5, occupancy: 40 },
+        { bookings: 0, occupancy: 100 },
+      ])).toBe(true);
+      expect(shouldShowPickupOccupancyTip([
+        { bookings: 2, occupancy: 50 },
+        { bookings: 0, occupancy: null },
+      ])).toBe(false);
     });
   });
 });

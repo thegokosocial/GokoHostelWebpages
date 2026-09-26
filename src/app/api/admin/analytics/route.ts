@@ -683,6 +683,7 @@ export async function POST(req: NextRequest) {
         refundsAndDiscounts: "Refunds use issued/receipt date; discounts use the booking/order recorded range because separate discount-event timestamps are not stored",
         comparison: "Prior equal-length date window ending the day before the selected from date",
         trendStayRevenue: "Daily trend stay value uses full amountTotal on the planned check-in date (arrival lens), not night-prorated overlap",
+        trendPickup: "Unified trend Pickup series counts bookings by creation day in Asia/Kolkata; future dates and advance stays appear under Occupancy/Arrivals, not Pickup",
       },
       generatedAt: new Date().toISOString(),
     });

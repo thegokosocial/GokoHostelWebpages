@@ -80,3 +80,10 @@ export function formatPercentDelta(value: number | null | undefined): string | n
 export function showPickupZeroHint(pickup: number, onBooks: number): boolean {
   return pickup === 0 && onBooks > 0;
 }
+
+/** True when pickup trend is flat on days that still have bed occupancy (common for advance bookings / future dates). */
+export function shouldShowPickupOccupancyTip(
+  rows: { bookings: number; occupancy: number | null }[],
+): boolean {
+  return rows.some((row) => row.bookings === 0 && (row.occupancy || 0) > 0);
+}

@@ -7,7 +7,7 @@ import { AdminLoading } from "./AdminLoading";
 import type { Role } from "./types";
 import { todayIST } from "@/lib/utils";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
-import { formatPercentDelta, showPickupZeroHint } from "@/lib/analyticsMetrics";
+import { formatPercentDelta, shouldShowPickupOccupancyTip, showPickupZeroHint } from "@/lib/analyticsMetrics";
 
 type TrendRow = {
   date: string; bookings: number; arrivals: number; guests: number; stayRevenue: number; foodOrders: number; foodRevenue: number; expenses: number;
@@ -104,7 +104,7 @@ function KpiStrip({ title, children }: { title: string; children: React.ReactNod
 function UnifiedTrendChart({ rows, metric }: { rows: TrendRow[]; metric: TrendMetric }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const config: Record<TrendMetric, { label: string; color: string; currency?: "paise" | "rupees"; get: (row: TrendRow) => number }> = {
-    bookings: { label: "Bookings received", color: "#2f6b4f", get: (row) => row.bookings },
+    bookings: { label: "Pickup (created)", color: "#2f6b4f", get: (row) => row.bookings },
     arrivals: { label: "Arrivals", color: "#4f83cc", get: (row) => row.arrivals },
     stayRevenue: { label: "Booked stay value", color: "#287c63", currency: "rupees", get: (row) => row.stayRevenue },
     foodRevenue: { label: "Food sales", color: "#d88919", currency: "paise", get: (row) => row.foodRevenue },
@@ -182,7 +182,7 @@ export function AdminAnalytics({ password, username }: { password: string; usern
   const [toDate, setToDate] = useState(today);
   const [draftFromDate, setDraftFromDate] = useState(initialFromDate);
   const [draftToDate, setDraftToDate] = useState(today);
-  const [metric, setMetric] = useState<TrendMetric>("bookings");
+  const [metric, setMetric] = useState<TrendMetric>("occupancy");
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -234,7 +234,7 @@ export function AdminAnalytics({ password, username }: { password: string; usern
   const peakBookingHour = data.bookings.byHour.reduce((peak, row) => row.count > peak.count ? row : peak, { hour: 0, count: 0 });
   const peakCheckIn = data.bookings.checkInsByHour.reduce((peak, row) => row.count > peak.count ? row : peak, { hour: 0, count: 0 });
   const peakCheckOut = data.bookings.checkOutsByHour.reduce((peak, row) => row.count > peak.count ? row : peak, { hour: 0, count: 0 });
-  const trendMetrics: { id: TrendMetric; label: string }[] = [{ id: "bookings", label: "Bookings" }, { id: "arrivals", label: "Arrivals" }, { id: "stayRevenue", label: "Stay value" }, { id: "foodRevenue", label: "Food sales" }, { id: "expenses", label: "Expenses" }, { id: "occupancy", label: "Occupancy" }];
+  const trendMetrics: { id: TrendMetric; label: string }[] = [{ id: "occupancy", label: "Occupancy" }, { id: "arrivals", label: "Arrivals" }, { id: "bookings", label: "Pickup" }, { id: "stayRevenue", label: "Stay value" }, { id: "foodRevenue", label: "Food sales" }, { id: "expenses", label: "Expenses" }];
   const paymentRows = data.bookings.byPayment.map((row) => ({ label: titleCase(row.payment), value: row.count, secondary: row.value }));
   const channelRows = data.bookings.byChannel.map((row) => ({ label: titleCase(row.channel), value: row.count, secondary: row.revenue }));
   const topItems = data.food.topItems.map((row) => ({ label: row.item, value: row.quantity, secondary: row.revenue }));
@@ -274,8 +274,9 @@ export function AdminAnalytics({ password, username }: { password: string; usern
       <Panel title="Postpaid OTA payments received" subtitle={`Goko-collected INR pay-at-property collections and refunds by payment date, ${data.range.fromDate} through ${data.range.toDate}. Advances appear before check-in; this is a cash movement metric, separate from occupied-stay revenue.`} icon={<IndianRupeeIcon className="h-5 w-5" />}><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950/30"><div className="text-[11px] text-emerald-700/70 dark:text-emerald-300/70">Collected</div><div className="mt-1 text-xl font-bold text-emerald-700 dark:text-emerald-300">{money(s.postpaidOtaCollectionsPaise)}</div></div><div className="rounded-xl bg-rose-50 p-3 dark:bg-rose-950/30"><div className="text-[11px] text-rose-700/70 dark:text-rose-300/70">Refunded</div><div className="mt-1 text-xl font-bold text-rose-700 dark:text-rose-300">{money(s.postpaidOtaRefundsPaise)}</div></div><div className="rounded-xl bg-brand-sand/60 p-3"><div className="text-[11px] text-brand-green-dark/50">Net movement</div><div className="mt-1 text-xl font-bold text-brand-green-dark">{money(s.postpaidOtaNetPaise)}</div><div className="mt-1 text-[10px] text-brand-green-dark/50">Cash {money(s.postpaidOtaCashNetPaise)} · Online {money(s.postpaidOtaOnlineNetPaise)}</div></div></div></Panel>
     </div>
     <Panel title="Refunds and discounts" subtitle="Issued or applied within the selected recorded-date range. Stay values are in rupees; food values are in paise and converted for display."><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl bg-rose-50 p-3 dark:bg-rose-950/30"><div className="text-[11px] text-rose-700/70 dark:text-rose-300/70">Stay refunds issued</div><div className="mt-1 text-xl font-bold text-rose-700 dark:text-rose-300">{stayMoney(s.stayRefunds)}</div></div><div className="rounded-xl bg-rose-50 p-3 dark:bg-rose-950/30"><div className="text-[11px] text-rose-700/70 dark:text-rose-300/70">Food refunds issued</div><div className="mt-1 text-xl font-bold text-rose-700 dark:text-rose-300">{money(s.foodRefunds)}</div></div><div className="rounded-xl bg-amber-50 p-3 dark:bg-amber-950/30"><div className="text-[11px] text-amber-700/70 dark:text-amber-300/70">Stay discounts given</div><div className="mt-1 text-xl font-bold text-amber-700 dark:text-amber-300">{stayMoney(s.stayDiscounts)}</div></div><div className="rounded-xl bg-amber-50 p-3 dark:bg-amber-950/30"><div className="text-[11px] text-amber-700/70 dark:text-amber-300/70">Food discounts given</div><div className="mt-1 text-xl font-bold text-amber-700 dark:text-amber-300">{money(s.foodDiscounts)}</div></div></div></Panel>
-    <Panel title="Unified operating trend" subtitle="Switch the measure without changing the selected date range. Hover points for exact values." icon={<BarChart3Icon className="h-5 w-5" />}>
+    <Panel title="Unified operating trend" subtitle="Defaults to Occupancy (assigned bed-nights). Pickup is creation day in Asia/Kolkata; Arrivals use planned check-in date. Hover or tap points for exact values." icon={<BarChart3Icon className="h-5 w-5" />}>
       <div className="mb-5 grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">{trendMetrics.map((item) => <button key={item.id} type="button" onClick={() => setMetric(item.id)} className={`min-w-0 rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:px-3 ${metric === item.id ? "bg-brand-green text-white" : "bg-brand-sand/60 text-brand-green-dark/65 hover:bg-brand-green/10"}`}>{item.label}</button>)}</div>
+      {metric === "bookings" && shouldShowPickupOccupancyTip(data.trend) && <div className="mb-3 break-words rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900">Pickup is zero on days with no new creations—switch to Occupancy or Arrivals for stays already on the books (advance bookings and future nights).</div>}
       <UnifiedTrendChart rows={data.trend} metric={metric} />
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-brand-mist pt-4 text-xs text-brand-green-dark/60 sm:grid-cols-4"><span className="min-w-0 break-words"><b className="text-brand-green-dark">Total activity value</b><br />{money(s.totalRevenue)}</span><span className="min-w-0 break-words"><b className="text-brand-green-dark">Activity balance</b><br />{money(s.activityBalance)} <em className="not-italic text-[10px]">(not profit)</em></span><span className="min-w-0 break-words"><b className="text-brand-green-dark">Actual check-ins</b><br />{s.actualCheckIns}</span><span className="min-w-0 break-words"><b className="text-brand-green-dark">Actual checkouts</b><br />{s.actualCheckOuts}</span></div>
     </Panel>
