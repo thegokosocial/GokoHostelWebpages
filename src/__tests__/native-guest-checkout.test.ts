@@ -340,7 +340,14 @@ describe("prepareGuestCheckout", () => {
       persons: 2, // capacity 1
     }))).rejects.toMatchObject({
       status: 400,
-      message: expect.stringMatching(/sleeping capacity/i),
+      message: "Your selection sleeps up to 1. Add beds for 1 more guest.",
+    });
+    await expect(prepareGuestCheckout(prepareInput({
+      rooms: [{ roomId: "1-Bed", quantity: 1, ratePlanId: 1 }],
+      persons: 3, // capacity 1 → shortfall 2
+    }))).rejects.toMatchObject({
+      status: 400,
+      message: "Your selection sleeps up to 1. Add beds for 2 more guests.",
     });
   });
 

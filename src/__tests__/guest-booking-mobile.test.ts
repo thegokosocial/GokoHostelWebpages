@@ -55,7 +55,9 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("Guests <span className=\"text-brand-red\" aria-hidden=\"true\">*</span>");
     expect(panel).toContain("guestDetailsComplete");
     expect(panel).toContain("Fill in guest name, email, phone and guests to enable Pay now");
-    expect(panel).toContain("Guests cannot exceed Sleeps up to");
+    expect(panel).toContain("Your selection sleeps up to {capacity}");
+    expect(panel).toContain("Add beds for {guestsShortfall} more");
+    expect(panel).not.toContain("or lower Guests");
     expect(panel).not.toContain("Live payments — real money");
     expect(panel).not.toContain("Test-mode payments only");
     expect(panel).not.toContain("Ask Goko on WhatsApp");

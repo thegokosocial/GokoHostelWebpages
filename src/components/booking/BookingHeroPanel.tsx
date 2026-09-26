@@ -424,6 +424,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     && persons !== "" && Number.isInteger(Number(persons)) && Number(persons) >= 1 && Number(persons) <= capacity,
   );
   const guestsOverCapacity = persons !== "" && Number.isInteger(Number(persons)) && capacity > 0 && Number(persons) > capacity;
+  const guestsShortfall = guestsOverCapacity ? Number(persons) - capacity : 0;
   return <>
   <CheckoutWaitOverlay phase={checkoutWait} />
   <div ref={panelRef} data-booking-in-view={inView} className="min-w-0 rounded-2xl bg-white p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
@@ -544,7 +545,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             </div>
             {guestsOverCapacity && (
               <p role="status" className="mt-2 text-sm text-brand-red">
-                Guests cannot exceed Sleeps up to {capacity}.
+                Your selection sleeps up to {capacity}. Add beds for {guestsShortfall} more {guestsShortfall === 1 ? "guest" : "guests"}.
               </p>
             )}
             {nativeCheckoutReady && paymentOptions ? <>

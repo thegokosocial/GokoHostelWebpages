@@ -500,8 +500,9 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   const { bedIds, units } = await allocateGuestSelection({ ...input, directBookingDiscountPercent: policy.directBookingDiscountPercent });
   const sleepingCapacity = units.reduce((n, u) => n + (u.type === "Double" ? 2 : 1), 0);
   if (input.persons > sleepingCapacity) {
+    const shortfall = input.persons - sleepingCapacity;
     throw new GuestCheckoutError(
-      `Guests cannot exceed the sleeping capacity of ${sleepingCapacity} for the selected beds`,
+      `Your selection sleeps up to ${sleepingCapacity}. Add beds for ${shortfall} more ${shortfall === 1 ? "guest" : "guests"}.`,
       400,
     );
   }
