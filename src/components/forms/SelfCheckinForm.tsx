@@ -770,7 +770,7 @@ export function SelfCheckinForm() {
 
   if (step === "phone" && !success && !submitting) {
     return (
-      <div className="mx-auto max-w-lg rounded-3xl border border-brand-mist bg-white dark:bg-card p-6 shadow-card dark:shadow-none md:p-10">
+      <div className="goko-glass-panel mx-auto max-w-lg rounded-3xl p-6 shadow-card md:p-10">
         <h2 className="font-display text-2xl font-bold text-brand-green md:text-3xl">
           Guest Self Check-in
         </h2>
@@ -828,7 +828,7 @@ export function SelfCheckinForm() {
 
   if (success) {
     return (
-      <div className="mx-auto max-w-lg rounded-3xl border border-brand-mist bg-white dark:bg-card p-6 shadow-card dark:shadow-none md:p-10">
+      <div className="goko-glass-panel mx-auto max-w-lg rounded-3xl p-6 shadow-card md:p-10">
         <div className="text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-green/10">
             <CheckCircle2Icon className="h-8 w-8 text-brand-green" />
@@ -882,7 +882,7 @@ export function SelfCheckinForm() {
 
   if (submitting) {
     return (
-      <div className="mx-auto max-w-2xl rounded-3xl border border-brand-mist bg-white dark:bg-card p-12 text-center shadow-card dark:shadow-none md:p-16">
+      <div className="goko-glass-panel mx-auto max-w-2xl rounded-3xl p-12 text-center shadow-card md:p-16">
         <div className="mx-auto flex h-20 w-20 items-center justify-center">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
         </div>
@@ -904,7 +904,7 @@ export function SelfCheckinForm() {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="mx-auto max-w-2xl rounded-3xl border border-brand-mist bg-white dark:bg-card p-6 shadow-card dark:shadow-none md:p-10"
+      className="goko-glass-panel mx-auto max-w-2xl rounded-3xl p-6 shadow-card md:p-10"
     >
       <h2 className="font-display text-2xl font-bold text-brand-green md:text-3xl">
         Guest Self Check-in
@@ -914,7 +914,7 @@ export function SelfCheckinForm() {
       </p>
 
       {returnGuest && (
-        <div className="mt-4 rounded-2xl border border-brand-green/20 bg-brand-green/[0.04] p-4">
+        <div className="goko-glass-chip mt-4 rounded-2xl border border-brand-green/30 p-4">
           <p className="text-sm font-medium text-brand-green">
             Welcome back, {returnGuest.name}! We&apos;ve loaded your previous details. Please review and update if needed.
           </p>

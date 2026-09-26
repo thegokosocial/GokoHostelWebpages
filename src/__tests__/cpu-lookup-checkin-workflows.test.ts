@@ -443,8 +443,19 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     const island = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinFormIsland.tsx"), "utf-8");
     expect(page).toContain("Welcome to Goko Hostel");
     expect(page).toContain("SelfCheckinFormIsland");
+    expect(page).toContain("HeroBackdrop");
+    expect(page).toContain("heroLoopVideo");
+    expect(page).toContain("goko-hero-title");
     expect(page).not.toContain("ssr: false");
     expect(island).toContain("ssr: false");
+  });
+
+  it("frosts self-checkin form shells over the hero video", () => {
+    const form = fs.readFileSync(path.join(ROOT, "src/components/forms/SelfCheckinForm.tsx"), "utf-8");
+    expect(form).toContain("goko-glass-panel");
+    expect(form).toContain("goko-glass-chip");
+    expect(form).not.toContain("border border-brand-mist bg-white dark:bg-card p-6 shadow-card");
+    expect(form).toContain('goko-glass-chip mt-4 rounded-2xl border border-brand-green/30');
   });
 
   it("disallows /review in robots and lists /reviews in the sitemap", () => {
