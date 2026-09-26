@@ -420,4 +420,10 @@ describe("Check Rates scrape dates are exclusive", () => {
     expect(checkRates).toContain("minDate={todayIST()}");
     expect(rateScrapeDates("2026-09-16", "2026-09-18")).toEqual(["2026-09-16", "2026-09-17"]);
   });
+
+  it("points failed scrapes at Actions auth/callback diagnostics", () => {
+    expect(checkRates).toContain("API_PASSWORD");
+    expect(checkRates).toContain("ADMIN_PASSWORD");
+    expect(checkRates).toContain("auth preflight or callback 401");
+  });
 });

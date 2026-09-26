@@ -261,7 +261,17 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
               {scrapeData.status === "done" && <p>Scrape completed at {new Date(scrapeData.completedAt).toLocaleString()} — showing {scrapeData.results.length} properties.</p>}
               {scrapeData.status === "partial" && <p>Scrape partially completed. Some prices could not be verified.</p>}
               {!!scrapeData.failedDates?.length && <p>Incomplete dates: {scrapeData.failedDates.join(", ")}</p>}
-              {scrapeData.status === "failed" && <p>Scrape failed. Try again or check logs.</p>}
+              {scrapeData.status === "failed" && (
+                <p>
+                  Scrape failed. Check{" "}
+                  <a href={ACTIONS_URL} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                    Actions logs
+                  </a>
+                  {" "}— auth preflight or callback 401 usually means repo secret{" "}
+                  <code className="text-[11px]">API_PASSWORD</code> no longer matches Worker{" "}
+                  <code className="text-[11px]">ADMIN_PASSWORD</code>.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {(scrapeData.status === "pending" || scrapeData.status === "in_progress") && (

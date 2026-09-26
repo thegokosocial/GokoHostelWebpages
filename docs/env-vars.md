@@ -67,7 +67,7 @@ Worker itself uses bindings `DB` and `EMAIL`, not these HTTP vars. Email flow: [
 
 | Name | Purpose |
 |------|---------|
-| `GITHUB_TOKEN` / `GITHUB_REPO` | Rate-scrape workflow dispatch (Worker). GitHub Actions also needs repo secrets `API_URL` + `API_PASSWORD` (= `ADMIN_PASSWORD`) so the scraper can write `rate_scrapes` |
+| `GITHUB_TOKEN` / `GITHUB_REPO` | Rate-scrape workflow dispatch (Worker). GitHub Actions also needs repo secrets `API_URL` + `API_PASSWORD` (= live Worker `ADMIN_PASSWORD`) so the scraper can write `rate_scrapes`. Re-sync `API_PASSWORD` whenever `ADMIN_PASSWORD` changes — auth preflight fails closed on mismatch. |
 | `VAPID_PRIVATE_KEY` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web push; no-op if unset |
 | `CRON_SECRET` | Protects the internal scheduled reconciliation-reminder endpoint |
 | `ANALYZE` | `npm run analyze` bundle |

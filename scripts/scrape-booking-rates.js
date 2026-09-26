@@ -9,6 +9,7 @@
  */
 const puppeteer = require("puppeteer");
 const { extractBookingCards } = require("./booking-rate-parser");
+const { slimCallbackPayload } = require("./rate-scrape-callback");
 const { writeFile } = require("node:fs/promises");
 
 const SCRAPE_ID = process.env.SCRAPE_ID;
@@ -28,6 +29,7 @@ const PROPERTY_TYPE_IDS = {
 };
 
 const CALLBACK_RETRIES = 3;
+const NO_RETRY_STATUSES = new Set([401, 403, 404]);
 
 function generateDates(start, end) {
   const dates = [];
@@ -46,6 +48,7 @@ function buildUrl(city, checkin, checkout, propertyType) {
 }
 
 async function postResults(status, results) {
+  const slim = slimCallbackPayload(results);
   let lastError;
   for (let attempt = 1; attempt <= CALLBACK_RETRIES; attempt++) {
     try {
@@ -56,19 +59,22 @@ async function postResults(status, results) {
           password: API_PASSWORD,
           action: "updateRateScrapeResults",
           scrapeId: parseInt(SCRAPE_ID, 10),
-          results: typeof results === "string" ? results : JSON.stringify(results),
+          results: typeof slim === "string" ? slim : JSON.stringify(slim),
           status,
         }),
       });
       if (res.ok) {
-        console.log(`✓ Posted status=${status}${attempt > 1 ? ` (attempt ${attempt})` : ""}.`);
+        console.log(`Posted status=${status}${attempt > 1 ? ` (attempt ${attempt})` : ""}.`);
         return;
       }
-      lastError = new Error(`Failed to post results: ${res.status}`);
+      const bodyText = (await res.text().catch(() => "")).slice(0, 400);
+      lastError = new Error(`Failed to post results: ${res.status}${bodyText ? ` ${bodyText}` : ""}`);
+      console.error(`Callback attempt ${attempt}/${CALLBACK_RETRIES} failed:`, lastError.message);
+      if (NO_RETRY_STATUSES.has(res.status)) break;
     } catch (err) {
       lastError = err;
+      console.error(`Callback attempt ${attempt}/${CALLBACK_RETRIES} failed:`, lastError?.message || lastError);
     }
-    console.error(`Callback attempt ${attempt}/${CALLBACK_RETRIES} failed:`, lastError?.message || lastError);
     if (attempt < CALLBACK_RETRIES) {
       await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
     }

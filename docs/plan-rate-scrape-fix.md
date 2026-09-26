@@ -30,3 +30,22 @@ The comparison basis remains signed-out desktop Booking.com, one adult, zero chi
 Deploy the API and dashboard reader before running the new scraper workflow: older UI versions cannot read version 2 envelopes. Reload open admin pages after deployment. The workflow runs parser and flow checks before scraping. No database migration or historical rewrite is required.
 
 Then run a fresh production scrape and inspect Goko's evidence for the same dates. A GitHub/proxy response of ₹400 must be compared with its captured card and offer/context, not forced to ₹500. Local verification demonstrates correct extraction for the live local response; it does not prove historical ₹400 was a parser error or guarantee identical offers across origins. Deployment and the production scrape are not part of this local implementation.
+
+## Callback 401 fix (2026-09-26)
+
+Live failed run `36218137302` scraped Booking.com for ~10 minutes then died on `Failed to post results: 401`. Scrape id 23 stayed `pending` (that SHA had no `in_progress` post). Live probes against the Worker:
+
+- Wrong password → `401 {"error":"Unauthorized"}` (JSON, not Cloudflare HTML).
+- Local `ADMIN_PASSWORD` from maintainer secrets → `getLatestRateScrape` `200`.
+- GitHub repo secret `API_PASSWORD` last updated **2026-05-20** — treat as drifted until re-synced to live `ADMIN_PASSWORD`.
+- Fat 20-property callback body ~105KB; slim evidence (`cardText` ≤240) ~10KB (~9.5%).
+
+Implemented:
+
+- `scripts/rate-scrape-callback.js` — truncate evidence before POST.
+- `scrape-booking-rates.js` — slim payload; log response body; **no retry** on 401/403/404.
+- `scrape-rates.yml` — require secrets, **auth preflight** (`getLatestRateScrape`), run `test-rate-scrape-callback.js`.
+- Admin Check Rates failed-state copy points at Actions / `API_PASSWORD` sync.
+- Ops: re-sync GitHub `API_PASSWORD` to Worker `ADMIN_PASSWORD`, push this fix, then retry a short date range from Check Rates.
+
+Stuck scrape **id 23** was marked `failed` during live verification so the dashboard is not left on pending.

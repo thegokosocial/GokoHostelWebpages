@@ -46,6 +46,33 @@ jobs:
             exit 1
           fi
 
+      - name: Verify API callback auth
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          API_PASSWORD: ${{ secrets.API_PASSWORD }}
+        run: |
+          node <<'NODE'
+          const url = process.env.API_URL;
+          const password = process.env.API_PASSWORD;
+          (async () => {
+            const res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password, action: "getLatestRateScrape", city: "Gokarna" }),
+            });
+            const text = await res.text();
+            if (!res.ok) {
+              console.error(`Callback auth failed: ${res.status} ${text.slice(0, 400)}`);
+              console.error("Set GitHub secret API_PASSWORD to the live Worker ADMIN_PASSWORD, and API_URL to …/api/admin/checkins");
+              process.exit(1);
+            }
+            console.log("Callback auth OK");
+          })().catch((err) => {
+            console.error(err);
+            process.exit(1);
+          });
+          NODE
+
       - name: Install Puppeteer
         run: npm install puppeteer
 
@@ -53,6 +80,7 @@ jobs:
         run: |
           node scripts/test-booking-rate-parser.js
           node scripts/test-rate-scrape-flow.js
+          node scripts/test-rate-scrape-callback.js
 
       - name: Run scraper
         env:

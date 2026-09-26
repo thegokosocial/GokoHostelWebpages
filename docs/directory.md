@@ -18,7 +18,7 @@ GokoWeb/
 ├── src/__tests__/                # Vitest
 ├── migrations/                   # Wrangler D1 production SQL (0001–0042)
 ├── drizzle/                      # stale kit output — not prod
-├── scripts/                      # Pi, FRRO, Drive token, scrape, backup-pi.sh
+├── scripts/                      # Pi, FRRO, Drive token, backup; rate scrape (scrape-booking-rates.js, rate-scrape-callback.js, booking-rate-parser.js + node tests)
 ├── public/                       # images, videos/hero, icons, manifest
 ├── wrangler.jsonc
 └── .github/workflows/            # ci.yml + scrape-rates.yml (no deploy)
