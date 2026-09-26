@@ -94,10 +94,10 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<GridData | null>(null);
   const [rangeStart, setRangeStart] = useState(() => todayIST());
-  const [rangeDays, setRangeDays] = useState(14);
+  const [rangeDays, setRangeDays] = useState(15);
   const [rangeMode, setRangeMode] = useState<"preset" | "custom">("preset");
   const [customStart, setCustomStart] = useState(() => todayIST());
-  const [customEnd, setCustomEnd] = useState(() => addCalendarDays(todayIST(), 13));
+  const [customEnd, setCustomEnd] = useState(() => addCalendarDays(todayIST(), 14));
   const [customError, setCustomError] = useState("");
   const [editingCell, setEditingCell] = useState<{ dormId: number; date: string } | null>(null);
   const [editingRate, setEditingRate] = useState<{ ratePlanId: number; date: string } | null>(null);
@@ -196,7 +196,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
     setRangeMode("custom");
   };
 
-  const colWidth = rangeDays <= 7 ? 80 : rangeDays <= 14 ? 60 : 48;
+  const colWidth = rangeDays <= 15 ? 60 : rangeDays <= 30 ? 48 : 40;
 
   if (loading && !data) {
     return (
@@ -224,7 +224,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           </Button>
         </div>
         <div className="flex gap-1">
-          {[7, 14, 30].map((d) => (
+          {[15, 30, 60].map((d) => (
             <Button key={d} variant={rangeMode === "preset" && rangeDays === d ? "default" : "outline"} size="sm" onClick={() => { setRangeMode("preset"); setRangeDays(d); }}>
               {d}d
             </Button>

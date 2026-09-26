@@ -200,16 +200,20 @@ describe("Inventory grid: date helpers stay in sync with source", () => {
     expect(stopped).not.toContain("bg-amber-50");
   });
 
-  it("builds 7/14/30-day ranges without skipping days across month ends", () => {
-    expect(ui).toContain("rangeDays <= 7 ? 80 : rangeDays <= 14 ? 60 : 48");
-    const fourteen = generateDates("2026-08-29", 14);
-    expect(fourteen).toHaveLength(14);
-    expect(fourteen[0]).toBe("2026-08-29");
-    expect(fourteen[2]).toBe("2026-08-31");
-    expect(fourteen[3]).toBe("2026-09-01");
-    expect(fourteen[13]).toBe("2026-09-11");
-    expect(generateDates("2026-08-29", 7)).toHaveLength(7);
+  it("builds 15/30/60-day ranges without skipping days across month ends", () => {
+    expect(ui).toContain("rangeDays <= 15 ? 60 : rangeDays <= 30 ? 48 : 40");
+    expect(ui).toContain("useState(15)");
+    expect(ui).toContain("{[15, 30, 60].map");
+    expect(ui).not.toContain("{[7, 14, 30].map");
+    const fifteen = generateDates("2026-08-29", 15);
+    expect(fifteen).toHaveLength(15);
+    expect(fifteen[0]).toBe("2026-08-29");
+    expect(fifteen[2]).toBe("2026-08-31");
+    expect(fifteen[3]).toBe("2026-09-01");
+    expect(fifteen[14]).toBe("2026-09-12");
     expect(generateDates("2026-08-29", 30)[29]).toBe("2026-09-27");
+    expect(generateDates("2026-08-29", 60)).toHaveLength(60);
+    expect(generateDates("2026-08-29", 60)[59]).toBe("2026-10-27");
   });
 });
 
@@ -343,7 +347,7 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(ui).toContain('action: "bulkSetRates"');
     expect(ui).toContain('action: "bulkAdjustRates"');
     expect(ui).toContain('action: "bulkSetRestrictions"');
-    expect(ui).toContain("{[7, 14, 30].map");
+    expect(ui).toContain("{[15, 30, 60].map");
     expect(ui).toContain('action: "getInventoryGrid"');
     expect(queries).toContain("export async function getInventoryGridData");
     expect(queries).toContain("unassignedOta");

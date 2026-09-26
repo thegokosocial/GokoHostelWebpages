@@ -21,6 +21,8 @@ describe("admin custom date ranges", () => {
   it("keeps custom ranges inclusive across Inventory and Timeline", () => {
     expect(inventory).toContain("setRangeDays(diff + 1)");
     expect(inventory).toContain("const endDate = dates[dates.length - 1] || rangeStart;");
+    expect(inventory).toContain("{[15, 30, 60].map");
+    expect(inventory).toContain("useState(15)");
     expect(timeline).toContain("setNumDays(diff + 1)");
     expect(timeline).toContain("addCalendarDays(startDate, i)");
     expect(inclusiveDays("2026-09-15", "2026-11-30")).toBe(77);
