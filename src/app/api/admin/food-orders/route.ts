@@ -36,6 +36,8 @@ import {
   getMenuItemCategoryExemptions,
   getAuditRetentionCutoff,
   createFoodBillShareToken,
+  getFoodOrdersByCheckinIds,
+  getFoodOrdersByIds,
 } from "@/db/queries";
 import { parseFoodCheckoutGraceDays, foodTaxPercent } from "@/lib/foodLookup";
 import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
@@ -1435,15 +1437,17 @@ export async function POST(req: NextRequest) {
         if (selectedCheckinIds.length === 0 && selectedOrderIds.length === 0) {
           return NextResponse.json({ error: "Select at least one unpaid guest or order" }, { status: 400 });
         }
-        const db = getDb();
-        const selector = selectedCheckinIds.length && selectedOrderIds.length
-          ? or(inArray(foodOrders.checkinId, selectedCheckinIds), inArray(foodOrders.id, selectedOrderIds))
-          : selectedCheckinIds.length ? inArray(foodOrders.checkinId, selectedCheckinIds) : inArray(foodOrders.id, selectedOrderIds);
-        const rows = await db.select().from(foodOrders).where(and(
-          selector,
-          sql`${foodOrders.status} != 'cancelled'`,
-        ));
-        const orders = rows.filter((order) => foodDue(order) > 0);
+        // Batched IN loads (D1 ~100 bind cap). Dedupe by order id so crafted
+        // overlap of checkinIds + orderIds cannot double-count (OR of two INs
+        // returned each row once; naive concat would not).
+        const [fromCheckins, fromOrders] = await Promise.all([
+          selectedCheckinIds.length ? getFoodOrdersByCheckinIds(selectedCheckinIds) : Promise.resolve([]),
+          selectedOrderIds.length ? getFoodOrdersByIds(selectedOrderIds) : Promise.resolve([]),
+        ]);
+        const byId = new Map<number, (typeof fromCheckins)[number]>();
+        for (const order of fromCheckins) byId.set(order.id, order);
+        for (const order of fromOrders) byId.set(order.id, order);
+        const orders = [...byId.values()];
         const selectedOrderRows = orders.map((o) => o.id);
         const [itemsMap, modCountMap] = await Promise.all([
           getFoodOrderItemsBatch(selectedOrderRows),

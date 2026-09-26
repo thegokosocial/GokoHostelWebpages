@@ -40,6 +40,7 @@ describe("Workers CPU: zero-regression API paths", () => {
     expect(section!).toContain("isBusy");
     expect(section!).not.toContain("getAllMenuItems");
     expect(section!).toContain("inArray(orderModifications.orderId, batchIds)");
+    expect(section!).toContain("uniqueInBatches(orderIds, D1_IN_BATCH_SIZE)");
     expect(section!).toContain("if (orderIds.length > 0)");
     expect(section!.split("getFoodOrderItemsBatch").length - 1).toBe(1);
 

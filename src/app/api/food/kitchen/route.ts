@@ -30,6 +30,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { authenticateKitchen } from "@/lib/auth";
 import { foodTaxPercent } from "@/lib/foodLookup";
 import { dbRead } from "@/lib/dbRetry";
+import { D1_IN_BATCH_SIZE, uniqueInBatches } from "@/lib/dbBatch";
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,8 +61,7 @@ export async function POST(req: NextRequest) {
         // temporarily unavailable during schema sync or database recovery.
         try {
           const db = getDb();
-          for (let start = 0; start < orderIds.length; start += 50) {
-            const batchIds = orderIds.slice(start, start + 50);
+          for (const batchIds of uniqueInBatches(orderIds, D1_IN_BATCH_SIZE)) {
             const modCounts = await db.select({
               orderId: orderModifications.orderId,
               count: sql<number>`COUNT(*)`,

@@ -115,6 +115,8 @@ Env manager (`MANAGER_PASSWORD`) → `permissions: {}` → **fails every gated a
 
 `createFoodOrder` then `addFoodOrderItems` are separate D1 writes (no `db.transaction()` — see D1 + `getDb()` bug). `addFoodOrderItems` chunks inserts (5 rows/statement) so carts with 9–12+ distinct lines stay under D1’s ~100 bind limit; failing to chunk caused incomplete orphans after compensate-cancel. A header with `total > 0` and zero lines is an incomplete orphan. Guest/admin place paths compensate with `abandonIncompleteFoodOrder` (unpaid + no lines only), heal matching idempotent retries (`healed: true`), and 409 `incomplete_food_order` on mismatch. Order Summary shows `INCOMPLETE_FOOD_ORDER_BANNER`. Do not treat blank items as a UI render bug until `food_order_items` is checked. **Remove Discount** uses `isFoodDiscountRemovable` (`discount > 0 && foodAmountPaid === 0`); do not strip discounts from orders with collected payment. **Order More** prefill is locked in Place Order (`orderMorePrefill` / `lockedPrefill`) until place success, Change guest, Add New, or leave Place — never clear on mount (async `?tab=` remounts used to drop the guest).
 
+**Same D1 bind landmine elsewhere:** multi-row settlement `allocateBatch` (OTA ~12 binds/row, website ~7) must chunk and commit with `db.batch` — never sequential chunks (UUID `allocationKey` is not idempotent). Large `IN` lists use `collectInBatches` / `D1_IN_BATCH_SIZE=25`. Combined Bill uses `getFoodOrdersByCheckinIds` + `getFoodOrdersByIds` and **dedupes by order id** (naive concat of both legs can double `grandTotal`).
+
 ### 6. Food Kannada sync drift
 
 UI/settings: `food_kannada_kitchen_print`, `food_kannada_kitchen_display`.  

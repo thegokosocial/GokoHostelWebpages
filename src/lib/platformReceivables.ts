@@ -13,6 +13,11 @@ import { syncInsert } from "@/db/syncMeta";
 import { createGuestReceipt, requireActiveReceiptAccount } from "@/lib/guestReceipts";
 import { collectInBatches } from "@/lib/dbBatch";
 
+/** ~12 binds/row with syncInsert; keep under D1's ~100 bind/statement cap with headroom. */
+export const PLATFORM_ALLOC_INSERT_CHUNK = 7;
+/** ~7 binds/row (no sync cols); same headroom policy as OTA allocations. */
+export const GATEWAY_ALLOC_INSERT_CHUNK = 12;
+
 export type PlatformAmounts = {
   grossPaise: number;
   taxChargedPaise: number;
@@ -477,9 +482,22 @@ export async function allocatePlatformSettlementBatch(data: {
       allocatedPaise: item.allocatedPaise, varianceType, notes: item.notes || "", createdBy: data.actor, createdAt: new Date().toISOString(),
     });
   });
-  // One multi-row INSERT keeps a selected payout allocation all-or-nothing.
-  const rows = await db.insert(platformSettlementAllocations).values(insertionRows).returning({ id: platformSettlementAllocations.id });
-  return { ids: rows.map((row) => row.id), unallocatedPaise: settlement[0].actualAmountPaise - used - requested };
+  // D1 ~100 binds/statement: syncInsert rows are ~12 binds each → chunk ≤7.
+  // db.batch keeps multi-chunk allocate all-or-nothing (UUID allocationKey is not idempotent).
+  const batch = (db as unknown as { batch?: (statements: unknown[]) => Promise<Array<Array<{ id: number }>>> }).batch;
+  if (typeof batch !== "function") {
+    throw new Error("D1 batch API unavailable for platform settlement allocation");
+  }
+  const chunks: typeof insertionRows[] = [];
+  for (let start = 0; start < insertionRows.length; start += PLATFORM_ALLOC_INSERT_CHUNK) {
+    chunks.push(insertionRows.slice(start, start + PLATFORM_ALLOC_INSERT_CHUNK));
+  }
+  const results = await batch.call(
+    db,
+    chunks.map((chunk) => db.insert(platformSettlementAllocations).values(chunk).returning({ id: platformSettlementAllocations.id })),
+  );
+  const ids = results.flatMap((rows) => rows.map((row) => row.id));
+  return { ids, unallocatedPaise: settlement[0].actualAmountPaise - used - requested };
 }
 
 export function bookingAmountsFromRaw(rawData: string | null | undefined, fallback: { amountTotal?: number | null; amountTax?: number | null } = {}): PlatformAmounts {

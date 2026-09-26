@@ -11,6 +11,7 @@ import {
   allocatePlatformSettlementBatch,
   bookingAmountsFromRaw,
   createPlatformSettlement,
+  GATEWAY_ALLOC_INSERT_CHUNK,
   gatewayExpectedNetPaise,
   getPlatformReceivableSummary,
   parsePlatformAmounts,
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
       const platform = rest.allocations.filter((item: any) => item?.type !== "website");
       if (website.length && platform.length) return NextResponse.json({ error: "A payout can only be allocated to one receivable source" }, { status: 400 });
       if (website.length) {
+        if (website.length > 100) return NextResponse.json({ error: "Choose a payout and between 1 and 100 receivables" }, { status: 400 });
         if (isPiRuntime()) return NextResponse.json({ error: "Website payment allocations are available on the Cloudflare runtime" }, { status: 400 });
         const db = getDb();
         const settlementId = Number(rest.settlementId);
@@ -142,12 +144,25 @@ export async function POST(req: NextRequest) {
         })) return NextResponse.json({ error: "An allocation exceeds a selected website payment's net receivable" }, { status: 400 });
         const values = website.map((item: any) => {
           const payment = paymentMap.get(String(item.paymentId))!.payment;
-          const allocated = existing.filter((row) => row.paymentId === payment.id).reduce((sum, row) => sum + row.allocatedPaise, 0);
           const amount = Number(item.allocatedPaise);
           return { settlementId, paymentId: payment.id, allocationKey: `gateway-allocation:${settlementId}:${payment.id}:${crypto.randomUUID()}`, allocatedPaise: amount, notes: String(item.notes || ""), createdBy: actor, createdAt: new Date().toISOString() };
         });
-        const inserted = await db.insert(gatewaySettlementAllocations).values(values).returning({ id: gatewaySettlementAllocations.id });
-        return NextResponse.json({ success: true, ids: inserted.map((row) => row.id), unallocatedPaise: settlement[0].actualAmountPaise - payoutUsed - requested });
+        // D1 ~100 binds/statement: gateway rows are ~7 binds each → chunk ≤12.
+        // db.batch keeps multi-chunk allocate all-or-nothing (UUID allocationKey is not idempotent).
+        const batch = (db as unknown as { batch?: (statements: unknown[]) => Promise<Array<Array<{ id: number }>>> }).batch;
+        if (typeof batch !== "function") {
+          return NextResponse.json({ error: "D1 batch API unavailable for website settlement allocation" }, { status: 500 });
+        }
+        const chunks: typeof values[] = [];
+        for (let start = 0; start < values.length; start += GATEWAY_ALLOC_INSERT_CHUNK) {
+          chunks.push(values.slice(start, start + GATEWAY_ALLOC_INSERT_CHUNK));
+        }
+        const results = await batch.call(
+          db,
+          chunks.map((chunk) => db.insert(gatewaySettlementAllocations).values(chunk).returning({ id: gatewaySettlementAllocations.id })),
+        );
+        const ids = results.flatMap((rows) => rows.map((row) => row.id));
+        return NextResponse.json({ success: true, ids, unallocatedPaise: settlement[0].actualAmountPaise - payoutUsed - requested });
       }
       const allocations = platform.map((item: any) => ({ bookingId: Number(item.bookingId), bookingCycle: Number(item.bookingCycle || 1), allocatedPaise: Number(item.allocatedPaise), varianceType: item.varianceType, notes: item.notes }));
       const result = await allocatePlatformSettlementBatch({ settlementId: Number(rest.settlementId), allocations, actor });

@@ -1557,6 +1557,19 @@ export async function getFoodOrdersByCheckinIds(checkinIds: number[]) {
   return rows.filter((order) => foodDue(order) > 0).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+/** Bind-safe load of due, non-cancelled food orders by primary key (Combined Bill walk-ins). */
+export async function getFoodOrdersByIds(orderIds: number[]) {
+  const db = getDb();
+  if (orderIds.length === 0) return [];
+  const rows = await collectInBatches(orderIds, (batch) => db.select().from(foodOrders)
+    .where(and(
+      inArray(foodOrders.id, batch),
+      sql`${foodOrders.status} != 'cancelled'`,
+    ))
+    .orderBy(foodOrders.createdAt));
+  return rows.filter((order) => foodDue(order) > 0).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
 // --- Food bill share tokens (Cloudflare-only) ---
 
 export async function createFoodBillShareToken(data: {
