@@ -171,18 +171,6 @@ export function evaluateIdSides(
   return { requiresBothSides: true, hasFront, hasAddress, missing };
 }
 
-/** When Vision is down, Aadhaar / Indian passport need 2+ files (or a prior successful verify). */
-export function bothSidesFileGateAllows(opts: {
-  idType: string;
-  nationality?: string | null;
-  fileCount: number;
-  visionUnavailable: boolean;
-}): boolean {
-  if (!opts.visionUnavailable) return true;
-  if (!requiresBothIdSides(opts.idType, opts.nationality)) return true;
-  return opts.fileCount >= 2;
-}
-
 // --- Layer helpers ---
 
 const DOCUMENT_LABELS = [

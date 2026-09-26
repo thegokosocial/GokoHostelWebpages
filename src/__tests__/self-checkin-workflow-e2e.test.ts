@@ -119,19 +119,16 @@ function validateRequest(fields: {
   return new NextRequest("http://localhost/api/validate-id", { method: "POST", body: fd });
 }
 
-/** Guest UI gate: submit unlocked after verify success or soft service error (with both-sides file gate). */
+/** Guest UI gate: submit unlocked after verify success or soft service error. */
 function guestCanSubmit(state: {
   validationEnabled: boolean;
   idValidated: boolean;
   idServerError: boolean;
   hasPrevId: boolean;
   hasIdFiles: boolean;
-  bothSidesRequired?: boolean;
-  idFileCount?: number;
 }) {
   if (!state.validationEnabled) return true;
   if (state.hasPrevId) return true;
-  if (state.idServerError && state.bothSidesRequired && (state.idFileCount ?? 0) < 2) return false;
   if (state.idValidated || state.idServerError) return true;
   return !state.hasIdFiles;
 }
@@ -239,7 +236,7 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("name_review");
     });
 
-    it("Vision throw with 1 Aadhaar file hard-gates check-in (need both sides)", async () => {
+    it("Vision throw with 1 Aadhaar file soft-allows check-in as pending", async () => {
       q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
 
       const validateRes = await validateIdPOST(validateRequest({
@@ -256,18 +253,17 @@ describe("self-check-in mock E2E workflows", () => {
         name: "Pawan Dhiran",
         contactNumber: "9000000003",
       }), [idFile("front.jpg")]));
-      expect(checkinRes.status).toBe(422);
-      const body = await checkinRes.json();
-      expect(body.error).toMatch(/front and back|DigiLocker/i);
-      expect(q.addCheckin).not.toHaveBeenCalled();
+      expect(checkinRes.status).toBe(200);
+      expect(q.addCheckin.mock.calls[0][0].verified).toBe("pending");
     });
 
-    it("Vision throw with 2 Aadhaar files soft-allows check-in as pending", async () => {
+    it("Vision throw with DigiLocker-style single PDF still pending", async () => {
       q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
+      const pdf = new File(["fake-pdf"], "aadhaar.pdf", { type: "application/pdf" });
       const checkinRes = await checkinPOST(checkinRequest(baseFields({
         name: "Pawan Dhiran",
         contactNumber: "9000000033",
-      }), [idFile("front.jpg"), idFile("back.jpg")]));
+      }), [pdf]));
       expect(checkinRes.status).toBe(200);
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("pending");
     });
@@ -379,27 +375,6 @@ describe("self-check-in mock E2E workflows", () => {
         idServerError: true,
         hasPrevId: false,
         hasIdFiles: true,
-      })).toBe(true);
-    });
-
-    it("blocks Vision-down Aadhaar submit until both sides are uploaded", () => {
-      expect(guestCanSubmit({
-        validationEnabled: true,
-        idValidated: false,
-        idServerError: true,
-        hasPrevId: false,
-        hasIdFiles: true,
-        bothSidesRequired: true,
-        idFileCount: 1,
-      })).toBe(false);
-      expect(guestCanSubmit({
-        validationEnabled: true,
-        idValidated: false,
-        idServerError: true,
-        hasPrevId: false,
-        hasIdFiles: true,
-        bothSidesRequired: true,
-        idFileCount: 2,
       })).toBe(true);
     });
 

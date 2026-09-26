@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation, requiresBothIdSides, bothSidesFileGateAllows } from "@/lib/validateIdDocument";
+import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
 import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
@@ -186,38 +186,14 @@ export async function POST(req: NextRequest) {
         }
         const visionSoftDown = (idValidation.layers || []).includes("validation_unavailable");
         if (visionSoftDown) {
-          if (!bothSidesFileGateAllows({
-            idType,
-            nationality,
-            fileCount: idImages.length,
-            visionUnavailable: true,
-          })) {
-            return NextResponse.json({
-              error: requiresBothIdSides(idType, nationality)
-                ? "Validation service is unavailable. Please upload both the front and back of your ID (or a combined DigiLocker PDF), then try again."
-                : "Validation service is unavailable. Please try again shortly.",
-              field: "idImages",
-            }, { status: 422 });
-          }
+          // One file is enough when Vision is down (DigiLocker / combined photo OK).
+          // Hard both-sides applies only when OCR succeeds and a side is missing.
           validationFailed = true;
         } else {
           idVerifiedOverride = verifiedFromIdValidation(idValidation);
         }
       } catch (valErr: any) {
         console.error("ID validation error:", valErr?.message);
-        if (!bothSidesFileGateAllows({
-          idType,
-          nationality,
-          fileCount: idImages.length,
-          visionUnavailable: true,
-        })) {
-          return NextResponse.json({
-            error: requiresBothIdSides(idType, nationality)
-              ? "Validation service is unavailable. Please upload both the front and back of your ID (or a combined DigiLocker PDF), then try again."
-              : "Validation service is unavailable. Please try again shortly.",
-            field: "idImages",
-          }, { status: 422 });
-        }
         validationFailed = true;
       }
 

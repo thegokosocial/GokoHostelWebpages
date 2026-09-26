@@ -27,13 +27,13 @@ export function isHeicFile(file: File): boolean {
 
 export function bothSidesHelpText(idType: string | undefined, nationality: string | undefined): string {
   if (idType === "aadhaar") {
-    return "Upload front (photo + DOB) and back (address). One DigiLocker / combined PDF with both sides is OK. JPEG, PNG, WebP, PDF. Max 10 MB.";
+    return "One clear photo or DigiLocker PDF with name and address is enough. If address is on the other side, we will ask for it after Verify. JPEG, PNG, WebP, PDF. Max 10 MB.";
   }
   if (idType === "passport" && nationality && nationality.toLowerCase() !== "india") {
     return "Upload the passport bio page. JPEG, PNG, WebP, PDF. Max 10 MB.";
   }
   if (idType === "passport") {
-    return "Upload the bio page (photo + DOB) and the address page. One combined PDF is OK. JPEG, PNG, WebP, PDF. Max 10 MB.";
+    return "One photo or PDF with the bio page (and address if shown) is enough. If address is missing, we will ask for the address page after Verify. JPEG, PNG, WebP, PDF. Max 10 MB.";
   }
   if (idType === "driving_licence") {
     return "Upload a clear photo of your driving licence. JPEG, PNG, WebP, PDF. Max 10 MB.";

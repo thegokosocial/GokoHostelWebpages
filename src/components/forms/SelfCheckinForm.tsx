@@ -362,6 +362,10 @@ export function SelfCheckinForm() {
   const [success, setSuccess] = useState(false);
   const [idFrontFiles, setIdFrontFiles] = useState<DocFile[]>([]);
   const [idBackFiles, setIdBackFiles] = useState<DocFile[]>([]);
+  /** Progressive second-side prompt after Verify finds front or address missing. */
+  const [sidePrompt, setSidePrompt] = useState<"front" | "back" | null>(null);
+  /** Guest voluntarily opened the other-side slot before Verify. */
+  const [offerOtherSide, setOfferOtherSide] = useState(false);
   const [visaFiles, setVisaFiles] = useState<DocFile[]>([]);
   const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string; staffReview?: boolean } | null>(null);
   const [validatingId, setValidatingId] = useState(false);
@@ -423,22 +427,24 @@ export function SelfCheckinForm() {
   const firstName = watch("firstName");
   const lastName = watch("lastName");
 
-  const bothSidesRequired = requiresBothIdSides(idType || "", nationality);
+  const bothSidesCapable = requiresBothIdSides(idType || "", nationality);
   const idFiles = useMemo(
-    () => (bothSidesRequired ? [...idFrontFiles, ...idBackFiles] : idFrontFiles),
-    [bothSidesRequired, idFrontFiles, idBackFiles],
+    () => [...idFrontFiles, ...idBackFiles],
+    [idFrontFiles, idBackFiles],
   );
   const prevIdOnly = Boolean(prevIdCardLink) && idFiles.length === 0;
-  const showDualIdSlots = bothSidesRequired && !prevIdOnly;
+  const showOtherSideSlot = !prevIdOnly && (sidePrompt !== null || offerOtherSide);
 
-  const syncIdImages = (front: DocFile[], back: DocFile[], bothSides: boolean) => {
-    const combined = bothSides ? [...front, ...back] : front;
+  const syncIdImages = (front: DocFile[], back: DocFile[]) => {
+    const combined = [...front, ...back];
     setValue("idImages", combined.length > 0 ? combined.map((f) => f.file) : null, { shouldValidate: true });
   };
 
   const clearIdUploads = () => {
     setIdFrontFiles([]);
     setIdBackFiles([]);
+    setSidePrompt(null);
+    setOfferOtherSide(false);
     setValue("idImages", null, { shouldValidate: true });
   };
 
@@ -571,7 +577,7 @@ export function SelfCheckinForm() {
     setValue("prevIdCardLink", undefined);
     setIdValidated(false);
     appendDocFile(file, idFrontFiles, setIdFrontFiles, (next) => {
-      syncIdImages(next, idBackFiles, bothSidesRequired);
+      syncIdImages(next, idBackFiles);
       setIdValidationMsg(null);
       if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
     });
@@ -582,7 +588,7 @@ export function SelfCheckinForm() {
     setValue("prevIdCardLink", undefined);
     setIdValidated(false);
     appendDocFile(file, idBackFiles, setIdBackFiles, (next) => {
-      syncIdImages(idFrontFiles, next, true);
+      syncIdImages(idFrontFiles, next);
       setIdValidationMsg(null);
       if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
     });
@@ -591,15 +597,19 @@ export function SelfCheckinForm() {
   const removeIdFrontFile = (index: number) => {
     const next = idFrontFiles.filter((_, i) => i !== index);
     setIdFrontFiles(next);
-    syncIdImages(next, idBackFiles, bothSidesRequired);
+    syncIdImages(next, idBackFiles);
     if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
     setIdValidationMsg(null);
+    if (next.length === 0 && idBackFiles.length === 0) {
+      setSidePrompt(null);
+      setOfferOtherSide(false);
+    }
   };
 
   const removeIdBackFile = (index: number) => {
     const next = idBackFiles.filter((_, i) => i !== index);
     setIdBackFiles(next);
-    syncIdImages(idFrontFiles, next, true);
+    syncIdImages(idFrontFiles, next);
     if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
     setIdValidationMsg(null);
   };
@@ -655,8 +665,12 @@ export function SelfCheckinForm() {
         setIdValidationMsg({ valid: true, staffReview, message: result.message });
         setIdValidated(true);
         setDetectedIdType(null);
+        setSidePrompt(null);
       } else if (keepForOtherSide) {
-        // Guest already uploaded one side — keep files so they can add the other.
+        const prompt: "front" | "back" =
+          result.needsFrontSide || layers.includes("front_missing") ? "front" : "back";
+        setSidePrompt(prompt);
+        setOfferOtherSide(false);
         setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
         setDetectedIdType(null);
@@ -837,6 +851,8 @@ export function SelfCheckinForm() {
       reset();
       setIdFrontFiles([]);
       setIdBackFiles([]);
+      setSidePrompt(null);
+      setOfferOtherSide(false);
       setVisaFiles([]);
       setIdValidationMsg(null);
       setVisaValidationMsg(null);
@@ -1264,6 +1280,8 @@ export function SelfCheckinForm() {
               setPrevIdCardLink("");
               setValue("prevIdCardLink", undefined);
               setIdValidated(false);
+              setSidePrompt(null);
+              setOfferOtherSide(false);
               if (detectedIdType && e.target.value === detectedIdType && idFiles.length > 0) {
                 setIdValidated(true);
                 setIdValidationMsg({ valid: true, message: `${detectedIdType.replace("_", " ")} detected. ID type updated.` });
@@ -1314,31 +1332,8 @@ export function SelfCheckinForm() {
           </div>
         )}
 
-        {/* ID Upload — dual front/back when both sides required */}
-        {showDualIdSlots ? (
-          <div className="space-y-3">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <MultiDocUpload
-                label={idType === "passport" ? "Bio page *" : "Front (photo + DOB) *"}
-                error={errors.idImages?.message as string | undefined}
-                files={idFrontFiles}
-                onAdd={addIdFrontFile}
-                onRemove={removeIdFrontFile}
-                onValidate={validationEnabled && !prevIdCardLink ? validateIdFiles : undefined}
-                showValidate={idFiles.length > 0}
-                validating={validatingId}
-                validationMsg={validationEnabled ? idValidationMsg : null}
-                helpText={bothSidesHelpText(idType, nationality)}
-              />
-              <MultiDocUpload
-                label={idType === "passport" ? "Address page *" : "Back (address) *"}
-                files={idBackFiles}
-                onAdd={addIdBackFile}
-                onRemove={removeIdBackFile}
-              />
-            </div>
-          </div>
-        ) : (
+        {/* ID Upload — one primary slot; other side only after Verify asks (or guest opts in) */}
+        <div className="space-y-4">
           <MultiDocUpload
             label={
               prevIdCardLink && idFiles.length === 0
@@ -1347,18 +1342,67 @@ export function SelfCheckinForm() {
                   ? "Passport bio page *"
                   : idType === "driving_licence"
                     ? "Driving Licence *"
-                    : "ID document (name + address) *"
+                    : idType === "aadhaar"
+                      ? "Aadhaar document *"
+                      : idType === "passport"
+                        ? "Passport document *"
+                        : "ID document *"
             }
             error={errors.idImages?.message as string | undefined}
             files={idFrontFiles}
             onAdd={addIdFrontFile}
             onRemove={removeIdFrontFile}
             onValidate={validationEnabled && !prevIdCardLink ? validateIdFiles : undefined}
+            showValidate={idFiles.length > 0}
             validating={validatingId}
-            validationMsg={validationEnabled ? idValidationMsg : null}
+            validationMsg={validationEnabled && !showOtherSideSlot ? idValidationMsg : null}
             helpText={bothSidesHelpText(idType, nationality)}
           />
-        )}
+
+          {bothSidesCapable && !prevIdOnly && !showOtherSideSlot && idFrontFiles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setOfferOtherSide(true)}
+              className="text-xs font-medium text-brand-green-dark underline-offset-2 hover:underline"
+            >
+              Also upload the other side (optional)
+            </button>
+          )}
+
+          {showOtherSideSlot && (
+            <div className="space-y-2 rounded-2xl border border-amber-300/60 bg-amber-50/80 p-4 dark:border-amber-500/30 dark:bg-amber-950/20">
+              {sidePrompt && (
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  {sidePrompt === "back"
+                    ? "Address not found on your upload — please add the back / address side, then Verify again."
+                    : "Front / bio page not found — please add the photo + DOB side, then Verify again."}
+                </p>
+              )}
+              {!sidePrompt && offerOtherSide && (
+                <p className="text-xs text-zinc-600">
+                  Optional. Use this if name and address are on separate photos.
+                </p>
+              )}
+              <MultiDocUpload
+                label={
+                  sidePrompt === "front"
+                    ? (idType === "passport" ? "Bio page *" : "Front (photo + DOB) *")
+                    : sidePrompt === "back"
+                      ? (idType === "passport" ? "Address page *" : "Back (address) *")
+                      : (idType === "passport" ? "Other page (optional)" : "Other side (optional)")
+                }
+                files={idBackFiles}
+                onAdd={addIdBackFile}
+                onRemove={removeIdBackFile}
+                onValidate={validationEnabled && !prevIdCardLink ? validateIdFiles : undefined}
+                showValidate={idFiles.length > 0}
+                validating={validatingId}
+                validationMsg={validationEnabled ? idValidationMsg : null}
+                helpText="JPEG, PNG, WebP, PDF. Max 10 MB."
+              />
+            </div>
+          )}
+        </div>
 
         {/* Previous Visa preview for return guests */}
         {isForeignNationality(nationality) && prevVisaLink && visaFiles.length === 0 && (
@@ -1488,12 +1532,9 @@ export function SelfCheckinForm() {
         )}
         {validationLoaded && validationEnabled && !idValidated && !idServerError && idFiles.length > 0 && !prevIdCardLink && (
           <p className="mb-3 text-center text-sm text-brand-red">
-            Please click &quot;Verify document&quot; before submitting
-          </p>
-        )}
-        {validationLoaded && validationEnabled && idServerError && bothSidesRequired && idFiles.length < 2 && !prevIdCardLink && (
-          <p className="mb-3 text-center text-sm text-brand-red">
-            Validation is offline — please upload both front and back (or a combined DigiLocker PDF), then submit.
+            {sidePrompt
+              ? "Add the requested side, then click \"Verify document\" again"
+              : "Please click \"Verify document\" before submitting"}
           </p>
         )}
         <Button
@@ -1504,7 +1545,6 @@ export function SelfCheckinForm() {
             submitting
             || !validationLoaded
             || (validationEnabled && !idValidated && !idServerError && !prevIdCardLink)
-            || (validationEnabled && idServerError && bothSidesRequired && idFiles.length < 2 && !prevIdCardLink)
           }
         >
           {submitting ? "Submitting..." : !validationLoaded ? "Loading..." : "Complete Check-in"}

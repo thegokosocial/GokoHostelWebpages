@@ -52,21 +52,23 @@ describe("self-checkin contrast and error surfacing contracts", () => {
     expect(form).not.toContain("runAction");
   });
 
-  it("skips re-Vision on submit after client verify and supports dual ID slots", () => {
+  it("skips re-Vision after verify and uses progressive other-side prompts", () => {
     expect(form).toContain('formData.append("clientIdValidation", "verified")');
     expect(form).toContain("requiresBothIdSides");
-    expect(form).toContain("@/lib/idDocumentSides");
     expect(form).toContain("idFrontFiles");
     expect(form).toContain("idBackFiles");
+    expect(form).toContain("sidePrompt");
+    expect(form).toContain("offerOtherSide");
+    expect(form).toContain("Also upload the other side (optional)");
+    expect(form).toContain("Aadhaar document *");
     expect(form).toContain("isAcceptedIdFile");
-    expect(form).toContain("isHeicFile");
     expect(form).toContain("bothSidesHelpText");
     expect(form).toContain("Clear previous ID and upload new");
-    expect(form).toContain("Front (photo + DOB)");
     expect(form).toContain("front_missing");
     expect(form).toContain("address_missing");
-    expect(form).toContain("Validation is offline");
-    expect(form).toContain("bothSidesRequired && idFiles.length < 2");
+    expect(form).not.toContain("showDualIdSlots");
+    expect(form).not.toContain("Validation is offline");
+    expect(form).not.toContain("bothSidesRequired && idFiles.length < 2");
   });
 
   it("keeps primary form headings on high-contrast zinc, not green-on-glass", () => {

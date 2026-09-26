@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  bothSidesFileGateAllows,
   evaluateIdSides,
   hasAadhaarFrontEvidence,
   hasPassportBioEvidence,
@@ -97,50 +96,11 @@ describe("hard both-sides reject matrix", () => {
   });
 });
 
-describe("bothSidesFileGateAllows (Vision down)", () => {
-  it("allows when Vision is available", () => {
-    expect(bothSidesFileGateAllows({
-      idType: "aadhaar",
-      nationality: "India",
-      fileCount: 1,
-      visionUnavailable: false,
-    })).toBe(true);
-  });
-
-  it("requires 2+ files for Aadhaar / Indian passport when Vision is down", () => {
-    expect(bothSidesFileGateAllows({
-      idType: "aadhaar",
-      nationality: "India",
-      fileCount: 1,
-      visionUnavailable: true,
-    })).toBe(false);
-    expect(bothSidesFileGateAllows({
-      idType: "aadhaar",
-      nationality: "India",
-      fileCount: 2,
-      visionUnavailable: true,
-    })).toBe(true);
-    expect(bothSidesFileGateAllows({
-      idType: "passport",
-      nationality: "India",
-      fileCount: 1,
-      visionUnavailable: true,
-    })).toBe(false);
-  });
-
-  it("does not gate DL or foreign passport", () => {
-    expect(bothSidesFileGateAllows({
-      idType: "driving_licence",
-      nationality: "India",
-      fileCount: 1,
-      visionUnavailable: true,
-    })).toBe(true);
-    expect(bothSidesFileGateAllows({
-      idType: "passport",
-      nationality: "Germany",
-      fileCount: 1,
-      visionUnavailable: true,
-    })).toBe(true);
+describe("Vision-down allows single Aadhaar file (no 2-file gate)", () => {
+  it("documents that OCR hard both-sides still applies when Vision works", () => {
+    const frontOnly = validateIdFromText(LIKITHA_AADHAAR_FRONT, "id", "aadhaar", "Likitha P", "India");
+    expect(frontOnly.valid).toBe(false);
+    expect(frontOnly.layers).toContain("address_missing");
   });
 });
 
@@ -167,9 +127,10 @@ describe("checkinIdUpload helpers", () => {
     expect(isHeicFile(new File([""], "a.jpg", { type: "image/jpeg" }))).toBe(false);
   });
 
-  it("returns both-sides help copy by id type", () => {
-    expect(bothSidesHelpText("aadhaar", "India")).toMatch(/front/i);
-    expect(bothSidesHelpText("passport", "India")).toMatch(/bio/i);
+  it("returns progressive both-sides help copy by id type", () => {
+    expect(bothSidesHelpText("aadhaar", "India")).toMatch(/one clear photo|digilocker/i);
+    expect(bothSidesHelpText("aadhaar", "India")).toMatch(/ask/i);
+    expect(bothSidesHelpText("passport", "India")).toMatch(/ask/i);
     expect(bothSidesHelpText("passport", "France")).toMatch(/bio page/i);
     expect(bothSidesHelpText("driving_licence", "India")).toMatch(/licence/i);
   });
