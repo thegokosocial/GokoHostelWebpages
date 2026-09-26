@@ -4,6 +4,8 @@
 
 Pages: `/self-checkin` (static shell with full-bleed hero loop video + frosted glass form cards — see [frosted-glass.md](frosted-glass.md)). APIs: `/api/checkin/lookup`, `/api/validate-id`, `/api/checkin`.
 
+`POST /api/checkin` requires a UUID `idempotencyKey` (FormData). Soft active-visit dedupe (`isSameCheckinVisit`) remains; the create key (migration **0080** `checkins.idempotency_key`) closes timeout/retry duplicates for the same attempt. Admin Records `add` / `addPast` use the same key contract.
+
 ---
 
 ## Flow

@@ -288,6 +288,7 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
   const [cart, setCart] = useState<CartItem[]>([]);
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [successMsg, setSuccessMsg] = useState("");
   const [error, setError] = useState("");
   const [loadingMenu, setLoadingMenu] = useState(true);
@@ -416,6 +417,7 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
 
       const res = await apiCall({
         action: "placeOrderForGuest",
+        idempotencyKey,
         guestType: guestType === "table" ? "walkin" : guestType,
         checkinId: guestType === "hostel" ? selectedGuest?.id : undefined,
         guestName: name,
@@ -426,6 +428,7 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
       });
       if (res.ok) {
         const data = await res.json();
+        setIdempotencyKey(crypto.randomUUID());
         setCart([]);
         setSpecialInstructions("");
         setSelectedGuest(null);

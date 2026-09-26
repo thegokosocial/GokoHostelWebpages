@@ -728,6 +728,7 @@ function ExpenseSheet({ members, group, house, selfMemberId, editing, canAccount
   });
   const [reuseHostelId, setReuseHostelId] = useState<number | null>(null);
   const moneyLocked = Boolean(editing?.hostelExpenseId || editing?.reimbursed || (editing && settleLocked));
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [saving, setSaving] = useState(false);
   const [inlineName, setInlineName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -1039,6 +1040,7 @@ function ExpenseSheet({ members, group, house, selfMemberId, editing, canAccount
                 expenseDate: date, splitMethod: gokoIsPayer || gokoMode === "covers_all" ? "exact" : method,
                 notes, shares, addMemberIds: shares.map((s) => s.memberId),
               };
+              if (!editing) body.idempotencyKey = idempotencyKey;
               if (gokoIsPayer) {
                 Object.assign(body, {
                   paymentMethod, accountId: paymentMethod === "online" ? Number(accountId) : null,
@@ -1047,7 +1049,10 @@ function ExpenseSheet({ members, group, house, selfMemberId, editing, canAccount
                 });
               }
               if (editing) await api("updateExpense", { id: editing.id, ...body });
-              else await api("addExpense", body);
+              else {
+                await api("addExpense", body);
+                setIdempotencyKey(crypto.randomUUID());
+              }
               onSaved(group.id);
             } catch (err) {
               const hid = err && typeof err === "object" && "hostelExpenseId" in err ? Number((err as { hostelExpenseId?: number }).hostelExpenseId) : 0;

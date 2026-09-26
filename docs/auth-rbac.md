@@ -50,9 +50,13 @@ actionAllowed(role, permissions, required)
 // admin → always allowed (unless required === "admin_only" and role !== admin)
 // admin_only → admin_required if not admin
 // string | string[] → any listed key true on permissions
+
+permissionDeniedPayload(required)
+// 403 JSON: { error, code: "permission_denied", requiredPermissions, howToFix }
+// error names catalog labels + keys; howToFix points at Management → Users
 ```
 
-**Trap:** env manager has empty permissions → **forbidden** on every gated action. That is intentional (changelog item 2). Give them a DB user with keys, or use `ADMIN_PASSWORD`.
+**Trap:** env manager has empty permissions → **forbidden** on every gated action. That is intentional (changelog item 2). Give them a DB user with keys, or use `ADMIN_PASSWORD`. Create actions on food-orders / expenses / splits / checkins return `permissionDeniedPayload` so the UI shows which keys to grant.
 
 Website CMS: **admin role only**, not a permission key. **403 on Pi.**
 

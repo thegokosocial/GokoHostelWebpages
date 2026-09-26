@@ -8,6 +8,7 @@ const q = vi.hoisted(() => ({
   updateFoodOrderItemQuantity: vi.fn(), deleteFoodOrderItem: vi.fn(), addStock: vi.fn(), decrementStock: vi.fn(), decrementStockIfAvailable: vi.fn(),
   restoreStock: vi.fn(),
   createFoodOrder: vi.fn(), addFoodOrderItems: vi.fn(), getNextOrderNumber: vi.fn(), getMenuItemById: vi.fn(),
+  getFoodOrderByIdempotencyKey: vi.fn(),
   dispatchPush: vi.fn(), notificationFoodBody: vi.fn(),
   latestReceiptAccount: vi.fn(), createGuestReceipt: vi.fn(), resolveReceiptAccount: vi.fn(),
   getFoodOrderItemsBatch: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@/db/queries", () => ({
   getFoodOrderItemsBatch: q.getFoodOrderItemsBatch,
   createFoodOrder: q.createFoodOrder, addFoodOrderItems: q.addFoodOrderItems,
   getNextOrderNumber: q.getNextOrderNumber, getMenuItemById: q.getMenuItemById,
+  getFoodOrderByIdempotencyKey: q.getFoodOrderByIdempotencyKey,
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
 vi.mock("@/lib/guestReceipts", () => ({ latestReceiptAccount: q.latestReceiptAccount, createGuestReceipt: q.createGuestReceipt, receiptBusinessDate: vi.fn(() => "2026-09-22"), resolveReceiptAccount: q.resolveReceiptAccount }));
@@ -69,6 +71,7 @@ beforeEach(() => {
   q.notificationFoodBody.mockReturnValue("New food order");
   q.getFoodOrderItemsBatch.mockResolvedValue(new Map());
   q.getMenuItemById.mockResolvedValue({ id: 4, name: "Seasonal Fish", trackInventory: 0, stockQuantity: 0 });
+  q.getFoodOrderByIdempotencyKey.mockResolvedValue(null);
   q.updateFoodOrderItemQuantity.mockImplementation(async (id: number, quantity: number, price: number) => Object.assign(pendingItem, { quantity, lineTotal: quantity * price }));
   q.getDb.mockReturnValue({
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [pendingItem] }) }) }),
@@ -95,6 +98,7 @@ describe("admin market-pricing workflows", () => {
       guestName: "Pawan test",
       guestPhone: "123454321",
       items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
     }));
 
     expect(response.status).toBe(200);
@@ -104,6 +108,7 @@ describe("admin market-pricing workflows", () => {
       total: 500,
       paymentStatus: "pending",
       createdBy: "Admin",
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
     }));
     expect(q.addFoodOrderItems).toHaveBeenCalledWith([expect.objectContaining({
       orderId: 99,
@@ -495,5 +500,109 @@ describe("admin market-pricing workflows", () => {
     ]));
     expect(body.guests).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Paid" })]));
     expect(body.guests).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Cancelled" })]));
+  });
+
+  it("placeOrderForGuest returns duplicate without creating when the key already exists", async () => {
+    q.getFoodOrderByIdempotencyKey.mockResolvedValue({ id: 55, orderNumber: "D269-23", total: 203000 });
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "hostel",
+      guestName: "Piyush Midha",
+      checkinId: 12,
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "22222222-2222-4222-8222-222222222222",
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      success: true, orderId: 55, orderNumber: "D269-23", total: 203000, duplicate: true,
+    });
+    expect(q.createFoodOrder).not.toHaveBeenCalled();
+    expect(q.addFoodOrderItems).not.toHaveBeenCalled();
+  });
+
+  it("placeOrderForGuest requires a UUID idempotencyKey", async () => {
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Ada",
+      guestPhone: "9000000000",
+      items: [{ menuItemId: 41, quantity: 1 }],
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "idempotencyKey required" });
+    expect(q.createFoodOrder).not.toHaveBeenCalled();
+  });
+
+  it("placeOrderForGuest UNIQUE race on the same key returns the existing order", async () => {
+    q.getMenuItemById.mockResolvedValue({
+      id: 41, name: "Soap", price: 500, priceOnRequest: 0, trackInventory: 0, stockQuantity: 0,
+    });
+    q.getSetting.mockResolvedValue("0");
+    q.getNextOrderNumber.mockResolvedValue("D269-24");
+    q.getFoodOrderByIdempotencyKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 88, orderNumber: "D269-23", total: 500 });
+    q.createFoodOrder.mockRejectedValueOnce(new Error("UNIQUE constraint failed: food_orders.idempotency_key"));
+
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Piyush",
+      guestPhone: "6201587898",
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "33333333-3333-4333-8333-333333333333",
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, orderId: 88, duplicate: true });
+    expect(q.addFoodOrderItems).not.toHaveBeenCalled();
+  });
+
+  it("placeOrderForGuest staff without place/view food keys gets actionable 403", async () => {
+    q.authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Timo",
+      permissions: { canViewDashboard: true },
+    });
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Piyush",
+      guestPhone: "6201587898",
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+    }));
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.code).toBe("permission_denied");
+    expect(body.requiredPermissions).toEqual(["canPlaceOrders", "canViewFoodOrders"]);
+    expect(body.error).toMatch(/canPlaceOrders|canViewFoodOrders/);
+    expect(body.howToFix).toMatch(/Management → Users/);
+    expect(q.createFoodOrder).not.toHaveBeenCalled();
+  });
+
+  it("placeOrderForGuest staff with canPlaceOrders is allowed", async () => {
+    q.authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Timo",
+      permissions: { canPlaceOrders: true },
+    });
+    q.getMenuItemById.mockResolvedValue({
+      id: 41, name: "Soap", price: 500, priceOnRequest: 0, trackInventory: 0, stockQuantity: 0,
+    });
+    q.getSetting.mockResolvedValue("0");
+    q.getNextOrderNumber.mockResolvedValue("D269-25");
+    q.createFoodOrder.mockResolvedValue([{ id: 99, orderNumber: "D269-25" }]);
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Piyush",
+      guestPhone: "6201587898",
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "55555555-5555-4555-8555-555555555555",
+    }));
+    expect(response.status).toBe(200);
+    expect(q.createFoodOrder).toHaveBeenCalled();
+  });
+
+  it("admin Place Order mints one idempotency key until success", async () => {
+    const source = await import("fs").then((fs) => fs.readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8"));
+    expect(source).toMatch(/useState\(\(\) => crypto\.randomUUID\(\)\)/);
+    expect(source).toMatch(/idempotencyKey,/);
+    expect(source).toMatch(/setIdempotencyKey\(crypto\.randomUUID\(\)\)/);
   });
 });

@@ -16,12 +16,13 @@ import { parseFoodCheckoutGraceDays, foodTaxPercent } from "@/lib/foodLookup";
 import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
 import { isKitchenOpen, parseKitchenHours, formatSlotsForDisplay } from "@/lib/kitchenHours";
 import { dispatchPush, notificationFoodBody } from "@/lib/pushNotify";
+import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      idempotencyKey,
+      idempotencyKey: rawIdempotencyKey,
       guestType,
       checkinId,
       guestName,
@@ -36,6 +37,12 @@ export async function POST(req: NextRequest) {
     if (!guestName || !items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
+
+    const parsedKey = parseCreateIdempotencyKey(rawIdempotencyKey);
+    if ("error" in parsedKey) {
+      return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+    }
+    const idempotencyKey = parsedKey.key;
 
     // Validate quantities are positive integers
     for (const item of items) {
@@ -61,17 +68,15 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Idempotency check
-    if (idempotencyKey) {
-      const existing = await getFoodOrderByIdempotencyKey(idempotencyKey);
-      if (existing) {
-        return NextResponse.json({
-          success: true,
-          orderId: existing.id,
-          orderNumber: existing.orderNumber,
-          total: existing.total,
-          duplicate: true,
-        });
-      }
+    const existing = await getFoodOrderByIdempotencyKey(idempotencyKey);
+    if (existing) {
+      return NextResponse.json({
+        success: true,
+        orderId: existing.id,
+        orderNumber: existing.orderNumber,
+        total: existing.total,
+        duplicate: true,
+      });
     }
 
     // 2. Kitchen hours check
@@ -186,7 +191,7 @@ export async function POST(req: NextRequest) {
 
     const orderData = {
       orderNumber,
-      idempotencyKey: idempotencyKey || undefined,
+      idempotencyKey,
       guestType: guestType || "walkin",
       checkinId: checkinId || undefined,
       guestName,
@@ -205,14 +210,21 @@ export async function POST(req: NextRequest) {
     try {
       const result = await createFoodOrder(orderData);
       order = result[0];
-    } catch (err: any) {
-      if (err?.message?.includes("UNIQUE") || err?.message?.includes("unique")) {
-        orderNumber = await getNextOrderNumber();
-        const result = await createFoodOrder({ ...orderData, orderNumber });
-        order = result[0];
-      } else {
-        throw err;
+    } catch (err: unknown) {
+      if (!isUniqueConstraintError(err)) throw err;
+      const raced = await getFoodOrderByIdempotencyKey(idempotencyKey);
+      if (raced) {
+        return NextResponse.json({
+          success: true,
+          orderId: raced.id,
+          orderNumber: raced.orderNumber,
+          total: raced.total,
+          duplicate: true,
+        });
       }
+      orderNumber = await getNextOrderNumber();
+      const result = await createFoodOrder({ ...orderData, orderNumber });
+      order = result[0];
     }
 
     await addFoodOrderItems(

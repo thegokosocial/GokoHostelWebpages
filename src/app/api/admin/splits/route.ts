@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
-import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { actionAllowed, permissionDeniedPayload, type ActionPerm } from "@/lib/actionPermissions";
 import { isPiRuntime } from "@/lib/runtime";
-import { addAuditEntry, addExpense, getAllUsers, getExpenseById, getUserById, getUserByUsername } from "@/db/queries";
+import { addAuditEntry, addExpense, getAllUsers, getExpenseById, getExpenseByIdempotencyKey, getUserById, getUserByUsername } from "@/db/queries";
 import { getDb } from "@/db";
 import { accounts, vendors } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { todayIST } from "@/lib/utils";
+import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import {
   assertBalanced,
   assertGokoPayerRules,
@@ -44,6 +45,7 @@ import {
   hardDeleteSplitExpense,
   insertShares,
   insertSplitExpense,
+  getSplitExpenseByIdempotencyKey,
   insertSplitSettlement,
   loadGroupLedger,
   replaceShares,
@@ -165,7 +167,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (role !== "admin" && !permissions.canViewSplits) {
-      return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
+      return NextResponse.json(permissionDeniedPayload("canViewSplits"), { status: 403 });
     }
 
     const gate = actionAllowed(role, permissions, ACTION_PERMISSIONS[action]);
@@ -173,7 +175,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
     if (gate === "forbidden") {
-      return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
+      return NextResponse.json(permissionDeniedPayload(ACTION_PERMISSIONS[action]), { status: 403 });
     }
 
     switch (action) {
@@ -482,6 +484,15 @@ export async function POST(req: NextRequest) {
       case "addExpense": {
         const groupId = Number(params.groupId);
         if (!Number.isInteger(groupId)) return NextResponse.json({ error: "groupId required" }, { status: 400 });
+        const parsedKey = parseCreateIdempotencyKey(params.idempotencyKey);
+        if ("error" in parsedKey) {
+          return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+        }
+        const idempotencyKey = parsedKey.key;
+        const existingSplit = await getSplitExpenseByIdempotencyKey(idempotencyKey);
+        if (existingSplit && !existingSplit.deletedAt) {
+          return NextResponse.json({ ok: true, id: existingSplit.id, duplicate: true, hostelExpenseId: existingSplit.hostelExpenseId ?? undefined });
+        }
         const group = await getSplitGroupById(groupId);
         if (!group) return NextResponse.json({ error: "Group not found" }, { status: 400 });
         const description = String(params.description || "").trim();
@@ -535,21 +546,32 @@ export async function POST(req: NextRequest) {
 
         let hostelExpenseId: number | null = null;
         if (gokoIsPayer) {
-          const posted = await reuseOrPostHostelExpense(params, totalAmount, description, actorName);
+          const posted = await reuseOrPostHostelExpense(params, totalAmount, description, actorName, idempotencyKey);
           if ("error" in posted) return posted.error;
           hostelExpenseId = posted.id;
         }
 
-        const expenseId = await insertSplitExpense({
-          groupId,
-          description,
-          totalAmount,
-          expenseDate,
-          splitMethod,
-          notes: String(params.notes || ""),
-          createdBy: actorName,
-          hostelExpenseId,
-        });
+        let expenseId: number | null;
+        try {
+          expenseId = await insertSplitExpense({
+            groupId,
+            description,
+            totalAmount,
+            expenseDate,
+            splitMethod,
+            notes: String(params.notes || ""),
+            createdBy: actorName,
+            hostelExpenseId,
+            idempotencyKey,
+          });
+        } catch (err: unknown) {
+          if (!isUniqueConstraintError(err)) throw err;
+          const raced = await getSplitExpenseByIdempotencyKey(idempotencyKey);
+          if (raced && !raced.deletedAt) {
+            return NextResponse.json({ ok: true, id: raced.id, duplicate: true, hostelExpenseId: raced.hostelExpenseId ?? undefined });
+          }
+          throw err;
+        }
         if (!expenseId) {
           const extra = hostelExpenseId ? ` Accounts entry #${hostelExpenseId} was saved; Splits row is missing.` : "";
           return NextResponse.json({ error: "Failed to save split expense." + extra, hostelExpenseId }, { status: 500 });
@@ -882,6 +904,7 @@ async function reuseOrPostHostelExpense(
   amount: number,
   purpose: string,
   actorName: string,
+  idempotencyKey?: string,
 ): Promise<{ id: number } | { error: NextResponse }> {
   const reuseId = Number(params.hostelExpenseId);
   if (Number.isInteger(reuseId) && reuseId > 0) {
@@ -903,7 +926,7 @@ async function reuseOrPostHostelExpense(
     }
     return { id: reuseId };
   }
-  return postHostelExpense(params, amount, purpose, actorName);
+  return postHostelExpense(params, amount, purpose, actorName, idempotencyKey);
 }
 
 async function postHostelExpense(
@@ -911,7 +934,12 @@ async function postHostelExpense(
   amount: number,
   purpose: string,
   actorName: string,
+  idempotencyKey?: string,
 ): Promise<{ id: number } | { error: NextResponse }> {
+  if (idempotencyKey) {
+    const existing = await getExpenseByIdempotencyKey(idempotencyKey);
+    if (existing && !existing.deletedAt) return { id: existing.id };
+  }
   const paymentMethod = String(params.paymentMethod || "cash") === "online" ? "online" : "cash";
   const accountIdRaw = paymentMethod === "online" ? Number(params.accountId) : null;
   if (paymentMethod === "online") {
@@ -926,21 +954,30 @@ async function postHostelExpense(
   const expenseDate = String(params.expenseDate || todayIST());
   const vendorId = params.vendorId == null || params.vendorId === "" ? null : Number(params.vendorId);
   const category = subCategory === "Others" ? String(params.customCategory || purpose).trim() || purpose : subCategory;
-  const id = await addExpense({
-    amount,
-    category,
-    customCategory: subCategory === "Others" ? String(params.customCategory || "") : "",
-    purpose: purpose || category,
-    billImageLink: "",
-    createdBy: actorName,
-    expenseDate,
-    createdMonth: expenseDate.slice(0, 7),
-    vendorId,
-    accountId: paymentMethod === "cash" ? null : accountIdRaw,
-    paymentMethod,
-    mainCategory,
-    subCategory,
-  });
-  if (!id) return { error: NextResponse.json({ error: "Failed to save Accounts expense" }, { status: 500 }) };
-  return { id };
+  try {
+    const id = await addExpense({
+      amount,
+      category,
+      customCategory: subCategory === "Others" ? String(params.customCategory || "") : "",
+      purpose: purpose || category,
+      billImageLink: "",
+      createdBy: actorName,
+      expenseDate,
+      createdMonth: expenseDate.slice(0, 7),
+      vendorId,
+      accountId: paymentMethod === "cash" ? null : accountIdRaw,
+      paymentMethod,
+      mainCategory,
+      subCategory,
+      idempotencyKey: idempotencyKey || null,
+    });
+    if (!id) return { error: NextResponse.json({ error: "Failed to save Accounts expense" }, { status: 500 }) };
+    return { id };
+  } catch (err: unknown) {
+    if (idempotencyKey && isUniqueConstraintError(err)) {
+      const raced = await getExpenseByIdempotencyKey(idempotencyKey);
+      if (raced) return { id: raced.id };
+    }
+    throw err;
+  }
 }

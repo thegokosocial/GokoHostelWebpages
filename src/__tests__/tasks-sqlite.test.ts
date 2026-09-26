@@ -27,6 +27,7 @@ describe("Tasks SQLite workflows", () => {
         vendor_id INTEGER, account_id INTEGER, payment_method TEXT DEFAULT 'cash', main_category TEXT DEFAULT 'stay_expense',
         sub_category TEXT DEFAULT '', created_by TEXT NOT NULL, updated_by TEXT DEFAULT '', created_at TEXT NOT NULL,
         updated_at TEXT DEFAULT '', expense_date TEXT NOT NULL DEFAULT '', created_month TEXT NOT NULL,
+        idempotency_key TEXT,
         sync_id TEXT, sync_updated_at TEXT DEFAULT '', sync_source TEXT DEFAULT 'cloudflare', deleted_at TEXT
       );
     `);

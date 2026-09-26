@@ -55,6 +55,7 @@ describe("self-checkin contrast and error surfacing contracts", () => {
   it("skips re-Vision on submit after client verify and supports dual ID slots", () => {
     expect(form).toContain('formData.append("clientIdValidation", "verified")');
     expect(form).toContain("requiresBothIdSides");
+    expect(form).toContain("@/lib/idDocumentSides");
     expect(form).toContain("idFrontFiles");
     expect(form).toContain("idBackFiles");
     expect(form).toContain("isAcceptedIdFile");

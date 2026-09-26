@@ -96,6 +96,7 @@ function statusReq(params: Record<string, string> = {}) {
 const validOrder = {
   guestName: "Ada",
   items: [{ menuItemId: 1, quantity: 1 }],
+  idempotencyKey: "550e8400-e29b-41d4-a716-446655440000",
 };
 
 describe("GET /api/food/menu", () => {
@@ -180,11 +181,12 @@ describe("POST /api/food/order", () => {
   });
 
   it("400s when quantity is 0 or 51", async () => {
-    const zero = await postOrder(orderReq({ guestName: "Ada", items: [{ menuItemId: 1, quantity: 0 }] }));
+    const key = "550e8400-e29b-41d4-a716-446655440000";
+    const zero = await postOrder(orderReq({ guestName: "Ada", idempotencyKey: key, items: [{ menuItemId: 1, quantity: 0 }] }));
     expect(zero.status).toBe(400);
     expect(await zero.json()).toMatchObject({ error: "Invalid item quantity" });
 
-    const tooMany = await postOrder(orderReq({ guestName: "Ada", items: [{ menuItemId: 1, quantity: 51 }] }));
+    const tooMany = await postOrder(orderReq({ guestName: "Ada", idempotencyKey: key, items: [{ menuItemId: 1, quantity: 51 }] }));
     expect(tooMany.status).toBe(400);
     expect(await tooMany.json()).toMatchObject({ error: "Invalid item quantity" });
     expect(q.createFoodOrder).not.toHaveBeenCalled();
@@ -257,7 +259,8 @@ describe("POST /api/food/order", () => {
       orderNumber: "F-42",
       total: 105,
     });
-    const res = await postOrder(orderReq({ ...validOrder, idempotencyKey: "guest-key-1" }));
+    const key = "550e8400-e29b-41d4-a716-446655440000";
+    const res = await postOrder(orderReq({ ...validOrder, idempotencyKey: key }));
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(json).toEqual({
@@ -267,9 +270,37 @@ describe("POST /api/food/order", () => {
       total: 105,
       duplicate: true,
     });
-    expect(q.getFoodOrderByIdempotencyKey).toHaveBeenCalledWith("guest-key-1");
+    expect(q.getFoodOrderByIdempotencyKey).toHaveBeenCalledWith(key);
     expect(q.createFoodOrder).not.toHaveBeenCalled();
     expect(q.dispatchPush).not.toHaveBeenCalled();
+  });
+
+  it("400s when idempotencyKey is missing", async () => {
+    const { idempotencyKey: _k, ...withoutKey } = validOrder;
+    const res = await postOrder(orderReq(withoutKey));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "idempotencyKey required" });
+    expect(q.createFoodOrder).not.toHaveBeenCalled();
+  });
+
+  it("returns existing order when UNIQUE races on the same idempotencyKey", async () => {
+    q.getFoodOrderByIdempotencyKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 7, orderNumber: "F-7", total: 105 });
+    q.getMenuItemById.mockResolvedValue({ id: 1, name: "Thali", price: 100, priceOnRequest: 0, isAvailable: 1, trackInventory: 0, stockQuantity: 0 });
+    q.getNextOrderNumber.mockResolvedValue("F-7");
+    q.createFoodOrder.mockRejectedValueOnce(new Error("UNIQUE constraint failed: food_orders.idempotency_key"));
+    const res = await postOrder(orderReq(validOrder));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ success: true, orderId: 7, duplicate: true });
+    expect(q.addFoodOrderItems).not.toHaveBeenCalled();
+  });
+
+  it("keeps a stable client idempotency key until success in FoodCart", async () => {
+    const source = readFile("src/components/food/FoodCart.tsx");
+    expect(source).toMatch(/useState\(\(\) => crypto\.randomUUID\(\)\)/);
+    expect(source).toMatch(/setIdempotencyKey\(crypto\.randomUUID\(\)\)/);
+    expect(source).not.toMatch(/const idempotencyKey = generateUUID\(\)/);
   });
 
   it("accepts a price-on-request item and stores it as pending", async () => {

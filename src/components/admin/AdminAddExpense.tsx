@@ -42,6 +42,7 @@ export function AdminAddExpense({
   const [billFiles, setBillFiles] = useState<File[]>([]);
   const [billPreviews, setBillPreviews] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
 
@@ -130,6 +131,7 @@ export function AdminAddExpense({
     try {
       const body: Record<string, any> = {
         action: "addExpense",
+        idempotencyKey,
         amount: Math.round(amountNum * 100),
         category: subCategory === "Others" ? customCategory.trim() : subCategory,
         customCategory: subCategory === "Others" ? customCategory.trim() : undefined,
@@ -162,6 +164,7 @@ export function AdminAddExpense({
 
       const res = await expenseApi(body);
       if (res.ok) {
+        setIdempotencyKey(crypto.randomUUID());
         setSuccess("Expense submitted successfully!");
         setAmount("");
         setExpenseDate(todayIST());

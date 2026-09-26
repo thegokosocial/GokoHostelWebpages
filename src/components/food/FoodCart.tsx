@@ -44,14 +44,6 @@ function formatPrice(paise: number): string {
   return `₹${Math.round(paise / 100)}`;
 }
 
-function generateUUID(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
 export function FoodCart({
   cart,
   guestInfo,
@@ -68,6 +60,7 @@ export function FoodCart({
   const [walkinName, setWalkinName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [orderSuccess, setOrderSuccess] = useState<{
     orderNumber: string;
     total: number;
@@ -97,8 +90,6 @@ export function FoodCart({
       setSubmitting(true);
       setError("");
 
-      const idempotencyKey = generateUUID();
-
       try {
         const res = await fetch("/api/food/order", {
         method: "POST",
@@ -123,6 +114,7 @@ export function FoodCart({
           return;
         }
 
+        setIdempotencyKey(crypto.randomUUID());
         setOrderSuccess({
           orderNumber: data.orderNumber,
           total: data.total,

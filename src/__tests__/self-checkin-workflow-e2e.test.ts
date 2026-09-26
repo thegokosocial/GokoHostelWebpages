@@ -13,6 +13,7 @@ import { verifiedFromIdValidation } from "@/lib/validateIdDocument";
 
 const q = vi.hoisted(() => ({
   getActiveCheckins: vi.fn(),
+  getCheckinByIdempotencyKey: vi.fn(),
   getSetting: vi.fn(),
   addCheckin: vi.fn(),
   incrementStat: vi.fn(),
@@ -28,6 +29,7 @@ const q = vi.hoisted(() => ({
 
 vi.mock("@/db/queries", () => ({
   getActiveCheckins: q.getActiveCheckins,
+  getCheckinByIdempotencyKey: q.getCheckinByIdempotencyKey,
   getSetting: q.getSetting,
   addCheckin: q.addCheckin,
   incrementStat: q.incrementStat,
@@ -92,6 +94,7 @@ function idFile(name = "id.jpg") {
 function checkinRequest(fields: Record<string, string>, files: File[] = [idFile()]) {
   const fd = new FormData();
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  if (!fields.idempotencyKey) fd.set("idempotencyKey", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
   for (const f of files) fd.append("idImages", f);
   return new NextRequest("http://localhost/api/checkin", {
     method: "POST",
@@ -139,6 +142,7 @@ describe("self-check-in mock E2E workflows", () => {
     q.getMonthKey.mockReturnValue("2026-09");
     q.isOfflineMode.mockReturnValue(false);
     q.getActiveCheckins.mockResolvedValue([]);
+    q.getCheckinByIdempotencyKey.mockResolvedValue(null);
     q.getSetting.mockResolvedValue("on");
     q.addCheckin.mockResolvedValue(undefined);
     q.incrementStat.mockResolvedValue(undefined);
@@ -411,6 +415,7 @@ describe("self-check-in mock E2E workflows", () => {
 
     it("surfaces missing-fields 400 as guest-readable error (not generic front desk)", async () => {
       const fd = new FormData();
+      fd.set("idempotencyKey", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
       fd.set("contactNumber", "9000000009");
       const bare = await checkinPOST(new NextRequest("http://localhost/api/checkin", {
         method: "POST",
@@ -427,6 +432,7 @@ describe("self-check-in mock E2E workflows", () => {
     it("reuses prevIdCardLink without Vision and marks verified yes", async () => {
       const fd = new FormData();
       for (const [k, v] of Object.entries(baseFields({ contactNumber: "9000000010" }))) fd.set(k, v);
+      fd.set("idempotencyKey", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
       fd.set("prevIdCardLink", "https://drive.google.com/file/d/prev/view");
       const res = await checkinPOST(new NextRequest("http://localhost/api/checkin", {
         method: "POST",
@@ -481,6 +487,7 @@ describe("self-check-in mock E2E workflows", () => {
         idType: "passport",
         contactNumber: "9000000013",
       }))) fd.set(k, v);
+      fd.set("idempotencyKey", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
       fd.append("idImages", idFile("passport.jpg"));
       const res = await checkinPOST(new NextRequest("http://localhost/api/checkin", {
         method: "POST",

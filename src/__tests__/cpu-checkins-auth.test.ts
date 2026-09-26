@@ -29,6 +29,7 @@ vi.mock("@/db/queries", () => ({
   getCheckinsByDateRange,
   getActiveCheckins: vi.fn(),
   addCheckin: vi.fn(),
+  getCheckinByIdempotencyKey: vi.fn(async () => null),
   updateCheckin: vi.fn(),
   deleteCheckin: vi.fn(),
   getCheckinMonths: vi.fn(),
@@ -254,7 +255,12 @@ describe("Checkins auth-vs-list workflows", () => {
     const entry = Array(17).fill("");
     entry[8] = "France";
     entry[13] = "aadhaar";
-    const res = await POST(req({ password: "x", action: "add", entry }));
+    const res = await POST(req({
+      password: "x",
+      action: "add",
+      entry,
+      idempotencyKey: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "Foreign nationals must provide a passport" });
   });
@@ -268,7 +274,12 @@ describe("Checkins auth-vs-list workflows", () => {
     const entry = Array(17).fill("");
     entry[8] = "France";
     entry[13] = "passport";
-    const res = await POST(req({ password: "x", action: "add", entry }));
+    const res = await POST(req({
+      password: "x",
+      action: "add",
+      entry,
+      idempotencyKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "Visa document is required for foreign nationals" });
   });

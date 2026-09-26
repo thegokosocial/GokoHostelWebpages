@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { cn, localDateStr } from "@/lib/utils";
 import { isStaffReviewValidation, messageFromCheckinFailure, messageFromCheckinCatch } from "@/lib/checkinSubmitError";
 import { isAcceptedIdFile, isHeicFile, bothSidesHelpText } from "@/lib/checkinIdUpload";
-import { requiresBothIdSides } from "@/lib/validateIdDocument";
+import { requiresBothIdSides } from "@/lib/idDocumentSides";
 import { CameraIcon, UploadIcon, CheckCircle2Icon, XIcon } from "lucide-react";
 
 const countryDialCodes: Record<string, string> = {
@@ -357,6 +357,7 @@ export function SelfCheckinForm() {
   const [prevVisaLink, setPrevVisaLink] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [submitError, setSubmitError] = useState("");
   const [success, setSuccess] = useState(false);
   const [idFrontFiles, setIdFrontFiles] = useState<DocFile[]>([]);
@@ -769,6 +770,7 @@ export function SelfCheckinForm() {
       formData.append("emergencyPhone", data.emergencyPhone);
       formData.append("idType", data.idType);
       if (data.dob) formData.append("dob", data.dob);
+      formData.append("idempotencyKey", idempotencyKey);
 
       if (idFiles.length > 0) {
         idFiles.forEach((doc) => {
@@ -831,6 +833,7 @@ export function SelfCheckinForm() {
       }
 
       setSuccess(true);
+      setIdempotencyKey(crypto.randomUUID());
       reset();
       setIdFrontFiles([]);
       setIdBackFiles([]);

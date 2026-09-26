@@ -1,6 +1,6 @@
 # Splits (staff / volunteer IOUs)
 
-**Git-safe.** Admin `/admin` → **Splits**. Cloudflare-only: hidden on Pi, API 403, migrator skips `0041_splits.sql`.
+**Git-safe.** Admin `/admin` → **Splits**. Cloudflare-only: hidden on Pi, API 403, migrator skips `0041_splits.sql` and `0081_split_expense_idempotency.sql`.
 
 Splits is a **group ledger of IOUs**, not a bank and not hostel P&L. Accounts still owns cash. UI **must** `fetch("/api/admin/splits")` — never `useAdminApi` (that POSTs checkins).
 
@@ -17,6 +17,8 @@ Named groups (`split_groups`). **No seed group.** Staff create Kitchen / House. 
 ## Money kernel (`src/lib/splits.ts`)
 
 All amounts **integer paise**. Remainder +1 paise to lowest **`memberId`**. `assertBalanced`: paid/owed ≥ 0, sums = total, no duplicate member.
+
+`addExpense` requires a UUID `idempotencyKey` on the split row (and reuses it for the hostel Accounts insert when Goko pays). Retries return `{ ok: true, duplicate: true }` without a second split (migration **0080**).
 
 `net = paid − owed + settlements_sent − settlements_received`. Settle is always **inside one group**. Overall nets are display-only.
 

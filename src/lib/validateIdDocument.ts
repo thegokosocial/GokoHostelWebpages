@@ -1,5 +1,7 @@
 import { visionAnalyze, type VisionAnalysis } from "./googleApiFetch";
 import { isForeignNationality } from "./checkinSchema";
+export { requiresBothIdSides } from "./idDocumentSides";
+import { requiresBothIdSides } from "./idDocumentSides";
 
 // --- Enhanced text patterns ---
 
@@ -133,12 +135,6 @@ export type IdSidesResult = {
 };
 
 /** Aadhaar or Indian passport must show both identity (front/bio) and address sides. */
-export function requiresBothIdSides(documentType: DocumentType | string, nationality?: string | null): boolean {
-  if (documentType === "aadhaar") return true;
-  if (documentType === "passport" && !isForeignNationality(nationality || "India")) return true;
-  return false;
-}
-
 /** Holder-side cues (DOB / sex). Guardian S/O lines alone do not count. */
 export function hasAadhaarFrontEvidence(text: string): boolean {
   const nonGuardian = text

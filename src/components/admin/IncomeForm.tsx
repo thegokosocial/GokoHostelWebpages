@@ -41,6 +41,7 @@ export function IncomeForm({
   const [sourceDetail, setSourceDetail] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -86,6 +87,7 @@ export function IncomeForm({
     try {
       const response = await apiCall({
         action: "addDailyIncome",
+        idempotencyKey,
         date: entryDate,
         accountId: accountId ? Number(accountId) : null,
         type,
@@ -99,6 +101,7 @@ export function IncomeForm({
         setError(body.error || "Failed to save income.");
         return;
       }
+      setIdempotencyKey(crypto.randomUUID());
       setAmount("");
       setSourceDetail("");
       setDescription("");

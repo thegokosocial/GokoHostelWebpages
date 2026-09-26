@@ -124,6 +124,8 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
   const [tabs, setTabs] = useState<string[]>([]);
   const [currentTab, setCurrentTab] = useState("");
   const [loading, setLoading] = useState(false);
+  const [addIdempotencyKey, setAddIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [pastIdempotencyKey, setPastIdempotencyKey] = useState(() => crypto.randomUUID());
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEntry, setNewEntry] = useState<string[]>(getDefaults());
   const [newIdFiles, setNewIdFiles] = useState<File[]>([]);
@@ -460,8 +462,8 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
 
       const isForeigner = isForeignNationality(entry[8]);
       const formCData = isForeigner ? JSON.stringify(newFormCFields) : undefined;
-      const res = await apiCall({ action: "add", entry, formCData, bookingPlatform: newBookingPlatform, bookingId: newBookingId, dob: newDob });
-      if (res.ok) { setShowAddForm(false); setNewEntry(getDefaults()); setNewFirstName(""); setNewLastName(""); setNewIdFiles([]); setNewVisaFiles([]); setNewFormCFields({}); setNewBookingPlatform(""); setNewBookingId(""); setNewDob(""); refresh(); }
+      const res = await apiCall({ action: "add", entry, formCData, bookingPlatform: newBookingPlatform, bookingId: newBookingId, dob: newDob, idempotencyKey: addIdempotencyKey });
+      if (res.ok) { setAddIdempotencyKey(crypto.randomUUID()); setShowAddForm(false); setNewEntry(getDefaults()); setNewFirstName(""); setNewLastName(""); setNewIdFiles([]); setNewVisaFiles([]); setNewFormCFields({}); setNewBookingPlatform(""); setNewBookingId(""); setNewDob(""); refresh(); }
     } finally { setLoading(false); }
   };
 
@@ -520,8 +522,8 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
 
       const isForeigner = isForeignNationality(entry[8]);
       const formCData = isForeigner ? JSON.stringify(pastFormCFields) : undefined;
-      const res = await apiCall({ action: "addPast", entry, checkoutDate: pastCheckoutDate, formCData, bookingPlatform: pastBookingPlatform, bookingId: pastBookingId, dob: pastDob });
-      if (res.ok) { setShowPastForm(false); setPastEntry(getDefaults()); setPastFirstName(""); setPastLastName(""); setPastIdFiles([]); setPastVisaFiles([]); setPastCheckoutDate(""); setPastFormCFields({}); setPastBookingPlatform(""); setPastBookingId(""); setPastDob(""); refresh(); }
+      const res = await apiCall({ action: "addPast", entry, checkoutDate: pastCheckoutDate, formCData, bookingPlatform: pastBookingPlatform, bookingId: pastBookingId, dob: pastDob, idempotencyKey: pastIdempotencyKey });
+      if (res.ok) { setPastIdempotencyKey(crypto.randomUUID()); setShowPastForm(false); setPastEntry(getDefaults()); setPastFirstName(""); setPastLastName(""); setPastIdFiles([]); setPastVisaFiles([]); setPastCheckoutDate(""); setPastFormCFields({}); setPastBookingPlatform(""); setPastBookingId(""); setPastDob(""); refresh(); }
       else { const errData = await res.json().catch(() => ({})); showError("Failed to save past record", errData.error); }
     } finally { setLoading(false); }
   };

@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, bookingContactMethods, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, orderModifications, expenses, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, bookingContactMethods, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, orderModifications, expenses, dailyIncome, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -47,9 +47,17 @@ export async function addCheckin(data: {
   formCData?: string; createdMonth: string;
   bookingPlatform?: string; bookingId?: string;
   dob?: string; dobFromId?: string;
+  idempotencyKey?: string;
 }) {
   const db = getDb();
-  return db.insert(checkins).values(syncInsert(data));
+  return db.insert(checkins).values(syncInsert(data)).returning();
+}
+
+export async function getCheckinByIdempotencyKey(key: string) {
+  if (!key) return null;
+  const db = getDb();
+  const rows = await db.select().from(checkins).where(eq(checkins.idempotencyKey, key)).limit(1);
+  return rows[0] || null;
 }
 
 export async function updateCheckin(id: number, data: Partial<typeof checkins.$inferInsert>) {
@@ -1635,11 +1643,26 @@ export async function addExpense(data: {
   billImageLink?: string; createdBy: string; expenseDate: string; createdMonth: string;
   vendorId?: number | null; accountId?: number | null; paymentMethod?: string;
   mainCategory?: string; subCategory?: string; taskId?: number | null;
+  idempotencyKey?: string | null;
 }) {
   const db = getDb();
   const now = new Date().toISOString();
   const result = await db.insert(expenses).values(syncInsert({ ...data, createdAt: now, updatedAt: now })).returning({ id: expenses.id });
   return result[0]?.id ?? null;
+}
+
+export async function getExpenseByIdempotencyKey(key: string) {
+  if (!key) return null;
+  const db = getDb();
+  const rows = await db.select().from(expenses).where(eq(expenses.idempotencyKey, key)).limit(1);
+  return rows[0] || null;
+}
+
+export async function getDailyIncomeByIdempotencyKey(key: string) {
+  if (!key) return null;
+  const db = getDb();
+  const rows = await db.select().from(dailyIncome).where(eq(dailyIncome.idempotencyKey, key)).limit(1);
+  return rows[0] || null;
 }
 
 export async function getExpenseById(id: number) {

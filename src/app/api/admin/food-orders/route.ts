@@ -9,6 +9,7 @@ import {
   updateFoodOrderStatus,
   updateFoodOrder,
   createFoodOrder,
+  getFoodOrderByIdempotencyKey,
   addFoodOrderItems,
   addOrderModification,
   getNextOrderNumber,
@@ -37,7 +38,7 @@ import {
 import { parseFoodCheckoutGraceDays, foodTaxPercent } from "@/lib/foodLookup";
 import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
 import { authenticateUser } from "@/lib/auth";
-import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { actionAllowed, permissionDeniedPayload, type ActionPerm } from "@/lib/actionPermissions";
 import { getDb } from "@/db";
 import { auditLog, cashPaymentEvents, foodOrders, foodOrderItems, foodOrderEditBatches, foodPaymentEvents, menuItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
 import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
@@ -52,6 +53,7 @@ import { billShareExpiresAt, generateBillShareToken, publicBillShareUrl } from "
 import { foodAmountPaid, foodDue, foodPaymentState } from "@/lib/foodPaymentBalance";
 import { latestWalkinOrder, normalizeWalkinGuestName, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
+import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 
 export async function POST(req: NextRequest) {
   try {
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
     if (gate === "forbidden") {
-      return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
+      return NextResponse.json(permissionDeniedPayload(ACTION_PERMISSIONS[action]), { status: 403 });
     }
 
     async function getModCountMap(orderIds?: number[]) {
@@ -272,9 +274,25 @@ export async function POST(req: NextRequest) {
       }
 
       case "placeOrderForGuest": {
-        const { guestType, checkinId, guestName, guestPhone, roomInfo, items, specialInstructions } = rest;
+        const { guestType, checkinId, guestName, guestPhone, roomInfo, items, specialInstructions, idempotencyKey: rawIdempotencyKey } = rest;
         if (!guestName || !items || !Array.isArray(items) || items.length === 0) {
           return NextResponse.json({ error: "guestName and items required" }, { status: 400 });
+        }
+        const parsedKey = parseCreateIdempotencyKey(rawIdempotencyKey);
+        if ("error" in parsedKey) {
+          return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+        }
+        const idempotencyKey = parsedKey.key;
+        const existingOrder = await getFoodOrderByIdempotencyKey(idempotencyKey);
+        if (existingOrder) {
+          return NextResponse.json({
+            success: true,
+            role,
+            orderId: existingOrder.id,
+            orderNumber: existingOrder.orderNumber,
+            total: existingOrder.total,
+            duplicate: true,
+          });
         }
         const isTableOrder = roomInfo && /^Table \d+$/i.test(roomInfo);
         if (guestType === "walkin" && !guestPhone?.trim() && !isTableOrder) {
@@ -317,43 +335,39 @@ export async function POST(req: NextRequest) {
 
         let orderNumber = await getNextOrderNumber();
         let order: any;
+        const orderFields = {
+          guestType: guestType || "walkin",
+          checkinId: checkinId || undefined,
+          guestName,
+          guestPhone: resolvedPhone,
+          roomInfo: roomInfo || "",
+          specialInstructions: specialInstructions || "",
+          subtotal,
+          tax,
+          total,
+          paymentStatus: guestType === "hostel" && checkinId ? "on_tab" : "pending",
+          createdBy: actorName,
+          idempotencyKey,
+        } as const;
         try {
-          const result = await createFoodOrder({
-            orderNumber,
-            guestType: guestType || "walkin",
-            checkinId: checkinId || undefined,
-            guestName,
-            guestPhone: resolvedPhone,
-            roomInfo: roomInfo || "",
-            specialInstructions: specialInstructions || "",
-            subtotal,
-            tax,
-            total,
-            paymentStatus: guestType === "hostel" && checkinId ? "on_tab" : "pending",
-            createdBy: actorName,
-          });
+          const result = await createFoodOrder({ orderNumber, ...orderFields });
           order = result[0];
-        } catch (err: any) {
-          if (err?.message?.includes("UNIQUE") || err?.message?.includes("unique")) {
-            orderNumber = await getNextOrderNumber();
-            const result = await createFoodOrder({
-              orderNumber,
-              guestType: guestType || "walkin",
-              checkinId: checkinId || undefined,
-              guestName,
-              guestPhone: resolvedPhone,
-              roomInfo: roomInfo || "",
-              specialInstructions: specialInstructions || "",
-              subtotal,
-              tax,
-              total,
-              paymentStatus: guestType === "hostel" && checkinId ? "on_tab" : "pending",
-              createdBy: actorName,
+        } catch (err: unknown) {
+          if (!isUniqueConstraintError(err)) throw err;
+          const raced = await getFoodOrderByIdempotencyKey(idempotencyKey);
+          if (raced) {
+            return NextResponse.json({
+              success: true,
+              role,
+              orderId: raced.id,
+              orderNumber: raced.orderNumber,
+              total: raced.total,
+              duplicate: true,
             });
-            order = result[0];
-          } else {
-            throw err;
           }
+          orderNumber = await getNextOrderNumber();
+          const result = await createFoodOrder({ orderNumber, ...orderFields });
+          order = result[0];
         }
 
         await addFoodOrderItems(validatedItems.map((v) => ({ orderId: order.id, menuItemId: v.menuItemId, itemName: v.itemName, itemPrice: v.itemPrice, quantity: v.quantity, lineTotal: v.lineTotal, pricingStatus: v.pricingStatus, notes: v.notes })));

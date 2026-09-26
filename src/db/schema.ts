@@ -50,12 +50,14 @@ export const checkins = sqliteTable("checkins", {
   dobFromId: text("dob_from_id").default(""),
   vibeMatched: integer("vibe_matched").notNull().default(0),
   createdMonth: text("created_month").notNull(),
+  idempotencyKey: text("idempotency_key"),
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_checkins_month").on(table.createdMonth),
   index("idx_checkins_contact").on(table.contact),
   index("idx_checkins_arrival").on(table.arrivalDate),
   index("idx_checkins_status").on(table.status),
+  uniqueIndex("idx_checkins_idempotency").on(table.idempotencyKey),
 ]);
 
 export const dorms = sqliteTable("dorms", {
@@ -923,11 +925,13 @@ export const dailyIncome = sqliteTable("daily_income", {
   foodRevenueAuto: integer("food_revenue_auto").notNull().default(0),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),
+  idempotencyKey: text("idempotency_key"),
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_daily_income_date").on(table.date),
   index("idx_daily_income_account").on(table.accountId),
   index("idx_daily_income_account_date").on(table.accountId, table.date),
+  uniqueIndex("idx_daily_income_idempotency").on(table.idempotencyKey),
 ]);
 
 /** Immutable automatic online guest-receipt journal. Amounts are paise. */
@@ -1024,6 +1028,7 @@ export const expenses = sqliteTable("expenses", {
   updatedAt: text("updated_at").default(""),
   expenseDate: text("expense_date").notNull().default(""),
   createdMonth: text("created_month").notNull(),
+  idempotencyKey: text("idempotency_key"),
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_expenses_month").on(table.createdMonth),
@@ -1032,6 +1037,7 @@ export const expenses = sqliteTable("expenses", {
   index("idx_expenses_account_date").on(table.accountId, table.expenseDate),
   index("idx_expenses_created_by").on(table.createdBy),
   uniqueIndex("idx_expenses_task_unique").on(table.taskId),
+  uniqueIndex("idx_expenses_idempotency").on(table.idempotencyKey),
 ]);
 
 export const pushSubscriptions = sqliteTable("push_subscriptions", {
@@ -1462,9 +1468,11 @@ export const splitExpenses = sqliteTable("split_expenses", {
   createdAt: text("created_at").notNull(),
   hostelExpenseId: integer("hostel_expense_id"),
   deletedAt: text("deleted_at"),
+  idempotencyKey: text("idempotency_key"),
 }, (table) => [
   index("idx_split_expenses_group_date").on(table.groupId, table.expenseDate),
   uniqueIndex("idx_split_expenses_hostel").on(table.hostelExpenseId).where(sql`${table.hostelExpenseId} is not null`),
+  uniqueIndex("idx_split_expenses_idempotency").on(table.idempotencyKey),
 ]);
 
 export const splitExpenseShares = sqliteTable("split_expense_shares", {

@@ -42,7 +42,7 @@ Sync columns on operational tables: `sync_id`, `sync_updated_at`, `sync_source`,
 |-------|------|
 | `menu_categories` | Sections, Kannada name, `discount_exempt`. |
 | `menu_items` | Fixed price paise or price-on-request flag, optional indicative min/max range and price basis, tags JSON, stock. |
-| `food_orders` | Header. Unique `order_number`, unique `idempotency_key`. Operational rows are preserved; the Audit-tab history view applies the global audit-retention cutoff without deleting orders. |
+| `food_orders` | Header. Unique `order_number`, unique `idempotency_key` when set. Create paths (guest + admin `placeOrderForGuest`) require a client UUID and return `duplicate: true` on retry. Operational rows are preserved; the Audit-tab history view applies the global audit-retention cutoff without deleting orders. |
 | `food_order_items` | Snapshot name/price, explicit `pricing_status` (`fixed`/`pending`), optional line notes (staff custom badge from Set price, max 24 chars). `status` active/voided. |
 | `order_modifications` | Kitchen/admin change log. |
 
@@ -212,7 +212,7 @@ Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kan
 
 ## What Pi never has
 
-`site_events`, `site_community_spaces`, `site_page_copy`, `site_hero_videos`, `site_page_heroes`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`, `food_bill_share_tokens`. Migrator skips `0035_site_cms.sql`, `0041_splits.sql`, `0064_food_bill_share_tokens.sql`, and `0079_site_hero_videos.sql` (among other Cloudflare-only stamps) but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
+`site_events`, `site_community_spaces`, `site_page_copy`, `site_hero_videos`, `site_page_heroes`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`, `food_bill_share_tokens`. Migrator skips `0035_site_cms.sql`, `0041_splits.sql`, `0081_split_expense_idempotency.sql`, `0064_food_bill_share_tokens.sql`, and `0079_site_hero_videos.sql` (among other Cloudflare-only stamps) but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
 # Cloud-only guest booking verification
 
 The existing settings row `website_booking_settings_v1` JSON now includes `maxSelectedBeds` (integer 1–100; absent field defaults to 4). No new table/migration is needed for the browsing limit. Existing revision-protected admin saves retain payment fields; availability exposes only the public limit, never the full settings JSON.

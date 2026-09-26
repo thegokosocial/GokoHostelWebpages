@@ -3,6 +3,8 @@ import {
   addExpense,
   getExpensesByUser,
   getExpenseById,
+  getExpenseByIdempotencyKey,
+  getDailyIncomeByIdempotencyKey,
   updateExpense,
   deleteExpense,
   addAuditEntry,
@@ -16,7 +18,7 @@ import { eq, and, sql, desc, inArray, isNull, lt, gte, lte } from "drizzle-orm";
 import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
 import { isOfflineMode, isPiRuntime } from "@/lib/runtime";
 import { authenticateUser } from "@/lib/auth";
-import { actionAllowed, actionAllowedAll, type ActionPerm } from "@/lib/actionPermissions";
+import { actionAllowed, actionAllowedAll, permissionDeniedPayload, type ActionPerm } from "@/lib/actionPermissions";
 import { hostelExpenseIsLinked } from "@/db/splitQueries";
 import { stayDueAtHotel, cashCollected, onlineCollected, cashRefunded, onlineRefunded, occupiedForRoomRevenue, isPrepaidStatus } from "@/lib/stayPayment";
 import { validateManualIncome } from "@/lib/income";
@@ -29,6 +31,8 @@ import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { bookingEventMethod, paiseToRupees } from "@/lib/bookingPaymentJournal";
 import { collectInBatches } from "@/lib/dbBatch";
 import { walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
+import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
+import { syncInsert } from "@/db/syncMeta";
 
 function extractDriveFileId(link: string): string | null {
   const match = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -80,7 +84,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
     if (gate === "forbidden") {
-      return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
+      return NextResponse.json(permissionDeniedPayload(requiredPerm), { status: 403 });
     }
 
     switch (action) {
@@ -264,9 +268,18 @@ export async function POST(req: NextRequest) {
       case "getIncomeCategories":
         return NextResponse.json({ categories: parseIncomeCategories(await getSetting("income_categories")) });
       case "addExpense": {
-        const { amount, category, customCategory, purpose, billImage, billMimeType, billImages, vendorId, accountId, paymentMethod, mainCategory, subCategory } = rest;
+        const { amount, category, customCategory, purpose, billImage, billMimeType, billImages, vendorId, accountId, paymentMethod, mainCategory, subCategory, idempotencyKey: rawKey } = rest;
         if (!amount || !category) {
           return NextResponse.json({ error: "amount and category are required" }, { status: 400 });
+        }
+        const parsedKey = parseCreateIdempotencyKey(rawKey);
+        if ("error" in parsedKey) {
+          return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+        }
+        const idempotencyKey = parsedKey.key;
+        const existingByKey = await getExpenseByIdempotencyKey(idempotencyKey);
+        if (existingByKey) {
+          return NextResponse.json({ success: true, role, id: existingByKey.id, duplicate: true });
         }
         if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount <= 0) {
           return NextResponse.json({ error: "amount must be a positive integer (in paise)" }, { status: 400 });
@@ -331,21 +344,30 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        await addExpense({
-          amount,
-          category,
-          customCategory: customCategory || "",
-          purpose: purpose || category,
-          billImageLink,
-          createdBy: actorName,
-          expenseDate,
-          createdMonth: month,
-          vendorId: vendorId || null,
-          accountId: effectiveAccountId,
-          paymentMethod: effectiveMethod,
-          mainCategory: mainCategory || "stay_expense",
-          subCategory: subCategory || "",
-        });
+        let expenseId: number | null;
+        try {
+          expenseId = await addExpense({
+            amount,
+            category,
+            customCategory: customCategory || "",
+            purpose: purpose || category,
+            billImageLink,
+            createdBy: actorName,
+            expenseDate,
+            createdMonth: month,
+            vendorId: vendorId || null,
+            accountId: effectiveAccountId,
+            paymentMethod: effectiveMethod,
+            mainCategory: mainCategory || "stay_expense",
+            subCategory: subCategory || "",
+            idempotencyKey,
+          });
+        } catch (err: unknown) {
+          if (!isUniqueConstraintError(err)) throw err;
+          const raced = await getExpenseByIdempotencyKey(idempotencyKey);
+          if (raced) return NextResponse.json({ success: true, role, id: raced.id, duplicate: true });
+          throw err;
+        }
 
         await addAuditEntry({
           username: actorName,
@@ -354,7 +376,7 @@ export async function POST(req: NextRequest) {
           details: `₹${(amount / 100).toFixed(0)} for ${purpose}`,
         });
 
-        return NextResponse.json({ success: true, role });
+        return NextResponse.json({ success: true, role, id: expenseId });
       }
 
       case "listExpenses": {
@@ -922,6 +944,15 @@ export async function POST(req: NextRequest) {
         const incomeCategories = parseIncomeCategories(await getSetting("income_categories"));
         const validation = validateManualIncome(rest, incomeCategories.map((item) => item.id));
         if ("error" in validation) return NextResponse.json({ error: validation.error }, { status: 400 });
+        const parsedKey = parseCreateIdempotencyKey(rest.idempotencyKey);
+        if ("error" in parsedKey) {
+          return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+        }
+        const idempotencyKey = parsedKey.key;
+        const existingIncome = await getDailyIncomeByIdempotencyKey(idempotencyKey);
+        if (existingIncome) {
+          return NextResponse.json({ success: true, id: existingIncome.id, duplicate: true });
+        }
         const income = validation.value;
         const db = getDb();
         if (income.type === "online") {
@@ -934,12 +965,20 @@ export async function POST(req: NextRequest) {
           eq(dailyLedger.isReconciled, 1),
         )).orderBy(dailyLedger.date).limit(1);
         if (reconciled.length) return NextResponse.json({ error: `Undo the ${reconciled[0].date} reconciliation before adding income to this account` }, { status: 409 });
-        await db.insert(dailyIncome).values({
-          ...income,
-          createdBy: username || displayName,
-          createdAt: new Date().toISOString(),
-        });
-        return NextResponse.json({ success: true });
+        try {
+          const inserted = await db.insert(dailyIncome).values(syncInsert({
+            ...income,
+            idempotencyKey,
+            createdBy: username || displayName,
+            createdAt: new Date().toISOString(),
+          })).returning({ id: dailyIncome.id });
+          return NextResponse.json({ success: true, id: inserted[0]?.id });
+        } catch (err: unknown) {
+          if (!isUniqueConstraintError(err)) throw err;
+          const raced = await getDailyIncomeByIdempotencyKey(idempotencyKey);
+          if (raced) return NextResponse.json({ success: true, id: raced.id, duplicate: true });
+          throw err;
+        }
       }
 
       case "getIncomeAccounts": {

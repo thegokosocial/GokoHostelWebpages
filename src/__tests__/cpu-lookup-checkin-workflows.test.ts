@@ -5,6 +5,7 @@ import * as path from "path";
 
 const q = vi.hoisted(() => ({
   getActiveCheckins: vi.fn(),
+  getCheckinByIdempotencyKey: vi.fn(),
   getAllBeds: vi.fn(),
   getRecentlyCheckedOutGuests: vi.fn(),
   getLatestCheckinByNormalizedPhone: vi.fn(),
@@ -20,6 +21,7 @@ const q = vi.hoisted(() => ({
 
 vi.mock("@/db/queries", () => ({
   getActiveCheckins: q.getActiveCheckins,
+  getCheckinByIdempotencyKey: q.getCheckinByIdempotencyKey,
   getAllBeds: q.getAllBeds,
   getRecentlyCheckedOutGuests: q.getRecentlyCheckedOutGuests,
   getLatestCheckinByNormalizedPhone: q.getLatestCheckinByNormalizedPhone,
@@ -77,12 +79,14 @@ function lookupReq(phone?: string) {
 function checkinReq(fields: Record<string, string>) {
   const fd = new FormData();
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  if (!fields.idempotencyKey) fd.set("idempotencyKey", "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
   return new NextRequest("http://localhost/api/checkin", { method: "POST", body: fd });
 }
 
 function checkinReqWithFiles(fields: Record<string, string>, visa = false) {
   const fd = new FormData();
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  if (!fields.idempotencyKey) fd.set("idempotencyKey", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
   fd.append("idImages", new File(["passport"], "passport.jpg", { type: "image/jpeg" }));
   if (visa) fd.append("visaImages", new File(["visa"], "visa.jpg", { type: "image/jpeg" }));
   return new NextRequest("http://localhost/api/checkin", { method: "POST", body: fd });
@@ -189,6 +193,8 @@ describe("POST /api/checkin required fields", () => {
     for (const fn of Object.values(q)) fn.mockReset();
     q.getMonthKey.mockReturnValue("2026-08");
     q.isOfflineMode.mockReturnValue(true);
+    q.getCheckinByIdempotencyKey.mockResolvedValue(null);
+    q.getActiveCheckins.mockResolvedValue([]);
   });
 
   it("400s when name or contact is missing", async () => {

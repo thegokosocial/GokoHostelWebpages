@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { actionAllowed, actionAllowedAll, type ActionPerm } from "@/lib/actionPermissions";
+import { actionAllowed, actionAllowedAll, permissionDeniedPayload, type ActionPerm } from "@/lib/actionPermissions";
 import { CHECKIN_LOOKUP_DATA_KEYS, checkinLookupData } from "@/lib/checkinLookup";
 import { buildFoodLookupGuests } from "@/lib/foodLookup";
 import { normalizePhone } from "@/lib/phoneUtils";
@@ -523,9 +523,13 @@ describe("Food lookup guests", () => {
 });
 
 function expenseGate(role: UserRole, permissions: Record<string, boolean>, action: string) {
+  const required = EXPENSES_PERMISSIONS[action];
   const gate = checkPermission(role, permissions, EXPENSES_PERMISSIONS, action);
   if (gate === "admin_required") return { status: 403, error: "Admin access required" };
-  if (gate === "forbidden") return { status: 403, error: "You don't have permission to perform this action" };
+  if (gate === "forbidden") {
+    const body = permissionDeniedPayload(required);
+    return { status: 403, error: body.error, requiredPermissions: body.requiredPermissions, howToFix: body.howToFix };
+  }
   return { status: 200, error: null };
 }
 
@@ -544,10 +548,11 @@ describe("Mock workflows: Bill Records edit (production 8:39pm failure)", () => 
   it("round 1: staff who can only view bills is still blocked from save and delete", () => {
     const perms = { canViewExpenses: true };
     expect(expenseGate("staff", perms, "listExpenses").status).toBe(200);
-    expect(expenseGate("staff", perms, "updateExpense")).toEqual({
-      status: 403,
-      error: "You don't have permission to perform this action",
-    });
+    const blocked = expenseGate("staff", perms, "updateExpense");
+    expect(blocked.status).toBe(403);
+    expect(blocked.requiredPermissions).toEqual(["canEditExpense"]);
+    expect(String(blocked.error)).toMatch(/canEditExpense/);
+    expect(String(blocked.howToFix)).toMatch(/Management → Users/);
     expect(expenseGate("staff", perms, "deleteExpense").status).toBe(403);
   });
 

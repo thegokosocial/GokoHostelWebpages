@@ -163,14 +163,23 @@ export async function insertSplitExpense(data: {
   notes: string;
   createdBy: string;
   hostelExpenseId?: number | null;
+  idempotencyKey?: string | null;
 }) {
   const db = getDb();
   const result = await db.insert(splitExpenses).values({
     ...data,
     hostelExpenseId: data.hostelExpenseId ?? null,
+    idempotencyKey: data.idempotencyKey ?? null,
     createdAt: nowIso(),
   }).returning({ id: splitExpenses.id });
   return result[0]?.id ?? null;
+}
+
+export async function getSplitExpenseByIdempotencyKey(key: string) {
+  if (!key) return null;
+  const db = getDb();
+  const rows = await db.select().from(splitExpenses).where(eq(splitExpenses.idempotencyKey, key)).limit(1);
+  return rows[0] || null;
 }
 
 export async function updateSplitExpense(id: number, data: Partial<{

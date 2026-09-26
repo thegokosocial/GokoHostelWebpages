@@ -8,7 +8,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 
 | Table | Columns |
 |-------|---------|
-| `checkins` | 33 |
+| `checkins` | 34 |
 | `dorms` | 7 |
 | `beds` | 17 |
 | `bed_history` | 10 |
@@ -35,7 +35,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `guest_receipts` | 22 |
 | `cash_payment_events` | 17 |
 | `daily_ledger` | 15 |
-| `expenses` | 21 |
+| `expenses` | 22 |
 | `push_subscriptions` | 7 |
 | `sync_log` | 10 |
 | `sync_conflicts` | 13 |
@@ -63,7 +63,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `split_members` | 10 |
 | `split_groups` | 4 |
 | `split_group_members` | 3 |
-| `split_expenses` | 11 |
+| `split_expenses` | 12 |
 | `split_expense_shares` | 5 |
 | `split_settlements` | 12 |
 
@@ -100,6 +100,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `dob_from_id` | text | default "" |
 | `vibe_matched` | integer | NOT NULL default 0 |
 | `created_month` | text | NOT NULL |
+| `idempotency_key` | text | unique when set (migration **0080**); client create retries |
 | `sync_id` | text |  |
 | `sync_updated_at` | text |  |
 | `sync_source` | text | default cloudflare |
@@ -539,6 +540,7 @@ Cloudflare-only (migration 0064). Not Pi-synced; Pi migrator stamps the filename
 | `food_revenue_auto` | integer | NOT NULL default 0 |
 | `created_by` | text | NOT NULL |
 | `created_at` | text | NOT NULL |
+| `idempotency_key` | text | unique when set (migration **0080**) |
 | `sync_id` | text |  |
 | `sync_updated_at` | text |  |
 | `sync_source` | text | default cloudflare |
@@ -585,6 +587,7 @@ Cloudflare-only (migration 0064). Not Pi-synced; Pi migrator stamps the filename
 | `created_at` | text | NOT NULL |
 | `updated_at` | text | default "" |
 | `created_month` | text | NOT NULL |
+| `idempotency_key` | text | unique when set (migration **0080**) |
 | `sync_id` | text |  |
 | `sync_updated_at` | text |  |
 | `sync_source` | text | default cloudflare |
@@ -974,6 +977,7 @@ Cloudflare-only (migration 0064). Not Pi-synced; Pi migrator stamps the filename
 | `created_at` | text | NOT NULL |
 | `hostel_expense_id` | integer |  |
 | `deleted_at` | text |  |
+| `idempotency_key` | text | unique when set (migration **0081**; Cloudflare-only with splits) |
 
 ## `split_expense_shares`
 

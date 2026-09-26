@@ -5,7 +5,7 @@ import { driveDeleteFile } from "@/lib/googleApiFetch";
 import { getDb } from "@/db";
 import { isOfflineMode } from "@/lib/runtime";
 import { authenticateUser, hashPassword, verifyPassword, type UserRole } from "@/lib/auth";
-import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
+import { actionAllowed, permissionDeniedPayload, type ActionPerm } from "@/lib/actionPermissions";
 import { isForeignNationality } from "@/lib/checkinSchema";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { logListQuery, logSafePage } from "@/lib/logRetention";
@@ -20,7 +20,7 @@ import { bookingReference, checkinLinksBooking, getCheckinBookingMatch, isManual
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
-  getCheckinsByMonth, getCheckinsByDateRange, getActiveCheckins, addCheckin, updateCheckin, deleteCheckin, getCheckinDeleteInfo, getCheckinMonths, markVibeMatched,
+  getCheckinsByMonth, getCheckinsByDateRange, getActiveCheckins, addCheckin, getCheckinByIdempotencyKey, updateCheckin, deleteCheckin, getCheckinDeleteInfo, getCheckinMonths, markVibeMatched,
   getAllBeds, getBedById, updateBedStatus, assignPhysicalBed, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
@@ -38,6 +38,8 @@ import { beds, checkins, foodOrders, bookings, bookingHistory, bookingBedAssignm
 import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 import { apiErrorBody, getRequestId } from "@/lib/apiError";
 import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
+import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
+import { syncInsert } from "@/db/syncMeta";
 import { collectInBatches, uniqueInBatches } from "@/lib/dbBatch";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
@@ -147,7 +149,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
     if (gate === "forbidden") {
-      return NextResponse.json({ error: "You don't have permission to perform this action" }, { status: 403 });
+      return NextResponse.json(permissionDeniedPayload(requiredPerm), { status: 403 });
     }
 
     // --- Check-in Records ---
@@ -296,8 +298,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "add") {
-      const { entry, formCData, bookingPlatform, bookingId: rawBookingId, dob: addDob } = rest;
+      const { entry, formCData, bookingPlatform, bookingId: rawBookingId, dob: addDob, idempotencyKey: rawKey } = rest;
       if (!entry) return NextResponse.json({ error: "No entry data" }, { status: 400 });
+      const parsedKey = parseCreateIdempotencyKey(rawKey);
+      if ("error" in parsedKey) {
+        return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+      }
+      const idempotencyKey = parsedKey.key;
+      const existingCheckin = await getCheckinByIdempotencyKey(idempotencyKey);
+      if (existingCheckin) {
+        return NextResponse.json({ success: true, checkinId: existingCheckin.id, duplicate: true });
+      }
 
       const e = Array.isArray(entry) ? entry : [];
       const entryNationality = Array.isArray(entry) ? entry[8] : entry.nationality;
@@ -326,13 +337,22 @@ export async function POST(req: NextRequest) {
         bookingPlatform: platform,
         bookingId: finalBookingId,
         dob: addDob || undefined,
+        idempotencyKey,
       };
+      let createdId: number | undefined;
       try {
-        await addCheckin(addData);
-      } catch (err: any) {
-        if (err?.message?.includes("dob") || err?.message?.includes("vibe_matched") || err?.message?.includes("dob_from_id")) {
+        const rows = await addCheckin(addData);
+        createdId = rows[0]?.id;
+      } catch (err: unknown) {
+        if (isUniqueConstraintError(err)) {
+          const raced = await getCheckinByIdempotencyKey(idempotencyKey);
+          if (raced) return NextResponse.json({ success: true, checkinId: raced.id, duplicate: true });
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("dob") || msg.includes("vibe_matched") || msg.includes("dob_from_id")) {
           const { dob: _d, dobFromId: _di, ...fallback } = addData;
-          await addCheckin(fallback as Parameters<typeof addCheckin>[0]);
+          const rows = await addCheckin(fallback as Parameters<typeof addCheckin>[0]);
+          createdId = rows[0]?.id;
         } else { throw err; }
       }
       await addAuditEntry({ username: actingUser, action: "checkin_add", target: e[3] || "unknown" });
@@ -344,12 +364,21 @@ export async function POST(req: NextRequest) {
         url: "/admin?section=dashboard",
         eventId: `admin-checkin-${finalBookingId || addData.submittedAt}`,
       });
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, checkinId: createdId });
     }
 
     if (action === "addPast") {
-      const { entry, checkoutDate, formCData, bookingPlatform, bookingId: rawBookingId, dob: pastDob } = rest;
+      const { entry, checkoutDate, formCData, bookingPlatform, bookingId: rawBookingId, dob: pastDob, idempotencyKey: rawKey } = rest;
       if (!entry) return NextResponse.json({ error: "No entry data" }, { status: 400 });
+      const parsedKey = parseCreateIdempotencyKey(rawKey);
+      if ("error" in parsedKey) {
+        return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+      }
+      const idempotencyKey = parsedKey.key;
+      const existingCheckin = await getCheckinByIdempotencyKey(idempotencyKey);
+      if (existingCheckin) {
+        return NextResponse.json({ success: true, checkinId: existingCheckin.id, duplicate: true });
+      }
 
       const e = Array.isArray(entry) ? entry : [];
       const entryNationality = Array.isArray(entry) ? entry[8] : entry.nationality;
@@ -384,18 +413,27 @@ export async function POST(req: NextRequest) {
         bookingPlatform: pastPlatform,
         bookingId: finalBookingId,
         createdMonth: monthKey,
+        idempotencyKey,
       };
       if (pastDob) pastData.dob = pastDob;
+      let createdId: number | undefined;
       try {
-        await db.insert(checkins).values(pastData);
-      } catch (err: any) {
-        if (err?.message?.includes("dob") || err?.message?.includes("vibe_matched") || err?.message?.includes("dob_from_id")) {
+        const rows = await db.insert(checkins).values(syncInsert(pastData)).returning({ id: checkins.id });
+        createdId = rows[0]?.id;
+      } catch (err: unknown) {
+        if (isUniqueConstraintError(err)) {
+          const raced = await getCheckinByIdempotencyKey(idempotencyKey);
+          if (raced) return NextResponse.json({ success: true, checkinId: raced.id, duplicate: true });
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("dob") || msg.includes("vibe_matched") || msg.includes("dob_from_id")) {
           const { dob: _d, dobFromId: _di, ...fallback } = pastData;
-          await db.insert(checkins).values(fallback);
+          const rows = await db.insert(checkins).values(syncInsert(fallback)).returning({ id: checkins.id });
+          createdId = rows[0]?.id;
         } else { throw err; }
       }
       await addAuditEntry({ username: actingUser, action: "past_checkin_add", target: e[3] || "unknown" });
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, checkinId: createdId });
     }
 
     if (action === "update") {

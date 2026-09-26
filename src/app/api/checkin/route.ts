@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation, requiresBothIdSides, bothSidesFileGateAllows } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
-import { addCheckin, getActiveCheckins, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
+import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
 import { isSameCheckinVisit } from "@/lib/checkinDuplicate";
 import { dobEqualsArrivalDate, getAgeFromDob } from "@/lib/parseDob";
 import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRateLimit";
+import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -86,6 +87,15 @@ export async function POST(req: NextRequest) {
     const homeCity = formData.get("homeCity") as string || "";
     const homeCountryPhone = formData.get("homeCountryPhone") as string || "";
     const formDob = (formData.get("dob") as string || "").trim();
+    const parsedKey = parseCreateIdempotencyKey(formData.get("idempotencyKey"));
+    if ("error" in parsedKey) {
+      return NextResponse.json({ error: parsedKey.error }, { status: 400 });
+    }
+    const idempotencyKey = parsedKey.key;
+    const existingByKey = await getCheckinByIdempotencyKey(idempotencyKey);
+    if (existingByKey) {
+      return NextResponse.json({ success: true, duplicate: true, checkinId: existingByKey.id });
+    }
 
     const hasIdImages = idImages.length > 0 || !!prevIdCardLink;
     if (!name || !contactNumber || !nationality || !idType || !hasIdImages || !arrivalDate || !stayingDays || !comingFrom || !numberOfPersons) {
@@ -365,12 +375,20 @@ export async function POST(req: NextRequest) {
       bookingId: finalBookingId,
       dob: dob || undefined,
       dobFromId: dobFromId || undefined,
+      idempotencyKey,
     };
 
     try {
       await addCheckin(checkinData);
-    } catch (insertErr: any) {
-      if (insertErr?.message?.includes("dob") || insertErr?.message?.includes("vibe_matched") || insertErr?.message?.includes("dob_from_id")) {
+    } catch (insertErr: unknown) {
+      if (isUniqueConstraintError(insertErr)) {
+        const raced = await getCheckinByIdempotencyKey(idempotencyKey);
+        if (raced) {
+          return NextResponse.json({ success: true, duplicate: true, checkinId: raced.id });
+        }
+      }
+      const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
+      if (msg.includes("dob") || msg.includes("vibe_matched") || msg.includes("dob_from_id")) {
         const { dob: _d, dobFromId: _di, ...fallbackData } = checkinData;
         await addCheckin(fallbackData as Parameters<typeof addCheckin>[0]);
       } else {
