@@ -192,7 +192,7 @@ describe("push notification payloads", () => {
   it("notifies for admin-created food orders and retries portable display options", () => {
     const adminOrders = fs.readFileSync(path.join(ROOT, "src/app/api/admin/food-orders/route.ts"), "utf8");
     const worker = fs.readFileSync(path.join(ROOT, "public/sw.js"), "utf8");
-    expect(adminOrders).toContain('eventId: `admin-food-order-${order.id}`');
+    expect(adminOrders).toContain('eventId: `admin-food-order-${orderRow.id}`');
     expect(adminOrders).toContain('title: "New Food Order"');
     expect(worker).toContain("{ body, data: { url } }");
   });
