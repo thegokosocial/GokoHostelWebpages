@@ -40,3 +40,11 @@ export function bothSidesHelpText(idType: string | undefined, nationality: strin
   }
   return "JPEG, PNG, WebP, PDF. Max 10 MB per file.";
 }
+
+/** Rewrite `url | url` Drive join after removing one preview. Empty string = cleared. */
+export function removeLinkFromJoined(joined: string, index: number): string {
+  const parts = joined.split(" | ").map((s) => s.trim()).filter(Boolean);
+  if (index < 0 || index >= parts.length) return joined;
+  parts.splice(index, 1);
+  return parts.join(" | ");
+}

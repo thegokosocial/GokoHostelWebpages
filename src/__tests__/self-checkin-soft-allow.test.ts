@@ -71,6 +71,14 @@ describe("self-checkin contrast and error surfacing contracts", () => {
     expect(form).not.toContain("bothSidesRequired && idFiles.length < 2");
   });
 
+  it("puts a Remove X on previous ID and visa previews", () => {
+    expect(form).toContain("removeLinkFromJoined");
+    expect(form).toContain("aria-label={`Remove ${label}");
+    expect(form).toContain("Clear previous visa and upload new");
+    expect(form).toContain("onRemove");
+    expect(form).toContain("e.stopPropagation()");
+  });
+
   it("keeps primary form headings on high-contrast zinc, not green-on-glass", () => {
     expect(form).toContain('font-display text-2xl font-bold text-zinc-900 md:text-3xl');
     expect(form).toContain("font-semibold text-zinc-900");

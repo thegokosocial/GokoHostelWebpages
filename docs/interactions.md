@@ -63,7 +63,8 @@ sequenceDiagram
   G->>P: phone
   P->>L: ?phone=
   L-->>P: prior name / Drive URLs or empty
-  G->>P: form + ID photos
+  Note over P: Prior Drive previews: Remove X per link (removeLinkFromJoined) or Clear previous…
+  G->>P: form + ID photos (one primary slot; other side only after front_missing/address_missing)
   P->>V: multipart (if image_validation)
   V->>Vis: OCR / labels
   Vis-->>P: valid or reason

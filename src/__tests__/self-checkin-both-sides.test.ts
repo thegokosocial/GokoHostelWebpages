@@ -6,7 +6,7 @@ import {
   requiresBothIdSides,
   validateIdFromText,
 } from "@/lib/validateIdDocument";
-import { isAcceptedIdFile, isHeicFile, bothSidesHelpText } from "@/lib/checkinIdUpload";
+import { isAcceptedIdFile, isHeicFile, bothSidesHelpText, removeLinkFromJoined } from "@/lib/checkinIdUpload";
 import { isStaffReviewValidation } from "@/lib/checkinSubmitError";
 import {
   AADHAAR_BACK_ADDRESS_ONLY,
@@ -133,6 +133,14 @@ describe("checkinIdUpload helpers", () => {
     expect(bothSidesHelpText("passport", "India")).toMatch(/ask/i);
     expect(bothSidesHelpText("passport", "France")).toMatch(/bio page/i);
     expect(bothSidesHelpText("driving_licence", "India")).toMatch(/licence/i);
+  });
+
+  it("removes one Drive link from a joined prevIdCardLink string", () => {
+    const joined = "https://drive.google.com/a | https://drive.google.com/b | https://drive.google.com/c";
+    expect(removeLinkFromJoined(joined, 1)).toBe("https://drive.google.com/a | https://drive.google.com/c");
+    expect(removeLinkFromJoined(joined, 0)).toBe("https://drive.google.com/b | https://drive.google.com/c");
+    expect(removeLinkFromJoined("https://drive.google.com/solo", 0)).toBe("");
+    expect(removeLinkFromJoined(joined, 99)).toBe(joined);
   });
 });
 

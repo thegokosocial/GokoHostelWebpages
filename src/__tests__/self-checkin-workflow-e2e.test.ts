@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import {
   DIGILOCKER_AADHAAR_WITH_ADDRESS,
+  DARSHAN_AADHAAR_BACK_ONLY,
   DL_WITH_TRANSPORT,
+  INDIAN_PASSPORT_BIO,
+  INDIAN_PASSPORT_WITH_ADDRESS,
   LIKITHA_AADHAAR_FRONT,
   PRAVALLIKA_PAN,
   SUGUMAR_AADHAAR_BOTH,
@@ -495,6 +498,113 @@ describe("self-check-in mock E2E workflows", () => {
       expect(res.status).toBe(200);
       expect(q.visionAnalyze).not.toHaveBeenCalled();
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("yes");
+    });
+  });
+
+  describe("extended ID path matrix", () => {
+    it("rejects Darshan-style Aadhaar back-only on validate and check-in", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(DARSHAN_AADHAAR_BACK_ONLY));
+      const validateRes = await validateIdPOST(validateRequest({
+        idType: "aadhaar",
+        guestName: "Darshan Chauhan",
+        nationality: "India",
+      }));
+      const validated = await validateRes.json();
+      expect(validated.valid).toBe(false);
+      expect(validated.layers).toContain("front_missing");
+      expect(validated.needsFrontSide).toBe(true);
+
+      const checkinRes = await checkinPOST(checkinRequest(baseFields({
+        name: "Darshan Chauhan",
+        contactNumber: "9000000020",
+      })));
+      expect(checkinRes.status).toBe(422);
+      expect(q.addCheckin).not.toHaveBeenCalled();
+    });
+
+    it("accepts DigiLocker Aadhaar with both sides in one OCR blob", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(DIGILOCKER_AADHAAR_WITH_ADDRESS));
+      const validateRes = await validateIdPOST(validateRequest({
+        idType: "aadhaar",
+        guestName: "Test User",
+        nationality: "India",
+      }));
+      const validated = await validateRes.json();
+      expect(validated.valid).toBe(true);
+      expect(validated.layers).toContain("both_sides_ok");
+
+      const checkinRes = await checkinPOST(checkinRequest(baseFields({
+        name: "Test User",
+        contactNumber: "9000000021",
+      })));
+      expect(checkinRes.status).toBe(200);
+      expect(q.addCheckin.mock.calls[0][0].verified).toBe("yes");
+    });
+
+    it("hard-rejects Indian passport bio-only; accepts with address", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(INDIAN_PASSPORT_BIO));
+      let res = await validateIdPOST(validateRequest({
+        idType: "passport",
+        guestName: "Rahul Sharma",
+        nationality: "India",
+      }));
+      expect((await res.json()).valid).toBe(false);
+
+      q.visionAnalyze.mockResolvedValue(visionOk(INDIAN_PASSPORT_WITH_ADDRESS));
+      res = await validateIdPOST(validateRequest({
+        idType: "passport",
+        guestName: "Rahul Sharma",
+        nationality: "India",
+      }));
+      expect((await res.json()).valid).toBe(true);
+
+      const checkinRes = await checkinPOST(checkinRequest(baseFields({
+        name: "Rahul Sharma",
+        idType: "passport",
+        contactNumber: "9000000022",
+      })));
+      expect(checkinRes.status).toBe(200);
+    });
+
+    it("accepts foreign passport with visa upload", async () => {
+      q.visionAnalyze
+        .mockResolvedValueOnce(visionOk(`UNITED STATES OF AMERICA
+PASSPORT
+Type P
+Passport No 540012345
+Surname DOE
+Given Names JOHN
+Nationality USA
+Date of Birth 12/04/1990
+P<USADOE<<JOHN<<<<<<<<<<<<<<<<<<<<<<<<<<`))
+        .mockResolvedValueOnce(visionOk(`REPUBLIC OF INDIA
+VISA
+Type e-Visa
+Valid from 01/01/2026
+Valid until 31/12/2026
+Passport No 540012345
+Name JOHN DOE`));
+
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(baseFields({
+        name: "John Doe",
+        nationality: "United States",
+        idType: "passport",
+        contactNumber: "9000000023",
+        arrivedFromCountry: "United States",
+        purposeOfVisit: "Tourism",
+        idempotencyKey: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      }))) fd.set(k, v);
+      fd.append("idImages", idFile("passport.jpg"));
+      fd.append("visaImages", idFile("visa.jpg"));
+      const res = await checkinPOST(new NextRequest("http://localhost/api/checkin", {
+        method: "POST",
+        body: fd,
+        headers: { origin: "http://localhost" },
+      }));
+      const body = await res.json();
+      expect(res.status, JSON.stringify(body)).toBe(200);
+      expect(q.addCheckin).toHaveBeenCalled();
     });
   });
 });

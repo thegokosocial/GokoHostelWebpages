@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn, localDateStr } from "@/lib/utils";
 import { isStaffReviewValidation, messageFromCheckinFailure, messageFromCheckinCatch } from "@/lib/checkinSubmitError";
-import { isAcceptedIdFile, isHeicFile, bothSidesHelpText } from "@/lib/checkinIdUpload";
+import { isAcceptedIdFile, isHeicFile, bothSidesHelpText, removeLinkFromJoined } from "@/lib/checkinIdUpload";
 import { requiresBothIdSides } from "@/lib/idDocumentSides";
 import { CameraIcon, UploadIcon, CheckCircle2Icon, XIcon } from "lucide-react";
 
@@ -297,10 +297,12 @@ function PreviousDocumentPreview({
   link,
   label,
   index,
+  onRemove,
 }: {
   link: string;
   label: string;
   index: number;
+  onRemove?: () => void;
 }) {
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const thumb = driveThumb(link);
@@ -323,12 +325,32 @@ function PreviousDocumentPreview({
     </div>
   );
 
-  return canOpen ? (
+  const openable = canOpen ? (
     <a href={link} target="_blank" rel="noreferrer" aria-label={`Open ${label} ${index + 1}`}>
       {card}
     </a>
   ) : (
     card
+  );
+
+  return (
+    <div className="relative inline-block">
+      {openable}
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={`Remove ${label} ${index + 1}`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="absolute -right-2 -top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-brand-red text-white shadow-md dark:shadow-none"
+        >
+          <XIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1311,7 +1333,23 @@ export function SelfCheckinForm() {
             </Label>
             <div className="mb-2 flex flex-wrap gap-3">
               {prevIdCardLink.split(" | ").map((link, i) => {
-                return <PreviousDocumentPreview key={i} link={link} label="Previous ID" index={i} />;
+                return (
+                  <PreviousDocumentPreview
+                    key={`${link}-${i}`}
+                    link={link}
+                    label="Previous ID"
+                    index={i}
+                    onRemove={() => {
+                      const next = removeLinkFromJoined(prevIdCardLink, i);
+                      setPrevIdCardLink(next);
+                      setValue("prevIdCardLink", next || undefined);
+                      if (!next) {
+                        setIdValidated(false);
+                        setIdValidationMsg(null);
+                      }
+                    }}
+                  />
+                );
               })}
             </div>
             <p className="text-xs text-zinc-600">
@@ -1412,12 +1450,36 @@ export function SelfCheckinForm() {
             </Label>
             <div className="mb-2 flex flex-wrap gap-3">
               {prevVisaLink.split(" | ").map((link, i) => {
-                return <PreviousDocumentPreview key={i} link={link} label="Previous visa" index={i} />;
+                return (
+                  <PreviousDocumentPreview
+                    key={`${link}-${i}`}
+                    link={link}
+                    label="Previous visa"
+                    index={i}
+                    onRemove={() => {
+                      const next = removeLinkFromJoined(prevVisaLink, i);
+                      setPrevVisaLink(next);
+                      setValue("prevVisaLink", next || undefined);
+                      if (!next) setVisaValidationMsg(null);
+                    }}
+                  />
+                );
               })}
             </div>
             <p className="text-xs text-zinc-600">
               Your previous visa is on file. Upload new documents below only if you want to replace them.
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                setPrevVisaLink("");
+                setValue("prevVisaLink", undefined);
+                setVisaValidationMsg(null);
+              }}
+              className="mt-2 text-xs font-medium text-brand-green-dark underline-offset-2 hover:underline"
+            >
+              Clear previous visa and upload new
+            </button>
           </div>
         )}
 
