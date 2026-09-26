@@ -134,6 +134,14 @@ describe("dateRangePicker helpers", () => {
 });
 
 describe("DateRangePicker adaptive layout contracts", () => {
+  it("offers marketing glass surface without changing the solid default", () => {
+    expect(pickerSource).toContain('surface?: "solid" | "glass"');
+    expect(pickerSource).toContain('surface = "solid"');
+    expect(pickerSource).toContain("marketingGlass");
+    expect(pickerSource).toContain("goko-glass-chip");
+    expect(pickerSource).toContain('variant === "marketing" && !marketingGlass');
+  });
+
   it("sizes month count from shell width, not viewport-only matchMedia", () => {
     expect(pickerSource).toContain("DUAL_MONTH_MIN_WIDTH");
     expect(pickerSource).toContain("ResizeObserver");

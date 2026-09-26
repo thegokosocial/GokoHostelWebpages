@@ -452,7 +452,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   <div ref={panelRef} data-booking-in-view={inView} className="goko-glass-panel min-w-0 rounded-2xl p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
     {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
     <div className="mb-5 grid grid-cols-2 gap-2 sm:flex" role="tablist" aria-label="Booking options">
-      {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "bg-brand-sand text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "Find my booking"}</button>)}
+      {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "goko-glass-chip text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "Find my booking"}</button>)}
     </div>
     {tab === "search" ? <div role="tabpanel" id="panel-search" aria-labelledby="tab-search">
       <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-3">
@@ -461,6 +461,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
           <DateRangePicker
             className="mt-1"
             variant="marketing"
+            surface="glass"
             required
             disabled={busy}
             minDate={todayIST()}
@@ -488,7 +489,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             const photos = [...(room.photos?.length ? room.photos : resolveRoomGallery(room.operationalName || room.name)), ...(room.washroomPhotos || [])];
             const quantity = selection[room.id] || 0;
             const canAdd = canAddGuestRoom(rooms, selection, room, maxSelectedBeds ?? 0);
-            return <article ref={index === 0 ? firstAvailabilityCardRef : undefined} key={room.id} className="scroll-mt-24 min-w-0 overflow-hidden rounded-2xl border border-brand-green/20 bg-white p-3 shadow-sm sm:p-4 xl:grid xl:grid-cols-[130px_minmax(0,1fr)_210px] xl:gap-4">
+            return <article ref={index === 0 ? firstAvailabilityCardRef : undefined} key={room.id} className="goko-glass-chip scroll-mt-24 min-w-0 overflow-hidden rounded-2xl border border-brand-green/20 p-3 shadow-sm sm:p-4 xl:grid xl:grid-cols-[130px_minmax(0,1fr)_210px] xl:gap-4">
               <div className="grid min-w-0 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:contents">
                 <div className="min-w-0">
                   {photos.length ? (
@@ -515,14 +516,14 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                 const active = quantity > 0 && chosenRate(room)?.id === rate.id;
                 return <div key={rate.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
                   <div className="min-w-0">{Number(rate.directBookingDiscountPercent) > 0 && <p className="mb-1 text-xs font-semibold text-emerald-700">Book direct — save {rate.directBookingDiscountPercent}%</p>}{Number(rate.directBookingDiscountPercent) > 0 && rate.standardNightlyRates?.length ? <p className="text-xs text-muted-foreground line-through">{money(Math.min(...rate.standardNightlyRates.map(night => night.rupees)))}</p> : null}<p className="text-xl font-bold">{rate.nightlyRates.some(night => night.rupees !== rate.nightlyRates[0]?.rupees) ? "From " : ""}{money(Math.min(...rate.nightlyRates.map(night => night.rupees)))} <span className="text-xs font-normal">/ bed / night</span></p><p className="mt-1 break-words text-sm">{rate.name}</p><p className="mt-1 text-xs">{money(rate.subtotalRupees)} per bed for {rate.nightlyRates.length} nights · Before taxes{Number(rate.savingsRupees) > 0 ? ` · Save ${money(Number(rate.savingsRupees))}` : ""}</p></div>
-                  {active ? <div className="flex items-center gap-1 rounded-xl border border-brand-green/30"><button type="button" className="min-h-12 min-w-12 text-xl" aria-label={`Remove ${room.name}`} onClick={() => { setSelection(current => ({ ...current, [room.id]: Math.max(0, (current[room.id] || 0) - 1) })); setReview(false); }}>−</button><span className="min-w-4 text-center font-bold" aria-label={`${quantity} selected`}>{quantity}</span><button type="button" className="min-h-12 min-w-12 text-xl disabled:opacity-30" aria-label={`Add ${room.name} ${rate.name}`} disabled={!canAdd} onClick={() => addRoom(room, rate.id)}>+</button></div>
-                    : <button type="button" className="min-h-12 rounded-xl border-2 border-brand-green px-3 font-semibold disabled:opacity-40" disabled={!quantity && !canAdd} aria-label={`${quantity ? "Switch rate for" : "Add"} ${room.name} ${rate.name}`} onClick={() => { if (quantity) { setPlans(current => ({ ...current, [room.id]: rate.id })); setReview(false); } else addRoom(room, rate.id); }}>{quantity ? "Switch rate" : "+ Add"}</button>}
+                  {active ? <div className="goko-glass-chip flex items-center gap-1 rounded-xl border border-brand-green/30"><button type="button" className="min-h-12 min-w-12 text-xl" aria-label={`Remove ${room.name}`} onClick={() => { setSelection(current => ({ ...current, [room.id]: Math.max(0, (current[room.id] || 0) - 1) })); setReview(false); }}>−</button><span className="min-w-4 text-center font-bold" aria-label={`${quantity} selected`}>{quantity}</span><button type="button" className="min-h-12 min-w-12 text-xl disabled:opacity-30" aria-label={`Add ${room.name} ${rate.name}`} disabled={!canAdd} onClick={() => addRoom(room, rate.id)}>+</button></div>
+                    : <button type="button" className="goko-glass-chip min-h-12 rounded-xl border-2 border-brand-green px-3 font-semibold disabled:opacity-40" disabled={!quantity && !canAdd} aria-label={`${quantity ? "Switch rate for" : "Add"} ${room.name} ${rate.name}`} onClick={() => { if (quantity) { setPlans(current => ({ ...current, [room.id]: rate.id })); setReview(false); } else addRoom(room, rate.id); }}>{quantity ? "Switch rate" : "+ Add"}</button>}
                   <details className="col-span-2 text-xs"><summary className="min-h-12 cursor-pointer py-3">Nightly price breakdown</summary><ul className="space-y-1">{rate.nightlyRates.map(night => <li key={night.date} className="flex justify-between gap-2"><span>{night.date}</span><span>{money(night.rupees)}</span></li>)}</ul></details>
                 </div>;
               }) : <p className="py-4 text-sm">No eligible online rate for these dates. Contact us to check the price and stay restrictions.</p>}</div>
             </article>;
           })}</div>
-          <aside data-booking-summary className="sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-brand-green-dark p-3 text-white shadow-lg xl:top-24 xl:bottom-auto xl:grid-cols-1 xl:p-5">
+          <aside data-booking-summary className="goko-glass-ink sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl p-3 text-white shadow-lg xl:top-24 xl:bottom-auto xl:grid-cols-1 xl:p-5">
             <p className="hidden border-b border-white/20 pb-3 text-xs xl:block">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate}</p>
             <div className="min-w-0">
               <p className="text-xs sm:text-sm">Your stay estimate</p>
@@ -556,7 +557,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             ) : null}
           </aside>
           </div>
-          {review && ready && <div ref={reviewRef} tabIndex={-1} className="mt-5 scroll-mt-24 rounded-xl border border-brand-mist p-4 focus:outline-none focus:ring-2 focus:ring-brand-green sm:p-5">
+          {review && ready && <div ref={reviewRef} tabIndex={-1} className="goko-glass-chip mt-5 scroll-mt-24 rounded-xl border border-brand-mist p-4 focus:outline-none focus:ring-2 focus:ring-brand-green sm:p-5">
             <h3 className="font-display text-2xl font-bold">Your Goko stay</h3>
             <p className="mt-2">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate} · {selectedCount} {selectedCount === 1 ? "bed" : "beds"} · Sleeps up to {capacity}</p>
             <ul className="mt-3 space-y-2 text-sm">

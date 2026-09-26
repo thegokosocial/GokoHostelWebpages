@@ -30,6 +30,8 @@ export type DateRangePickerProps = {
   disabled?: boolean;
   required?: boolean;
   variant?: "marketing" | "admin" | "compact";
+  /** Marketing only: frosted trigger for hero glass. Default solid white. */
+  surface?: "solid" | "glass";
   labels?: { start?: string; end?: string };
   className?: string;
   id?: string;
@@ -101,6 +103,7 @@ export function DateRangePicker({
   disabled,
   required,
   variant = "marketing",
+  surface = "solid",
   labels,
   className,
   id,
@@ -137,10 +140,13 @@ export function DateRangePicker({
     }
   }
 
+  const marketingGlass = variant === "marketing" && surface === "glass";
   const triggerClass = cn(
     "flex w-full min-w-0 items-center gap-2 border text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green disabled:cursor-not-allowed disabled:opacity-50",
-    variant === "marketing" &&
+    variant === "marketing" && !marketingGlass &&
       "min-h-12 rounded-lg border-brand-green/25 bg-white px-3 py-3 text-base text-brand-green-dark",
+    marketingGlass &&
+      "goko-glass-chip min-h-12 rounded-lg border-white/40 px-3 py-3 text-base text-brand-green-dark",
     variant === "admin" &&
       "min-h-10 rounded-md border-input bg-background px-3 py-2 text-sm",
     variant === "compact" &&

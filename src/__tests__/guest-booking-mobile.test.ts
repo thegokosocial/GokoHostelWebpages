@@ -85,7 +85,7 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("window.requestAnimationFrame");
     expect(panel).toContain('window.matchMedia("(prefers-reduced-motion: reduce)")');
     expect(panel).toContain('block: "start", behavior');
-    expect(panel).toContain('className="scroll-mt-24');
+    expect(panel).toContain("scroll-mt-24");
     expect(panel).toContain("if (!rooms?.length) return;");
   });
   it("searches with dates only, shows nightly prices and uses a configured limit", () => {
@@ -156,15 +156,28 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("persons !== \"\" && Number.isInteger(Number(persons))");
   });
 
-  it("uses a frosted glass outer shell with solid nested surfaces and sticky estimate", () => {
+  it("uses layered glass materials with solid CTAs tabs and text fields", () => {
     expect(panel).toContain("goko-glass-panel");
+    expect(panel).toContain("goko-glass-chip");
+    expect(panel).toContain("goko-glass-ink");
     expect(panel).toMatch(/className="goko-glass-panel min-w-0 rounded-2xl/);
+    expect(panel).toContain('goko-glass-chip scroll-mt-24');
+    expect(panel).toContain("goko-glass-ink sticky");
+    expect(panel).toContain('surface="glass"');
+    expect(panel).toContain('tab === value ? "bg-brand-green text-white" : "goko-glass-chip text-brand-green-dark"');
+    expect(panel).toContain("bg-brand-red");
+    expect(panel).toContain("border border-brand-green/25 bg-white");
     expect(panel).not.toMatch(/data-booking-in-view=\{inView\} className="[^"]*bg-white/);
-    expect(panel).toContain('rounded-2xl border border-brand-green/20 bg-white');
-    expect(panel).toContain("bg-brand-green-dark");
+    expect(panel).not.toContain("bg-brand-green-dark p-3 text-white");
     expect(css).toContain(".goko-glass-panel");
-    expect(css).toContain("backdrop-filter: blur(20px) saturate(160%)");
-    expect(css).toContain("-webkit-backdrop-filter: blur(20px) saturate(160%)");
+    expect(css).toContain(".goko-glass-chip");
+    expect(css).toContain(".goko-glass-ink");
+    expect(css).toContain("rgba(255, 255, 255, 0.42)");
+    expect(css).toContain("rgba(255, 255, 255, 0.5)");
+    expect(css).toContain("rgba(26, 61, 42, 0.58)");
+    expect(css).toContain("backdrop-filter: blur(24px) saturate(170%)");
+    expect(css).toContain("backdrop-filter: blur(14px) saturate(150%)");
+    expect(css).toContain("backdrop-filter: blur(16px) saturate(140%)");
     expect(css).toContain("prefers-reduced-transparency: reduce");
     expect(css).toMatch(/@supports \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)/);
   });
