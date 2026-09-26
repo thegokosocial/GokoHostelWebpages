@@ -354,7 +354,11 @@ function AdminPageInner() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => { setSection(item.id); setMobileMenuOpen(false); }}
+                    onClick={() => {
+                      // Navigate first; defer Sheet close so Base UI focus-restore cannot cancel router.push.
+                      setSection(item.id);
+                      queueMicrotask(() => setMobileMenuOpen(false));
+                    }}
                     className={cn(
                       "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                       section === item.id

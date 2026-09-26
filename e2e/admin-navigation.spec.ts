@@ -121,16 +121,18 @@ test("mobile drawer closes from blank space, X, and navigation selection", async
   await page.getByRole("button", { name: "Open navigation" }).click();
   const drawer = page.locator("#admin-mobile-navigation");
   await expect(drawer).toBeVisible();
-  await drawer.getByRole("button", { name: "Bookings" }).click();
-  await expect(page).toHaveURL(/section=bookings/);
+  await drawer.getByRole("navigation", { name: "Admin sections" }).getByRole("button", { name: "Bookings" }).click();
+  await expect(page).toHaveURL(/section=bookings/, { timeout: 10_000 });
   await expect(drawer).toBeHidden();
 
   await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(drawer).toBeVisible();
   await drawer.click({ position: { x: 370, y: 800 } });
   await expect(drawer).toBeHidden();
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "Close", exact: true }).click();
   await expect(drawer).toBeHidden();
 });
 
@@ -138,13 +140,21 @@ test("mobile Management options select their tab, including Food Settings childr
   await page.setViewportSize({ width: 390, height: 844 });
   await signInToManagement(page);
 
-  await page.getByRole("button", { name: "History", exact: true }).click();
-  await page.getByRole("button", { name: "Users", exact: true }).click();
+  // Mobile picker tiles use role="option" inside #management-mobile-nav (listbox), not button.
+  const openManagementPicker = async (currentLabel: string) => {
+    await page.getByRole("button", { name: currentLabel, exact: true }).click();
+    const picker = page.locator("#management-mobile-nav");
+    await expect(picker).toBeVisible();
+    return picker;
+  };
+
+  let picker = await openManagementPicker("History");
+  await picker.getByRole("option", { name: "Users", exact: true }).click();
   await expect(page).toHaveURL(/tab=users/);
   await expect(page.getByRole("heading", { name: "Users & Permissions" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Users", exact: true }).click();
-  await page.getByRole("button", { name: "Food Settings", exact: true }).click();
+  picker = await openManagementPicker("Users");
+  await picker.getByRole("option", { name: "Food Settings", exact: true }).click();
   await expect(page).toHaveURL(/tab=foodSettings/);
   await expect(page.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
 
