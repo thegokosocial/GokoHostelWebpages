@@ -149,8 +149,8 @@ assert("Name matched on DL", r8.nameMatch, "true");
 // ═══ Test 9: Aadhaar front only (no address) ═══
 console.log("\n═══ Test 9: Front side only — needsBackSide ═══");
 
-const r9 = validateIdFromText(AADHAAR_FRONT_NO_ADDRESS, "id", "aadhaar", "Pawan Dhiran");
-assert("Front-only valid (accepted)", r9.valid, "true");
+const r9 = validateIdFromText(AADHAAR_FRONT_NO_ADDRESS, "id", "aadhaar", "Pawan Dhiran", "India");
+assert("Front-only hard-blocked", r9.valid, "false");
 assert("Needs back side flag", r9.needsBackSide, "true");
 
 // ═══ Test 10: No guest name provided — should pass ═══

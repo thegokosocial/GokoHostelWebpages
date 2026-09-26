@@ -551,6 +551,7 @@ export function SelfCheckinForm() {
       formData.append("category", "id");
       if (idType) formData.append("idType", idType);
       if (guestName) formData.append("guestName", guestName);
+      if (nationality) formData.append("nationality", nationality);
 
       const res = await fetch("/api/validate-id", { method: "POST", body: formData });
 
@@ -572,19 +573,26 @@ export function SelfCheckinForm() {
 
       const result = await res.json();
 
-      if (result.valid && result.needsBackSide) {
-        setIdValidationMsg({ valid: true, message: result.message || "Please also upload the back side of your Aadhaar." });
-        setIdValidated(true);
-        setDetectedIdType(null);
-      } else if (result.valid) {
+      if (result.valid) {
         setIdValidationMsg({ valid: true, message: result.message });
         setIdValidated(true);
+        setDetectedIdType(null);
+      } else if (result.needsBackSide || result.layers?.includes("address_missing")) {
+        // Keep front image so the guest can add the address side
+        setIdValidationMsg({ valid: false, message: result.message || "Please also upload the side of your ID that shows your address." });
+        setIdValidated(false);
         setDetectedIdType(null);
       } else {
         setIdValidationMsg({ valid: false, message: result.message });
         if (result.layers?.includes("type_mismatch") && result.documentType !== "unknown") {
           setIdValidated(false);
           setDetectedIdType(result.documentType);
+        } else if (result.layers?.some((l: string) => String(l).startsWith("unsupported_"))) {
+          // Wrong document type — clear so they re-upload the right ID
+          setIdValidated(false);
+          setDetectedIdType(null);
+          setIdFiles([]);
+          setValue("idImages", null, { shouldValidate: true });
         } else {
           setIdValidated(false);
           setDetectedIdType(null);
@@ -1201,7 +1209,15 @@ export function SelfCheckinForm() {
 
         {/* ID Upload (multiple images/PDF) */}
         <MultiDocUpload
-          label={prevIdCardLink && idFiles.length === 0 ? "Upload new ID (optional)" : "ID document (upload front & back) *"}
+          label={
+            prevIdCardLink && idFiles.length === 0
+              ? "Upload new ID (optional)"
+              : isForeignNationality(nationality)
+                ? "Passport bio page *"
+                : watch("idType") === "driving_licence"
+                  ? "Driving Licence *"
+                  : "ID document (name + address) *"
+          }
           error={errors.idImages?.message as string | undefined}
           files={idFiles}
           onAdd={addIdFile}
@@ -1209,7 +1225,15 @@ export function SelfCheckinForm() {
           onValidate={validationEnabled && !prevIdCardLink ? validateIdFiles : undefined}
           validating={validatingId}
           validationMsg={validationEnabled ? idValidationMsg : null}
-          helpText="Upload front and back of your ID. Accepted: JPEG, PNG, WebP, PDF. Max 10 MB per file."
+          helpText={
+            isForeignNationality(nationality)
+              ? "Upload your passport name/bio page. Address page is optional. Visa is required separately below. JPEG, PNG, WebP, PDF. Max 10 MB."
+              : watch("idType") === "driving_licence"
+                ? "Usually one clear photo of the licence is enough (name and address are often on the same side). JPEG, PNG, WebP, PDF. Max 10 MB."
+                : watch("idType") === "passport"
+                  ? "Upload the bio page and the address page of your Indian passport. JPEG, PNG, WebP, PDF. Max 10 MB."
+                  : "Upload Aadhaar so both name and address are visible (front + back, or one combined photo). JPEG, PNG, WebP, PDF. Max 10 MB."
+          }
         />
 
         {/* Previous Visa preview for return guests */}

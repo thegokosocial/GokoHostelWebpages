@@ -24,7 +24,7 @@ API failures retain the existing `{ error: string }` field and progressively add
 |-------|--------|------|---------|
 | `/api/checkin` | POST multipart | none | Self check-in → Vision + Drive + D1; one active check-in per normalized guest and arrival date is idempotent; booking platform is required, booking ID is optional; non-Indian nationality requires `idType=passport`; foreign submissions save a Form C draft with a persistent draft ID |
 | `/api/checkin/lookup` | GET `?phone=` | none | Returning guest prefill plus stored ID/visa links for preview and reuse |
-| `/api/validate-id` | POST multipart | none | Live ID/visa OCR |
+| `/api/validate-id` | POST multipart | none | Live ID/visa OCR; fields `file`(s), `category`, optional `idType`, `guestName`, `nationality` (drives Indian passport address hard-block) |
 | `/api/settings` | GET | none | Public flags (`image_validation`, etc.) |
 | `/api/booking/config` | GET | none | Sanitized destination/mode, `configurationAvailable`, dynamic `nativeCheckoutReady` + `paymentOptions`; no-store; unavailable/invalid configuration → 503; no integration secrets |
 | `/api/booking/destination` | GET | none | Fresh configured guest destination, no-store 303; missing/invalid/configuration failure → Booking Enquiry; ignores public redirect queries |

@@ -486,7 +486,10 @@ export function AdminDashboard({
               const isFlagged = age !== null && !item.vibeMatched && (age < ageRange.min || age > ageRange.max);
               const isUnderage = age !== null && age < ageRange.min;
               const hasDobMismatch = !!(item.dob && item.dobFromId && !item.vibeMatched && !dobsMatch(item.dob, item.dobFromId));
-              const isAnyFlagged = isFlagged || hasDobMismatch;
+              const verifiedStatus = item.row[14] || "";
+              const hasNameReview = !item.vibeMatched && verifiedStatus === "name_review";
+              const hasDocReview = !item.vibeMatched && verifiedStatus === "doc_review";
+              const isAnyFlagged = isFlagged || hasDobMismatch || hasNameReview || hasDocReview;
               const checkinId = parseInt(item.row[15]);
               return (
               <motion.div key={i} variants={staggerItem} className={cn("rounded-xl border bg-white dark:bg-zinc-900 p-3 shadow-sm dark:shadow-none transition-all duration-200 hover:bg-brand-sand/50 dark:hover:bg-zinc-800/50", isAnyFlagged ? "border-orange-300 dark:border-amber-800/50 bg-orange-50/40 dark:bg-amber-950/20" : "border-gray-100 dark:border-zinc-800")}>
@@ -510,13 +513,17 @@ export function AdminDashboard({
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  {item.row[14] === "yes" ? (
+                  {verifiedStatus === "yes" ? (
                     <span className="rounded-md bg-green-50 dark:bg-green-950 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">ID verified</span>
-                  ) : item.row[14] === "no" ? (
+                  ) : verifiedStatus === "no" ? (
                     <span className="rounded-md bg-red-50 dark:bg-red-950 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-400">ID rejected</span>
-                  ) : item.row[14] === "spoof_warning" ? (
+                  ) : verifiedStatus === "spoof_warning" ? (
                     <span className="rounded-md bg-amber-50 dark:bg-amber-950 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">Possibly fake ID</span>
-                  ) : !item.row[14] || item.row[14] === "pending" ? (
+                  ) : verifiedStatus === "name_review" ? (
+                    <span className="rounded-md bg-orange-50 dark:bg-orange-950 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-400">Name check</span>
+                  ) : verifiedStatus === "doc_review" ? (
+                    <span className="rounded-md bg-orange-50 dark:bg-orange-950 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-400">Doc check</span>
+                  ) : !verifiedStatus || verifiedStatus === "pending" ? (
                     <span className="rounded-md bg-yellow-50 dark:bg-yellow-950 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-700 dark:text-yellow-400">ID pending</span>
                   ) : null}
                   {isFlagged && (
@@ -529,7 +536,8 @@ export function AdminDashboard({
                   )}
                   {item.vibeMatched === 1 && (
                     (age !== null && (age < ageRange.min || age > ageRange.max)) ||
-                    (item.dob && item.dobFromId && !dobsMatch(item.dob, item.dobFromId))
+                    (item.dob && item.dobFromId && !dobsMatch(item.dob, item.dobFromId)) ||
+                    verifiedStatus === "name_review" || verifiedStatus === "doc_review"
                   ) && (
                     <span className="rounded-md bg-green-50 dark:bg-green-950 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">Vibe OK</span>
                   )}

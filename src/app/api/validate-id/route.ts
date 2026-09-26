@@ -14,6 +14,7 @@ export async function POST(req: NextRequest) {
     const category = (formData.get("category") as string) || "id";
     const idType = formData.get("idType") as string | null;
     const guestName = formData.get("guestName") as string | null;
+    const nationality = formData.get("nationality") as string | null;
 
     if (files.length === 0) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -30,7 +31,14 @@ export async function POST(req: NextRequest) {
 
     if (files.length === 1) {
       const fileBuffer = Buffer.from(await files[0].arrayBuffer());
-      const result = await validateIdDocument(fileBuffer, category as "id" | "visa", idType as any, guestName || undefined, files[0].type);
+      const result = await validateIdDocument(
+        fileBuffer,
+        category as "id" | "visa",
+        idType as any,
+        guestName || undefined,
+        files[0].type,
+        nationality,
+      );
       incrementStat("vision", 1).catch(() => {});
       return NextResponse.json(result);
     }
@@ -39,7 +47,13 @@ export async function POST(req: NextRequest) {
       buffer: Buffer.from(await f.arrayBuffer()),
       mimeType: f.type,
     })));
-    const result = await validateMultipleFiles(buffers, category as "id" | "visa", idType as any, guestName || undefined);
+    const result = await validateMultipleFiles(
+      buffers,
+      category as "id" | "visa",
+      idType as any,
+      guestName || undefined,
+      nationality,
+    );
     incrementStat("vision", files.length).catch(() => {});
     return NextResponse.json(result);
   } catch (error) {

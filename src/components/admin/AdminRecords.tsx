@@ -1095,8 +1095,10 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
               const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
               const guestUnderage = guestAge !== null && guestAge < ageRange.min;
               const guestDobMismatch = !!(guestDob && guestDobFromId && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId));
-              const guestAnyFlag = guestFlagged || guestDobMismatch;
               const verified = row[16] || "";
+              const guestNameReview = !guestVibeMatched && verified === "name_review";
+              const guestDocReview = !guestVibeMatched && verified === "doc_review";
+              const guestAnyFlag = guestFlagged || guestDobMismatch || guestNameReview || guestDocReview;
               const checkinId = parseInt(row[17] || "0", 10);
               const resolution = bookingResolutions[String(checkinId)];
               const idLinks = (row[14] || "").includes(" | ") ? (row[14] || "").split(" | ").filter((u: string) => u.startsWith("http")) : (row[14] || "").startsWith("http") ? [row[14]] : [];
@@ -1119,6 +1121,10 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Rejected</span>
                         ) : verified === "spoof_warning" ? (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Spoof</span>
+                        ) : verified === "name_review" ? (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-orange-100 dark:bg-orange-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Name check</span>
+                        ) : verified === "doc_review" ? (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-orange-100 dark:bg-orange-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Doc check</span>
                         ) : verified === "pending" ? (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700 dark:text-yellow-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Pending</span>
                         ) : null}
@@ -1249,7 +1255,10 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                 const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
                 const guestUnderage = guestAge !== null && guestAge < ageRange.min;
                 const guestDobMismatch = !!(guestDob && guestDobFromId && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId));
-                const guestAnyFlag = guestFlagged || guestDobMismatch;
+                const verifiedCell = row[16] || "";
+                const guestNameReview = !guestVibeMatched && verifiedCell === "name_review";
+                const guestDocReview = !guestVibeMatched && verifiedCell === "doc_review";
+                const guestAnyFlag = guestFlagged || guestDobMismatch || guestNameReview || guestDocReview;
                 const checkinId = parseInt(row[17] || "0", 10);
                 const resolution = bookingResolutions[String(checkinId)];
                 return (
@@ -1275,6 +1284,12 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                             {guestDobMismatch && (
                               <span className="rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400">DOB mismatch</span>
                             )}
+                            {guestNameReview && (
+                              <span className="rounded-full bg-orange-100 dark:bg-orange-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-400">Name check</span>
+                            )}
+                            {guestDocReview && (
+                              <span className="rounded-full bg-orange-100 dark:bg-orange-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-400">Doc check</span>
+                            )}
                           </div>
                         </td>
                       );
@@ -1298,6 +1313,14 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                                 className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800">
                                 <ShieldAlertIcon className="h-3 w-3" /> Possibly fake
                               </button>
+                            ) : cell === "name_review" ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 dark:bg-orange-900/50 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-400">
+                                <ShieldAlertIcon className="h-3 w-3" /> Name check
+                              </span>
+                            ) : cell === "doc_review" ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 dark:bg-orange-900/50 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-400">
+                                <ShieldAlertIcon className="h-3 w-3" /> Doc check
+                              </span>
                             ) : (
                               <button type="button" onClick={() => setVerifyPopup({ origIdx, row })}
                                 className="inline-flex items-center gap-1 rounded-full bg-yellow-100 dark:bg-yellow-900/50 px-2 py-0.5 text-[10px] font-semibold text-yellow-700 dark:text-yellow-400 hover:bg-yellow-200 dark:hover:bg-yellow-800">
@@ -1316,7 +1339,8 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                             )}
                             {guestVibeMatched && (
                               (guestAge !== null && (guestAge < ageRange.min || guestAge > ageRange.max)) ||
-                              (guestDob && guestDobFromId && !dobsMatch(guestDob, guestDobFromId))
+                              (guestDob && guestDobFromId && !dobsMatch(guestDob, guestDobFromId)) ||
+                              cell === "name_review" || cell === "doc_review"
                             ) && (
                               <span className="rounded-full bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 dark:text-green-400">Vibe OK</span>
                             )}

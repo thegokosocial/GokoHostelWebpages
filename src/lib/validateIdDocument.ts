@@ -1,32 +1,40 @@
 import { visionAnalyze, type VisionAnalysis } from "./googleApiFetch";
+import { isForeignNationality } from "./checkinSchema";
 
 // --- Enhanced text patterns ---
 
-const AADHAAR_PATTERNS = [
+const AADHAAR_STRONG_PATTERNS = [
   /aadhaar/i,
   /आधार/,
   /unique\s*identification/i,
   /uidai/i,
-  /\b\d{4}\s?\d{4}\s?\d{4}\b/,
   /\bVID\b.*\d{4}\s?\d{4}\s?\d{4}\s?\d{4}/,
   /enrol(l)?ment\s*(no|number)/i,
+];
+
+const AADHAAR_PATTERNS = [
+  ...AADHAAR_STRONG_PATTERNS,
+  /\b\d{4}\s?\d{4}\s?\d{4}\b/,
   /generated\s*date/i,
-  /government\s*of\s*india/i,
+];
+
+const DRIVING_LICENCE_STRONG_PATTERNS = [
+  /driving\s*licen[cs]e/i,
+  /licence\s*no/i,
+  /\bLMV\b/i,
+  /\bMCWG\b/i,
+  /sarathi/i,
+  /\b(KA|MH|TN|AP|TS|DL|UP|GJ|RJ|MP|WB|KL|PB|HR|OR|JH|CG|BR|GA)\d{2}\s?\d{11,13}\b/,
+  /class\s*of\s*vehicle/i,
 ];
 
 const DRIVING_LICENCE_PATTERNS = [
-  /driving\s*licen[cs]e/i,
+  ...DRIVING_LICENCE_STRONG_PATTERNS,
   /transport\s*(department|authority|commissioner)/i,
   /motor\s*vehicle/i,
   /\bDL\b/,
-  /\bLMV\b/i,
-  /\bMCWG\b/i,
-  /licence\s*no/i,
   /valid\s*(till|upto|from|to)/i,
-  /sarathi/i,
-  /\b(KA|MH|TN|AP|TS|DL|UP|GJ|RJ|MP|WB|KL|PB|HR|OR|JH|CG|BR|GA)\d{2}\s?\d{11,13}\b/,
   /date\s*of\s*issue/i,
-  /class\s*of\s*vehicle/i,
 ];
 
 const PASSPORT_PATTERNS = [
@@ -56,7 +64,51 @@ const VISA_PATTERNS = [
   /category.*visa/i,
 ];
 
+const ALLOWED_ID_HINT = "Please upload Aadhaar, Driving Licence, or Passport.";
+
+const PAN_PATTERNS = [
+  /pan\s*card/i,
+  /permanent\s*account\s*number/i,
+  /income\s*tax\s*department/i,
+  /\b[A-Z]{5}\d{4}[A-Z]\b/,
+  /pan\s*verification/i,
+  /pan\s*number/i,
+];
+
+const VOTER_PATTERNS = [
+  /elector\s*photo\s*identity/i,
+  /\bEPIC\b/i,
+  /election\s*commission\s*of\s*india/i,
+  /electoral\s*photo\s*identity/i,
+  /voter\s*(id|identity|card)/i,
+];
+
+const MARKSHEET_PATTERNS = [
+  /mark\s*-?\s*sheet/i,
+  /marksheet/i,
+  /grade\s*card/i,
+  /statement\s*of\s*marks/i,
+  /\bCBSE\b/,
+  /\bICSE\b/,
+  /\bSSC\b.*\b(exam|board|mark)/i,
+  /\bHSC\b.*\b(exam|board|mark)/i,
+  /semester\s*(result|mark|grade)/i,
+  /percentage\s*:?\s*\d/i,
+  /board\s*of\s*(secondary|intermediate|higher)/i,
+];
+
+const VEHICLE_RC_PATTERNS = [
+  /certificate\s*of\s*registration/i,
+  /registration\s*certificate/i,
+  /\bRC\s*book\b/i,
+  /chassis\s*(no|number)/i,
+  /engine\s*(no|number)/i,
+  /vehicle\s*registration/i,
+  /registered\s*owner/i,
+];
+
 export type DocumentType = "aadhaar" | "driving_licence" | "passport" | "visa" | "unknown";
+export type NameMatchQuality = "full" | "partial" | "none";
 
 export type ValidationResult = {
   valid: boolean;
@@ -64,8 +116,10 @@ export type ValidationResult = {
   confidence: "high" | "medium" | "low";
   message: string;
   nameMatch?: boolean;
+  nameMatchQuality?: NameMatchQuality;
   layers?: string[];
   needsBackSide?: boolean;
+  needsDocReview?: boolean;
   ocrText?: string;
   spoofWarning?: boolean;
 };
@@ -124,8 +178,83 @@ function wordBoundaryMatch(text: string, name: string): boolean {
   return pattern.test(text);
 }
 
-function checkNameMatch(text: string, guestName?: string): boolean {
-  if (!guestName || guestName.trim().length < 2) return true;
+function countPatternHits(text: string, patterns: RegExp[]): number {
+  return patterns.filter((p) => p.test(text)).length;
+}
+
+function hasStrongAadhaarCues(text: string): boolean {
+  return countPatternHits(text, AADHAAR_STRONG_PATTERNS) >= 1
+    || (/आधार/.test(text) && /\b\d{4}\s?\d{4}\s?\d{4}\b/.test(text));
+}
+
+function hasStrongDlCues(text: string): boolean {
+  return countPatternHits(text, DRIVING_LICENCE_STRONG_PATTERNS) >= 1;
+}
+
+function hasAllowlistIdCues(text: string): boolean {
+  return hasStrongAadhaarCues(text)
+    || hasStrongDlCues(text)
+    || countPatternHits(text, PASSPORT_PATTERNS) >= 2;
+}
+
+type UnsupportedClass = "pan" | "voter" | "marksheet" | "vehicle_rc";
+
+function detectUnsupportedDocument(text: string): { kind: UnsupportedClass; hits: number } | null {
+  const candidates: { kind: UnsupportedClass; hits: number; minHits: number }[] = [
+    { kind: "pan", hits: countPatternHits(text, PAN_PATTERNS), minHits: 2 },
+    { kind: "voter", hits: countPatternHits(text, VOTER_PATTERNS), minHits: 2 },
+    { kind: "marksheet", hits: countPatternHits(text, MARKSHEET_PATTERNS), minHits: 2 },
+    { kind: "vehicle_rc", hits: countPatternHits(text, VEHICLE_RC_PATTERNS), minHits: 2 },
+  ];
+
+  let best: { kind: UnsupportedClass; hits: number; minHits: number } | null = null;
+  for (const c of candidates) {
+    if (c.hits < c.minHits) continue;
+    if (!best || c.hits > best.hits) best = c;
+  }
+  if (!best) return null;
+
+  // Real DL must never be rejected as vehicle RC
+  if (best.kind === "vehicle_rc" && hasStrongDlCues(text)) return null;
+  // Clear allowlisted ID with stronger signals wins over weak wrong-doc
+  if (hasAllowlistIdCues(text) && best.hits < 3 && best.kind !== "pan" && best.kind !== "voter") {
+    return null;
+  }
+  // PAN/voter with allowlist cues still reject when wrong-doc cues are strong
+  if ((best.kind === "pan" || best.kind === "voter") && hasStrongAadhaarCues(text) && best.hits < 2) {
+    return null;
+  }
+
+  return { kind: best.kind, hits: best.hits };
+}
+
+function unsupportedMessage(kind: UnsupportedClass): string {
+  switch (kind) {
+    case "pan":
+      return `PAN card detected. ${ALLOWED_ID_HINT}`;
+    case "voter":
+      return `Voter ID detected. ${ALLOWED_ID_HINT}`;
+    case "marksheet":
+      return `Mark sheet detected. ${ALLOWED_ID_HINT}`;
+    case "vehicle_rc":
+      return `Vehicle registration detected. ${ALLOWED_ID_HINT}`;
+  }
+}
+
+function isAmbiguousWrongDoc(text: string): boolean {
+  const rcHits = countPatternHits(text, VEHICLE_RC_PATTERNS);
+  const markHits = countPatternHits(text, MARKSHEET_PATTERNS);
+  if (hasStrongDlCues(text) || hasStrongAadhaarCues(text)) return false;
+  // Single weak cue — prefer staff review over hard reject
+  return (rcHits === 1 && !hasStrongDlCues(text)) || (markHits === 1 && !hasAllowlistIdCues(text));
+}
+
+type NameMatchResult = { quality: NameMatchQuality; matched: boolean };
+
+function checkNameMatchQuality(text: string, guestName?: string): NameMatchResult {
+  if (!guestName || guestName.trim().length < 2) {
+    return { quality: "full", matched: true };
+  }
 
   const parts = guestName.trim().toLowerCase().split(/\s+/).filter(Boolean);
 
@@ -142,20 +271,31 @@ function checkNameMatch(text: string, guestName?: string): boolean {
     .toLowerCase();
 
   const searchTexts = [nonGuardianText.toLowerCase(), normalizedText];
-
   const idTokens = normalizedText.split(/[^a-z0-9]+/i).filter((token) => token.length > 0);
   const meaningfulParts = parts.filter((part) => part.length >= 2 || parts.length === 1);
-  if (meaningfulParts.length === 0) return true;
+  if (meaningfulParts.length === 0) return { quality: "full", matched: true };
 
-  return meaningfulParts.every((part) => {
+  const partMatches = meaningfulParts.map((part) => {
     const exact = idTokens.some((token) => token === part);
     const initial = part.length === 1 && idTokens.some((token) => token.startsWith(part));
     return exact || initial;
-  }) && searchTexts.some((searchText) => wordBoundaryMatch(searchText, meaningfulParts[0]));
+  });
+  const matchedCount = partMatches.filter(Boolean).length;
+  const firstOk = searchTexts.some((searchText) => wordBoundaryMatch(searchText, meaningfulParts[0]));
+
+  if (matchedCount === meaningfulParts.length && firstOk) {
+    return { quality: "full", matched: true };
+  }
+  if (matchedCount >= 1 && meaningfulParts.some((p) => p.length >= 2 && idTokens.includes(p))) {
+    return { quality: "partial", matched: false };
+  }
+  return { quality: "none", matched: false };
 }
 
-const AADHAAR_ADDRESS_PATTERNS = [
+const ADDRESS_PATTERNS = [
   /\baddress\b/i,
+  /address\s*of\s*(parents|guardian|holder)/i,
+  /permanent\s*address/i,
   /\bS\/O\b|\bD\/O\b|\bW\/O\b|\bC\/O\b/,
   /pin\s*:?\s*\d{6}/i,
   /\b\d{6}\b/,
@@ -163,15 +303,20 @@ const AADHAAR_ADDRESS_PATTERNS = [
   /\b(karnataka|maharashtra|tamil\s*nadu|kerala|andhra|telangana|gujarat|rajasthan|uttar\s*pradesh|madhya\s*pradesh|west\s*bengal|bihar|odisha|punjab|haryana|goa)\b/i,
 ];
 
-function hasAadhaarAddress(text: string): boolean {
-  const matchCount = AADHAAR_ADDRESS_PATTERNS.filter((p) => p.test(text)).length;
-  return matchCount >= 2;
+function hasAddressEvidence(text: string): boolean {
+  return countPatternHits(text, ADDRESS_PATTERNS) >= 2;
+}
+
+function requiresAddress(documentType: DocumentType, nationality?: string | null): boolean {
+  if (documentType === "aadhaar") return true;
+  if (documentType === "passport" && !isForeignNationality(nationality || "India")) return true;
+  return false;
 }
 
 function detectDocumentType(text: string): { type: DocumentType; matchCount: number } {
-  const checks: { type: DocumentType; patterns: RegExp[] }[] = [
-    { type: "aadhaar", patterns: AADHAAR_PATTERNS },
-    { type: "driving_licence", patterns: DRIVING_LICENCE_PATTERNS },
+  const checks: { type: DocumentType; patterns: RegExp[]; minStrong?: () => boolean }[] = [
+    { type: "aadhaar", patterns: AADHAAR_PATTERNS, minStrong: () => hasStrongAadhaarCues(text) },
+    { type: "driving_licence", patterns: DRIVING_LICENCE_PATTERNS, minStrong: () => hasStrongDlCues(text) || countPatternHits(text, DRIVING_LICENCE_PATTERNS) >= 3 },
     { type: "passport", patterns: PASSPORT_PATTERNS },
     { type: "visa", patterns: VISA_PATTERNS },
   ];
@@ -179,6 +324,8 @@ function detectDocumentType(text: string): { type: DocumentType; matchCount: num
   let bestMatch: { type: DocumentType; matchCount: number } = { type: "unknown", matchCount: 0 };
   for (const check of checks) {
     const matchCount = check.patterns.filter((p) => p.test(text)).length;
+    if (matchCount === 0) continue;
+    if (check.minStrong && !check.minStrong()) continue;
     if (matchCount > bestMatch.matchCount) {
       bestMatch = { type: check.type, matchCount };
     }
@@ -191,64 +338,145 @@ function runTextValidation(
   expectedCategory: "id" | "visa",
   expectedIdType?: string,
   guestName?: string,
+  nationality?: string | null,
 ): ValidationResult {
   if (!text || text.trim().length < 10) {
     return { valid: false, documentType: "unknown", confidence: "high", message: "Could not detect readable text. Please upload a clear photo of your ID." };
   }
 
-  const { type, matchCount } = detectDocumentType(text);
   const layers: string[] = ["text_detection"];
 
   if (expectedCategory === "id") {
+    const unsupported = detectUnsupportedDocument(text);
+    if (unsupported) {
+      layers.push("unsupported_doc", `unsupported_${unsupported.kind}`);
+      return {
+        valid: false,
+        documentType: "unknown",
+        confidence: "high",
+        layers,
+        message: unsupportedMessage(unsupported.kind),
+      };
+    }
+
+    const { type, matchCount } = detectDocumentType(text);
     const validIdTypes: DocumentType[] = ["aadhaar", "driving_licence", "passport"];
     if (!validIdTypes.includes(type) || matchCount === 0) {
       layers.push("invalid_id");
-      return { valid: false, documentType: "unknown", confidence: "high", layers, message: "The uploaded document is not a valid ID. Please upload a clear photo of your Aadhaar card, Driving Licence, or Passport." };
+      const ambiguous = isAmbiguousWrongDoc(text);
+      if (ambiguous) {
+        layers.push("doc_review");
+        return {
+          valid: true,
+          documentType: "unknown",
+          confidence: "low",
+          needsDocReview: true,
+          layers,
+          message: `Document accepted for staff review. ${ALLOWED_ID_HINT}`,
+        };
+      }
+      return {
+        valid: false,
+        documentType: "unknown",
+        confidence: "high",
+        layers,
+        message: `The uploaded document is not a valid ID. ${ALLOWED_ID_HINT}`,
+      };
     }
 
     if (expectedIdType && type !== expectedIdType) {
       layers.push("type_mismatch");
-      return { valid: false, documentType: type, confidence: "high", layers, message: `You selected "${expectedIdType.replace("_", " ")}" but this appears to be a ${type.replace("_", " ")}. Please change your ID type selection to "${type.replace("_", " ")}" to proceed.` };
+      return {
+        valid: false,
+        documentType: type,
+        confidence: "high",
+        layers,
+        message: `You selected "${expectedIdType.replace("_", " ")}" but this appears to be a ${type.replace("_", " ")}. Please change your ID type selection to "${type.replace("_", " ")}" to proceed.`,
+      };
     }
     layers.push("type_match");
 
-    const nameMatched = checkNameMatch(text, guestName);
-    if (guestName && !nameMatched) {
+    const nameResult = checkNameMatchQuality(text, guestName);
+    if (guestName && nameResult.quality === "none") {
       if (matchCount < 2) {
         layers.push("weak_id");
-        return { valid: false, documentType: type, confidence: "medium", nameMatch: false, layers, message: "The uploaded document does not appear to be a valid ID. Please upload a clear photo of your Aadhaar card, Driving Licence, or Passport." };
+        return {
+          valid: false,
+          documentType: type,
+          confidence: "medium",
+          nameMatch: false,
+          nameMatchQuality: "none",
+          layers,
+          message: `The uploaded document does not appear to be a valid ID. ${ALLOWED_ID_HINT}`,
+        };
       }
       layers.push("name_mismatch");
-      return { valid: false, documentType: type, confidence: "high", nameMatch: false, layers, message: `Your name was not found on the ${type.replace("_", " ")}. Please upload your own ID document.` };
+      return {
+        valid: false,
+        documentType: type,
+        confidence: "high",
+        nameMatch: false,
+        nameMatchQuality: "none",
+        layers,
+        message: `Your name was not found on the ${type.replace("_", " ")}. Please upload your own ID document.`,
+      };
     }
-    if (guestName) layers.push("name_verified");
 
-    if (type === "aadhaar" && !hasAadhaarAddress(text)) {
+    let needsDocReview = false;
+    if (guestName && nameResult.quality === "partial") {
+      layers.push("name_partial");
+    } else if (guestName && nameResult.quality === "full") {
+      layers.push("name_verified");
+    }
+
+    if (isAmbiguousWrongDoc(text) && type === "driving_licence" && matchCount < 3) {
+      needsDocReview = true;
+      layers.push("doc_review");
+    }
+
+    if (requiresAddress(type, nationality) && !hasAddressEvidence(text)) {
       layers.push("address_missing");
       const conf = matchCount >= 2 ? "high" : "medium";
+      const addressMsg = type === "passport"
+        ? "Passport name found, but address was not. Please also upload the address page of your Indian passport."
+        : "Aadhaar name found, but address was not. Please also upload the back side showing your address.";
       return {
-        valid: true,
+        valid: false,
         documentType: type,
         confidence: conf,
-        nameMatch: true,
+        nameMatch: nameResult.quality === "full",
+        nameMatchQuality: nameResult.quality,
         needsBackSide: true,
+        needsDocReview: nameResult.quality === "partial" || needsDocReview,
         layers,
-        message: `Aadhaar detected. Name verified. Address not found — please also upload the back side of your Aadhaar.`,
+        message: addressMsg,
       };
     }
 
     const conf = matchCount >= 2 ? "high" : "medium";
+    const nameBit = nameResult.quality === "full" && guestName
+      ? " Name verified."
+      : nameResult.quality === "partial"
+        ? " Name partially matches — staff will confirm."
+        : "";
+    const addressBit = type === "aadhaar" || (type === "passport" && !isForeignNationality(nationality || "India"))
+      ? " Address found."
+      : "";
+
     return {
       valid: true,
       documentType: type,
       confidence: conf,
-      nameMatch: true,
+      nameMatch: nameResult.quality === "full",
+      nameMatchQuality: nameResult.quality,
+      needsDocReview: nameResult.quality === "partial" || needsDocReview,
       layers,
-      message: `${type.replace("_", " ")} detected.${nameMatched && guestName ? " Name verified." : ""}${type === "aadhaar" ? " Address found." : ""}`,
+      message: `${type.replace("_", " ")} detected.${nameBit}${addressBit}`,
     };
   }
 
   if (expectedCategory === "visa") {
+    const { type, matchCount } = detectDocumentType(text);
     if (type === "visa" && matchCount >= 1) {
       return { valid: true, documentType: "visa", confidence: "high", layers, message: "Visa document detected." };
     }
@@ -261,6 +489,16 @@ function runTextValidation(
   return { valid: false, documentType: "unknown", confidence: "low", message: "Validation failed." };
 }
 
+function unavailableResult(): ValidationResult {
+  return {
+    valid: true,
+    documentType: "unknown",
+    confidence: "low",
+    layers: ["validation_unavailable"],
+    message: "Validation service unavailable, document accepted for staff review.",
+  };
+}
+
 // --- Main validation (images use full 5-layer, PDFs use text-only) ---
 
 export async function validateIdDocument(
@@ -268,11 +506,12 @@ export async function validateIdDocument(
   expectedCategory: "id" | "visa",
   expectedIdType?: "aadhaar" | "driving_licence" | "passport",
   guestName?: string,
-  mimeType?: string
+  mimeType?: string,
+  nationality?: string | null,
 ): Promise<ValidationResult> {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) {
-    return { valid: true, documentType: "unknown", confidence: "low", message: "Validation skipped (no credentials)" };
+    return { valid: true, documentType: "unknown", confidence: "low", layers: ["validation_skipped"], message: "Validation skipped (no credentials)" };
   }
 
   try {
@@ -280,7 +519,6 @@ export async function validateIdDocument(
     const analysis = await visionAnalyze(fileBase64, mimeType || "image/jpeg");
     const layers: string[] = [];
 
-    // Layer 1: Label/Object detection (images only)
     if (!analysis.isPdf && analysis.labels.length > 0) {
       const { isDoc, reason } = checkIsDocument(analysis.labels, analysis.objects);
       if (!isDoc) {
@@ -289,16 +527,13 @@ export async function validateIdDocument(
       layers.push("label_ok");
     }
 
-    // Layer 2-4: Text detection + pattern matching + type check + name check
-    const textResult = runTextValidation(analysis.text, expectedCategory, expectedIdType, guestName);
+    const textResult = runTextValidation(analysis.text, expectedCategory, expectedIdType, guestName, nationality);
     layers.push(...(textResult.layers || []));
 
     if (!textResult.valid) {
       return { ...textResult, layers };
     }
 
-    // Layer 5: SafeSearch (images only)
-    // Skip spoof check for DigiLocker/mAadhaar — these are verified government digital docs
     const isDigiLocker = /digilocker|digi\s*locker|m[\s-]?aadhaar/i.test(analysis.text);
     let spoofWarning = false;
     if (!analysis.isPdf && analysis.safeSearch) {
@@ -320,7 +555,7 @@ export async function validateIdDocument(
     return { ...textResult, layers, message: textResult.message, ocrText: analysis.text, spoofWarning };
   } catch (error) {
     console.error("Vision API error:", error);
-    return { valid: true, documentType: "unknown", confidence: "low", message: "Validation service unavailable, document accepted." };
+    return unavailableResult();
   }
 }
 
@@ -329,37 +564,30 @@ export function validateIdFromText(
   text: string,
   expectedCategory: "id" | "visa",
   expectedIdType?: "aadhaar" | "driving_licence" | "passport",
-  guestName?: string
+  guestName?: string,
+  nationality?: string | null,
 ): ValidationResult {
-  return runTextValidation(text, expectedCategory, expectedIdType, guestName);
+  return runTextValidation(text, expectedCategory, expectedIdType, guestName, nationality);
 }
 
-function extractAadhaarNumbers(text: string): string[] {
-  // Match 12-digit Aadhaar numbers in various formats (with/without spaces, dashes, or dots)
-  const matches = text.match(/\b\d{4}[\s.\-]?\d{4}[\s.\-]?\d{4}\b/g) || [];
-  // Also try to find masked numbers like XXXX XXXX 9012 (last 4 visible)
-  const last4Matches = text.match(/[Xx]{4}[\s.\-]?[Xx]{4}[\s.\-]?\d{4}/g) || [];
-  const allNums = [...matches.map((m) => m.replace(/[\s.\-]/g, "")), ...last4Matches.map((m) => m.replace(/[\s.\-]/g, "").slice(-4))];
-  return allNums;
-}
-
-/** Validate multiple files together (combines OCR, checks Aadhaar number match across pages) */
+/** Validate multiple files together (combines OCR text for name + address) */
 export async function validateMultipleFiles(
   files: { buffer: Buffer; mimeType: string }[],
   expectedCategory: "id" | "visa",
   expectedIdType?: "aadhaar" | "driving_licence" | "passport",
-  guestName?: string
+  guestName?: string,
+  nationality?: string | null,
 ): Promise<ValidationResult> {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) {
-    return { valid: true, documentType: "unknown", confidence: "low", message: "Validation skipped (no credentials)" };
+    return { valid: true, documentType: "unknown", confidence: "low", layers: ["validation_skipped"], message: "Validation skipped (no credentials)" };
   }
 
   try {
     const allTexts: string[] = [];
     const allLabels: string[] = [];
     const allObjects: string[] = [];
-    let safeSearch: any = null;
+    let safeSearch: VisionAnalysis["safeSearch"] | null = null;
 
     for (const file of files) {
       const base64 = file.buffer.toString("base64");
@@ -373,7 +601,6 @@ export async function validateMultipleFiles(
     const combinedText = allTexts.join("\n");
     const layers: string[] = [];
 
-    // Layer 1: Label check (using all labels from all images)
     if (allLabels.length > 0) {
       const { isDoc, reason } = checkIsDocument(allLabels, allObjects);
       if (!isDoc) {
@@ -382,21 +609,17 @@ export async function validateMultipleFiles(
       layers.push("label_ok");
     }
 
-    // Layer 2-4: Text validation on combined text
-    const textResult = runTextValidation(combinedText, expectedCategory, expectedIdType, guestName);
+    const textResult = runTextValidation(combinedText, expectedCategory, expectedIdType, guestName, nationality);
     layers.push(...(textResult.layers || []));
 
     if (!textResult.valid) {
       return { ...textResult, layers };
     }
 
-    // Aadhaar-specific: skip number matching (OCR is unreliable with QR codes on back)
-    // Both sides are validated individually for being valid ID documents
     if (textResult.documentType === "aadhaar" && allTexts.length > 1) {
       layers.push("aadhaar_multi_page");
     }
 
-    // Layer 5: SafeSearch
     const isDigiLockerMulti = /digilocker|digi\s*locker|m[\s-]?aadhaar/i.test(combinedText);
     let spoofWarningMulti = false;
     if (safeSearch) {
@@ -418,6 +641,21 @@ export async function validateMultipleFiles(
     return { ...textResult, layers, message: textResult.message, ocrText: combinedText, spoofWarning: spoofWarningMulti };
   } catch (error) {
     console.error("Multi-file validation error:", error);
-    return { valid: true, documentType: "unknown", confidence: "low", message: "Validation service unavailable, document accepted." };
+    return unavailableResult();
   }
+}
+
+/** Map validation outcome to checkins.verified for self check-in persistence. */
+export function verifiedFromIdValidation(result: {
+  layers?: string[];
+  nameMatchQuality?: NameMatchQuality;
+  needsDocReview?: boolean;
+  spoofWarning?: boolean;
+}): "yes" | "pending" | "spoof_warning" | "name_review" | "doc_review" {
+  const layers = result.layers || [];
+  if (layers.includes("validation_unavailable") || layers.includes("validation_skipped")) return "pending";
+  if (result.spoofWarning || layers.includes("spoof_warning")) return "spoof_warning";
+  if (result.nameMatchQuality === "partial" || layers.includes("name_partial")) return "name_review";
+  if (result.needsDocReview || layers.includes("doc_review")) return "doc_review";
+  return "yes";
 }

@@ -173,6 +173,14 @@ export function resolveDobForChecks(manualDob?: string | null, dobFromId?: strin
   return normalizeDob(manualDob || "") || normalizeDob(dobFromId || "");
 }
 
+/** True when a DOB string is the same calendar day as an ISO YYYY-MM-DD arrival date. */
+export function dobEqualsArrivalDate(dob: string | null | undefined, arrivalDate: string | null | undefined): boolean {
+  if (!dob || !arrivalDate) return false;
+  const iso = arrivalDate.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!iso) return false;
+  return dobsMatch(dob, `${iso[3]}/${iso[2]}/${iso[1]}`);
+}
+
 /**
  * Calculate age from a DOB string in DD/MM/YYYY format.
  * Returns null if the date can't be parsed.

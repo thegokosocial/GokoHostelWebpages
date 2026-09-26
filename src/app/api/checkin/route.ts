@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocument";
+import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
 import { addCheckin, getActiveCheckins, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
 import { isSameCheckinVisit } from "@/lib/checkinDuplicate";
-import { getAgeFromDob } from "@/lib/parseDob";
+import { dobEqualsArrivalDate, getAgeFromDob } from "@/lib/parseDob";
 import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRateLimit";
 
 function generateBookingId(): string {
@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
     let serverVisionCalls = 0;
     let validationFailed = false;
     let idSpoofWarning = false;
+    let idVerifiedOverride: ReturnType<typeof verifiedFromIdValidation> | null = null;
     let passportOcrText = "";
     let visaOcrText = "";
     let idOcrText = "";
@@ -138,7 +139,7 @@ export async function POST(req: NextRequest) {
           return { valid: false, documentType: "unknown" as const, confidence: "high" as const, message: "Only images and PDFs accepted" };
         }
         const buffer = Buffer.from(await file.arrayBuffer());
-        return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type);
+        return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type, nationality);
       }
 
       try {
@@ -153,7 +154,7 @@ export async function POST(req: NextRequest) {
             buffer: Buffer.from(await f.arrayBuffer()),
             mimeType: f.type,
           })));
-          idValidation = await validateMultipleFiles(buffers, "id", idType as any, name);
+          idValidation = await validateMultipleFiles(buffers, "id", idType as any, name, nationality);
           serverVisionCalls += idImages.length;
         } else {
           idValidation = await validateFile(idImages[0], "id", idType, name);
@@ -171,6 +172,7 @@ export async function POST(req: NextRequest) {
         if (!idValidation.valid) {
           return NextResponse.json({ error: idValidation.message, field: "idImages" }, { status: 422 });
         }
+        idVerifiedOverride = verifiedFromIdValidation(idValidation);
       } catch (valErr: any) {
         console.error("ID validation error:", valErr?.message);
         validationFailed = true;
@@ -249,7 +251,15 @@ export async function POST(req: NextRequest) {
       visaLink = visaLinks.join(" | ");
     }
     const submittedAt = new Date().toISOString();
-    const verified = reusingPrevId ? "yes" : !validationEnabled ? "pending" : validationFailed ? "pending" : idSpoofWarning ? "spoof_warning" : "yes";
+    const verified = reusingPrevId
+      ? "yes"
+      : !validationEnabled || validationFailed
+        ? "pending"
+        : idVerifiedOverride
+          ? (idSpoofWarning && idVerifiedOverride === "yes" ? "spoof_warning" : idVerifiedOverride)
+          : idSpoofWarning
+            ? "spoof_warning"
+            : "yes";
 
     const isForeigner = isForeignNationality(nationality);
     let formCData = "";
@@ -289,6 +299,9 @@ export async function POST(req: NextRequest) {
       if (!ocrDob && isForeigner && passportOcrText) {
         const { parseDobFromOcr } = await import("@/lib/parseDob");
         ocrDob = parseDobFromOcr(passportOcrText, "passport") || "";
+      }
+      if (ocrDob && dobEqualsArrivalDate(ocrDob, arrivalDate)) {
+        ocrDob = "";
       }
     } catch {}
 
