@@ -86,6 +86,19 @@ test("Order Summary Remove Discount clears zero-collection discounts", async ({ 
   expect(foodRequests.find((r) => r.action === "removeDiscount")).toMatchObject({ orderIds: [10] });
 });
 
+test("Order More keeps Ordering for guest on Place Order", async ({ page }) => {
+  await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canPlaceOrders: true, canMarkPaid: true },
+  });
+  await loginAdmin(page);
+  const drawer = await openWalkinOrderDrawer(page);
+  await drawer.getByRole("button", { name: "Order More" }).click();
+  await expect(page.getByRole("heading", { name: "Place Order" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Ordering for")).toBeVisible();
+  await expect(page.getByText("Pawan test").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change guest" })).toBeVisible();
+});
+
 test("void line item stages cancel then saveOrderEdits", async ({ page }) => {
   const { foodRequests } = await mockAdminShell(page, {
     permissions: {

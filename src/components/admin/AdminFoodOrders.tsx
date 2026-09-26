@@ -22,6 +22,14 @@ import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
 import { foodAmountPaid, foodDue, foodPaymentStatus, isFoodDiscountRemovable } from "@/lib/foodPaymentBalance";
+import {
+  hostelStubFromPrefill,
+  loadActiveGuestsWithMatch,
+  prefillDetailText,
+  prefillTypeLabel,
+  tableNumberFromPrefill,
+  type OrderMorePrefillGuest,
+} from "@/lib/orderMorePrefill";
 import { INCOMPLETE_FOOD_ORDER_BANNER, isIncompleteFoodOrder } from "@/lib/foodOrderCreate";
 import { latestWalkinOrder, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
@@ -179,13 +187,7 @@ interface CartItem {
   quantity: number;
 }
 
-interface PrefillGuest {
-  guestType: "hostel" | "walkin" | "table";
-  checkinId?: number;
-  guestName: string;
-  guestPhone?: string;
-  roomInfo?: string;
-}
+type PrefillGuest = OrderMorePrefillGuest;
 
 export function AdminFoodOrders({ password, username, role, permissions = {} }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
@@ -231,7 +233,11 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => {
+              // Leaving Place without placing must drop Order More prefill so remounts stay clean.
+              if (t.id !== "place") clearPrefillGuest();
+              setTab(t.id);
+            }}
             className={cn(
               "relative rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               tab === t.id ? "text-white" : "text-brand-green-dark/70 hover:bg-brand-green/[0.06]"
@@ -250,8 +256,34 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
           <KitchenDashboard password={password} authScope="admin" onLogout={() => {}} />
         </div>
       )}
-      {tab === "place" && <PlaceOrder apiCall={apiCall} prefillGuest={prefillGuest} onPrefillConsumed={clearPrefillGuest} onOrderPlaced={() => setTab("summary")} />}
-      {tab === "summary" && <OrderSummary apiCall={apiCall} password={password} username={username} onOrderMore={(guest) => { setPrefillGuest(guest); setTab("place"); }} onAddNewOrder={() => setTab("place")} role={role} permissions={permissions} />}
+      {tab === "place" && (
+        <PlaceOrder
+          apiCall={apiCall}
+          prefillGuest={prefillGuest}
+          onPrefillConsumed={clearPrefillGuest}
+          onOrderPlaced={() => {
+            clearPrefillGuest();
+            setTab("summary");
+          }}
+        />
+      )}
+      {tab === "summary" && (
+        <OrderSummary
+          apiCall={apiCall}
+          password={password}
+          username={username}
+          onOrderMore={(guest) => {
+            setPrefillGuest(guest);
+            setTab("place");
+          }}
+          onAddNewOrder={() => {
+            clearPrefillGuest();
+            setTab("place");
+          }}
+          role={role}
+          permissions={permissions}
+        />
+      )}
       {tab === "combined" && <CombinedBill apiCall={apiCall} password={password} username={username} role={role} permissions={permissions} />}
     </div>
   );
@@ -260,29 +292,19 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
 // ─── Place Order ─────────────────────────────────────────────────────────────
 
 function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }: { apiCall: (body: any) => Promise<Response>; prefillGuest: PrefillGuest | null; onPrefillConsumed: () => void; onOrderPlaced?: () => void }) {
-  // Keep the navigation prefill after the parent clears it, so Order More can use a compact guest row.
-  const [initialPrefillGuest] = useState(prefillGuest);
-  const prefilledTable = initialPrefillGuest?.guestType === "table"
-    ? Number(initialPrefillGuest.roomInfo?.match(/Table (\d+)/i)?.[1]) || null
-    : null;
-  const [guestSelectionExpanded, setGuestSelectionExpanded] = useState(!initialPrefillGuest);
-  const [guestType, setGuestType] = useState<"hostel" | "walkin" | "table">(initialPrefillGuest?.guestType || "hostel");
+  // Lock Order More guest locally; re-apply when prop arrives late (async tab URL). Do not clear parent on mount.
+  const [lockedPrefill, setLockedPrefill] = useState<PrefillGuest | null>(prefillGuest);
+  const [guestSelectionExpanded, setGuestSelectionExpanded] = useState(!prefillGuest);
+  const [guestType, setGuestType] = useState<"hostel" | "walkin" | "table">(prefillGuest?.guestType || "hostel");
   const [cafeTableCount, setCafeTableCount] = useState(0);
-  const [selectedTable, setSelectedTable] = useState<number | null>(prefilledTable);
-  const [tableGuestName, setTableGuestName] = useState(initialPrefillGuest?.guestType === "table" ? initialPrefillGuest.guestName : "");
-  const [tableSessionId, setTableSessionId] = useState(initialPrefillGuest?.guestType === "table" ? (initialPrefillGuest.guestPhone || "") : "");
+  const [selectedTable, setSelectedTable] = useState<number | null>(() => (prefillGuest ? tableNumberFromPrefill(prefillGuest) : null));
+  const [tableGuestName, setTableGuestName] = useState(prefillGuest?.guestType === "table" ? prefillGuest.guestName : "");
+  const [tableSessionId, setTableSessionId] = useState(prefillGuest?.guestType === "table" ? (prefillGuest.guestPhone || "") : "");
   const [guests, setGuests] = useState<Guest[]>([]);
-  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(() => initialPrefillGuest?.guestType === "hostel" && initialPrefillGuest.checkinId ? {
-    id: initialPrefillGuest.checkinId,
-    name: initialPrefillGuest.guestName,
-    contact: initialPrefillGuest.guestPhone || "",
-    arrivalDate: "",
-    stayingDays: "",
-    bedInfo: initialPrefillGuest.roomInfo || "",
-  } : null);
+  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(() => (prefillGuest ? hostelStubFromPrefill(prefillGuest) : null));
   const [guestSearch, setGuestSearch] = useState("");
-  const [walkinName, setWalkinName] = useState(initialPrefillGuest?.guestType === "walkin" ? initialPrefillGuest.guestName : "");
-  const [walkinPhone, setWalkinPhone] = useState(initialPrefillGuest?.guestType === "walkin" ? (initialPrefillGuest.guestPhone || "") : "");
+  const [walkinName, setWalkinName] = useState(prefillGuest?.guestType === "walkin" ? prefillGuest.guestName : "");
+  const [walkinPhone, setWalkinPhone] = useState(prefillGuest?.guestType === "walkin" ? (prefillGuest.guestPhone || "") : "");
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -300,9 +322,43 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
   const [taxRate, setTaxRate] = useState(5);
   const cartRef = useRef<HTMLDivElement>(null);
 
+  const applyLockedPrefill = useCallback((guest: PrefillGuest) => {
+    setLockedPrefill(guest);
+    setGuestSelectionExpanded(false);
+    setGuestType(guest.guestType);
+    if (guest.guestType === "hostel") {
+      setSelectedGuest(hostelStubFromPrefill(guest));
+      setWalkinName("");
+      setWalkinPhone("");
+      setSelectedTable(null);
+      setTableGuestName("");
+      setTableSessionId("");
+    } else if (guest.guestType === "walkin") {
+      setSelectedGuest(null);
+      setWalkinName(guest.guestName);
+      setWalkinPhone(guest.guestPhone || "");
+      setSelectedTable(null);
+      setTableGuestName("");
+      setTableSessionId("");
+    } else {
+      setSelectedGuest(null);
+      setWalkinName("");
+      setWalkinPhone("");
+      setSelectedTable(tableNumberFromPrefill(guest));
+      setTableGuestName(guest.guestName);
+      setTableSessionId(guest.guestPhone || "");
+    }
+  }, []);
+
   useEffect(() => {
-    if (initialPrefillGuest) onPrefillConsumed();
-  }, [initialPrefillGuest, onPrefillConsumed]);
+    if (prefillGuest) applyLockedPrefill(prefillGuest);
+  }, [prefillGuest, applyLockedPrefill]);
+
+  const abandonPrefill = useCallback(() => {
+    setLockedPrefill(null);
+    setGuestSelectionExpanded(true);
+    onPrefillConsumed();
+  }, [onPrefillConsumed]);
 
   useEffect(() => {
     (async () => {
@@ -338,22 +394,26 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
   }, [apiCall]);
 
   useEffect(() => {
-    if (guestType === "hostel") {
-      (async () => {
-        const res = await apiCall({ action: "getActiveGuests" });
-        if (res.ok) {
+    if (guestType !== "hostel") return;
+    let cancelled = false;
+    const checkinId = lockedPrefill?.guestType === "hostel" ? lockedPrefill.checkinId : undefined;
+    (async () => {
+      const { guests: list, match } = await loadActiveGuestsWithMatch<Guest>(
+        async () => {
+          const res = await apiCall({ action: "getActiveGuests" });
+          if (!res.ok) return null;
           const data = await res.json();
-          setGuests(data.guests || []);
-          if (initialPrefillGuest?.guestType === "hostel" && initialPrefillGuest.checkinId) {
-            const match = (data.guests as Guest[]).find((g) => g.id === initialPrefillGuest.checkinId);
-            if (match) {
-              setSelectedGuest(match);
-            }
-          }
-        }
-      })();
-    }
-  }, [guestType, apiCall, initialPrefillGuest]);
+          return (data.guests || []) as Guest[];
+        },
+        checkinId,
+        { retries: 2, delayMs: 350 },
+      );
+      if (cancelled) return;
+      setGuests(list);
+      if (match) setSelectedGuest(match);
+    })();
+    return () => { cancelled = true; };
+  }, [guestType, apiCall, lockedPrefill]);
 
   const filteredGuests = guests.filter(
     (g) => g.name.toLowerCase().includes(guestSearch.toLowerCase()) || g.contact.includes(guestSearch)
@@ -370,12 +430,8 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
 
   const categoryItems = menuItems.filter((i) => i.categoryId === selectedCategory);
   const displayItems = isSearching ? searchResults : categoryItems;
-  const prefilledGuestType = initialPrefillGuest?.guestType === "hostel" ? "Hostel guest" : initialPrefillGuest?.guestType === "table" ? "Cafe table" : "Walk-in";
-  const prefilledGuestDetail = initialPrefillGuest?.guestType === "hostel"
-    ? initialPrefillGuest.roomInfo || initialPrefillGuest.guestPhone
-    : initialPrefillGuest?.guestType === "table"
-      ? initialPrefillGuest.roomInfo || initialPrefillGuest.guestName
-      : initialPrefillGuest?.guestPhone;
+  const prefilledGuestType = lockedPrefill ? prefillTypeLabel(lockedPrefill) : "";
+  const prefilledGuestDetail = lockedPrefill ? prefillDetailText(lockedPrefill) : undefined;
 
   const addToCart = (item: MenuItem) => {
     setCart((prev) => {
@@ -457,14 +513,14 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
     <div className={cn("space-y-4", cart.length > 0 && "pb-20")}>
       <h3 className="font-display text-lg font-bold text-brand-green-dark">Place Order</h3>
 
-      {initialPrefillGuest && !guestSelectionExpanded ? (
+      {lockedPrefill && !guestSelectionExpanded ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-green/20 bg-brand-green/[0.05] px-3 py-2.5">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-wide text-brand-green-dark/60">Ordering for</p>
-            <p className="truncate text-sm font-semibold text-brand-green-dark">{initialPrefillGuest.guestName}</p>
+            <p className="truncate text-sm font-semibold text-brand-green-dark">{lockedPrefill.guestName}</p>
             <p className="truncate text-xs text-brand-green-dark/60">{prefilledGuestType}{prefilledGuestDetail ? ` · ${prefilledGuestDetail}` : ""}</p>
           </div>
-          <button type="button" onClick={() => setGuestSelectionExpanded(true)} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-brand-green hover:bg-brand-green/10">
+          <button type="button" onClick={abandonPrefill} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-brand-green hover:bg-brand-green/10">
             Change guest
           </button>
         </div>
