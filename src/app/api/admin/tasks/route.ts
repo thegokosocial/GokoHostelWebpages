@@ -13,8 +13,9 @@ import {
   appendTaskNoteEntry,
   buildShoppingItemsFromInput,
   canCollaborateOnTask,
+  notesJsonWithLegacySeed,
   parseShoppingItems,
-  parseTaskNotes,
+  presentTaskNotes,
   toggleShoppingItemInList,
 } from "@/lib/taskNotesShopping";
 
@@ -59,11 +60,13 @@ function jsonUsernames(value: string | null | undefined): string[] {
 function presentTask(row: Awaited<ReturnType<typeof getTaskById>>, activeUsers: Map<string, TaskUser>) {
   if (!row) return null;
   const task = row.tasks;
-  const notes = parseTaskNotes(task.notes);
-  const legacyNote = typeof task.note === "string" ? task.note.trim() : "";
   return {
     ...task,
-    notes: notes.length > 0 ? notes : (legacyNote ? [{ id: `legacy-${task.id}`, body: legacyNote, authorUsername: task.updatedBy || task.createdBy, createdAt: task.updatedAt || task.createdAt }] : []),
+    notes: presentTaskNotes(task.notes, task.note, {
+      taskId: task.id,
+      authorUsername: task.updatedBy || task.createdBy,
+      createdAt: task.updatedAt || task.createdAt,
+    }),
     shoppingItems: parseShoppingItems(task.shoppingItems),
     attachments: jsonAttachments(task.attachments),
     followers: jsonUsernames(task.followerUsernames).map((name) => activeUsers.get(name)).filter(Boolean),
@@ -256,9 +259,15 @@ export async function POST(req: NextRequest) {
       if (task.deletedAt) return taskError("Archived tasks cannot receive notes", 409);
       if (!collaborator) return taskError("Only managers, the assignee, or followers can add notes", 403);
       if (!actorUsername) return taskError("A signed-in username is required to add notes", 403);
-      const appended = appendTaskNoteEntry(task.notes, typeof rest.body === "string" ? rest.body : "", actorUsername);
+      const seeded = notesJsonWithLegacySeed(task.notes, task.note, {
+        taskId,
+        authorUsername: task.updatedBy || task.createdBy || actorUsername,
+        createdAt: task.updatedAt || task.createdAt || new Date().toISOString(),
+      });
+      const appended = appendTaskNoteEntry(seeded, typeof rest.body === "string" ? rest.body : "", actorUsername);
       if (!appended.ok) return taskError(appended.error);
-      await updateTask(taskId, { notes: appended.json, updatedBy: actorName });
+      // Clear legacy `note` once it has been folded into the journal so later present/append paths stay consistent.
+      await updateTask(taskId, { notes: appended.json, note: "", updatedBy: actorName });
       await addAuditEntry({ username: actorName, action: "task_note_added", target: `task:${taskId}`, details: appended.notes[appended.notes.length - 1]?.id || "" });
       return NextResponse.json({ success: true, notes: appended.notes });
     }

@@ -46,6 +46,7 @@ beforeEach(() => {
   mocks.task.tasks.taskType = "purchase";
   mocks.task.tasks.notes = "[]";
   mocks.task.tasks.shoppingItems = "[]";
+  mocks.task.tasks.note = "";
   mocks.task.tasks.followerUsernames = '["staff","manager"]';
   mocks.task.expenses = null;
   mocks.getTaskById.mockResolvedValue(mocks.task);
@@ -100,8 +101,38 @@ describe("Tasks API mock workflows", () => {
   it("appends a note for assignee without push", async () => {
     const response = await POST(request({ action: "addTaskNote", taskId: 10, body: "Bought half" }));
     expect(response.status).toBe(200);
-    expect(mocks.updateTask).toHaveBeenCalledWith(10, expect.objectContaining({ notes: expect.stringContaining("Bought half") }));
+    expect(mocks.updateTask).toHaveBeenCalledWith(10, expect.objectContaining({ notes: expect.stringContaining("Bought half"), note: "" }));
     expect(mocks.dispatchPushToUsers).not.toHaveBeenCalled();
+  });
+
+  it("folds a legacy free-text note into the journal before appending", async () => {
+    mocks.task.tasks.note = "Added fan and regulator to buy list";
+    mocks.task.tasks.notes = "[]";
+    const response = await POST(request({ action: "addTaskNote", taskId: 10, body: "Items purchased. will be delivered tomorrow" }));
+    expect(response.status).toBe(200);
+    const payload = mocks.updateTask.mock.calls[0][1] as { notes: string; note: string };
+    expect(payload.note).toBe("");
+    const bodies = JSON.parse(payload.notes).map((entry: { body: string }) => entry.body);
+    expect(bodies).toEqual([
+      "Added fan and regulator to buy list",
+      "Items purchased. will be delivered tomorrow",
+    ]);
+    expect((await response.json()).notes.map((entry: { body: string }) => entry.body)).toEqual(bodies);
+  });
+
+  it("lists both legacy and journal notes when both exist", async () => {
+    mocks.task.tasks.note = "Added fan and regulator to buy list";
+    mocks.task.tasks.notes = JSON.stringify([
+      { id: "n1", body: "Items purchased. will be delivered towmorrow", authorUsername: "admin", createdAt: "2026-09-26T17:56:44.622Z" },
+    ]);
+    mocks.getTasks.mockResolvedValue([mocks.task]);
+    const response = await POST(request({ action: "listTasks" }));
+    expect(response.status).toBe(200);
+    const notes = (await response.json()).tasks[0].notes;
+    expect(notes.map((entry: { body: string }) => entry.body)).toEqual([
+      "Added fan and regulator to buy list",
+      "Items purchased. will be delivered towmorrow",
+    ]);
   });
 
   it("rejects note add from a non-collaborator", async () => {

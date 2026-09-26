@@ -39,6 +39,7 @@ import { eq, and, sql, inArray, or, desc, lte } from "drizzle-orm";
 import { apiErrorBody, getRequestId } from "@/lib/apiError";
 import { ALL_PERMISSION_KEYS } from "@/lib/permissionCatalog";
 import { ensureDefaultFoodStaffPermissions } from "@/lib/foodStaffPermissions";
+import { presentTaskNotes } from "@/lib/taskNotesShopping";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import { syncInsert } from "@/db/syncMeta";
 import { collectInBatches, uniqueInBatches } from "@/lib/dbBatch";
@@ -955,18 +956,17 @@ export async function POST(req: NextRequest) {
         : [];
       const myTasks = myTaskRows.map((row) => {
         let attachments: unknown[] = [];
-        let notes: unknown[] = [];
         let shoppingItems: unknown[] = [];
         try { attachments = JSON.parse(row.tasks.attachments || "[]"); } catch {}
-        try { notes = JSON.parse(row.tasks.notes || "[]"); } catch {}
         try { shoppingItems = JSON.parse(row.tasks.shoppingItems || "[]"); } catch {}
-        const legacyNote = typeof row.tasks.note === "string" ? row.tasks.note.trim() : "";
         return {
           ...row.tasks,
           attachments: Array.isArray(attachments) ? attachments : [],
-          notes: Array.isArray(notes) && notes.length > 0
-            ? notes
-            : (legacyNote ? [{ id: `legacy-${row.tasks.id}`, body: legacyNote, authorUsername: row.tasks.updatedBy || row.tasks.createdBy, createdAt: row.tasks.updatedAt || row.tasks.createdAt }] : []),
+          notes: presentTaskNotes(row.tasks.notes, row.tasks.note, {
+            taskId: row.tasks.id,
+            authorUsername: row.tasks.updatedBy || row.tasks.createdBy,
+            createdAt: row.tasks.updatedAt || row.tasks.createdAt,
+          }),
           shoppingItems: Array.isArray(shoppingItems) ? shoppingItems : [],
           assignee: row.users ? { id: row.users.id, username: row.users.username, displayName: row.users.displayName, role: row.users.role } : null,
           expense: row.expenses ? { id: row.expenses.id, amount: row.expenses.amount, category: row.expenses.category, purpose: row.expenses.purpose, expenseDate: row.expenses.expenseDate } : null,

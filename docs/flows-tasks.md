@@ -10,7 +10,7 @@ Tasks require only a title. They also support a description, free-text category,
 
 ### Notes journal
 
-Each task stores an append-only `notes` JSON journal (`id`, `body`, `authorUsername`, `createdAt`). Managers, the assignee, and followers can add notes; notes cannot be edited or deleted. Cards and detail views show the full journal (scroll-capped on phone) plus an inline Add composer — opening Edit is not required to read or append. Legacy `note` is left in place for older rows and is presented as a single journal entry when `notes` is empty.
+Each task stores an append-only `notes` JSON journal (`id`, `body`, `authorUsername`, `createdAt`). Managers, the assignee, and followers can add notes; notes cannot be edited or deleted. Cards and detail views show the full journal (scroll-capped on phone) plus an inline Add composer — opening Edit is not required to read or append. Legacy free-text `note` is merged into the presented journal (prepended) whenever it is still set; the first `addTaskNote` after that seeds the journal from `note`, appends the new entry, and clears `note` so older text is never dropped.
 
 ### Shopping list type
 

@@ -210,7 +210,7 @@ Payment activity additions: `guest_receipts.operation_id` groups per-order onlin
 | `due_date` | text | Optional YYYY-MM-DD |
 | `assignee_user_id` | integer | Optional FK to `users`; null means unassigned |
 | `status` | text | todo / in_progress / blocked / done |
-| `note` | text | Legacy single shared note (read fallback only; new writes use `notes`) |
+| `note` | text | Legacy single shared note; merged into presented `notes` until cleared by `addTaskNote` |
 | `notes` | text | JSON append-only note journal `{id,body,authorUsername,createdAt}[]` |
 | `shopping_items` | text | JSON checklist for shopping tasks `{id,label,bought,boughtAt?,boughtBy?}[]` |
 | `attachments` | text | JSON Drive attachment metadata |

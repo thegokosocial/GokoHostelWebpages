@@ -78,6 +78,35 @@ export function appendTaskNoteEntry(
   return { ok: true, notes, json: JSON.stringify(notes) };
 }
 
+/** Merge legacy free-text `note` into the journal for display and before append. */
+export function presentTaskNotes(
+  notesJson: string | null | undefined,
+  legacyNote: string | null | undefined,
+  meta: { taskId: number | string; authorUsername: string; createdAt: string },
+): TaskNoteEntry[] {
+  const notes = parseTaskNotes(notesJson);
+  const trimmed = typeof legacyNote === "string" ? legacyNote.trim() : "";
+  if (!trimmed) return notes;
+  const legacyId = `legacy-${meta.taskId}`;
+  if (notes.some((entry) => entry.id === legacyId || entry.body === trimmed)) return notes;
+  const legacyEntry: TaskNoteEntry = {
+    id: legacyId,
+    body: trimmed.slice(0, TASK_NOTE_MAX),
+    authorUsername: meta.authorUsername || "unknown",
+    createdAt: meta.createdAt || "",
+  };
+  return [legacyEntry, ...notes];
+}
+
+/** Seed journal JSON from legacy `note` when the journal is empty (before append). */
+export function notesJsonWithLegacySeed(
+  notesJson: string | null | undefined,
+  legacyNote: string | null | undefined,
+  meta: { taskId: number | string; authorUsername: string; createdAt: string },
+): string {
+  return JSON.stringify(presentTaskNotes(notesJson, legacyNote, meta));
+}
+
 /** Build shopping items from manager-provided labels; preserve bought state by id when present. */
 export function buildShoppingItemsFromInput(
   input: unknown,
