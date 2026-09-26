@@ -133,4 +133,20 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).not.toContain('"My booking"');
     expect(panel).toContain("Currently we only support finding bookings made through the Goko website.");
   });
+
+  it("shows strikethrough compare-at prices when direct-booking discount applies", () => {
+    expect(panel).toContain("function DiscountPrice(");
+    expect(panel).toContain("standardSubtotalRupees");
+    expect(panel).toContain("hasDirectDiscount");
+    expect(panel).toContain("standardTotals");
+    expect(panel).toContain("bookingTotals(standardSubtotal");
+    expect(panel).toContain('line-through');
+    expect(panel).toContain("<DiscountPrice");
+    expect(panel).toContain("standard={standardLine}");
+    expect(panel).toContain("standard={standardSubtotal}");
+    expect(panel).toContain("standard={standardTotals?.total");
+    expect(panel).toContain("tone=\"dark\"");
+    expect(panel).toContain("size=\"lg\"");
+    expect(panel).toContain("You save ${money(standardSubtotal - subtotal)}");
+  });
 });

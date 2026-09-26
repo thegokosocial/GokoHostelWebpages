@@ -26,6 +26,26 @@ const UNCERTAIN_COPY = "Booking not confirmed. If money was deducted it will be 
 const field = "mt-1 min-h-12 w-full min-w-0 max-w-full rounded-lg border border-brand-green/25 bg-white px-3 py-3 text-base text-brand-green-dark focus:outline-none focus:ring-2 focus:ring-brand-green";
 const action = "min-h-12 rounded-lg bg-brand-red px-4 py-3 font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 disabled:opacity-50";
 const money = (rupees: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(rupees);
+
+/** Strikethrough compare-at + bold paid price when direct-booking discount applies. */
+function DiscountPrice({
+  standard, discounted, tone = "light", size = "md",
+}: {
+  standard: number; discounted: number; tone?: "light" | "dark"; size?: "sm" | "md" | "lg";
+}) {
+  const showCompare = standard > discounted;
+  const strike = tone === "dark" ? "text-white/50" : "text-muted-foreground";
+  const paid = tone === "dark" ? "text-white" : "text-brand-green-dark";
+  const strikeSize = size === "lg" ? "text-sm" : size === "md" ? "text-xs" : "text-[11px]";
+  const paidSize = size === "lg" ? "text-2xl font-semibold sm:text-3xl" : size === "md" ? "text-base font-semibold" : "text-sm font-semibold";
+  return (
+    <span className={`inline-flex flex-col items-end leading-tight ${paid}`}>
+      {showCompare ? <span className={`${strikeSize} ${strike} line-through`}>{money(standard)}</span> : null}
+      <span className={paidSize}>{money(discounted)}</span>
+    </span>
+  );
+}
+
 async function readResponse(response: Response) {
   const data = await response.json().catch(() => { throw new Error("Could not reach Goko. Please try again or contact us."); });
   if (!response.ok) throw new Error(data.error || "Please try again.");
@@ -193,7 +213,9 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const chosenRate = (room: GuestRoom) => room.rates?.find(rate => rate.id === plans[room.id]) ?? room.rates?.[0];
   const subtotal = rooms?.reduce((sum, room) => sum + (selection[room.id] || 0) * (chosenRate(room)?.subtotalRupees || 0), 0) || 0;
   const standardSubtotal = rooms?.reduce((sum, room) => sum + (selection[room.id] || 0) * (chosenRate(room)?.standardSubtotalRupees || chosenRate(room)?.subtotalRupees || 0), 0) || 0;
+  const hasDirectDiscount = standardSubtotal > subtotal;
   const totals = taxPercent == null ? null : bookingTotals(subtotal, { taxPercent });
+  const standardTotals = taxPercent == null || !hasDirectDiscount ? null : bookingTotals(standardSubtotal, { taxPercent });
   const ready = !!searchedStay && maxSelectedBeds != null && selectedCount > 0 && selectedCount <= maxSelectedBeds && !!rooms?.every(room => !selection[room.id] || (selection[room.id] <= room.availableUnits && !!chosenRate(room)));
   function addRoom(room: GuestRoom, planId: number) {
     setSelection(current => canAddGuestRoom(rooms || [], current, room, maxSelectedBeds ?? 0) ? { ...current, [room.id]: (current[room.id] || 0) + 1 } : current);
@@ -502,7 +524,21 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
           })}</div>
           <aside data-booking-summary className="sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-brand-green-dark p-3 text-white shadow-lg xl:top-24 xl:bottom-auto xl:grid-cols-1 xl:p-5">
             <p className="hidden border-b border-white/20 pb-3 text-xs xl:block">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate}</p>
-            <div className="min-w-0"><p className="text-xs sm:text-sm">Your stay estimate</p><p className="mt-1 break-words text-2xl font-semibold sm:text-3xl">{selectedCount ? money(totals?.total ?? subtotal) : "Choose beds"}</p></div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm">Your stay estimate</p>
+              {selectedCount ? (
+                <div className="mt-1">
+                  <DiscountPrice
+                    standard={standardTotals?.total ?? (totals?.total ?? subtotal)}
+                    discounted={totals?.total ?? subtotal}
+                    tone="dark"
+                    size="lg"
+                  />
+                </div>
+              ) : (
+                <p className="mt-1 break-words text-2xl font-semibold sm:text-3xl">Choose beds</p>
+              )}
+            </div>
             <button type="button" className={`${action} max-w-36 text-sm sm:max-w-none sm:text-base`} disabled={!ready} onClick={openReview}>Review your stay</button>
             <p className="col-span-2 text-xs xl:col-span-1">{selectedCount} {selectedCount === 1 ? "bed" : "beds"} selected · Sleeps up to {capacity}.</p>
             {selectedCount === maxSelectedBeds && maxSelectedBeds != null ? (
@@ -512,7 +548,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             ) : null}
             {selectedCount && totals ? (
               <p className="col-span-2 text-xs xl:col-span-1">
-                Beds {money(subtotal)} + tax ({taxPercent}%) {money(totals.tax)}{standardSubtotal > subtotal ? ` · You save ${money(standardSubtotal - subtotal)}` : ""}.
+                Beds {money(subtotal)} + tax ({taxPercent}%) {money(totals.tax)}{hasDirectDiscount ? ` · You save ${money(standardSubtotal - subtotal)}` : ""}.
               </p>
             ) : null}
             {nativeCheckoutReady ? (
@@ -523,8 +559,39 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
           {review && ready && <div ref={reviewRef} tabIndex={-1} className="mt-5 scroll-mt-24 rounded-xl border border-brand-mist p-4 focus:outline-none focus:ring-2 focus:ring-brand-green sm:p-5">
             <h3 className="font-display text-2xl font-bold">Your Goko stay</h3>
             <p className="mt-2">{searchedStay?.checkinDate} – {searchedStay?.checkoutDate} · {selectedCount} {selectedCount === 1 ? "bed" : "beds"} · Sleeps up to {capacity}</p>
-            <ul className="mt-3 space-y-2 text-sm">{rooms.filter(room => selection[room.id]).map(room => <li key={room.id}>{selection[room.id]} × {room.name} · {chosenRate(room)?.name} · {money(selection[room.id] * chosenRate(room)!.subtotalRupees)}</li>)}</ul>
-            {totals && <dl className="mt-4 space-y-2 border-t border-brand-mist pt-3 text-sm"><div className="flex justify-between"><dt>Bed subtotal</dt><dd>{money(totals.beforeTax)}</dd></div><div className="flex justify-between"><dt>Estimated tax ({taxPercent}%)</dt><dd>{money(totals.tax)}</dd></div><div className="flex justify-between text-lg font-semibold"><dt>Estimated total</dt><dd>{money(totals.total)}</dd></div></dl>}
+            <ul className="mt-3 space-y-2 text-sm">
+              {rooms.filter(room => selection[room.id]).map(room => {
+                const rate = chosenRate(room)!;
+                const qty = selection[room.id];
+                const line = qty * rate.subtotalRupees;
+                const standardLine = qty * (rate.standardSubtotalRupees ?? rate.subtotalRupees);
+                return (
+                  <li key={room.id} className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">{qty} × {room.name} · {rate.name}</span>
+                    <DiscountPrice standard={standardLine} discounted={line} size="sm" />
+                  </li>
+                );
+              })}
+            </ul>
+            {totals && (
+              <dl className="mt-4 space-y-2 border-t border-brand-mist pt-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <dt>Bed subtotal</dt>
+                  <dd><DiscountPrice standard={standardSubtotal} discounted={totals.beforeTax} size="sm" /></dd>
+                </div>
+                <div className="flex justify-between gap-3"><dt>Estimated tax ({taxPercent}%)</dt><dd>{money(totals.tax)}</dd></div>
+                <div className="flex items-start justify-between gap-3 text-lg font-semibold">
+                  <dt>Estimated total</dt>
+                  <dd>
+                    <DiscountPrice
+                      standard={standardTotals?.total ?? totals.total}
+                      discounted={totals.total}
+                      size="md"
+                    />
+                  </dd>
+                </div>
+              </dl>
+            )}
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <label className="text-sm">Guest name <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required autoComplete="name" maxLength={120} value={guest.name} onChange={e => setGuest(current => ({ ...current, name: e.target.value }))} /></label>
               <label className="text-sm">Email <span className="text-brand-red" aria-hidden="true">*</span><input className={field} required type="email" autoComplete="email" maxLength={254} value={guest.email} onChange={e => setGuest(current => ({ ...current, email: e.target.value }))} /></label>
