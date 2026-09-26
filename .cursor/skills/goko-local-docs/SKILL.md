@@ -62,6 +62,8 @@ Before every commit, inspect both the working-tree and staged diffs. Every featu
 | Why we built it this way | `decisions.md` |
 | Landmines / wire formats / UI≠API | `llm-onboarding.md` |
 | Pages / admin components | `pages-and-ui.md` |
+| Frosted glass / glassmorphism materials | `frosted-glass.md` |
+| Guest booking UI workflows | `guest-booking-ui.md` |
 | How to continue work | `developing.md` |
 
 ## Style

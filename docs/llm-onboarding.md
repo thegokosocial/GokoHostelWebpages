@@ -17,6 +17,7 @@ Handoff to another agent (not autopilot): [developing.md](developing.md#handoff-
 - Table *catalog* (52 tables) and FK graph — not every column default.
 - Route list + exact `action` names + RBAC maps we verified **31 Aug 2026**.
 - End-to-end stories: check-in, food, PMS occupancy, stay collect/refund, Room Revenue, accounts, **splits**, CMS, sync, reviews/Form C.
+- Marketing frosted glass materials (panel/chip/ink): [frosted-glass.md](frosted-glass.md); guest booking UI: [guest-booking-ui.md](guest-booking-ui.md).
 - Logins, Google, Cloudflare, Pi SSH (gitignored secrets file on this machine).
 - Stale-doc list so you do not follow `goko-web-overview.mdc` auto-deploy.
 

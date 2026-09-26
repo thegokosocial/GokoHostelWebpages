@@ -45,6 +45,8 @@ Skip only for pure comment/format/typo-in-code with zero behavior change.
 | Deploy / D1 applied list | `MAINTAINER.local.md` |
 | New top-level concept | `docs/overview.md` / `docs/architecture.md` / `docs/decisions.md` / `docs/developing.md` |
 | Folder layout / lib / admin UI | `docs/directory.md`, `docs/pages-and-ui.md` |
+| Frosted glass / glassmorphism | `docs/frosted-glass.md` |
+| Guest booking UI workflows | `docs/guest-booking-ui.md` |
 | Tests / CI | `docs/testing-and-ci.md` |
 
 Index: `docs/README.md`. New agent: `docs/llm-onboarding.md` + `docs/developing.md`. Dedicated pass: skill `goko-local-docs`. Project-wide agent instructions also live in the repository root `AGENTS.md` and apply to every chat/agent working in GokoWeb.
