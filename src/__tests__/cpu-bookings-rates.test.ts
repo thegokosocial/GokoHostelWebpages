@@ -1626,4 +1626,66 @@ describe("Bookings calendar and rates workflows", () => {
     const json = await blocked.json();
     expect(json.error).toMatch(/Paid website/i);
   });
+
+  describe("dual occupancy: calendar check-in ≠ physical bed occupy", () => {
+    it("calendar checkIn updates booking status without assigning or occupying beds", async () => {
+      q.assignBedToBooking.mockClear();
+      q.getBookingDetail.mockResolvedValue({
+        booking: {
+          checkinDate: "2026-09-05",
+          checkoutDate: "2026-09-10",
+          status: "received",
+          amountTotal: 2000,
+          amountPaid: 0,
+          paymentStatus: "pay_at_hotel",
+        },
+        assignments: [],
+      });
+      const res = await POST(req({ password: "x", action: "checkIn", bookingId: 5 }));
+      expect(res.status).toBe(200);
+      expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({ status: "checked_in" }));
+      expect(q.assignBedToBooking).not.toHaveBeenCalled();
+    });
+
+    it("calendar checkIn with prepaid still records online stay revenue without bed occupy", async () => {
+      q.getBookingDetail.mockResolvedValue({
+        booking: {
+          checkinDate: "2026-09-05",
+          checkoutDate: "2026-09-10",
+          status: "received",
+          amountTotal: 31500,
+          amountPaid: 0,
+          paymentStatus: "prepaid",
+        },
+        assignments: [{ status: "assigned", dormId: 3, bedId: 7 }],
+      });
+      const res = await POST(req({ password: "x", action: "checkIn", bookingId: 5, collectPayment: false }));
+      expect(res.status).toBe(200);
+      expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({
+        status: "checked_in",
+        amountPaid: 31500,
+        paymentMethod: "online",
+      }));
+      expect(q.assignBedToBooking).not.toHaveBeenCalled();
+    });
+
+    it("calendar checkOut shortens assignments only and does not force bed cleanup", async () => {
+      q.getBookingDetail.mockResolvedValue({
+        booking: {
+          checkinDate: "2026-09-05",
+          checkoutDate: "2099-12-31",
+          status: "checked_in",
+          source: "manual",
+        },
+        assignments: [{ status: "assigned", dormId: 3, bedId: 7, checkoutDate: "2099-12-31" }],
+      });
+      const res = await POST(req({ password: "x", action: "checkOut", bookingId: 5 }));
+      expect(res.status).toBe(200);
+      expect(q.shortenAssignedCheckout).toHaveBeenCalled();
+      expect(q.updateBookingFull).toHaveBeenCalledWith(5, expect.objectContaining({ status: "checked_out" }));
+      // Physical bed cleanup lives on checkins checkoutBed — not calendar checkOut.
+      expect(q.unassignBookingBeds).not.toHaveBeenCalled();
+      expect(q.cancelBedAssignments).not.toHaveBeenCalled();
+    });
+  });
 });

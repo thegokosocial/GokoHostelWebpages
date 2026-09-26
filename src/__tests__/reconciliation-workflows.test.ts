@@ -66,6 +66,32 @@ describe("independent reconciliation workflow", () => {
     expect(route).toContain("reconciled by another user");
   });
 
+  it("saveReconciliation CAS rejects a second save on the same cash date (409 copy)", () => {
+    expect(route).toContain("This account has already been reconciled. Undo it before trying again.");
+    expect(route).toContain("This account was reconciled by another user. Refresh to see the latest values.");
+    const saveSection = route.match(/case "saveReconciliation":[\s\S]*?case "undoReconciliation":/)?.[0];
+    expect(saveSection).toBeTruthy();
+    expect(saveSection!).toContain("status: 409");
+    expect(saveSection!).toContain("target.accountId");
+  });
+
+  it("online account reconcile does not flip Cash or a different account (scoped target)", () => {
+    const saveSection = route.match(/case "saveReconciliation":[\s\S]*?case "undoReconciliation":/)?.[0];
+    expect(saveSection!).toContain("parseReconciliationTarget");
+    expect(saveSection!).toContain("reconciliationPermission(target)");
+    expect(saveSection!).toContain("accountId === null");
+    expect(saveSection!).toContain("${target.accountId}");
+  });
+
+  it("cash journal / expense mutations reject after covering reconciliation (409)", () => {
+    expect(route).toContain("Undo the ${reconciled[0].date} reconciliation before adding an expense");
+    expect(route).toContain("Undo the ${reconciled[0].date} reconciliation before adding income");
+  });
+
+  it("undoReconciliation is admin_only", () => {
+    expect(route).toContain('undoReconciliation: "admin_only"');
+  });
+
   it("returns reconciliation metadata on every account", () => {
     expect(route).toContain('notes: ledgerEntry?.notes || ""');
     expect(route).toContain('reconciledBy: ledgerEntry?.reconciledBy || ""');

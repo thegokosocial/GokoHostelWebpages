@@ -7,7 +7,20 @@ import * as schema from "@/db/schema";
 const dbState = vi.hoisted(() => ({ getDb: vi.fn() }));
 vi.mock("@/db", () => ({ getDb: dbState.getDb }));
 
-import { addFoodOrderItems } from "@/db/queries";
+import { addFoodOrderItems, FOOD_ORDER_ITEM_INSERT_CHUNK } from "@/db/queries";
+
+function lineItems(count: number, orderId = 99) {
+  return Array.from({ length: count }, (_, i) => ({
+    orderId,
+    menuItemId: i + 1,
+    itemName: `Dish ${i + 1}`,
+    itemPrice: 1000,
+    quantity: 1,
+    lineTotal: 1000,
+    pricingStatus: "fixed",
+    notes: "",
+  }));
+}
 
 describe("addFoodOrderItems chunking", () => {
   beforeEach(() => {
@@ -32,23 +45,36 @@ describe("addFoodOrderItems chunking", () => {
     dbState.getDb.mockReturnValue(drizzle(sqlite, { schema }));
   });
 
-  it.each([9, 10, 12])("inserts %i distinct line items across bind-safe chunks", async (lineCount) => {
-    const items = Array.from({ length: lineCount }, (_, i) => ({
-      orderId: 99,
-      menuItemId: i + 1,
-      itemName: `Dish ${i + 1}`,
-      itemPrice: 1000,
-      quantity: 1,
-      lineTotal: 1000,
-      pricingStatus: "fixed",
-      notes: "",
-    }));
-    await addFoodOrderItems(items);
+  it.each([8, 9, 10, 12, 14, 20])("inserts %i distinct line items across bind-safe chunks", async (lineCount) => {
+    await addFoodOrderItems(lineItems(lineCount));
     const db = dbState.getDb();
     const rows = await db.select().from(schema.foodOrderItems).where(eq(schema.foodOrderItems.orderId, 99));
     expect(rows).toHaveLength(lineCount);
     expect(rows.map((r: { itemName: string }) => r.itemName)).toEqual(
       Array.from({ length: lineCount }, (_, i) => `Dish ${i + 1}`),
     );
+  });
+
+  it("issues one insert statement per FOOD_ORDER_ITEM_INSERT_CHUNK rows", async () => {
+    expect(FOOD_ORDER_ITEM_INSERT_CHUNK).toBe(5);
+    const db = dbState.getDb();
+    const insertSpy = vi.spyOn(db, "insert");
+    await addFoodOrderItems(lineItems(12));
+    expect(insertSpy).toHaveBeenCalledTimes(Math.ceil(12 / FOOD_ORDER_ITEM_INSERT_CHUNK));
+  });
+
+  it("keeps first-chunk rows when a later chunk insert fails", async () => {
+    const db = dbState.getDb();
+    const realInsert = db.insert.bind(db);
+    let calls = 0;
+    vi.spyOn(db, "insert").mockImplementation((...args: Parameters<typeof db.insert>) => {
+      calls += 1;
+      if (calls === 2) throw new Error("D1_BIND_LIMIT");
+      return realInsert(...args);
+    });
+
+    await expect(addFoodOrderItems(lineItems(12))).rejects.toThrow(/D1_BIND_LIMIT/);
+    const rows = await db.select().from(schema.foodOrderItems).where(eq(schema.foodOrderItems.orderId, 99));
+    expect(rows).toHaveLength(FOOD_ORDER_ITEM_INSERT_CHUNK);
   });
 });

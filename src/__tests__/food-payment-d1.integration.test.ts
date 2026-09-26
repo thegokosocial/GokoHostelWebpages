@@ -365,4 +365,70 @@ describe("food payment D1 persistence", () => {
     expect(sqlite.prepare("SELECT amount FROM guest_receipts").all()).toEqual([{ amount: 200 }]);
     expect(sqlite.prepare("SELECT COUNT(*) n FROM cash_payment_events").get()).toEqual({ n: 0 });
   });
+
+  it("blocks markOrderPaid when any line still has pending market price", async () => {
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([[10, [{ status: "active", pricingStatus: "pending" }]]]));
+    const response = await POST(request({ orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/final prices/i) });
+    expect(sqlite.prepare("SELECT payment_status FROM food_orders WHERE id = 10").get()).toEqual({ payment_status: "pending" });
+  });
+
+  it("staff without canMarkPaid gets 403 on markOrderPaid", async () => {
+    q.authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "View",
+      permissions: { canViewFoodOrders: true },
+    });
+    const response = await POST(request({ orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      code: "permission_denied",
+      requiredPermissions: ["canMarkPaid"],
+    });
+  });
+
+  it("oldest-first split cash across two Combined Bill orders at D1 persistence", async () => {
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, total, updated_at, created_at) VALUES (?, ?, ?, ?, ?)").run(
+      11, "F-11", 300, "2026-09-22T16:00:00.000Z", "2026-09-22T15:00:00.000Z",
+    );
+    sqlite.prepare("INSERT INTO food_orders (id, order_number, total, updated_at, created_at) VALUES (?, ?, ?, ?, ?)").run(
+      12, "F-12", 500, "2026-09-22T17:00:00.000Z", "2026-09-22T16:00:00.000Z",
+    );
+    q.getFoodOrderById.mockImplementation(async (id: number) => ({
+      id,
+      orderNumber: `F-${id}`,
+      status: "placed",
+      paymentStatus: "pending",
+      amountPaid: 0,
+      amountRefunded: 0,
+      total: id === 11 ? 300 : 500,
+      createdAt: id === 11 ? "2026-09-22T15:00:00.000Z" : "2026-09-22T16:00:00.000Z",
+    }));
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([
+      [11, [{ status: "active", pricingStatus: "fixed" }]],
+      [12, [{ status: "active", pricingStatus: "fixed" }]],
+    ]));
+
+    // Combined due 800; cash 300 covers older order fully, remainder online on newer.
+    // Caller must pass orderIds oldest-first (UI Combined Bill does).
+    const response = await POST(request({
+      orderIds: [11, 12],
+      paymentMethod: "split",
+      cashReceived: 300,
+      changeGiven: 0,
+      onlineAccountId: 7,
+    }));
+    expect(response.status).toBe(200);
+    expect(sqlite.prepare("SELECT id, amount_paid, payment_status, payment_method, cash_received FROM food_orders WHERE id IN (11,12) ORDER BY id").all()).toEqual([
+      { id: 11, amount_paid: 300, payment_status: "paid", payment_method: "split", cash_received: 300 },
+      { id: 12, amount_paid: 500, payment_status: "paid", payment_method: "split", cash_received: 0 },
+    ]);
+    expect(sqlite.prepare("SELECT source_id, amount FROM guest_receipts ORDER BY source_id").all()).toEqual([
+      { source_id: 12, amount: 500 },
+    ]);
+    expect(sqlite.prepare("SELECT source_id, amount_paise FROM cash_payment_events ORDER BY source_id").all()).toEqual([
+      { source_id: 11, amount_paise: 300 },
+    ]);
+  });
 });

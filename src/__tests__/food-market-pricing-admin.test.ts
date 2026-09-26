@@ -697,6 +697,36 @@ describe("admin market-pricing workflows", () => {
     expect(q.addFoodOrderItems).not.toHaveBeenCalled();
   });
 
+  it("placeOrderForGuest does not abandon a paid incomplete orphan (409 incomplete_food_order)", async () => {
+    q.getMenuItemById.mockResolvedValue({
+      id: 41, name: "Soap", price: 500, priceOnRequest: 0, trackInventory: 0, stockQuantity: 0,
+    });
+    q.getSetting.mockResolvedValue("0");
+    q.getFoodOrderByIdempotencyKey.mockResolvedValue({
+      id: 381,
+      orderNumber: "D269-24",
+      subtotal: 203000,
+      tax: 0,
+      total: 203000,
+      status: "placed",
+      paymentStatus: "paid",
+      amountPaid: 203000,
+    });
+    q.countFoodOrderItems.mockResolvedValue(0);
+
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Piyush",
+      guestPhone: "6201587898",
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "99999999-9999-4999-8999-999999999999",
+    }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "incomplete_food_order", orderId: 381 });
+    expect(q.abandonIncompleteFoodOrder).not.toHaveBeenCalled();
+    expect(q.addFoodOrderItems).not.toHaveBeenCalled();
+  });
+
   it("admin Place Order mints one idempotency key until success", async () => {
     const source = await import("fs").then((fs) => fs.readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8"));
     expect(source).toMatch(/useState\(\(\) => crypto\.randomUUID\(\)\)/);

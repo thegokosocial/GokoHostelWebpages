@@ -1318,7 +1318,7 @@ export async function createFoodOrder(data: {
 
 /** D1 allows ~100 bound params per statement; each line is ~14 binds with syncInsert.
  *  Use 5 (not the theoretical max ~7) so schema/sync column growth stays safe. */
-const FOOD_ORDER_ITEM_INSERT_CHUNK = 5;
+export const FOOD_ORDER_ITEM_INSERT_CHUNK = 5;
 
 export async function addFoodOrderItems(items: Array<{
   orderId: number; menuItemId: number; itemName: string;

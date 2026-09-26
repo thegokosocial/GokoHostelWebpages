@@ -230,7 +230,7 @@ describe("platform settlement allocateBatch D1 bind safety", () => {
     expect(route).toContain("results.flatMap");
   });
 
-  it.each([1, 7, 8, 9, 15])("allocates %i OTA booking cycles under bind-safe chunks", async (count) => {
+  it.each([1, 7, 8, 9, 15, 50, 100])("allocates %i OTA booking cycles under bind-safe chunks", async (count) => {
     const db = openDb();
     dbState.getDb.mockReturnValue(db);
     const { settlementId, allocations, totalPaise } = await seedSettlement(db, count);

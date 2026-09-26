@@ -163,4 +163,22 @@ describe("getPendingFoodTab db workflows", () => {
     });
     expect(getDb).toHaveBeenCalledTimes(1);
   });
+
+  it("booking-only phone with no matching checkin yields empty unpaid tab", async () => {
+    getDb.mockReturnValueOnce(drizzleChain([]));
+    await expect(getPendingFoodTab({ contact: "9123456789" })).resolves.toEqual(EMPTY_FOOD_TAB);
+    expect(getDb).toHaveBeenCalledTimes(1);
+  });
+
+  it("active checkin with on_tab unpaid rows returns pending tab", async () => {
+    getDb.mockReturnValueOnce(
+      drizzleChain([{ id: 9, checkinId: 77, total: 4200 }]),
+    );
+    await expect(getPendingFoodTab({ checkinId: 77 })).resolves.toEqual({
+      checkinId: 77,
+      pendingTab: 4200,
+      pendingOrders: 1,
+      orderIds: [9],
+    });
+  });
 });
