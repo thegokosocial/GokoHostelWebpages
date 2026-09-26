@@ -40,7 +40,7 @@ function DiscountPrice({
   const paidSize = size === "lg" ? "text-2xl font-semibold sm:text-3xl" : size === "md" ? "text-base font-semibold" : "text-sm font-semibold";
   return (
     <span className={`inline-flex flex-col items-end leading-tight ${paid}`}>
-      {showCompare ? <span className={`${strikeSize} ${strike} line-through`}>{money(standard)}</span> : null}
+      {showCompare ? <span className={`${strikeSize} ${strike} line-through decoration-2`}>{money(standard)}</span> : null}
       <span className={paidSize}>{money(discounted)}</span>
     </span>
   );
@@ -73,7 +73,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [taxPercent, setTaxPercent] = useState<number | null>(null);
   const [maxSelectedBeds, setMaxSelectedBeds] = useState<number | null>(null);
   const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
-  const [persons, setPersons] = useState("1");
+  const [persons, setPersons] = useState("");
   const [stay, setStay] = useState(preview?.stay ?? { checkinDate: "", checkoutDate: "" });
   const [searchedStay, setSearchedStay] = useState<typeof stay | null>(null);
   const [reference, setReference] = useState(""), [email, setEmail] = useState("");

@@ -140,7 +140,7 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("hasDirectDiscount");
     expect(panel).toContain("standardTotals");
     expect(panel).toContain("bookingTotals(standardSubtotal");
-    expect(panel).toContain('line-through');
+    expect(panel).toContain("line-through decoration-2");
     expect(panel).toContain("<DiscountPrice");
     expect(panel).toContain("standard={standardLine}");
     expect(panel).toContain("standard={standardSubtotal}");
@@ -148,5 +148,11 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("tone=\"dark\"");
     expect(panel).toContain("size=\"lg\"");
     expect(panel).toContain("You save ${money(standardSubtotal - subtotal)}");
+  });
+
+  it("starts Guests empty so party size is entered deliberately", () => {
+    expect(panel).toContain('const [persons, setPersons] = useState("")');
+    expect(panel).not.toContain('const [persons, setPersons] = useState("1")');
+    expect(panel).toContain("persons !== \"\" && Number.isInteger(Number(persons))");
   });
 });
