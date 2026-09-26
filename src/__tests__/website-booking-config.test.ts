@@ -145,11 +145,11 @@ describe("Draft booking settings", () => {
     expect(mocks.compareAndSetWebsiteSettings).toHaveBeenCalledWith(null, expect.stringContaining('"maxSelectedBeds":12'));
   });
   it("has safe reviewed draft defaults", () => {
-    expect(websiteBookingSettingsSchema.parse({})).toMatchObject({ advancePercent: 50, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30, cancellationDeadlineHours: 48, cancellationRefundPercent: 100, gatewayEnvironment: "test", requireLookupOtp: true });
+    expect(websiteBookingSettingsSchema.parse({})).toMatchObject({ directBookingDiscountPercent: 0, advancePercent: 50, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30, cancellationDeadlineHours: 48, cancellationRefundPercent: 100, gatewayEnvironment: "test", requireLookupOtp: true });
   });
   it.each([
     { advancePercent: -1 }, { advancePercent: 101 }, { advancePercent: 50.5 }, { holdMinutes: 20 },
-    { unresolvedPaymentMaxMinutes: 31 }, { cancellationDeadlineHours: -1 }, { cancellationRefundPercent: 101 },
+    { unresolvedPaymentMaxMinutes: 31 }, { cancellationDeadlineHours: -1 }, { cancellationRefundPercent: 101 }, { directBookingDiscountPercent: 81 },
     { gatewayEnvironment: "other" }, { keySecret: "do-not-store" }, { enabled: true }, { policyPublished: true },
   ])("rejects invalid settings or credential injection %s", (settings) => {
     expect(websiteBookingSettingsSchema.safeParse(settings).success).toBe(false);

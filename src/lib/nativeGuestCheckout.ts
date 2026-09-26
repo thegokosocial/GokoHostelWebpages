@@ -11,6 +11,7 @@ import {
   getRatePlanMappings, getRoomTypeMappings, getSetting, transitionBookingStatus, unassignBookingBeds,
   unassignBookingBedsByBedIds, updateBookingFull, addBookingHistoryEntry, getBookingHistoryEntries,
 } from "@/db/queries";
+import { directBookingRate } from "@/lib/bookingPricing";
 import { generateGokoBookingId, generateGuestAccessToken, hashToken } from "@/lib/bookingReference";
 import { guestRateForStay, websiteBookingTaxPercent, searchGuestRooms } from "@/lib/guestBookingSearch";
 import {
@@ -107,12 +108,13 @@ async function snapshotWebsiteOntoBooking(
   if (!booking) return;
   const payRows = await getDb().select().from(payments).where(eq(payments.checkoutId, row.id));
   const captured = payRows.filter((p) => p.captured === 1);
-  let quoteSummary: { nights: number; beforeTax: number; tax: number; total: number; unitsLabel?: string } | undefined;
+  let quoteSummary: { nights: number; standardBeforeTax?: number; savings?: number; directDiscountPercent?: number; beforeTax: number; tax: number; total: number; unitsLabel?: string } | undefined;
   const quoteJson = opts.quoteJson;
   if (quoteJson) {
     try {
       const q = JSON.parse(quoteJson) as {
-        beforeTaxRupees?: number; taxRupees?: number; totalRupees?: number;
+        standardBeforeTaxRupees?: number; savingsRupees?: number; beforeTaxRupees?: number; taxRupees?: number; totalRupees?: number;
+        policy?: { directBookingDiscountPercent?: number };
         checkinDate?: string; checkoutDate?: string;
         units?: Array<{ key: string }>;
       };
@@ -121,6 +123,9 @@ async function snapshotWebsiteOntoBooking(
         : 0;
       quoteSummary = {
         nights,
+        standardBeforeTax: Number(q.standardBeforeTaxRupees || q.beforeTaxRupees || 0),
+        savings: Number(q.savingsRupees || 0),
+        directDiscountPercent: Number(q.policy?.directBookingDiscountPercent || 0),
         beforeTax: Number(q.beforeTaxRupees || 0),
         tax: Number(q.taxRupees || 0),
         total: Number(q.totalRupees || 0),
@@ -233,6 +238,7 @@ async function sha(s: string) { return hashToken(s); }
 export type AllocatedUnit = {
   key: string; dormId: number; type: "Double" | "Bed"; bedIds: number[];
   ratePlanId: number; nightlyRates: { date: string; rupees: number }[];
+  standardNightlyRates: { date: string; rupees: number }[];
 };
 
 /** Expand guest room keys (`dormId-type`) into ≤4 physical bed IDs. Never trusts client bed IDs. */
@@ -240,6 +246,7 @@ export async function allocateGuestSelection(input: {
   checkinDate: string; checkoutDate: string;
   rooms: { roomId: string; quantity: number; ratePlanId: number }[];
   excludeBookingId?: number;
+  directBookingDiscountPercent?: number;
 }): Promise<{ bedIds: number[]; units: AllocatedUnit[] }> {
   const avail = await getNativeSelectionAvailability({
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
@@ -270,7 +277,9 @@ export async function allocateGuestSelection(input: {
       unit.bedIds.forEach((id) => used.add(id));
       units.push({
         key: unit.key, dormId, type, bedIds: unit.bedIds as number[],
-        ratePlanId: plan.id, nightlyRates: rate.nightlyRates,
+        ratePlanId: plan.id,
+        standardNightlyRates: rate.nightlyRates,
+        nightlyRates: rate.nightlyRates.map((night) => ({ ...night, rupees: directBookingRate(night.rupees, input.directBookingDiscountPercent || 0) })),
       });
     }
   }
@@ -488,7 +497,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   if (selectedUnits > policy.maxSelectedBeds) {
     throw new GuestCheckoutError(`You can select at most ${policy.maxSelectedBeds} beds for a website booking`, 400);
   }
-  const { bedIds, units } = await allocateGuestSelection(input);
+  const { bedIds, units } = await allocateGuestSelection({ ...input, directBookingDiscountPercent: policy.directBookingDiscountPercent });
   const sleepingCapacity = units.reduce((n, u) => n + (u.type === "Double" ? 2 : 1), 0);
   if (input.persons > sleepingCapacity) {
     throw new GuestCheckoutError(
@@ -507,7 +516,7 @@ export async function prepareGuestCheckout(raw: z.input<typeof selectionSchema>)
   const accepted = await acceptNativeQuote({ requestKey: input.requestKey, ownerToken }, {
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     policyVersion, policy, taxBasisPoints, paymentChoice: input.paymentChoice,
-    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates })),
+    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates, standardNightlyRates: u.standardNightlyRates })),
   });
   const quote = accepted.quote;
   if (quote.dueNowPaise > 0 && quote.dueNowPaise < 100) {
@@ -1086,13 +1095,14 @@ async function buildAmendQuoteTotals(input: {
   const { bedIds, units } = await allocateGuestSelection({
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     rooms: input.rooms, excludeBookingId: input.excludeBookingId,
+    directBookingDiscountPercent: input.policy.directBookingDiscountPercent,
   });
   const taxBasisPoints = Math.round((await websiteBookingTaxPercent()) * 100);
   const quote = buildNativeBookingQuote({
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     policyVersion: input.policyVersion, policy: input.policy, taxBasisPoints,
     paymentChoice: "full",
-    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates })),
+    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates, standardNightlyRates: u.standardNightlyRates })),
   });
   return { bedIds, units, quote, taxBasisPoints };
 }
@@ -1197,7 +1207,7 @@ export async function prepareGuestAmend(raw: z.input<typeof amendSelectionSchema
   const accepted = await acceptNativeQuote({ requestKey: input.requestKey, ownerToken }, {
     checkinDate: input.checkinDate, checkoutDate: input.checkoutDate,
     policyVersion, policy: settings, taxBasisPoints, paymentChoice: "full",
-    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates })),
+    units: units.map((u) => ({ key: u.key, nightlyRates: u.nightlyRates, standardNightlyRates: u.standardNightlyRates })),
   });
   const id = crypto.randomUUID();
   const now = timestamp();
@@ -1354,7 +1364,7 @@ export async function fulfilGuestAmend(checkoutId: string, ownerToken?: string, 
   if (!quoteRow) throw new GuestCheckoutError("Accepted quote not found", 503);
   const storedQuote = JSON.parse(quoteRow.quoteJson) as Record<string, unknown>;
   const {
-    currency: _c, nativeCheckoutReady: _n, beforeTaxRupees: _b, taxRupees: _t,
+    currency: _c, nativeCheckoutReady: _n, standardBeforeTaxRupees: _sb, savingsRupees: _s, beforeTaxRupees: _b, taxRupees: _t,
     totalRupees: _tr, dueNowPaise: _d, dueAtPropertyPaise: _dap, totalPaise: _tp, ...quoteInput
   } = storedQuote;
   const quote = buildNativeBookingQuote(quoteInput as Parameters<typeof buildNativeBookingQuote>[0]);

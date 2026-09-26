@@ -17,6 +17,9 @@ export type WebsiteCheckoutSnapshot = {
   acceptedQuoteId?: string | null;
   quoteSummary?: {
     nights: number;
+    standardBeforeTax?: number;
+    savings?: number;
+    directDiscountPercent?: number;
     beforeTax: number;
     tax: number;
     total: number;

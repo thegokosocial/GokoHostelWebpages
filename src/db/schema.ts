@@ -1350,6 +1350,24 @@ export const sitePageCopy = sqliteTable("site_page_copy", {
   updatedAt: text("updated_at").notNull().default(""),
 });
 
+export const siteRoomContent = sqliteTable("site_room_content", {
+  dormId: integer("dorm_id").primaryKey().references(() => dorms.id, { onDelete: "cascade" }),
+  publicName: text("public_name").notNull().default(""),
+  description: text("description").notNull().default(""),
+  amenities: text("amenities").notNull().default("[]"),
+  roomPhotos: text("room_photos").notNull().default("[]"),
+  washroomPhotos: text("washroom_photos").notNull().default("[]"),
+  updatedAt: text("updated_at").notNull().default(""),
+});
+
+export const sitePropertyContent = sqliteTable("site_property_content", {
+  id: integer("id").primaryKey(),
+  exteriorPhotos: text("exterior_photos").notNull().default("[]"),
+  commonPhotos: text("common_photos").notNull().default("[]"),
+  washroomPhotos: text("washroom_photos").notNull().default("[]"),
+  updatedAt: text("updated_at").notNull().default(""),
+});
+
 export const quickLinkSections = sqliteTable("quick_link_sections", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),

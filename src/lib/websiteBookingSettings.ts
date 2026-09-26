@@ -4,6 +4,7 @@ export const WEBSITE_BOOKING_SETTINGS_KEY = "website_booking_settings_v1";
 export const MAX_WEBSITE_BOOKING_BEDS = 100;
 export const websiteBookingSettingsSchema = z.object({
   maxSelectedBeds: z.number().int().min(1).max(MAX_WEBSITE_BOOKING_BEDS).default(4),
+  directBookingDiscountPercent: z.number().int().min(0).max(80).default(0),
   advancePercent: z.number().int().min(0).max(100).default(50),
   allowFullPayment: z.boolean().default(true),
   allowPayAtProperty: z.boolean().default(true),

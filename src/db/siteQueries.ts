@@ -1,10 +1,12 @@
-import { asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, or, sql } from "drizzle-orm";
 import { getDb } from "./index";
-import { siteCommunitySpaces, siteEvents, sitePageCopy } from "./schema";
+import { dorms, roomTypeMapping, siteCommunitySpaces, siteEvents, sitePageCopy, sitePropertyContent, siteRoomContent } from "./schema";
 
 export type SiteEventRow = typeof siteEvents.$inferSelect;
 export type SiteCommunitySpaceRow = typeof siteCommunitySpaces.$inferSelect;
 export type SitePageCopyRow = typeof sitePageCopy.$inferSelect;
+export type SiteRoomContentRow = typeof siteRoomContent.$inferSelect;
+export type SitePropertyContentRow = typeof sitePropertyContent.$inferSelect;
 
 function nowIso() {
   return new Date().toISOString();
@@ -116,6 +118,40 @@ export async function upsertSitePageCopy(page: string, content: string) {
   return db.insert(sitePageCopy).values({ page, content, updatedAt: nowIso() });
 }
 
+export async function getAccommodationContentRows() {
+  const db = getDb();
+  const [rooms, content, mappings, property] = await Promise.all([
+    db.select({ id: dorms.id, name: dorms.name, deletedAt: dorms.deletedAt }).from(dorms),
+    db.select().from(siteRoomContent),
+    db.select({ dormId: roomTypeMapping.dormId, isActive: roomTypeMapping.isActive }).from(roomTypeMapping),
+    db.select().from(sitePropertyContent).where(eq(sitePropertyContent.id, 1)).limit(1),
+  ]);
+  return { rooms, content, mappings, property: property[0] || null };
+}
+
+export async function saveSiteRoomContent(data: typeof siteRoomContent.$inferInsert, revision: string) {
+  const db = getDb();
+  const now = nowIso();
+  if (!data.dormId) return [];
+  if (revision === "missing") {
+    return db.insert(siteRoomContent).values({ ...data, updatedAt: now })
+      .onConflictDoNothing({ target: siteRoomContent.dormId }).returning();
+  }
+  return db.update(siteRoomContent).set({ ...data, updatedAt: now })
+    .where(and(eq(siteRoomContent.dormId, data.dormId), eq(siteRoomContent.updatedAt, revision))).returning();
+}
+
+export async function saveSitePropertyContent(data: Omit<typeof sitePropertyContent.$inferInsert, "id">, revision: string) {
+  const db = getDb();
+  const now = nowIso();
+  if (revision === "missing") {
+    return db.insert(sitePropertyContent).values({ id: 1, ...data, updatedAt: now })
+      .onConflictDoNothing({ target: sitePropertyContent.id }).returning();
+  }
+  return db.update(sitePropertyContent).set({ ...data, updatedAt: now })
+    .where(and(eq(sitePropertyContent.id, 1), eq(sitePropertyContent.updatedAt, revision))).returning();
+}
+
 /** True if any CMS row still points at this public media URL. */
 export async function countMediaUrlRefs(url: string): Promise<number> {
   if (!url) return 0;
@@ -132,5 +168,9 @@ export async function countMediaUrlRefs(url: string): Promise<number> {
     .select({ n: sql<number>`count(*)` })
     .from(sitePageCopy)
     .where(sql`instr(${sitePageCopy.content}, ${url}) > 0`);
-  return Number(events?.n ?? 0) + Number(spaces?.n ?? 0) + Number(copy?.n ?? 0);
+  const [rooms] = await db.select({ n: sql<number>`count(*)` }).from(siteRoomContent)
+    .where(or(sql`instr(${siteRoomContent.roomPhotos}, ${url}) > 0`, sql`instr(${siteRoomContent.washroomPhotos}, ${url}) > 0`));
+  const [property] = await db.select({ n: sql<number>`count(*)` }).from(sitePropertyContent)
+    .where(or(sql`instr(${sitePropertyContent.exteriorPhotos}, ${url}) > 0`, sql`instr(${sitePropertyContent.commonPhotos}, ${url}) > 0`, sql`instr(${sitePropertyContent.washroomPhotos}, ${url}) > 0`));
+  return Number(events?.n ?? 0) + Number(spaces?.n ?? 0) + Number(copy?.n ?? 0) + Number(rooms?.n ?? 0) + Number(property?.n ?? 0);
 }

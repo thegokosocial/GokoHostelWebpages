@@ -5,9 +5,10 @@ import { getAllDorms, getAvailableBedsForRange, getRoomTypeMappings, getRatePlan
 import { beds as bedsTable } from "@/db/schema";
 import { sellableUnits, stayNights, type InventoryBedRef } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
-import { BOOKING_TAX_SETTING, BOOKING_TAX_APPLY_WEBSITE_SETTING, DEFAULT_BOOKING_TAX_PERCENT, bookingTaxApplyEnabled } from "@/lib/bookingPricing";
+import { BOOKING_TAX_SETTING, BOOKING_TAX_APPLY_WEBSITE_SETTING, DEFAULT_BOOKING_TAX_PERCENT, bookingTaxApplyEnabled, directBookingRate } from "@/lib/bookingPricing";
 import { WEBSITE_BOOKING_SETTINGS_KEY, readWebsiteBookingSettings, MAX_WEBSITE_BOOKING_BEDS } from "@/lib/websiteBookingSettings";
 import { evaluateNativeCheckoutReadiness } from "@/lib/nativeCheckoutReadiness";
+import { loadAccommodationContent } from "@/lib/accommodationContent";
 
 const date = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/).refine(value => {
   const parsed = new Date(`${value}T00:00:00Z`);
@@ -19,8 +20,8 @@ export const guestSearchSchema = z.object({
   .refine(s => s.checkoutDate > s.checkinDate && Date.parse(s.checkoutDate) - Date.parse(s.checkinDate) <= 30 * 86400000, "Choose a stay of 1–30 nights")
   .refine(s => s.checkinDate >= todayIST() && Date.parse(s.checkinDate) - Date.parse(todayIST()) <= 365 * 86400000, "Choose an arrival within the next year");
 
-export type GuestRate = { id: number; name: string; nightlyRates: { date: string; rupees: number }[]; subtotalRupees: number };
-export type GuestRoom = { id: string; name: string; type: "Double" | "Bed"; capacity: number; availableUnits: number; rates?: GuestRate[] };
+export type GuestRate = { id: number; name: string; nightlyRates: { date: string; rupees: number }[]; standardNightlyRates?: { date: string; rupees: number }[]; subtotalRupees: number; standardSubtotalRupees?: number; savingsRupees?: number; directBookingDiscountPercent?: number };
+export type GuestRoom = { id: string; name: string; operationalName?: string; description?: string; amenities?: string[]; photos?: string[]; washroomPhotos?: string[]; type: "Double" | "Bed"; capacity: number; availableUnits: number; rates?: GuestRate[] };
 export function guestTaxPercent(raw: string | null) {
   if (raw === null) return DEFAULT_BOOKING_TAX_PERCENT;
   if (!raw.trim() || !Number.isFinite(Number(raw)) || Number(raw) < 0 || Number(raw) > 100) throw new Error("Invalid booking tax configuration");
@@ -86,14 +87,26 @@ export async function searchGuestRooms(input: unknown, opts?: { excludeBookingId
       ids.forEach(id => heldIds.add(id));
     }
   }
-  const [beds, available, dorms, mappings, plans, daily] = await Promise.all([
+  const [beds, available, dorms, mappings, plans, daily, settingsRaw, accommodation] = await Promise.all([
     db.select({ id: bedsTable.id, dormId: bedsTable.dormId, bedId: bedsTable.bedId, type: bedsTable.type }).from(bedsTable).where(sql`${bedsTable.deletedAt} IS NULL`),
     getAvailableBedsForRange(stay.checkinDate, stay.checkoutDate, undefined, opts?.excludeBookingId),
     getAllDorms(), getRoomTypeMappings(), getRatePlanMappings(), getAllDailyRates(stay.checkinDate, stay.checkoutDate),
+    getSetting(WEBSITE_BOOKING_SETTINGS_KEY),
+    loadAccommodationContent().catch(() => null),
   ]);
   const rooms = aggregateGuestRooms(beds, new Set(available.filter(b => b.pool === "online").map(b => b.id)), dorms.filter(d => !d.deletedAt), heldIds);
+  const settings = readWebsiteBookingSettings(settingsRaw);
   for (const room of rooms) {
     const dormId = Number(room.id.split("-")[0]);
+    const content = accommodation?.rooms.find((item) => item.dormId === dormId);
+    if (content) {
+      room.operationalName = room.name;
+      room.name = content.publicName;
+      room.description = content.description;
+      room.amenities = content.amenities;
+      room.photos = content.roomPhotos;
+      room.washroomPhotos = content.washroomPhotos;
+    }
     const activeMappings = mappings.filter(mapping => mapping.dormId === dormId && mapping.isActive === 1);
     room.rates = [];
     // An ambiguous mapping must not guess which room tariff to publish.
@@ -103,10 +116,17 @@ export async function searchGuestRooms(input: unknown, opts?: { excludeBookingId
       // A mixed bunk/double dorm cannot infer a double tariff from its single-bed base rate.
       if (room.type === "Double" && beds.some(bed => bed.dormId === dormId && bed.type !== "Double") && rows.some(row => row.date < stay.checkoutDate && row.adult2Rate == null)) continue;
       const rate = guestRateForStay(rows, stay.checkinDate, stay.checkoutDate, room.capacity, todayIST());
-      if (rate) room.rates.push({ id: plan.id, name: plan.ratePlanName, ...rate });
+      if (rate) {
+        const standardNightlyRates = rate.nightlyRates;
+        const nightlyRates = standardNightlyRates.map((night) => ({ ...night, rupees: directBookingRate(night.rupees, settings.directBookingDiscountPercent) }));
+        const subtotalRupees = nightlyRates.reduce((sum, night) => sum + night.rupees, 0);
+        room.rates.push({ id: plan.id, name: plan.ratePlanName, nightlyRates, standardNightlyRates,
+          subtotalRupees, standardSubtotalRupees: rate.subtotalRupees,
+          savingsRupees: rate.subtotalRupees - subtotalRupees,
+          directBookingDiscountPercent: settings.directBookingDiscountPercent });
+      }
     }
   }
-  const settings = readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY));
   let nativeCheckoutReady = false;
   let paymentOptions = {
     advancePercent: settings.advancePercent,

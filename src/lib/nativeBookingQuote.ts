@@ -15,6 +15,7 @@ const quoteInput = z.object({
   units: z.array(z.object({
     key: z.string().trim().min(1).max(128),
     nightlyRates: z.array(z.object({ date: calendarDate, rupees: money }).strict()).min(1).max(30),
+    standardNightlyRates: z.array(z.object({ date: calendarDate, rupees: money }).strict()).min(1).max(30).optional(),
   }).strict()).min(1).max(4),
 }).strict().refine((value) => value.checkoutDate > value.checkinDate &&
   (Date.parse(value.checkoutDate) - Date.parse(value.checkinDate)) / 86400000 <= 30, "Stay must be 1–30 nights");
@@ -33,9 +34,17 @@ export function buildNativeBookingQuote(input: z.input<typeof quoteInput>) {
     if (rates.size !== unit.nightlyRates.length || rates.size !== nights.length || nights.some((night) => !rates.has(night))) {
       throw new Error("Each selected unit requires exactly one server rate for every occupied night");
     }
-    return { key: unit.key, nightlyRates: nights.map((date) => ({ date, rupees: rates.get(date)! })) };
+    const standard = new Map((unit.standardNightlyRates || unit.nightlyRates).map((rate) => [rate.date, rate.rupees]));
+    if (standard.size !== nights.length || nights.some((night) => !standard.has(night))) {
+      throw new Error("Standard rates must cover every occupied night");
+    }
+    return { key: unit.key,
+      nightlyRates: nights.map((date) => ({ date, rupees: rates.get(date)! })),
+      standardNightlyRates: nights.map((date) => ({ date, rupees: standard.get(date)! })) };
   }).sort((a, b) => a.key.localeCompare(b.key));
   const beforeTax = units.reduce((sum, unit) => sum + unit.nightlyRates.reduce((subtotal, rate) => subtotal + BigInt(rate.rupees), BigInt(0)), BigInt(0));
+  const standardBeforeTax = units.reduce((sum, unit) => sum + unit.standardNightlyRates.reduce((subtotal, rate) => subtotal + BigInt(rate.rupees), BigInt(0)), BigInt(0));
+  if (standardBeforeTax < beforeTax) throw new Error("Direct rate cannot exceed its standard rate evidence");
   // Existing PMS convention: tax rounded once to whole rupees; deposit rounded upwards to whole rupees.
   const tax = (beforeTax * BigInt(parsed.taxBasisPoints) + BigInt(5000)) / BigInt(10000), total = beforeTax + tax;
   if (total === BigInt(0)) throw new Error("A booking quote must have a positive total");
@@ -45,6 +54,7 @@ export function buildNativeBookingQuote(input: z.input<typeof quoteInput>) {
   const dueNow = parsed.paymentChoice === "property" ? BigInt(0) : parsed.paymentChoice === "full" ? total
     : (total * BigInt(parsed.policy.advancePercent) + BigInt(99)) / BigInt(100);
   return { ...parsed, units, currency: "INR" as const, nativeCheckoutReady: false as const,
+    standardBeforeTaxRupees: safeMoney(standardBeforeTax), savingsRupees: safeMoney(standardBeforeTax - beforeTax),
     beforeTaxRupees: safeMoney(beforeTax), taxRupees: safeMoney(tax), totalRupees: safeMoney(total),
     dueNowPaise: safeMoney(dueNow * BigInt(100)), dueAtPropertyPaise: safeMoney((total - dueNow) * BigInt(100)),
     totalPaise: safeMoney(total * BigInt(100)),

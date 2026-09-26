@@ -16,6 +16,13 @@ describe("Native quote and refund calculators — no gateway or booking mutation
     expect(quote).toMatchObject({ beforeTaxRupees: 3003, taxRupees: 150, totalRupees: 3153, dueNowPaise: 157700,
       dueAtPropertyPaise: 157600, totalPaise: 315300, nativeCheckoutReady: false, currency: "INR" });
   });
+  it("retains standard-rate evidence and computes direct-booking savings", () => {
+    const input = request();
+    input.policy.directBookingDiscountPercent = 10;
+    expect(buildNativeBookingQuote({ ...input, units: [{ ...input.units[0], standardNightlyRates: [
+      { date: "2026-12-01", rupees: 1112 }, { date: "2026-12-02", rupees: 2224 },
+    ] }] })).toMatchObject({ standardBeforeTaxRupees: 3336, beforeTaxRupees: 3003, savingsRupees: 333 });
+  });
   it("copies accepted policy and rates rather than retaining mutable settings references", () => {
     const input = request(), quote = buildNativeBookingQuote(input);
     input.policy.advancePercent = 100; input.policy.policyText = "changed"; input.units[0].nightlyRates[0].rupees = 1;

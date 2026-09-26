@@ -7,6 +7,7 @@ export async function processSiteImage(file: File, kind: SiteImageKind): Promise
   const target = SITE_IMAGE_TARGETS[kind];
   let bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   try {
+    if (bitmap.width < 300 || bitmap.height < 300) throw new Error("Photo is too small. Use an image at least 300 × 300 pixels.");
     const edge = Math.max(bitmap.width, bitmap.height);
     if (edge > MAX_DECODE_EDGE) {
       const scale = MAX_DECODE_EDGE / edge;

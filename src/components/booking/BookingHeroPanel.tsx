@@ -192,6 +192,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const capacity = rooms?.reduce((sum, room) => sum + (selection[room.id] || 0) * room.capacity, 0) || 0;
   const chosenRate = (room: GuestRoom) => room.rates?.find(rate => rate.id === plans[room.id]) ?? room.rates?.[0];
   const subtotal = rooms?.reduce((sum, room) => sum + (selection[room.id] || 0) * (chosenRate(room)?.subtotalRupees || 0), 0) || 0;
+  const standardSubtotal = rooms?.reduce((sum, room) => sum + (selection[room.id] || 0) * (chosenRate(room)?.standardSubtotalRupees || chosenRate(room)?.subtotalRupees || 0), 0) || 0;
   const totals = taxPercent == null ? null : bookingTotals(subtotal, { taxPercent });
   const ready = !!searchedStay && maxSelectedBeds != null && selectedCount > 0 && selectedCount <= maxSelectedBeds && !!rooms?.every(room => !selection[room.id] || (selection[room.id] <= room.availableUnits && !!chosenRate(room)));
   function addRoom(room: GuestRoom, planId: number) {
@@ -461,7 +462,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         {rooms.length === 0 ? <p className="mt-3">No online beds are available for these dates. Try different dates or contact us.</p> : <>
           <div className="mt-4 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-4">{rooms.map((room, index) => {
-            const photos = resolveRoomGallery(room.name);
+            const photos = [...(room.photos?.length ? room.photos : resolveRoomGallery(room.operationalName || room.name)), ...(room.washroomPhotos || [])];
             const quantity = selection[room.id] || 0;
             const canAdd = canAddGuestRoom(rooms, selection, room, maxSelectedBeds ?? 0);
             return <article ref={index === 0 ? firstAvailabilityCardRef : undefined} key={room.id} className="scroll-mt-24 min-w-0 overflow-hidden rounded-2xl border border-brand-green/20 bg-white p-3 shadow-sm sm:p-4 xl:grid xl:grid-cols-[130px_minmax(0,1fr)_210px] xl:gap-4">
@@ -481,16 +482,16 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
                 </div>
                 <div className="min-w-0">
                   <h4 className="text-lg font-bold leading-snug">{room.name}</h4>
-                  <p className="mt-1 text-sm">{room.type === "Double" ? "Double bed in a shared dorm" : "Single bed in a shared dorm"}</p>
+                  <p className="mt-1 text-sm">{room.description || (room.type === "Double" ? "Double bed in a shared dorm" : "Single bed in a shared dorm")}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-full bg-brand-sand px-3 py-2">Sleeps {room.capacity} per bed</span><span className="rounded-full bg-brand-green/10 px-3 py-2">{room.availableUnits} beds available</span></div>
-                  <p className="mt-3 text-xs leading-relaxed text-brand-green">Non-AC · Individual fan · Locker · Charging point</p>
+                  <p className="mt-3 text-xs leading-relaxed text-brand-green">{room.amenities?.length ? room.amenities.slice(0, 6).join(" · ") : "Non-AC · Individual fan · Locker · Charging point"}</p>
                   <p className="mt-3 text-xs">Nightly prices and stay totals are per {room.type === "Double" ? "whole double bed" : "single bed"}. Taxes shown in your summary.</p>
                 </div>
               </div>
               <div className="mt-4 min-w-0 divide-y divide-brand-mist border-t border-brand-mist xl:mt-0 xl:border-t-0">{room.rates?.length ? room.rates.map(rate => {
                 const active = quantity > 0 && chosenRate(room)?.id === rate.id;
                 return <div key={rate.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
-                  <div className="min-w-0"><p className="text-xl font-bold">{rate.nightlyRates.some(night => night.rupees !== rate.nightlyRates[0]?.rupees) ? "From " : ""}{money(Math.min(...rate.nightlyRates.map(night => night.rupees)))} <span className="text-xs font-normal">/ bed / night</span></p><p className="mt-1 break-words text-sm">{rate.name}</p><p className="mt-1 text-xs">{money(rate.subtotalRupees)} per bed for {rate.nightlyRates.length} nights · Before taxes</p></div>
+                  <div className="min-w-0">{Number(rate.directBookingDiscountPercent) > 0 && <p className="mb-1 text-xs font-semibold text-emerald-700">Book direct — save {rate.directBookingDiscountPercent}%</p>}{Number(rate.directBookingDiscountPercent) > 0 && rate.standardNightlyRates?.length ? <p className="text-xs text-muted-foreground line-through">{money(Math.min(...rate.standardNightlyRates.map(night => night.rupees)))}</p> : null}<p className="text-xl font-bold">{rate.nightlyRates.some(night => night.rupees !== rate.nightlyRates[0]?.rupees) ? "From " : ""}{money(Math.min(...rate.nightlyRates.map(night => night.rupees)))} <span className="text-xs font-normal">/ bed / night</span></p><p className="mt-1 break-words text-sm">{rate.name}</p><p className="mt-1 text-xs">{money(rate.subtotalRupees)} per bed for {rate.nightlyRates.length} nights · Before taxes{Number(rate.savingsRupees) > 0 ? ` · Save ${money(Number(rate.savingsRupees))}` : ""}</p></div>
                   {active ? <div className="flex items-center gap-1 rounded-xl border border-brand-green/30"><button type="button" className="min-h-12 min-w-12 text-xl" aria-label={`Remove ${room.name}`} onClick={() => { setSelection(current => ({ ...current, [room.id]: Math.max(0, (current[room.id] || 0) - 1) })); setReview(false); }}>−</button><span className="min-w-4 text-center font-bold" aria-label={`${quantity} selected`}>{quantity}</span><button type="button" className="min-h-12 min-w-12 text-xl disabled:opacity-30" aria-label={`Add ${room.name} ${rate.name}`} disabled={!canAdd} onClick={() => addRoom(room, rate.id)}>+</button></div>
                     : <button type="button" className="min-h-12 rounded-xl border-2 border-brand-green px-3 font-semibold disabled:opacity-40" disabled={!quantity && !canAdd} aria-label={`${quantity ? "Switch rate for" : "Add"} ${room.name} ${rate.name}`} onClick={() => { if (quantity) { setPlans(current => ({ ...current, [room.id]: rate.id })); setReview(false); } else addRoom(room, rate.id); }}>{quantity ? "Switch rate" : "+ Add"}</button>}
                   <details className="col-span-2 text-xs"><summary className="min-h-12 cursor-pointer py-3">Nightly price breakdown</summary><ul className="space-y-1">{rate.nightlyRates.map(night => <li key={night.date} className="flex justify-between gap-2"><span>{night.date}</span><span>{money(night.rupees)}</span></li>)}</ul></details>
@@ -510,7 +511,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
             ) : null}
             {selectedCount && totals ? (
               <p className="col-span-2 text-xs xl:col-span-1">
-                Beds {money(subtotal)} + tax ({taxPercent}%) {money(totals.tax)}.
+                Beds {money(subtotal)} + tax ({taxPercent}%) {money(totals.tax)}{standardSubtotal > subtotal ? ` · You save ${money(standardSubtotal - subtotal)}` : ""}.
               </p>
             ) : null}
             {nativeCheckoutReady ? (

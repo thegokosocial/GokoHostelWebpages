@@ -1,6 +1,5 @@
 import { PageRibbon } from "@/components/layout/PageRibbon";
-import { Reveal } from "@/components/motion/Reveal";
-import { StayRoomCard } from "@/components/sections/CardWithModal";
+import { StayRoomsLive } from "@/components/sections/StayRoomsLive";
 import { BookNowButton } from "@/components/booking/BookNowButton";
 import { Container } from "@/components/ui/Container";
 import { Icon } from "@/components/ui/Icon";
@@ -8,10 +7,8 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import {
   stayAmenities,
   stayHero,
-  stayRoomSummaries,
   stayWhy,
 } from "@/content/stay";
-import { stayGalleryById } from "@/lib/stayGallery";
 import { buildMetadata } from "@/lib/seo";
 import { heroVideoB } from "@/lib/site";
 
@@ -34,27 +31,7 @@ export default function StayPage() {
         heroVideo={heroVideoB}
       />
 
-      <section className="py-16 md:py-24">
-        <Container>
-          <SectionHeader title="Our rooms" />
-          <p className="mx-auto mt-3 max-w-2xl text-center text-brand-green-dark/85">
-            Swipe through photos — then lock in your bed on our booking partner.
-          </p>
-          <p className="mx-auto mt-2 max-w-2xl text-center text-sm text-brand-green-dark/60">
-            Click any room to browse all photos
-          </p>
-          <div className="mt-14 space-y-20">
-            {stayRoomSummaries.map((room, i) => {
-              const imgs = stayGalleryById[room.id] ?? [];
-              return (
-                <Reveal key={room.id} delay={i * 0.05}>
-                  <StayRoomCard room={room} images={imgs} />
-                </Reveal>
-              );
-            })}
-          </div>
-        </Container>
-      </section>
+      <StayRoomsLive />
 
       <section className="relative py-16 md:py-24">
         <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />

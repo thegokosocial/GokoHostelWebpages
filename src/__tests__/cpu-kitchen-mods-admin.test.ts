@@ -328,7 +328,7 @@ describe("Admin bookings shell source-scan", () => {
     const section = route.match(/action === "getAvailableBeds"[\s\S]*?action === "getBookingHistory"/)?.[0];
     expect(section).toBeTruthy();
     expect(section!.split("getAllDailyRates").length - 1).toBe(1);
-    expect(section).toContain("getAllDailyRates(checkinDate, checkinDate)");
+    expect(section).toContain("getAllDailyRates(checkinDate, checkoutDate)");
     expect(section).not.toMatch(/await getDailyRates\(/);
   });
 

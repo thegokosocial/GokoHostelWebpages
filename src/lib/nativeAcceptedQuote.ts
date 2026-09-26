@@ -10,12 +10,14 @@ type Owner = Parameters<typeof getNativeInventoryHold>[0];
 type QuoteInput = Parameters<typeof buildNativeBookingQuote>[0];
 function result(row: typeof quotes.$inferSelect) {
   // Recompute/validate stored evidence instead of trusting duplicated computed JSON fields.
-  const stored = JSON.parse(row.quoteJson), { currency, nativeCheckoutReady, beforeTaxRupees, taxRupees,
+  const stored = JSON.parse(row.quoteJson), { currency, nativeCheckoutReady, standardBeforeTaxRupees, savingsRupees, beforeTaxRupees, taxRupees,
     totalRupees, dueNowPaise, dueAtPropertyPaise, totalPaise, ...input } = stored;
   const quote = buildNativeBookingQuote(input);
   if (currency !== quote.currency || nativeCheckoutReady !== false || beforeTaxRupees !== quote.beforeTaxRupees ||
     taxRupees !== quote.taxRupees || totalRupees !== quote.totalRupees || dueNowPaise !== quote.dueNowPaise ||
-    dueAtPropertyPaise !== quote.dueAtPropertyPaise || totalPaise !== quote.totalPaise) throw new Error("Invalid accepted quote evidence");
+    dueAtPropertyPaise !== quote.dueAtPropertyPaise || totalPaise !== quote.totalPaise ||
+    (standardBeforeTaxRupees !== undefined && standardBeforeTaxRupees !== quote.standardBeforeTaxRupees) ||
+    (savingsRupees !== undefined && savingsRupees !== quote.savingsRupees)) throw new Error("Invalid accepted quote evidence");
   return { id: row.id, holdId: row.holdId, acceptedAt: row.acceptedAt, quote, nativeCheckoutReady: false as const };
 }
 async function read(holdId: string) {

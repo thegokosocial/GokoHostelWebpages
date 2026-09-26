@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/auth";
 import { isPiRuntime } from "@/lib/runtime";
-import { getSetting, setSetting } from "@/db/queries";
+import { getAllDorms, getSetting, setSetting } from "@/db/queries";
 import { compareAndSetWebsiteSettings } from "@/lib/websiteBookingSettingsStore";
 import { site } from "@/lib/site";
 import {
@@ -21,6 +21,18 @@ import {
   parseBookingSmsTemplates,
   validateBookingSmsTemplates,
 } from "@/lib/bookingSmsTemplates";
+import { loadAccommodationContent, propertyContentInputSchema, roomContentInputSchema, sanitizePhotoList } from "@/lib/accommodationContent";
+import { countMediaUrlRefs, saveSitePropertyContent, saveSiteRoomContent } from "@/db/siteQueries";
+import { keyToMediaUrl, releasedMediaKeys } from "@/lib/mediaKeys";
+import { deleteMediaKeys } from "@/lib/mediaR2";
+
+async function cleanupReleased(keys: string[]) {
+  try {
+    const unused: string[] = [];
+    for (const key of keys) if (await countMediaUrlRefs(keyToMediaUrl(key)) === 0) unused.push(key);
+    if (unused.length) await deleteMediaKeys(unused);
+  } catch (error) { console.error("Accommodation media cleanup failed:", error); }
+}
 
 export async function POST(req: NextRequest) {
   let body;
@@ -50,6 +62,37 @@ export async function POST(req: NextRequest) {
           webhookUrl: `${site.url}/api/webhooks/razorpay`,
           policyStatus: readiness.nativeCheckoutReady ? "active_test" : "draft",
         }, { headers: { "Cache-Control": "no-store" } });
+      }
+      case "getAccommodationContent": {
+        return NextResponse.json(await loadAccommodationContent(), { headers: { "Cache-Control": "no-store" } });
+      }
+      case "saveRoomContent": {
+        const parsed = roomContentInputSchema.safeParse(body.content);
+        if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid room content" }, { status: 400 });
+        const dorm = (await getAllDorms()).find((row) => row.id === parsed.data.dormId && !row.deletedAt);
+        if (!dorm) return NextResponse.json({ error: "Room not found" }, { status: 404 });
+        const current = await loadAccommodationContent();
+        const before = current.rooms.find((room) => room.dormId === parsed.data.dormId);
+        const roomPhotos = sanitizePhotoList(parsed.data.roomPhotos);
+        const washroomPhotos = sanitizePhotoList(parsed.data.washroomPhotos);
+        const saved = await saveSiteRoomContent({ dormId: parsed.data.dormId, publicName: parsed.data.publicName,
+          description: parsed.data.description, amenities: JSON.stringify(parsed.data.amenities),
+          roomPhotos: JSON.stringify(roomPhotos), washroomPhotos: JSON.stringify(washroomPhotos) }, parsed.data.revision);
+        if (!saved.length) return NextResponse.json({ error: "Room content changed in another session. Reload before saving.", code: "ACCOMMODATION_CONTENT_CONFLICT" }, { status: 409 });
+        await cleanupReleased(releasedMediaKeys([...(before?.roomPhotos || []), ...(before?.washroomPhotos || [])], [...roomPhotos, ...washroomPhotos]));
+        return NextResponse.json({ success: true, content: (await loadAccommodationContent()).rooms.find((room) => room.dormId === parsed.data.dormId) });
+      }
+      case "savePropertyGallery": {
+        const parsed = propertyContentInputSchema.safeParse(body.content);
+        if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid property gallery" }, { status: 400 });
+        const current = await loadAccommodationContent();
+        const exteriorPhotos = sanitizePhotoList(parsed.data.exteriorPhotos);
+        const commonPhotos = sanitizePhotoList(parsed.data.commonPhotos);
+        const washroomPhotos = sanitizePhotoList(parsed.data.washroomPhotos);
+        const saved = await saveSitePropertyContent({ exteriorPhotos: JSON.stringify(exteriorPhotos), commonPhotos: JSON.stringify(commonPhotos), washroomPhotos: JSON.stringify(washroomPhotos) }, parsed.data.revision);
+        if (!saved.length) return NextResponse.json({ error: "Property gallery changed in another session. Reload before saving.", code: "ACCOMMODATION_CONTENT_CONFLICT" }, { status: 409 });
+        await cleanupReleased(releasedMediaKeys([...current.property.exteriorPhotos, ...current.property.commonPhotos, ...current.property.washroomPhotos], [...exteriorPhotos, ...commonPhotos, ...washroomPhotos]));
+        return NextResponse.json({ success: true, content: (await loadAccommodationContent()).property });
       }
       case "saveSettings": {
         if (!body.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) {

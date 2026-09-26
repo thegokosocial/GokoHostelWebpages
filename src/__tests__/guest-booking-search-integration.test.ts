@@ -46,6 +46,13 @@ describe("Guest availability SQL and rate assembly", () => {
     state.settings = JSON.stringify({ maxSelectedBeds: 0 });
     await expect(searchGuestRooms(stay())).rejects.toThrow();
   });
+  it("discounts each nightly channel rate and keeps comparison evidence", async () => {
+    state.adult1 = 701; state.settings = JSON.stringify({ directBookingDiscountPercent: 10 });
+    expect((await searchGuestRooms(stay())).rooms[0].rates?.[0]).toMatchObject({
+      nightlyRates: [{ rupees: 631 }, { rupees: 631 }], standardNightlyRates: [{ rupees: 701 }, { rupees: 701 }],
+      subtotalRupees: 1262, standardSubtotalRupees: 1402, savingsRupees: 140, directBookingDiscountPercent: 10,
+    });
+  });
   it("uses current online data, filters deleted beds and returns configured whole-stay prices", async () => {
     const result = await searchGuestRooms(stay());
     expect(result.rooms[0]).toMatchObject({ availableUnits: 1, rates: [{ name: "Standard", subtotalRupees: 1700 }] });

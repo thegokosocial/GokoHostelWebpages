@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
 import { DEFAULT_WEBSITE_BOOKING_SETTINGS, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
 import { RazorpayTestPreview } from "@/components/admin/RazorpayTestPreview";
+import { AccommodationContentManager } from "@/components/admin/AccommodationContentManager";
 import {
   BOOKING_EMAIL_KINDS,
   BOOKING_EMAIL_KIND_LABELS,
@@ -152,7 +153,12 @@ export function BookingSettings({ password, username }: { password: string; user
         Flip Test ↔ Live below, then Save. Live uses <code>RAZORPAY_LIVE_*</code> Worker secrets and charges real money.
       </p>
     </div>
-    <nav aria-label="Booking settings sections" className={managementSectionTabsClass}>
+    <label className="grid gap-1 text-sm sm:hidden">Booking settings section
+      <select className="min-h-12 rounded-xl border bg-white px-3" value={section} onChange={(event) => setSection(event.target.value as Section)}>
+        <option value="policies">Booking & Policies</option><option value="rooms">Rooms & Rates</option><option value="payments">Payments & Readiness</option><option value="emails">Email Templates</option><option value="sms">Text Templates</option>
+      </select>
+    </label>
+    <nav aria-label="Booking settings sections" className={cn(managementSectionTabsClass, "hidden sm:flex")}>
       {([["policies", "Booking & Policies"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"], ["emails", "Email Templates"], ["sms", "Text Templates"]] as const).map(([id, title]) =>
         <button
           type="button"
@@ -187,10 +193,17 @@ export function BookingSettings({ password, username }: { password: string; user
           <textarea className="min-h-32 rounded-lg border bg-background p-3" maxLength={4000} value={settings.policyText} onChange={(e) => setSettings({ ...settings, policyText: e.target.value })} />
         </label>
       </>}
-      {section === "rooms" && <div className="rounded-lg border p-4 text-sm">
-        <h3 className="font-semibold">Use existing rooms, rates and website content</h3>
-        <p className="mt-2">Inventory owns daily rates and restrictions. Website owns room descriptions and photographs. Channel Manager owns dorm and rate-plan mappings. Native guest-category publishing and sellable-unit mapping are still pending; no new rate catalogue is created here.</p>
-        <p className="mt-3"><a className="underline" href="/admin?section=inventory">Open Inventory</a> · <a className="underline" href="/admin?section=management&tab=website">Website content</a> · <a className="underline" href="/admin?section=management&tab=channelManager">Channel Manager</a></p>
+      {section === "rooms" && <div className="space-y-5">
+        <section className="rounded-2xl border bg-white p-4">
+          <h3 className="font-semibold">Book-direct advantage</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Discount Goko website bookings from the mapped Inventory/Aiosell standard channel rate. OTA-only promotions can still differ.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,16rem)_1fr] sm:items-end">
+            {numberField("directBookingDiscountPercent", "Direct booking discount (%)", 0, 80)}
+            <div className="rounded-xl bg-brand-sand/50 p-3 text-sm"><span className="text-muted-foreground line-through">₹1,000</span><strong className="ml-2 text-lg">₹{1000 - Number(settings.directBookingDiscountPercent) * 10}</strong><span className="ml-2 text-xs">direct</span></div>
+          </div>
+        </section>
+        <AccommodationContentManager password={password} username={username} />
+        <p className="text-sm"><a className="underline" href="/admin?section=inventory">Open Inventory</a> · <a className="underline" href="/admin?section=management&tab=channelManager">Channel Manager</a></p>
       </div>}
       {section === "payments" && <>
         <label className="grid max-w-sm gap-1 text-sm font-semibold">Gateway mode (flip here)

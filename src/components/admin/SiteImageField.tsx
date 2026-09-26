@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ImagePlusIcon, Loader2Icon, StarIcon, UploadIcon, XIcon } from "lucide-react";
+import { CameraIcon, ImagePlusIcon, Loader2Icon, StarIcon, UploadIcon, XIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { isMediaUrl } from "@/lib/mediaKeys";
 import { processSiteImage } from "@/lib/processSiteImage";
@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 type UploadOpts = {
   kind: SiteImageKind;
-  folder: "events" | "community" | "heroes" | "menu";
+  folder: "events" | "community" | "heroes" | "rooms" | "menu";
   password: string;
   username?: string;
 };
@@ -54,7 +54,7 @@ export function SiteImageField({
   label: string;
   value: string;
   kind: SiteImageKind;
-  folder: "events" | "community" | "heroes" | "menu";
+  folder: "events" | "community" | "heroes" | "rooms" | "menu";
   password: string;
   username?: string;
   onChange: (url: string) => void;
@@ -176,7 +176,7 @@ export function SiteImageGallery({
   label: string;
   values: string[];
   kind: SiteImageKind;
-  folder: "events" | "community" | "heroes" | "menu";
+  folder: "events" | "community" | "heroes" | "rooms" | "menu";
   password: string;
   username?: string;
   onChange: (urls: string[]) => void;
@@ -221,8 +221,9 @@ export function SiteImageGallery({
     }
     const batch = files.slice(0, room);
     setBusy(true);
-    try {
-      for (const file of batch) {
+    let failed = 0;
+    for (const file of batch) {
+      try {
         const url = await uploadProcessedImage(file, { kind, folder, password, username });
         if (!aliveRef.current) {
           discardPending(url, password, username);
@@ -230,13 +231,13 @@ export function SiteImageGallery({
         }
         pendingRef.current.add(url);
         onChange([...valuesRef.current, url]);
+      } catch {
+        failed += 1;
       }
-      if (files.length > room) setError(`Added ${batch.length}. Up to ${SITE_GALLERY_MAX} photos.`);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not process image");
-    } finally {
-      setBusy(false);
     }
+    if (failed) setError(`${failed} photo${failed === 1 ? "" : "s"} could not be added. The others were kept.`);
+    else if (files.length > room) setError(`Added ${batch.length}. Up to ${SITE_GALLERY_MAX} photos.`);
+    setBusy(false);
   };
 
   const removeAt = (index: number) => {
@@ -319,6 +320,7 @@ export function SiteImageGallery({
           </label>
         ) : null}
       </div>
+      {values.length < SITE_GALLERY_MAX ? <label className={cn("inline-flex min-h-11 w-fit cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm", (busy || disabled) && "pointer-events-none opacity-60")}><CameraIcon className="size-4" />Take photo<input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" disabled={busy || disabled} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void addFiles([file]); }} /></label> : null}
       {error ? <p className="text-xs text-red-500">{error}</p> : null}
     </div>
   );
