@@ -18,6 +18,12 @@ export function parseBillQrMode(raw: string | null | undefined): BillQrMode {
   return (VALID_MODES as readonly string[]).includes(s) ? (s as BillQrMode) : "static";
 }
 
+/** Leaving Razorpay dynamic for Static — retire open unpaid bill QRs so guests cannot pay stale codes. */
+export function shouldRetireOpenFoodQrsOnModeChange(prev: BillQrMode, next: BillQrMode): boolean {
+  const wasRazorpay = prev === "razorpay_test" || prev === "razorpay_live";
+  return wasRazorpay && next === "static";
+}
+
 /** Razorpay environment implied by a mode, or null for static. */
 export function environmentFromMode(mode: BillQrMode): RazorpayEnvironment | null {
   if (mode === "razorpay_test") return "test";

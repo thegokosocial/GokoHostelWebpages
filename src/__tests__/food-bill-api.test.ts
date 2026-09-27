@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+const foodQr = vi.hoisted(() => ({
+  retireAllOpenFoodQrAttempts: vi.fn(async () => ({
+    retiredAttemptIds: [] as string[],
+    skippedCapturedIds: [] as string[],
+  })),
+}));
+
 vi.mock("@/lib/auth", () => ({ authenticateUser: vi.fn() }));
 vi.mock("@/lib/mediaR2", () => ({ deleteMediaKeys: vi.fn(), getMediaBucket: vi.fn(), putMediaObject: vi.fn() }));
+vi.mock("@/lib/foodQrPayment", () => ({
+  retireAllOpenFoodQrAttempts: foodQr.retireAllOpenFoodQrAttempts,
+}));
 vi.mock("@/db/queries", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/db/queries")>();
   return {
@@ -51,6 +61,10 @@ async function post(body: Record<string, unknown>) {
 describe("Bill settings / branding API (real handler)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    foodQr.retireAllOpenFoodQrAttempts.mockResolvedValue({
+      retiredAttemptIds: [],
+      skippedCapturedIds: [],
+    });
     vi.mocked(authenticateUser).mockResolvedValue(admin);
     vi.mocked(getSetting).mockImplementation(async (key: string) => {
       const map: Record<string, string> = {
@@ -109,6 +123,56 @@ describe("Bill settings / branding API (real handler)", () => {
     expect(res.status).toBe(200);
     expect(order[0]).toBe("set:food_bill_payment_qr_url");
     expect(order[1]).toBe("del:bills/old.png");
+    expect(foodQr.retireAllOpenFoodQrAttempts).not.toHaveBeenCalled();
+  });
+
+  it("retires open food QRs when mode switches razorpay → static", async () => {
+    foodQr.retireAllOpenFoodQrAttempts.mockResolvedValueOnce({
+      retiredAttemptIds: ["a1", "a2"],
+      skippedCapturedIds: ["a3"],
+    });
+    vi.mocked(getSetting).mockImplementation(async (key: string) => {
+      if (key === "food_bill_qr_mode") return "razorpay_test";
+      return "";
+    });
+
+    const res = await post({
+      password: "x",
+      action: "updateFoodSettings",
+      settings: { food_bill_qr_mode: "static" },
+    });
+    expect(res.status).toBe(200);
+    expect(foodQr.retireAllOpenFoodQrAttempts).toHaveBeenCalledOnce();
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      retiredFoodQrAttemptIds: ["a1", "a2"],
+      skippedCapturedFoodQrIds: ["a3"],
+    });
+    expect(setSetting).toHaveBeenCalledWith("food_bill_qr_mode", "static");
+  });
+
+  it("does not retire when saving static while already static, or razorpay without leaving", async () => {
+    vi.mocked(getSetting).mockImplementation(async (key: string) => {
+      if (key === "food_bill_qr_mode") return "static";
+      return "";
+    });
+    await post({
+      password: "x",
+      action: "updateFoodSettings",
+      settings: { food_bill_qr_mode: "static" },
+    });
+    expect(foodQr.retireAllOpenFoodQrAttempts).not.toHaveBeenCalled();
+
+    vi.mocked(getSetting).mockImplementation(async (key: string) => {
+      if (key === "food_bill_qr_mode") return "razorpay_test";
+      return "";
+    });
+    await post({
+      password: "x",
+      action: "updateFoodSettings",
+      settings: { food_bill_qr_mode: "razorpay_live" },
+    });
+    expect(foodQr.retireAllOpenFoodQrAttempts).not.toHaveBeenCalled();
   });
 
   it("mirrors live guest tab GST split math", () => {

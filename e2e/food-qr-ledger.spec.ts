@@ -3,7 +3,14 @@ import { expect, test, type Page } from "@playwright/test";
 const ATTEMPT_ACTIVE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ATTEMPT_CREATING = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-type FoodPayBody = { action?: string; attemptId?: string };
+type FoodPayBody = {
+  action?: string;
+  attemptId?: string;
+  query?: string;
+  fromDate?: string;
+  toDate?: string;
+  page?: number;
+};
 
 async function mockRazorpayPaymentsAdmin(page: Page) {
   type AttemptRow = {
@@ -43,7 +50,20 @@ async function mockRazorpayPaymentsAdmin(page: Page) {
       guestPhone: "1122334455",
       createdAt: "2026-09-27T15:33:19.000Z",
       closeBy: null,
-      foodOrderIds: "[70]",
+      foodOrderIds: "[70,71,72,73,74]",
+      payments: [],
+    },
+    {
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      state: "expired",
+      environment: "test",
+      paymentAmountPaise: 200,
+      qrCodeId: "qr_expired1",
+      guestName: "Expired Guest",
+      guestPhone: "999",
+      createdAt: "2026-09-20T15:33:19.000Z",
+      closeBy: "2026-09-27T15:33:19.000Z",
+      foodOrderIds: "[99]",
       payments: [],
     },
   ];
@@ -72,7 +92,41 @@ async function mockRazorpayPaymentsAdmin(page: Page) {
     if (url.pathname === "/api/admin/food-payments") {
       calls.push(body);
       if (body.action === "listFoodQrAttempts") {
-        await route.fulfill({ json: { attempts } });
+        const q = (body.query || "").trim().toLowerCase();
+        let rows = attempts;
+        if (q) {
+          rows = rows.filter((row) => {
+            const hay = [
+              row.guestName,
+              row.guestPhone,
+              row.qrCodeId,
+              row.id,
+              row.foodOrderIds,
+              ...row.payments.map((p) => p.id),
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase();
+            return hay.includes(q);
+          });
+        }
+        if (body.fromDate || body.toDate) {
+          rows = rows.filter((row) => {
+            const day = new Date(row.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+            if (body.fromDate && day < body.fromDate) return false;
+            if (body.toDate && day > body.toDate) return false;
+            return true;
+          });
+        }
+        await route.fulfill({
+          json: {
+            attempts: rows,
+            page: body.page || 1,
+            pageSize: 25,
+            total: rows.length,
+            totalPages: 1,
+          },
+        });
         return;
       }
       if (body.action === "reconcileFoodQrAttempt") {
@@ -94,7 +148,6 @@ async function mockRazorpayPaymentsAdmin(page: Page) {
       await route.fulfill({ json: {} });
       return;
     }
-    // Minimal stubs for Management shell
     if (body.action === "getSettings" || body.action === "listDorms") {
       await route.fulfill({ json: { dorms: [], settings: {} } });
       return;
@@ -123,13 +176,17 @@ test.describe("Food Razorpay payments ledger", () => {
     await expect(page.getByText("Pawan test")).toBeVisible();
     await expect(page.getByText("Manu")).toBeVisible();
     await expect(page.getByText("Retire QR").first()).toBeVisible();
-    await expect(page.getByText(/Retire QR cancels an unpaid open QR/i)).toBeVisible();
+    await expect(page.getByText(/Switching Bill Settings to Static also retires/i)).toBeVisible();
 
-    // Creating row has no qrCodeId — Reconcile disabled; Retire still available
+    await expect(page.getByRole("button", { name: "Reconcile" })).toHaveCount(1);
     const retireButtons = page.getByRole("button", { name: "Retire QR" });
     await expect(retireButtons).toHaveCount(2);
 
-    await page.getByRole("button", { name: "Reconcile" }).first().click();
+    await expect(page.getByRole("button", { name: "+2 more" })).toBeVisible();
+    await page.getByRole("button", { name: "+2 more" }).click();
+    await expect(page.getByText("70, 71, 72, 73, 74")).toBeVisible();
+
+    await page.getByRole("button", { name: "Reconcile" }).click();
     await expect.poll(() => calls.some((c) => c.action === "reconcileFoodQrAttempt")).toBe(true);
 
     await retireButtons.first().click();
@@ -137,16 +194,28 @@ test.describe("Food Razorpay payments ledger", () => {
     await expect(page.getByText(/QR retired/i)).toBeVisible({ timeout: 5000 });
   });
 
-  test("desktop Food tab lists Outcome and search", async ({ page }) => {
+  test("desktop Food tab lists Outcome, date range, and search", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await mockRazorpayPaymentsAdmin(page);
+    const { calls } = await mockRazorpayPaymentsAdmin(page);
     await openFoodLedger(page);
 
     await expect(page.getByRole("columnheader", { name: "Outcome" })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Orders" })).toBeVisible();
+    await expect(page.getByText("25 entries per page")).toBeVisible();
+    await expect(page.getByPlaceholder(/Guest, phone, order id/i)).toBeVisible();
+
     await page.getByPlaceholder(/Guest, phone, order id/i).fill("Manu");
     await page.getByRole("button", { name: "Search", exact: true }).click();
+    await expect.poll(() =>
+      calls.some((c) => c.action === "listFoodQrAttempts" && c.query === "Manu"),
+    ).toBe(true);
     await expect(page.getByText("Manu")).toBeVisible();
     await expect(page.getByText("Pawan test")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await expect.poll(() =>
+      calls.some((c) => c.action === "listFoodQrAttempts" && !c.query && !c.fromDate && !c.toDate),
+    ).toBe(true);
+    await expect(page.getByText("Pawan test")).toBeVisible();
   });
 });

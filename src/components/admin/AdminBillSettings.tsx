@@ -31,7 +31,11 @@ const DEFAULTS: BillSettings = {
 };
 
 const QR_MODE_OPTIONS: Array<{ value: BillQrMode; label: string; hint: string }> = [
-  { value: "static", label: "Static QR image", hint: "Uploaded UPI QR; guest may enter amount; staff verifies" },
+  {
+    value: "static",
+    label: "Static QR image",
+    hint: "Uploaded UPI QR; guest may enter amount; staff verifies. Saving Static closes any open Razorpay bill QRs.",
+  },
   { value: "razorpay_test", label: "Razorpay dynamic (Test)", hint: "Fixed-amount UPI QR via Razorpay Test keys" },
   { value: "razorpay_live", label: "Razorpay dynamic (Live)", hint: "Fixed-amount UPI QR via Razorpay Live keys" },
 ];
@@ -97,7 +101,17 @@ export function AdminBillSettings({ password, username }: { password: string; us
       const res = await apiCall({ action: "updateFoodSettings", settings: payload });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
-      showSuccess("Bill settings saved");
+      const retired = Array.isArray(data.retiredFoodQrAttemptIds) ? data.retiredFoodQrAttemptIds.length : 0;
+      const skipped = Array.isArray(data.skippedCapturedFoodQrIds) ? data.skippedCapturedFoodQrIds.length : 0;
+      if (retired > 0 || skipped > 0) {
+        showSuccess(
+          skipped
+            ? `Bill settings saved — retired ${retired} open QR${retired === 1 ? "" : "s"} (${skipped} already paid, left alone)`
+            : `Bill settings saved — retired ${retired} open Razorpay QR${retired === 1 ? "" : "s"}`,
+        );
+      } else {
+        showSuccess("Bill settings saved");
+      }
       setDirty(false);
       await loadSettings();
     } catch (e: unknown) {

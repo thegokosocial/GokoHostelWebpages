@@ -143,9 +143,12 @@ function insertActiveAttempt(
     notes?: string;
     orderIds?: number[];
     amountPaise?: number;
+    guestName?: string;
+    guestPhone?: string;
+    createdAt?: string;
   },
 ) {
-  const now = new Date().toISOString();
+  const now = opts.createdAt ?? new Date().toISOString();
   const closeBy = new Date(Date.now() + 86400000).toISOString();
   const orderIds = opts.orderIds ?? [opts.orderId];
   const amount = opts.amountPaise ?? 10000;
@@ -156,8 +159,8 @@ function insertActiveAttempt(
   sqlite.prepare(`
     INSERT INTO food_qr_attempts (
       id, request_key, environment, state, qr_code_id, qr_image_url, payment_amount_paise, snapshot_due_paise,
-      food_order_ids, close_by, notes, created_at, updated_at
-    ) VALUES (?, ?, 'test', 'active', ?, 'https://example.com/p.png', ?, ?, ?, ?, ?, ?, ?)
+      food_order_ids, guest_name, guest_phone, close_by, notes, created_at, updated_at
+    ) VALUES (?, ?, 'test', 'active', ?, 'https://example.com/p.png', ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     opts.attemptId,
     opts.requestKey,
@@ -165,6 +168,8 @@ function insertActiveAttempt(
     amount,
     amount,
     JSON.stringify(orderIds),
+    opts.guestName ?? "",
+    opts.guestPhone ?? "",
     closeBy,
     opts.notes ?? defaultNotes,
     now,
@@ -511,6 +516,65 @@ describe("closeActiveFoodQrAttempt (disposable SQLite)", () => {
 
     const snap = await reconcileFoodQrAttempt(ATTEMPT_A);
     expect(snap.state).toBe("active");
+  });
+
+  it("retireAllOpenFoodQrAttempts closes open QRs and skips captured ones", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-bulk-a", qrCodeId: "qr_bulk_a" });
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_B, orderId: 11, requestKey: "rk-bulk-b", qrCodeId: "qr_bulk_b" });
+    sqlite.prepare(`
+      INSERT INTO food_qr_payments (id, attempt_id, amount_paise, status, captured, refunded_paise, verified_at)
+      VALUES ('pay_cap', ?, 10000, 'captured', 1, 0, ?)
+    `).run(ATTEMPT_B, new Date().toISOString());
+
+    const { retireAllOpenFoodQrAttempts } = await import("@/lib/foodQrPayment");
+    const result = await retireAllOpenFoodQrAttempts();
+    expect(result.retiredAttemptIds).toContain(ATTEMPT_A);
+    expect(result.skippedCapturedIds).toContain(ATTEMPT_B);
+    expect(sqlite.prepare("SELECT state FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({
+      state: "closed",
+    });
+    expect(sqlite.prepare("SELECT state FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_B)).toEqual({
+      state: "active",
+    });
+  });
+
+  it("listFoodQrAttempts filters by guest query and IST date range", async () => {
+    insertActiveAttempt(sqlite, {
+      attemptId: ATTEMPT_A,
+      orderId: 10,
+      requestKey: "rk-list-a",
+      qrCodeId: "qr_list_a",
+      guestName: "Pawan test",
+      guestPhone: "123454321",
+      createdAt: "2026-09-27T10:00:00.000Z",
+    });
+    insertActiveAttempt(sqlite, {
+      attemptId: ATTEMPT_B,
+      orderId: 11,
+      requestKey: "rk-list-b",
+      qrCodeId: "qr_list_b",
+      guestName: "Manu",
+      guestPhone: "999",
+      createdAt: "2026-09-20T10:00:00.000Z",
+    });
+    sqlite.prepare(`
+      INSERT INTO food_qr_payments (id, attempt_id, amount_paise, status, captured, refunded_paise, verified_at)
+      VALUES ('pay_list_a', ?, 10000, 'captured', 1, 0, ?)
+    `).run(ATTEMPT_A, "2026-09-27T11:00:00.000Z");
+
+    const { listFoodQrAttempts } = await import("@/lib/foodQrPayment");
+    const byGuest = await listFoodQrAttempts({ query: "Pawan" });
+    expect(byGuest.attempts.map((a) => a.id)).toEqual([ATTEMPT_A]);
+    expect(byGuest.total).toBe(1);
+
+    const byPay = await listFoodQrAttempts({ query: "pay_list_a" });
+    expect(byPay.attempts.map((a) => a.id)).toEqual([ATTEMPT_A]);
+
+    const byDay = await listFoodQrAttempts({ fromDate: "2026-09-27", toDate: "2026-09-27" });
+    expect(byDay.attempts.map((a) => a.id)).toEqual([ATTEMPT_A]);
+
+    const older = await listFoodQrAttempts({ fromDate: "2026-09-20", toDate: "2026-09-20" });
+    expect(older.attempts.map((a) => a.id)).toEqual([ATTEMPT_B]);
   });
 });
 

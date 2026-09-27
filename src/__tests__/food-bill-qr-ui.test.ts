@@ -87,6 +87,42 @@ describe("foodBillQrUiLocksEdits / foodBillQrRetireAttemptId", () => {
   });
 });
 
+describe("foodQrCreatedAtBounds", () => {
+  it("maps inclusive IST days to UTC ISO bounds", async () => {
+    const { foodQrCreatedAtBounds } = await import("@/lib/foodBillQrUi");
+    expect(foodQrCreatedAtBounds()).toEqual({ fromIso: null, toExclusiveIso: null });
+    expect(foodQrCreatedAtBounds("bad", "also-bad")).toEqual({ fromIso: null, toExclusiveIso: null });
+    const bounds = foodQrCreatedAtBounds("2026-09-27", "2026-09-27");
+    expect(bounds.fromIso).toBe("2026-09-26T18:30:00.000Z");
+    expect(bounds.toExclusiveIso).toBe("2026-09-27T18:30:00.000Z");
+  });
+});
+
+describe("foodQrAttemptCanReconcile / formatFoodQrOrderIdsPreview", () => {
+  it("Reconcile only for open attempts with a gateway qrCodeId", async () => {
+    const { foodQrAttemptCanReconcile } = await import("@/lib/foodBillQrUi");
+    expect(foodQrAttemptCanReconcile({ state: "active", qrCodeId: "qr_x" })).toBe(true);
+    expect(foodQrAttemptCanReconcile({ state: "creating", qrCodeId: "qr_x" })).toBe(true);
+    expect(foodQrAttemptCanReconcile({ state: "creating", qrCodeId: null })).toBe(false);
+    expect(foodQrAttemptCanReconcile({ state: "expired", qrCodeId: "qr_x" })).toBe(false);
+    expect(foodQrAttemptCanReconcile({ state: "closed", qrCodeId: "qr_x" })).toBe(false);
+    expect(foodQrAttemptCanReconcile({ state: "paid", qrCodeId: "qr_x" })).toBe(false);
+  });
+
+  it("collapses order ids after the first three", async () => {
+    const { formatFoodQrOrderIdsPreview } = await import("@/lib/foodBillQrUi");
+    expect(formatFoodQrOrderIdsPreview([1, 2])).toEqual({ visible: [1, 2], hiddenCount: 0 });
+    expect(formatFoodQrOrderIdsPreview([1, 2, 3, 4, 5])).toEqual({
+      visible: [1, 2, 3],
+      hiddenCount: 2,
+    });
+    expect(formatFoodQrOrderIdsPreview([10, 11, 12, 13], { limit: 2 })).toEqual({
+      visible: [10, 11],
+      hiddenCount: 2,
+    });
+  });
+});
+
 describe("mapFoodQrAttemptToUi", () => {
   it("maps active with image", () => {
     expect(mapFoodQrAttemptToUi({

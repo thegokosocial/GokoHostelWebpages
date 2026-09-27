@@ -355,7 +355,7 @@ describe("closeActiveFoodQr admin action", () => {
       displayName: "Staff",
       permissions: { canMarkPaid: true },
     });
-    const list = await foodPaymentsPost(paymentsReq("listFoodQrAttempts", { limit: 10 }));
+    const list = await foodPaymentsPost(paymentsReq("listFoodQrAttempts", { page: 1, query: "x" }));
     expect(list.status).toBe(403);
     const close = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: ATTEMPT }));
     expect(close.status).toBe(200);
@@ -363,7 +363,7 @@ describe("closeActiveFoodQr admin action", () => {
 });
 
 describe("wiring: ledger columns + kitchen reject + admin banner", () => {
-  it("FoodPaymentsLedger exposes Room-like columns and Retire QR", () => {
+  it("FoodPaymentsLedger exposes Room-like columns, open-only Reconcile, and order collapse", () => {
     const ledger = readFileSync("src/components/admin/FoodPaymentsLedger.tsx", "utf8");
     expect(ledger).toContain("Outcome");
     expect(ledger).toContain("Orders");
@@ -372,8 +372,14 @@ describe("wiring: ledger columns + kitchen reject + admin banner", () => {
     expect(ledger).toContain("Retire QR");
     expect(ledger).toContain("Reconcile");
     expect(ledger).toContain("foodQrAttemptOutcome");
-    expect(ledger).toContain("limit: 100");
-    expect(ledger).toContain("!row.qrCodeId");
+    expect(ledger).toContain("foodQrAttemptCanReconcile");
+    expect(ledger).toContain("formatFoodQrOrderIdsPreview");
+    expect(ledger).toContain("+{hiddenCount} more");
+    expect(ledger).toContain("DateRangePicker");
+    expect(ledger).toContain("fromDate");
+    expect(ledger).toContain("toDate");
+    expect(ledger).toContain("25 entries per page");
+    expect(ledger).toContain("canReconcile &&");
   });
 
   it("kitchen updateItemQuantity rejects active QR claims", () => {
@@ -395,9 +401,21 @@ describe("wiring: ledger columns + kitchen reject + admin banner", () => {
   it("foodQrPayment wires Retire via finalizeOpenFoodQrAttempt + desk release", () => {
     const src = readFileSync("src/lib/foodQrPayment.ts", "utf8");
     expect(src).toContain("export async function closeActiveFoodQrAttempt");
+    expect(src).toContain("export async function retireAllOpenFoodQrAttempts");
     expect(src).toContain("return releaseFoodQrForDeskPayment(orderIds)");
     expect(src).toContain("finalizeOpenFoodQrAttempt");
     expect(src).toContain('finalizeOpenFoodQrAttempt(existing.attemptId, "expired")');
-    expect(src).toContain("Math.min(opts.limit || 100, 100)");
+    expect(src).toContain("FOOD_QR_LIST_PAGE_SIZE");
+    expect(src).toContain("foodQrCreatedAtBounds");
+  });
+
+  it("Bill Settings updateFoodSettings retires open QRs when switching to static", () => {
+    const route = readFileSync("src/app/api/admin/food/route.ts", "utf8");
+    const bill = readFileSync("src/components/admin/AdminBillSettings.tsx", "utf8");
+    expect(route).toContain("shouldRetireOpenFoodQrsOnModeChange");
+    expect(route).toContain("retireAllOpenFoodQrAttempts");
+    expect(route).toContain("retiredFoodQrAttemptIds");
+    expect(bill).toContain("Saving Static closes any open Razorpay bill QRs");
+    expect(bill).toContain("retiredFoodQrAttemptIds");
   });
 });

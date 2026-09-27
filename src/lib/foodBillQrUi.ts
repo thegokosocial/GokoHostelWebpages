@@ -35,6 +35,25 @@ export function foodQrAttemptIsCloseable(state: string): boolean {
   return state === "active" || state === "creating" || state === "qr_unknown";
 }
 
+/** Ledger Reconcile: only while attempt can still change at Razorpay (open + gateway id). */
+export function foodQrAttemptCanReconcile(opts: {
+  state: string;
+  qrCodeId?: string | null;
+}): boolean {
+  if (!opts.qrCodeId) return false;
+  return opts.state === "active" || opts.state === "creating" || opts.state === "qr_unknown";
+}
+
+/** Collapse long order-id lists: first `limit` ids + hiddenCount. */
+export function formatFoodQrOrderIdsPreview(
+  ids: number[],
+  opts?: { limit?: number },
+): { visible: number[]; hiddenCount: number } {
+  const limit = Math.max(1, opts?.limit ?? 3);
+  if (ids.length <= limit) return { visible: ids, hiddenCount: 0 };
+  return { visible: ids.slice(0, limit), hiddenCount: ids.length - limit };
+}
+
 export function parseFoodQrOrderIds(raw: unknown): number[] {
   if (Array.isArray(raw)) {
     return raw.map(Number).filter((n) => Number.isInteger(n) && n > 0);
@@ -49,7 +68,25 @@ export function parseFoodQrOrderIds(raw: unknown): number[] {
   return [];
 }
 
-/** Client-side Food ledger search (guest / phone / qr_ / pay_ / order id). */
+/** Inclusive IST calendar days → UTC ISO bounds for `created_at` filters (matches Room ledger). */
+export function foodQrCreatedAtBounds(fromDate?: string, toDate?: string): {
+  fromIso: string | null;
+  toExclusiveIso: string | null;
+} {
+  const dayStart = (date: string, endExclusive = false): string | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const parsed = new Date(`${date}T00:00:00.000+05:30`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    if (endExclusive) parsed.setTime(parsed.getTime() + 24 * 60 * 60 * 1000);
+    return parsed.toISOString();
+  };
+  return {
+    fromIso: fromDate ? dayStart(fromDate) : null,
+    toExclusiveIso: toDate ? dayStart(toDate, true) : null,
+  };
+}
+
+/** Food ledger text search (guest / phone / qr_ / pay_ / order id / attempt id). */
 export function foodQrAttemptMatchesQuery(
   row: {
     guestName?: string | null;

@@ -16,8 +16,16 @@ import { RazorpayError } from "@/lib/razorpay";
 
 const credentials = { password: z.string().max(1024), username: z.string().max(100).optional() };
 const id = z.string().uuid();
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const bodySchema = z.discriminatedUnion("action", [
-  z.object({ ...credentials, action: z.literal("listFoodQrAttempts"), limit: z.number().int().min(1).max(100).optional() }).strict(),
+  z.object({
+    ...credentials,
+    action: z.literal("listFoodQrAttempts"),
+    page: z.number().int().min(1).optional(),
+    query: z.string().trim().max(120).optional(),
+    fromDate: isoDate.optional(),
+    toDate: isoDate.optional(),
+  }).strict(),
   z.object({ ...credentials, action: z.literal("getFoodQrAttempt"), attemptId: id }).strict(),
   z.object({ ...credentials, action: z.literal("reconcileFoodQrAttempt"), attemptId: id }).strict(),
   z.object({ ...credentials, action: z.literal("closeActiveFoodQr"), attemptId: id }).strict(),
@@ -65,7 +73,12 @@ export async function POST(req: NextRequest) {
 
     switch (parsed.data.action) {
       case "listFoodQrAttempts":
-        return NextResponse.json({ attempts: await listFoodQrAttempts({ limit: parsed.data.limit }) }, { headers });
+        return NextResponse.json(await listFoodQrAttempts({
+          page: parsed.data.page,
+          query: parsed.data.query,
+          fromDate: parsed.data.fromDate,
+          toDate: parsed.data.toDate,
+        }), { headers });
       case "getFoodQrAttempt":
         return NextResponse.json({ attempt: await getFoodQrAttempt(parsed.data.attemptId) }, { headers });
       case "reconcileFoodQrAttempt":

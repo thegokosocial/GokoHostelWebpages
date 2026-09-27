@@ -20,7 +20,10 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(adminRoute).toContain("canGenerateFoodBills");
     expect(adminRoute).toContain("ensureActiveFoodQrForOrders");
     expect(adminRoute).toContain("isPiRuntime");
-    expect(adminRoute).toContain('limit: z.number().int().min(1).max(100)');
+    expect(adminRoute).toContain("fromDate: isoDate.optional()");
+    expect(adminRoute).toContain("toDate: isoDate.optional()");
+    expect(adminRoute).toContain("query: z.string().trim().max(120).optional()");
+    expect(adminRoute).toContain("page: z.number().int().min(1).optional()");
   });
 
   it("guest QR route is share-token only with checkin/walk-in scope and never trusts client amount", () => {
@@ -74,6 +77,8 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(hook).toContain("onPaid");
     expect(hook).toContain("paidNotifiedRef");
     expect(ledger).toContain("listFoodQrAttempts");
+    expect(ledger).toContain("DateRangePicker");
+    expect(ledger).toContain("fromDate");
     expect(ledger).toContain("reconcileFoodQrAttempt");
     expect(ledger).toContain("closeActiveFoodQr");
     expect(ledger).toContain("foodQrAttemptOutcome");

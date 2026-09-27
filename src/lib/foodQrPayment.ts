@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import {
@@ -8,6 +8,7 @@ import {
 import { getSetting, getFoodOrdersByIds, getFoodOrderItemsBatch, updateFoodOrderPayment } from "@/db/queries";
 import { foodDue, foodAmountPaid } from "@/lib/foodPaymentBalance";
 import { parseBillQrMode, effectiveMode, environmentFromMode, BILL_QR_MODE_KEY } from "@/lib/foodBillQrMode";
+import { foodQrCreatedAtBounds } from "@/lib/foodBillQrUi";
 import { isPiRuntime } from "@/lib/runtime";
 import {
   RazorpayError, razorpayCredentials, workerEnv,
@@ -539,6 +540,40 @@ async function finalizeOpenFoodQrAttempt(
 }
 
 /**
+ * Retire every open unpaid food QR (Bill Settings → Static).
+ * Capture races on individual attempts are skipped so mode switch is never blocked.
+ */
+export async function retireAllOpenFoodQrAttempts(): Promise<{
+  retiredAttemptIds: string[];
+  skippedCapturedIds: string[];
+}> {
+  if (isPiRuntime()) return { retiredAttemptIds: [], skippedCapturedIds: [] };
+  try {
+    const open = await getDb().select({ id: attempts.id }).from(attempts)
+      .where(inArray(attempts.state, [...OPEN_FOOD_QR_STATES]));
+    const retiredAttemptIds: string[] = [];
+    const skippedCapturedIds: string[] = [];
+    for (const row of open) {
+      try {
+        await finalizeOpenFoodQrAttempt(row.id, "closed");
+        retiredAttemptIds.push(row.id);
+      } catch (error) {
+        if (error instanceof FoodQrError && error.status === 409) {
+          skippedCapturedIds.push(row.id);
+          continue;
+        }
+        throw error;
+      }
+    }
+    return { retiredAttemptIds, skippedCapturedIds };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (/no such table|food_qr_/i.test(msg)) return { retiredAttemptIds: [], skippedCapturedIds: [] };
+    throw error;
+  }
+}
+
+/**
  * Retire one open food QR by attempt id (ledger / Bill drawer Retire QR).
  * Reuses desk release: reconcile → abort if captured → close provider QR → release claims.
  */
@@ -722,11 +757,45 @@ export async function processFoodQrWebhook(eventId: string) {
 
 // --- Admin ---
 
-export async function listFoodQrAttempts(opts: { limit?: number } = {}) {
+const FOOD_QR_LIST_PAGE_SIZE = 25;
+
+export type ListFoodQrAttemptsFilters = {
+  page?: number;
+  query?: string;
+  fromDate?: string;
+  toDate?: string;
+};
+
+/** Paginated Food QR attempts for admin ledger (text + IST date range, Room-parity). */
+export async function listFoodQrAttempts(opts: ListFoodQrAttemptsFilters = {}) {
   cloudOnly();
   const db = getDb();
-  const limit = Math.min(opts.limit || 100, 100);
-  const rows = await db.select().from(attempts).orderBy(desc(attempts.createdAt)).limit(limit);
+  const page = Math.max(1, Math.floor(opts.page || 1));
+  const conditions = [];
+  const query = opts.query?.trim();
+  if (query) {
+    const pattern = `%${query}%`;
+    const payHits = await db.select({ attemptId: payments.attemptId }).from(payments).where(like(payments.id, pattern));
+    const payAttemptIds = [...new Set(payHits.map((row) => row.attemptId))];
+    conditions.push(or(
+      like(attempts.guestName, pattern),
+      like(attempts.guestPhone, pattern),
+      like(attempts.qrCodeId, pattern),
+      like(attempts.id, pattern),
+      like(attempts.foodOrderIds, pattern),
+      ...(payAttemptIds.length ? [inArray(attempts.id, payAttemptIds)] : []),
+    ));
+  }
+  const { fromIso, toExclusiveIso } = foodQrCreatedAtBounds(opts.fromDate, opts.toDate);
+  if (fromIso) conditions.push(gte(attempts.createdAt, fromIso));
+  if (toExclusiveIso) conditions.push(lt(attempts.createdAt, toExclusiveIso));
+  const where = conditions.length ? and(...conditions) : undefined;
+  const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(attempts).where(where);
+  const rows = await db.select().from(attempts)
+    .where(where)
+    .orderBy(desc(attempts.createdAt))
+    .limit(FOOD_QR_LIST_PAGE_SIZE)
+    .offset((page - 1) * FOOD_QR_LIST_PAGE_SIZE);
   const ids = rows.map((r) => r.id);
   const payRows = ids.length
     ? await collectInBatches(ids, (batch) => db.select().from(payments).where(inArray(payments.attemptId, batch)))
@@ -737,10 +806,17 @@ export async function listFoodQrAttempts(opts: { limit?: number } = {}) {
     list.push(p);
     byAttempt.set(p.attemptId, list);
   }
-  return rows.map((row) => ({
-    ...row,
-    payments: byAttempt.get(row.id) || [],
-  }));
+  const total = Number(count || 0);
+  return {
+    attempts: rows.map((row) => ({
+      ...row,
+      payments: byAttempt.get(row.id) || [],
+    })),
+    page,
+    pageSize: FOOD_QR_LIST_PAGE_SIZE,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / FOOD_QR_LIST_PAGE_SIZE)),
+  };
 }
 
 // --- Public snapshot ---

@@ -4,6 +4,7 @@ import {
   effectiveMode,
   environmentFromMode,
   qrModeReadiness,
+  shouldRetireOpenFoodQrsOnModeChange,
   BILL_QR_MODE_KEY,
 } from "@/lib/foodBillQrMode";
 
@@ -101,5 +102,16 @@ describe("qrModeReadiness", () => {
 describe("BILL_QR_MODE_KEY", () => {
   it("equals food_bill_qr_mode", () => {
     expect(BILL_QR_MODE_KEY).toBe("food_bill_qr_mode");
+  });
+});
+
+describe("shouldRetireOpenFoodQrsOnModeChange", () => {
+  it("is true only when leaving razorpay_* for static", () => {
+    expect(shouldRetireOpenFoodQrsOnModeChange("razorpay_test", "static")).toBe(true);
+    expect(shouldRetireOpenFoodQrsOnModeChange("razorpay_live", "static")).toBe(true);
+    expect(shouldRetireOpenFoodQrsOnModeChange("static", "static")).toBe(false);
+    expect(shouldRetireOpenFoodQrsOnModeChange("static", "razorpay_test")).toBe(false);
+    expect(shouldRetireOpenFoodQrsOnModeChange("razorpay_test", "razorpay_live")).toBe(false);
+    expect(shouldRetireOpenFoodQrsOnModeChange("razorpay_live", "razorpay_test")).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import { sanitizeFoodImageUrl } from "@/lib/foodImage";
 import { mediaUrlToKey, sanitizeBillPaymentQrUrl } from "@/lib/mediaKeys";
 import { deleteMediaKeys } from "@/lib/mediaR2";
 import { BILL_SETTINGS_KEYS, brandingFromSettings, parseAccentHex } from "@/lib/foodBillFormat";
+import { BILL_QR_MODE_KEY, parseBillQrMode, shouldRetireOpenFoodQrsOnModeChange } from "@/lib/foodBillQrMode";
 import { foodTaxPercent } from "@/lib/foodLookup";
 
 async function deleteMenuPhotos(urls: Array<string | null | undefined>) {
@@ -302,6 +303,20 @@ export async function POST(req: NextRequest) {
         if ("food_bill_accent" in nextSettings) {
           nextSettings.food_bill_accent = parseAccentHex(String(nextSettings.food_bill_accent || ""));
         }
+
+        let retiredFoodQrAttemptIds: string[] = [];
+        let skippedCapturedFoodQrIds: string[] = [];
+        if (BILL_QR_MODE_KEY in nextSettings) {
+          const prevMode = parseBillQrMode(await getSetting(BILL_QR_MODE_KEY));
+          const nextMode = parseBillQrMode(String(nextSettings[BILL_QR_MODE_KEY] ?? ""));
+          if (shouldRetireOpenFoodQrsOnModeChange(prevMode, nextMode)) {
+            const { retireAllOpenFoodQrAttempts } = await import("@/lib/foodQrPayment");
+            const retired = await retireAllOpenFoodQrAttempts();
+            retiredFoodQrAttemptIds = retired.retiredAttemptIds;
+            skippedCapturedFoodQrIds = retired.skippedCapturedIds;
+          }
+        }
+
         const allowed = new Set<string>(FOOD_SETTINGS_KEYS);
         for (const [key, value] of Object.entries(nextSettings)) {
           if (allowed.has(key)) {
@@ -316,7 +331,11 @@ export async function POST(req: NextRequest) {
         ) {
           await deleteBillQr([prevQrUrl]);
         }
-        return NextResponse.json({ ok: true });
+        return NextResponse.json({
+          ok: true,
+          retiredFoodQrAttemptIds,
+          skippedCapturedFoodQrIds,
+        });
       }
 
       default:
