@@ -5,6 +5,11 @@ type HeroesResponse = { pages: Partial<Record<HeroPageKey, HeroLoopVideo>> };
 
 let heroesPromise: Promise<HeroesResponse | null> | null = null;
 
+/** Clear module cache between Vitest cases (no-op in production). */
+export function resetPublicHeroVideosCache() {
+  heroesPromise = null;
+}
+
 /** Shared client fetch for CMS hero assignments (module-level, one request). */
 export function fetchPublicHeroVideos(): Promise<HeroesResponse | null> {
   if (typeof window === "undefined") return Promise.resolve(null);

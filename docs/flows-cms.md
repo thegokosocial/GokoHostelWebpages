@@ -23,7 +23,7 @@ Managed under Website → **Hero Videos** (not per Events/Community form).
 - **Libraries:** desktop MP4 list + mobile MP4 list (R2 folder `hero-videos/`). Built-in A/B from git (`/videos/hero/...`) appear as virtual catalog entries.
 - **Assignments:** each marketing page picks one desktop + one mobile clip. Tablet uses the desktop file with CSS `object-cover` (no third upload).
 - **Encode:** admin browser runs ffmpeg.wasm once on upload (`processHeroVideo`), then POSTs processed MP4 (≤15MB) + JPEG poster.
-- **Public hydrate:** `HeroBackdrop` / `PageRibbon` take `pageKey` and fetch `/api/site?page=heroes` (shared module promise). Seed props remain git A/B until live data arrives. No `force-dynamic` on marketing pages.
+- **Public hydrate:** `HeroBackdrop` / `PageRibbon` take `pageKey` and fetch `/api/site?page=heroes` (shared module promise, `cache: default`, same `s-maxage=60` as other site pages). Seed props remain git A/B until live data arrives. When CMS URLs differ from the seed, `HeroBackdrop` remounts `<video>` (key includes mp4/webm) so the browser actually swaps the clip; matching URLs do not remount. No `force-dynamic` on marketing pages.
 - **Stills:** Events/Community still use CMS `hero.ribbonImage` (JPEG in `heroes/`) as reduced-motion / no-video fallback.
 
 Page keys: `home`, `stay`, `story`, `events`, `community`, `how-to-reach`, `faqs`, `reviews`, `booking-enquiry`, `book` (also `/book/preview` + Find my booking tab), `booking-confirmation` (`/booking/[reference]`), `self-checkin`, `things-to-do`. Out of scope: `/quick-links`, food-order, kitchen, admin.

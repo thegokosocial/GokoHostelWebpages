@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import type { HeroLoopVideo } from "@/lib/site";
-import type { HeroPageKey } from "@/lib/heroVideos";
+import { heroVideoElementKey, type HeroPageKey } from "@/lib/heroVideos";
 import { fetchPublicHeroVideos, peekHeroForPage } from "@/lib/fetchHeroVideos";
 
 type HeroBackdropProps = {
@@ -90,7 +90,7 @@ export function HeroBackdrop({
         />
       ) : (
         <video
-          key={isMobile ? "mobile" : "desktop"}
+          key={heroVideoElementKey(isMobile, mp4Src, webmSrc)}
           ref={videoRef}
           className="absolute inset-0 z-0 h-full w-full object-cover"
           poster={video!.poster}

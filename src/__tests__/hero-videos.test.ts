@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultAssignmentIds,
   HERO_PAGE_DEFAULT_SET,
   HERO_PAGE_KEYS,
+  heroVideoElementKey,
   loopFromPair,
   resolveAllPageHeroes,
   resolvePageHeroLoop,
@@ -11,6 +12,11 @@ import {
   validateAssignmentIds,
   type HeroLibraryItem,
 } from "@/lib/heroVideos";
+import {
+  fetchPublicHeroVideos,
+  peekHeroForPage,
+  resetPublicHeroVideosCache,
+} from "@/lib/fetchHeroVideos";
 import { heroVideoA, heroVideoB } from "@/lib/site";
 
 describe("heroVideos resolver", () => {
@@ -152,6 +158,9 @@ describe("hero video page wiring", () => {
     expect(backdrop).toContain("fetchPublicHeroVideos");
     expect(backdrop).toContain("webmSrc ?");
     expect(backdrop).toContain("pageKey");
+    expect(backdrop).toContain("heroVideoElementKey(isMobile, mp4Src, webmSrc)");
+    expect(backdrop).not.toContain('key={isMobile ? "mobile" : "desktop"}');
+    expect(readFileSync("src/lib/fetchHeroVideos.ts", "utf8")).toContain('cache: "default"');
 
     const admin = readFileSync("src/components/admin/AdminWebsite.tsx", "utf8");
     expect(admin).toContain("AdminHeroVideos");
@@ -166,5 +175,143 @@ describe("hero video page wiring", () => {
     const ql = readFileSync("src/app/(marketing)/quick-links/page.tsx", "utf8");
     expect(ql).not.toContain("PageRibbon");
     expect(ql).not.toContain("HeroBackdrop");
+  });
+});
+
+describe("hero video hydrate remount workflow (save → public pages)", () => {
+  it("remounts when CMS assignment differs from static seed (self-checkin A→B)", () => {
+    expect(HERO_PAGE_DEFAULT_SET["self-checkin"]).toBe("A");
+    const empty = new Map<string, HeroLibraryItem>();
+    const seed = resolvePageHeroLoop("self-checkin", null, empty);
+    const live = resolvePageHeroLoop(
+      "self-checkin",
+      { desktopVideoId: "builtin:B:desktop", mobileVideoId: "builtin:B:mobile" },
+      empty,
+    );
+    expect(seed.mp4).toBe(heroVideoA.mp4);
+    expect(live.mp4).toBe(heroVideoB.mp4);
+
+    const seedKey = heroVideoElementKey(false, seed.mp4, seed.webm);
+    const liveKey = heroVideoElementKey(false, live.mp4, live.webm);
+    expect(seedKey).not.toBe(liveKey);
+    expect(liveKey).toContain(heroVideoB.mp4);
+
+    // Matching seed+live → same key (no remount / no forced reload)
+    expect(heroVideoElementKey(false, seed.mp4, seed.webm)).toBe(seedKey);
+
+    // Orientation change still remounts (desktop vs mobile file)
+    const mobileKey = heroVideoElementKey(true, seed.mobileMp4, seed.mobileWebm);
+    expect(mobileKey).not.toBe(seedKey);
+    expect(mobileKey.startsWith("m:")).toBe(true);
+  });
+
+  it("remounts for uploaded R2 clips vs builtin seed", () => {
+    const library: HeroLibraryItem[] = [
+      {
+        id: "up-d",
+        slot: "desktop",
+        label: "Upload desk",
+        url: "/api/media/hero-videos/2026-09-27-desk.mp4",
+        posterUrl: "/api/media/hero-videos/2026-09-27-desk.jpg",
+        bytes: 1,
+        width: 1024,
+        height: 576,
+        builtin: false,
+      },
+      {
+        id: "up-m",
+        slot: "mobile",
+        label: "Upload mobile",
+        url: "/api/media/hero-videos/2026-09-27-mob.mp4",
+        posterUrl: "/api/media/hero-videos/2026-09-27-mob.jpg",
+        bytes: 1,
+        width: 324,
+        height: 576,
+        builtin: false,
+      },
+    ];
+    const byId = new Map(library.map((v) => [v.id, v]));
+    const seed = resolvePageHeroLoop("events", null, byId);
+    const live = resolvePageHeroLoop(
+      "events",
+      { desktopVideoId: "up-d", mobileVideoId: "up-m" },
+      byId,
+    );
+    expect(heroVideoElementKey(false, seed.mp4, seed.webm)).not.toBe(
+      heroVideoElementKey(false, live.mp4, live.webm),
+    );
+    expect(live.webm).toBeUndefined();
+  });
+
+  it("peekHeroForPage only accepts complete loops", () => {
+    expect(peekHeroForPage(null, "self-checkin")).toBeNull();
+    expect(peekHeroForPage({ pages: {} }, "self-checkin")).toBeNull();
+    expect(
+      peekHeroForPage(
+        { pages: { "self-checkin": { poster: "p", mp4: heroVideoB.mp4, mobileMp4: "" } } },
+        "self-checkin",
+      ),
+    ).toBeNull();
+    const ok = peekHeroForPage(
+      {
+        pages: {
+          "self-checkin": {
+            poster: heroVideoB.poster,
+            mp4: heroVideoB.mp4,
+            webm: heroVideoB.webm,
+            mobileMp4: heroVideoB.mobileMp4,
+            mobileWebm: heroVideoB.mobileWebm,
+          },
+        },
+      },
+      "self-checkin",
+    );
+    expect(ok?.mp4).toBe(heroVideoB.mp4);
+  });
+
+  it("save→resolveAllPageHeroes updates only the assigned page", () => {
+    const pages = resolveAllPageHeroes(
+      [{ page: "self-checkin", desktopVideoId: "builtin:B:desktop", mobileVideoId: "builtin:B:mobile" }],
+      [],
+    );
+    expect(pages["self-checkin"].mp4).toBe(heroVideoB.mp4);
+    expect(pages.home.mp4).toBe(heroVideoA.mp4);
+    expect(pages.stay.mp4).toBe(heroVideoB.mp4);
+  });
+});
+
+describe("fetchPublicHeroVideos client cache", () => {
+  beforeEach(() => {
+    resetPublicHeroVideosCache();
+    vi.stubGlobal("window", {});
+  });
+  afterEach(() => {
+    resetPublicHeroVideosCache();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("uses cache:default once per module lifetime and shares the promise", async () => {
+    const payload = {
+      pages: {
+        "self-checkin": {
+          poster: heroVideoB.poster,
+          mp4: heroVideoB.mp4,
+          mobileMp4: heroVideoB.mobileMp4,
+        },
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => payload,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const a = await fetchPublicHeroVideos();
+    const b = await fetchPublicHeroVideos();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual({ cache: "default" });
+    expect(a).toBe(b);
+    expect(peekHeroForPage(a, "self-checkin")?.mp4).toBe(heroVideoB.mp4);
   });
 });

@@ -171,6 +171,18 @@ function gitWebmFor(url: string, which: "desktop" | "mobile"): string {
   return which === "mobile" ? (set.mobileWebm || "") : (set.webm || "");
 }
 
+/**
+ * React `key` for the hero `<video>` element.
+ * Must include media URLs so CMS hydrate remounts when seed ≠ live (browsers ignore `<source>` swaps).
+ */
+export function heroVideoElementKey(
+  isMobile: boolean,
+  mp4Src: string | undefined | null,
+  webmSrc: string | undefined | null,
+): string {
+  return `${isMobile ? "m" : "d"}:${mp4Src || ""}:${webmSrc || ""}`;
+}
+
 /** Build a playable loop from desktop + mobile library rows (webm optional). */
 export function loopFromPair(
   desktop: { url: string; posterUrl: string } | null,
