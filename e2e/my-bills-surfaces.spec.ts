@@ -145,12 +145,72 @@ test.describe("My Bills guest surfaces (mobile)", () => {
     await page.goto("/my-bills?t=opaque-share-token-xyz", { waitUntil: "domcontentloaded" });
 
     await expect(page.getByAltText("Payment QR")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/exact amount|via UPI/)).toBeVisible();
+    // Default ensure mock is poster-only (no upiIntent) → cropped Razorpay, not PhonePe.
+    await expect(page.getByText("Razorpay UPI · exact amount")).toBeVisible();
+    await expect(page.getByText(/via UPI \(exact amount\)/)).toBeVisible();
     await expect.poll(() => qrCalls.length).toBeGreaterThanOrEqual(1);
     expect(qrCalls[0]).toMatchObject({ action: "ensure" });
     expect(qrCalls[0].orderIds).toEqual([101]);
     expect(qrCalls[0].token).toBe("opaque-share-token-xyz");
     expect(qrCalls[0]).not.toHaveProperty("amountPaise");
+  });
+
+  test("share token + poster-only Razorpay attempt CSS-crops poster (not PhonePe fallback)", async ({ page }) => {
+    const posterUrl = "https://rzp.io/i/e2e-poster-crop-fixture";
+    await mockBillsApis(page, {
+      viaToken: true,
+      qrMode: "razorpay_test",
+      qrEnsure: {
+        json: {
+          attempt: {
+            attemptId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            state: "active",
+            imageUrl: posterUrl,
+            upiIntent: null,
+            closeBy: "2099-06-01T00:00:00.000Z",
+            amountPaise: 386000,
+            paymentMethodLabel: "razorpay_test",
+          },
+        },
+      },
+    });
+    await page.goto("/my-bills?t=opaque-share-token-xyz", { waitUntil: "domcontentloaded" });
+
+    const qr = page.getByAltText("Payment QR");
+    await expect(qr).toBeVisible({ timeout: 15_000 });
+    await expect(qr).toHaveAttribute("src", posterUrl);
+    await expect(page.getByText("Razorpay UPI · exact amount")).toBeVisible();
+    await expect(page.getByText(/via UPI \(exact amount\)/)).toBeVisible();
+    await expect(page.getByText(/PhonePe static QR/)).toHaveCount(0);
+    await expect(page.getByText(/Razorpay square unavailable/)).toHaveCount(0);
+  });
+
+  test("share token + upiIntent prefers AutoQrCode over poster imageUrl", async ({ page }) => {
+    const posterUrl = "https://rzp.io/i/should-not-render-as-img";
+    const intent = "upi://pay?pa=qmart.razorpay@hdfcbank&am=3860.00&cu=INR";
+    await mockBillsApis(page, {
+      viaToken: true,
+      qrMode: "razorpay_test",
+      qrEnsure: {
+        json: {
+          attempt: {
+            attemptId: "ffffffff-1111-2222-3333-444444444444",
+            state: "active",
+            imageUrl: posterUrl,
+            upiIntent: intent,
+            closeBy: "2099-06-01T00:00:00.000Z",
+            amountPaise: 386000,
+            paymentMethodLabel: "razorpay_test",
+          },
+        },
+      },
+    });
+    await page.goto("/my-bills?t=opaque-share-token-xyz", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByAltText("Payment QR")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`img[src="${posterUrl}"]`)).toHaveCount(0);
+    await expect(page.getByText("Razorpay UPI · exact amount")).toBeVisible();
+    await expect(page.getByText(/via UPI \(exact amount\)/)).toBeVisible();
   });
 
   test("share token paid ensure response shows Razorpay received, not dead QR", async ({ page }) => {

@@ -8,6 +8,7 @@ import {
   myBillsShowsPaidHistory,
   myBillsShowsPayQr,
   myBillsShowsSpendSummary,
+  resolveFoodBillPayQrSource,
   shouldEnsureDynamicFoodQr,
 } from "@/lib/foodBillQrUi";
 import { actionAllowed } from "@/lib/actionPermissions";
@@ -203,16 +204,17 @@ describe("claim guards + guest QR contracts stay wired", () => {
     expect(guestQr).toContain("Payment attempt does not match this bill");
   });
 
-  it("GuestFoodBillCard prefers square AutoQrCode; falls back to static bill QR not Razorpay poster", () => {
+  it("GuestFoodBillCard: resolveFoodBillPayQrSource → intent / poster / static; no CORS decode", () => {
     expect(card).toContain("hidePayment");
+    expect(card).toContain("resolveFoodBillPayQrSource");
     expect(card).toContain("AutoQrCode");
-    expect(card).toContain("dynamicUpiIntent");
+    expect(card).toContain("RazorpayPosterQr");
+    expect(card).toContain("showPosterCrop");
     expect(card).toContain("maxPx={280}");
-    expect(card).toContain("branding.qrUrl");
-    expect(card).toContain("Never show Razorpay's branded poster");
     expect(card).toContain("foodBillQrStaffCaption");
-    expect(card).not.toMatch(/dynamicQr\.imageUrl/);
+    expect(card).toContain("hasPosterImage");
     expect(card).not.toContain("crossOrigin");
+    expect(card).not.toContain("jsQR");
   });
 
   it("My Bills wires shared surface helpers", () => {
@@ -223,13 +225,67 @@ describe("claim guards + guest QR contracts stay wired", () => {
   });
 });
 
+describe("resolveFoodBillPayQrSource", () => {
+  const poster = "https://rzp.io/i/poster-abc";
+  const intent = "upi://pay?pa=qmart.razorpay@hdfcbank&am=10.00";
+  const phonepe = "https://cdn.example/phonepe.png";
+
+  it("prefers upiIntent over poster and static", () => {
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "active",
+      upiIntent: intent,
+      imageUrl: poster,
+      staticQrUrl: phonepe,
+    })).toEqual({ kind: "intent", upiIntent: intent });
+  });
+
+  it("uses CSS-cropped poster when active without intent", () => {
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "active",
+      upiIntent: null,
+      imageUrl: poster,
+      staticQrUrl: phonepe,
+    })).toEqual({ kind: "poster", imageUrl: poster });
+  });
+
+  it("falls back to PhonePe static when active has neither intent nor poster", () => {
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "active",
+      upiIntent: "  ",
+      imageUrl: "",
+      staticQrUrl: phonepe,
+    })).toEqual({ kind: "static", qrUrl: phonepe });
+  });
+
+  it("hides QR for paid/loading/error/hidePayment; static mode uses bill QR", () => {
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "paid", imageUrl: poster, staticQrUrl: phonepe,
+    }).kind).toBe("none");
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "loading", imageUrl: poster, staticQrUrl: phonepe,
+    }).kind).toBe("none");
+    expect(resolveFoodBillPayQrSource({
+      hidePayment: true, dynamicStatus: "active", imageUrl: poster,
+    }).kind).toBe("none");
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "static", staticQrUrl: phonepe,
+    })).toEqual({ kind: "static", qrUrl: phonepe });
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: null, staticQrUrl: phonepe,
+    })).toEqual({ kind: "static", qrUrl: phonepe });
+  });
+});
+
 describe("foodBillQrStaffCaption", () => {
-  it("labels Razorpay square vs PhonePe static vs unavailable fallback", () => {
+  it("labels Razorpay (intent or poster) vs PhonePe static vs unavailable fallback", () => {
     expect(foodBillQrStaffCaption({
       dynamicStatus: "active", hasUpiIntent: true, razorpayMode: true,
     })).toEqual({ kind: "razorpay", text: "Razorpay UPI · exact amount" });
     expect(foodBillQrStaffCaption({
-      dynamicStatus: "active", hasUpiIntent: false, razorpayMode: true,
+      dynamicStatus: "active", hasUpiIntent: false, hasPosterImage: true, razorpayMode: true,
+    })).toEqual({ kind: "razorpay", text: "Razorpay UPI · exact amount" });
+    expect(foodBillQrStaffCaption({
+      dynamicStatus: "active", hasUpiIntent: false, hasPosterImage: false, razorpayMode: true,
     })).toEqual({ kind: "phonepe_fallback", text: "PhonePe static QR (Razorpay square unavailable)" });
     expect(foodBillQrStaffCaption({
       dynamicStatus: "static", razorpayMode: false,

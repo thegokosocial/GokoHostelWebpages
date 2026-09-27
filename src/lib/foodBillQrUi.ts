@@ -123,24 +123,62 @@ export type FoodBillQrStaffCaption =
   | { kind: "phonepe_fallback"; text: string }
   | null;
 
+/** What GuestFoodBillCard should render in the pay-QR slot. */
+export type FoodBillPayQrSource =
+  | { kind: "none" }
+  | { kind: "intent"; upiIntent: string }
+  | { kind: "poster"; imageUrl: string }
+  | { kind: "static"; qrUrl: string };
+
+/**
+ * Display priority for bill pay QR:
+ * 1) Razorpay `upiIntent` (square AutoQrCode)
+ * 2) CSS-cropped Razorpay `imageUrl` poster
+ * 3) Bill Settings PhonePe/static upload
+ */
+export function resolveFoodBillPayQrSource(opts: {
+  hidePayment?: boolean;
+  dynamicStatus?: "loading" | "active" | "paid" | "error" | "static" | null;
+  upiIntent?: string | null;
+  imageUrl?: string | null;
+  staticQrUrl?: string | null;
+}): FoodBillPayQrSource {
+  if (opts.hidePayment) return { kind: "none" };
+  const status = opts.dynamicStatus ?? null;
+  if (status === "paid" || status === "loading" || status === "error") {
+    return { kind: "none" };
+  }
+  if (status === "active") {
+    const intent = opts.upiIntent?.trim() || "";
+    if (intent) return { kind: "intent", upiIntent: intent };
+    const poster = opts.imageUrl?.trim() || "";
+    if (poster) return { kind: "poster", imageUrl: poster };
+  }
+  const staticUrl = opts.staticQrUrl?.trim() || "";
+  if (staticUrl) return { kind: "static", qrUrl: staticUrl };
+  return { kind: "none" };
+}
+
 /**
  * Subtle staff-facing channel label under the bill QR.
- * Distinguishes Razorpay square UPI from Bill Settings PhonePe static (incl. silent fallback).
+ * Distinguishes Razorpay UPI (intent or CSS-cropped poster) from Bill Settings PhonePe static.
  */
 export function foodBillQrStaffCaption(opts: {
   hidePayment?: boolean;
   dynamicStatus?: "loading" | "active" | "paid" | "error" | "static" | null;
   hasUpiIntent?: boolean;
+  /** Active attempt has imageUrl and UI will CSS-crop the poster QR module. */
+  hasPosterImage?: boolean;
   razorpayMode?: boolean;
 }): FoodBillQrStaffCaption {
   if (opts.hidePayment) return null;
   const status = opts.dynamicStatus ?? null;
   if (status === "paid" || status === "error") return null;
   if (status === "loading") return { kind: "loading", text: "Preparing Razorpay QR…" };
-  if (status === "active" && opts.hasUpiIntent) {
+  if (status === "active" && (opts.hasUpiIntent || opts.hasPosterImage)) {
     return { kind: "razorpay", text: "Razorpay UPI · exact amount" };
   }
-  if (status === "active" && !opts.hasUpiIntent) {
+  if (status === "active") {
     return { kind: "phonepe_fallback", text: "PhonePe static QR (Razorpay square unavailable)" };
   }
   if (status === "static" || status == null) {
