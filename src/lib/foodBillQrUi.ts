@@ -11,6 +11,73 @@ import { parseBillQrMode, type BillQrMode } from "@/lib/foodBillQrMode";
  */
 export const FOOD_RAZORPAY_RECEIPT_NICKNAME = "Razorpay a/c";
 
+/** Shared 409 copy when totals change while a food QR claim is open. */
+export const ACTIVE_FOOD_QR_EDIT_BLOCKED =
+  "These orders have an active Razorpay QR payment. Wait for it to complete or expire before changing totals or payment.";
+
+export type FoodQrAttemptOutcome = "Paid" | "Active" | "Expired" | "Closed" | "Creating" | "Unknown";
+
+/** Staff-facing outcome for Management → Razorpay payments → Food (Room-like). */
+export function foodQrAttemptOutcome(opts: {
+  state: string;
+  payments?: Array<{ captured?: number | boolean | null }>;
+}): FoodQrAttemptOutcome {
+  const hasCapture = (opts.payments || []).some((p) => Number(p.captured) === 1);
+  if (opts.state === "paid" || hasCapture) return "Paid";
+  if (opts.state === "expired") return "Expired";
+  if (opts.state === "closed") return "Closed";
+  if (opts.state === "active") return "Active";
+  if (opts.state === "creating" || opts.state === "qr_unknown") return "Creating";
+  return "Unknown";
+}
+
+export function foodQrAttemptIsCloseable(state: string): boolean {
+  return state === "active" || state === "creating" || state === "qr_unknown";
+}
+
+export function parseFoodQrOrderIds(raw: unknown): number[] {
+  if (Array.isArray(raw)) {
+    return raw.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      return parseFoodQrOrderIds(JSON.parse(raw));
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** Client-side Food ledger search (guest / phone / qr_ / pay_ / order id). */
+export function foodQrAttemptMatchesQuery(
+  row: {
+    guestName?: string | null;
+    guestPhone?: string | null;
+    qrCodeId?: string | null;
+    foodOrderIds?: unknown;
+    payments?: Array<{ id?: string | null }>;
+    id?: string | null;
+  },
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const orderIds = parseFoodQrOrderIds(row.foodOrderIds).map(String);
+  const hay = [
+    row.guestName,
+    row.guestPhone,
+    row.qrCodeId,
+    row.id,
+    ...orderIds,
+    ...(row.payments || []).map((p) => p.id),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
+}
+
 /** Food order paymentMethod set by Razorpay QR capture (live or test). */
 export function isRazorpayFoodPaymentMethod(method?: string | null): boolean {
   return method === "razorpay" || method === "razorpay_test";

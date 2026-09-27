@@ -29,10 +29,14 @@ const kitchenMocks = vi.hoisted(() => ({
   areAllOrderItemsInventory: vi.fn(),
   getMenuItemCategoryExemptions: vi.fn(),
   getDb: vi.fn(),
+  hasActiveFoodQrClaim: vi.fn(async () => false),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateKitchen: kitchenMocks.authenticateKitchen }));
 vi.mock("@/db", () => ({ getDb: kitchenMocks.getDb }));
+vi.mock("@/lib/foodQrPayment", () => ({
+  hasActiveFoodQrClaim: kitchenMocks.hasActiveFoodQrClaim,
+}));
 vi.mock("@/db/queries", () => ({
   getActiveFoodOrders: kitchenMocks.getActiveFoodOrders,
   getFoodOrderItemsBatch: kitchenMocks.getFoodOrderItemsBatch,
@@ -244,6 +248,7 @@ describe("Kitchen food-order quantity and add-item inventory workflows", () => {
     kitchenMocks.updateFoodOrderItemQuantity.mockResolvedValue(undefined);
     kitchenMocks.addOrderModification.mockResolvedValue(undefined);
     kitchenMocks.updateFoodOrder.mockResolvedValue(undefined);
+    kitchenMocks.hasActiveFoodQrClaim.mockResolvedValue(false);
     kitchenMocks.getDb.mockReturnValue({
       select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ discount: 0 }] }) }) }),
       insert: () => ({ values: async () => undefined }),
@@ -318,6 +323,18 @@ describe("Kitchen food-order quantity and add-item inventory workflows", () => {
     expect(res.status).toBe(200);
     expect(kitchenMocks.decrementStockIfAvailable).toHaveBeenCalledWith(5, 1);
     expect(kitchenMocks.updateFoodOrderItemQuantity).toHaveBeenCalled();
+  });
+
+  it("blocks kitchen quantity edits while a food Razorpay QR claim is active", async () => {
+    const { ACTIVE_FOOD_QR_EDIT_BLOCKED } = await import("@/lib/foodBillQrUi");
+    kitchenMocks.hasActiveFoodQrClaim.mockResolvedValue(true);
+
+    const res = await POST(req({ password: "ok", action: "updateItemQuantity", orderId: 10, orderItemId: 20, newQuantity: 3 }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: ACTIVE_FOOD_QR_EDIT_BLOCKED });
+    expect(kitchenMocks.hasActiveFoodQrClaim).toHaveBeenCalledWith([10]);
+    expect(kitchenMocks.updateFoodOrderItemQuantity).not.toHaveBeenCalled();
   });
 });
 

@@ -475,6 +475,27 @@ const DESK_RELEASE_ABORT =
   "A Razorpay payment was already captured for this bill. Refresh before recording desk payment.";
 
 /**
+ * Close one open food QR by attempt id (ledger Close / Bill drawer).
+ * Reuses desk release: reconcile → abort if captured → close provider QR → release claims.
+ */
+export async function closeActiveFoodQrAttempt(attemptId: string): Promise<{ releasedAttemptIds: string[] }> {
+  cloudOnly();
+  const db = getDb();
+  const [attempt] = await db.select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
+  if (!attempt) throw new FoodQrError("Payment attempt not found", 404);
+  let orderIds: number[] = [];
+  try {
+    orderIds = (JSON.parse(attempt.foodOrderIds || "[]") as unknown[])
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+  } catch {
+    orderIds = [];
+  }
+  if (!orderIds.length) throw new FoodQrError("No orders on this payment attempt", 400);
+  return releaseFoodQrForDeskPayment(orderIds);
+}
+
+/**
  * Close open food Razorpay QRs and release claims so Mark Paid can record cash/online/split.
  * Aborts if a capture is already applied or visible — never double-settle.
  */
@@ -674,7 +695,7 @@ export async function processFoodQrWebhook(eventId: string) {
 export async function listFoodQrAttempts(opts: { limit?: number } = {}) {
   cloudOnly();
   const db = getDb();
-  const limit = Math.min(opts.limit || 25, 100);
+  const limit = Math.min(opts.limit || 100, 100);
   const rows = await db.select().from(attempts).orderBy(desc(attempts.createdAt)).limit(limit);
   const ids = rows.map((r) => r.id);
   const payRows = ids.length

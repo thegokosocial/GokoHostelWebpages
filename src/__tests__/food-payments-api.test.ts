@@ -11,12 +11,16 @@ describe("admin food-payments + guest bill QR routes", () => {
   const ordersUi = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
   const myBills = readFileSync("src/app/my-bills/page.tsx", "utf8");
 
-  it("admin ledger is admin-only; ensure/reconcile allow bill staff permissions", () => {
+  it("admin ledger is admin-only; ensure/reconcile/close allow bill staff permissions", () => {
     expect(adminRoute).toContain('listFoodQrAttempts: "admin_only"');
     expect(adminRoute).toContain("ensureFoodQr");
+    expect(adminRoute).toContain("reconcileFoodQrAttempt");
+    expect(adminRoute).toContain("closeActiveFoodQr");
+    expect(adminRoute).toContain("closeActiveFoodQrAttempt");
     expect(adminRoute).toContain("canGenerateFoodBills");
     expect(adminRoute).toContain("ensureActiveFoodQrForOrders");
     expect(adminRoute).toContain("isPiRuntime");
+    expect(adminRoute).toContain('limit: z.number().int().min(1).max(100)');
   });
 
   it("guest QR route is share-token only with checkin/walk-in scope and never trusts client amount", () => {
@@ -70,5 +74,8 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(hook).toContain("paidNotifiedRef");
     expect(ledger).toContain("listFoodQrAttempts");
     expect(ledger).toContain("reconcileFoodQrAttempt");
+    expect(ledger).toContain("closeActiveFoodQr");
+    expect(ledger).toContain("foodQrAttemptOutcome");
+    expect(ledger).toContain("Close QR");
   });
 });

@@ -120,10 +120,9 @@ export async function POST(req: NextRequest) {
 
     async function rejectIfActiveFoodQr(orderIds: number[]) {
       const { hasActiveFoodQrClaim } = await import("@/lib/foodQrPayment");
+      const { ACTIVE_FOOD_QR_EDIT_BLOCKED } = await import("@/lib/foodBillQrUi");
       if (await hasActiveFoodQrClaim(orderIds)) {
-        return NextResponse.json({
-          error: "These orders have an active Razorpay QR payment. Wait for it to complete or expire before changing totals or payment.",
-        }, { status: 409 });
+        return NextResponse.json({ error: ACTIVE_FOOD_QR_EDIT_BLOCKED }, { status: 409 });
       }
       return null;
     }

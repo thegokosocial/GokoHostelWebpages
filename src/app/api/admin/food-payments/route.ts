@@ -10,6 +10,7 @@ import {
   reconcileFoodQrAttempt,
   ensureActiveFoodQrForOrders,
   getFoodQrAttempt,
+  closeActiveFoodQrAttempt,
 } from "@/lib/foodQrPayment";
 import { RazorpayError } from "@/lib/razorpay";
 
@@ -19,6 +20,7 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({ ...credentials, action: z.literal("listFoodQrAttempts"), limit: z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ ...credentials, action: z.literal("getFoodQrAttempt"), attemptId: id }).strict(),
   z.object({ ...credentials, action: z.literal("reconcileFoodQrAttempt"), attemptId: id }).strict(),
+  z.object({ ...credentials, action: z.literal("closeActiveFoodQr"), attemptId: id }).strict(),
   z.object({
     ...credentials,
     action: z.literal("ensureFoodQr"),
@@ -31,6 +33,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   listFoodQrAttempts: "admin_only",
   getFoodQrAttempt: "admin_only",
   reconcileFoodQrAttempt: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
+  closeActiveFoodQr: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
   ensureFoodQr: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
 };
 
@@ -67,6 +70,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ attempt: await getFoodQrAttempt(parsed.data.attemptId) }, { headers });
       case "reconcileFoodQrAttempt":
         return NextResponse.json({ attempt: await reconcileFoodQrAttempt(parsed.data.attemptId) }, { headers });
+      case "closeActiveFoodQr":
+        return NextResponse.json({
+          releasedAttemptIds: (await closeActiveFoodQrAttempt(parsed.data.attemptId)).releasedAttemptIds,
+        }, { headers });
       case "ensureFoodQr":
         return NextResponse.json({
           attempt: await ensureActiveFoodQrForOrders({

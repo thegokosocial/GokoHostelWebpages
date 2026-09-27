@@ -74,7 +74,7 @@ function requestFor(route: string, action: string): NextRequest {
       body.requestKey = id;
       body.orderIds = [1];
     }
-    if (["getFoodQrAttempt", "reconcileFoodQrAttempt"].includes(action)) body.attemptId = id;
+    if (["getFoodQrAttempt", "reconcileFoodQrAttempt", "closeActiveFoodQr"].includes(action)) body.attemptId = id;
   }
   return new NextRequest("http://localhost/api/admin/route", {
     method: "POST",
