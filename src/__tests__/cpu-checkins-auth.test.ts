@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { authenticateUser, getCheckinsByMonth, getCheckinsByDateRange, getMonthKey, getSystemLogs } = vi.hoisted(() => ({
+const { authenticateUser, getCheckinsByMonth, getCheckinsByDateRange, getMonthKey, getSystemLogs, markVibeMatched } = vi.hoisted(() => ({
   authenticateUser: vi.fn(),
   getCheckinsByMonth: vi.fn(),
   getCheckinsByDateRange: vi.fn(),
   getMonthKey: vi.fn(() => "2026-08"),
   getSystemLogs: vi.fn(),
+  markVibeMatched: vi.fn(),
 }));
 const getAuditEntries = vi.hoisted(() => vi.fn());
 const getInventoryAuditEntries = vi.hoisted(() => vi.fn());
@@ -33,7 +34,7 @@ vi.mock("@/db/queries", () => ({
   updateCheckin: vi.fn(),
   deleteCheckin: vi.fn(),
   getCheckinMonths: vi.fn(),
-  markVibeMatched: vi.fn(),
+  markVibeMatched,
   getAllBeds: vi.fn(),
   getBedById: vi.fn(),
   updateBedStatus: vi.fn(),
@@ -282,6 +283,54 @@ describe("Checkins auth-vs-list workflows", () => {
     }));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "Visa document is required for foreign nationals" });
+  });
+
+  it("allows markVibeMatched with canViewDashboard and forbids without it", async () => {
+    markVibeMatched.mockResolvedValue(undefined);
+    authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Dash",
+      permissions: { canViewDashboard: true },
+    });
+    const ok = await POST(req({ password: "x", action: "markVibeMatched", checkinId: 42 }));
+    expect(ok.status).toBe(200);
+    expect(markVibeMatched).toHaveBeenCalledWith(42);
+
+    markVibeMatched.mockClear();
+    authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "NoDash",
+      permissions: { canViewRecords: true },
+    });
+    const denied = await POST(req({ password: "x", action: "markVibeMatched", checkinId: 42 }));
+    expect(denied.status).toBe(403);
+    expect(markVibeMatched).not.toHaveBeenCalled();
+  });
+
+  it("gates addPast as admin_only", async () => {
+    authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Staff",
+      permissions: { canAddCheckin: true, canViewRecords: true },
+    });
+    const staff = await POST(req({
+      password: "x",
+      action: "addPast",
+      idempotencyKey: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      entry: Array(17).fill(""),
+    }));
+    expect(staff.status).toBe(403);
+    expect(await staff.json()).toMatchObject({ error: "Admin access required" });
+
+    authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    const admin = await POST(req({
+      password: "x",
+      action: "addPast",
+      idempotencyKey: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    }));
+    // Past the admin_only gate; missing entry is a 400 from the handler
+    expect(admin.status).toBe(400);
+    expect(await admin.json()).toEqual({ error: "No entry data" });
   });
 
   it("forbids staff from getSystemLogs without the logs permission", async () => {

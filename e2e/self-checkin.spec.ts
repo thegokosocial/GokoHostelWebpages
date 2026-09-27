@@ -11,11 +11,18 @@ const tinyJpeg = {
   ]),
 };
 
+type CheckinCapture = {
+  raw: string;
+  hasIdempotencyKey: boolean;
+  clientIdValidation: string | null;
+};
+
 async function stubSelfCheckinApis(
   page: Page,
   opts: {
     lookup?: Record<string, unknown> | null;
     validateSequence?: Array<Record<string, unknown>>;
+    onCheckin?: (capture: CheckinCapture) => void;
   } = {},
 ) {
   let validateCall = 0;
@@ -71,12 +78,44 @@ async function stubSelfCheckinApis(
     }
 
     if (url.pathname === "/api/checkin" && method === "POST") {
+      const raw = route.request().postData() || "";
+      const keyMatch = raw.match(/name="idempotencyKey"\r?\n\r?\n([0-9a-f-]{36})/i);
+      const verifiedMatch = raw.match(/name="clientIdValidation"\r?\n\r?\n([^\r\n]+)/i);
+      opts.onCheckin?.({
+        raw,
+        hasIdempotencyKey: Boolean(keyMatch?.[1]),
+        clientIdValidation: verifiedMatch?.[1] ?? null,
+      });
       await route.fulfill({ json: { success: true } });
       return;
     }
 
     await route.fulfill({ status: 404, json: { error: "unmocked" } });
   });
+}
+
+async function fillRequiredGuestFields(page: Page, over: {
+  firstName?: string;
+  lastName?: string;
+  contact?: string;
+  emergencyPhone?: string;
+} = {}) {
+  await page.locator("#bookingPlatform").selectOption("Walk-in");
+  await page.locator("#firstName").fill(over.firstName ?? "Ada");
+  await page.locator("#lastName").fill(over.lastName ?? "Guest");
+  await page.locator("#numberOfPersons").fill("1");
+  await page.locator("#stayingDays").fill("2");
+  await page.locator("#comingFrom").fill("Bangalore");
+  await page.locator("#contactNumber").fill(over.contact ?? "9876543210");
+  await page.locator("#emergencyName").fill("Bob Friend");
+  await page.locator("#emergencyPhone").fill(over.emergencyPhone ?? "9000000001");
+}
+
+async function pickCountry(page: Page, inputId: string, country: string) {
+  const input = page.locator(`#${inputId}`);
+  await input.click();
+  await input.fill(country);
+  await page.locator("li", { hasText: country }).first().click();
 }
 
 async function skipToForm(page: Page) {
@@ -162,5 +201,76 @@ test.describe("self check-in guest journeys", () => {
     await skipToForm(page);
     await expect(page.getByLabel(/First name/i)).toBeVisible();
     await expect(page.getByRole("button", { name: "Complete Check-in" })).toBeVisible();
+  });
+
+  test("new guest Complete sends idempotency key and shows success", async ({ page }) => {
+    let capture: CheckinCapture | null = null;
+    await stubSelfCheckinApis(page, {
+      lookup: null,
+      onCheckin: (c) => { capture = c; },
+    });
+    await skipToForm(page);
+    await fillRequiredGuestFields(page);
+    await page.locator("#idType").selectOption("aadhaar");
+    await galleryInputs(page).first().setInputFiles(tinyJpeg);
+    await page.getByRole("button", { name: "Verify document" }).click();
+    await expect(page.getByText(/Aadhaar verified/i)).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("button", { name: "Complete Check-in" }).click();
+    await expect(page.getByText("Check-in complete!")).toBeVisible({ timeout: 10_000 });
+    expect(capture).not.toBeNull();
+    expect(capture!.hasIdempotencyKey).toBe(true);
+    expect(capture!.clientIdValidation).toBe("verified");
+  });
+
+  test("foreign guest: visa required UI then Complete with mocked APIs", async ({ page }) => {
+    let capture: CheckinCapture | null = null;
+    await stubSelfCheckinApis(page, {
+      lookup: null,
+      validateSequence: [
+        {
+          valid: true,
+          documentType: "passport",
+          confidence: "high",
+          layers: ["both_sides_ok", "name_verified"],
+          message: "Passport verified.",
+        },
+        {
+          valid: true,
+          documentType: "visa",
+          confidence: "high",
+          layers: ["visa_ok"],
+          message: "Visa verified.",
+        },
+      ],
+      onCheckin: (c) => { capture = c; },
+    });
+    await skipToForm(page);
+    await fillRequiredGuestFields(page, {
+      firstName: "Jean",
+      lastName: "Dupont",
+      contact: "9123456789",
+      emergencyPhone: "9000000099",
+    });
+    await pickCountry(page, "nationality", "France");
+    await expect(page.locator("#idType")).toHaveValue("passport");
+    await expect(page.getByText(/Visa document \(required for non-Indian nationals\)/i)).toBeVisible();
+
+    await galleryInputs(page).first().setInputFiles({ ...tinyJpeg, name: "passport.jpg" });
+    // Visa MultiDocUpload is the last gallery file input when foreign
+    await galleryInputs(page).last().setInputFiles({ ...tinyJpeg, name: "visa.jpg" });
+
+    await page.getByRole("button", { name: "Verify document" }).first().click();
+    await expect(page.getByText(/Passport verified/i)).toBeVisible({ timeout: 10_000 });
+
+    await pickCountry(page, "arrivedFromCountry", "France");
+    await page.locator('select[name="purposeOfVisit"]').selectOption("Tourism");
+
+    await page.getByRole("button", { name: "Complete Check-in" }).click();
+    await expect(page.getByText("Check-in complete!")).toBeVisible({ timeout: 10_000 });
+    expect(capture).not.toBeNull();
+    expect(capture!.hasIdempotencyKey).toBe(true);
+    expect(capture!.raw).toMatch(/name="nationality"[\s\S]*France/);
+    expect(capture!.raw).toMatch(/name="visaImages"/);
   });
 });

@@ -4,7 +4,7 @@
 
 Pages: `/self-checkin` (static shell with full-bleed hero loop video + frosted glass form cards — see [frosted-glass.md](frosted-glass.md)). APIs: `/api/checkin/lookup`, `/api/validate-id`, `/api/checkin`.
 
-`POST /api/checkin` requires a UUID `idempotencyKey` (FormData). Soft active-visit dedupe (`isSameCheckinVisit`) remains; the create key (migration **0080** `checkins.idempotency_key`) closes timeout/retry duplicates for the same attempt. Admin Records `add` / `addPast` use the same key contract.
+`POST /api/checkin` requires a UUID `idempotencyKey` (FormData). Soft active-visit dedupe (`isSameCheckinVisit`) remains; the create key (migration **0080** `checkins.idempotency_key`) closes timeout/retry duplicates for the same attempt. Admin Records `add` / `addPast` use the same key contract. Guest abuse edge: `guestBookingRateLimit` on `POST /api/checkin` returns **429** (`Too many submissions…`); `GET /api/checkin/lookup` is not rate-limited and never leaks 500s (`found: false` on miss/error). Disposable-SQLite coverage: `src/__tests__/checkin-create.integration.test.ts` (create / foreign+visa / idempotency / parallel key race / soft visit / Drive-fail insert / 429 / lookup). Records gates: `markVibeMatched`=`canViewDashboard`, `addPast`=`admin_only` in `cpu-checkins-auth.test.ts`.
 
 ---
 
