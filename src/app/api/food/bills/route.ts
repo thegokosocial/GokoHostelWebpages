@@ -8,6 +8,8 @@ import { brandingFromSettings, publicBillBranding, BILL_SETTINGS_KEYS } from "@/
 import { foodTaxPercent } from "@/lib/foodLookup";
 import { foodAmountPaid, foodDue } from "@/lib/foodPaymentBalance";
 import { latestWalkinOrder, normalizeWalkinGuestName, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
+import { BILL_QR_MODE_KEY, parseBillQrMode, effectiveMode } from "@/lib/foodBillQrMode";
+import { workerEnv } from "@/lib/razorpay";
 
 type BillSelection = { scope?: "hostel" | "walkin"; walkinNameKey?: string; checkinId?: number | null };
 
@@ -135,6 +137,7 @@ async function loadBillsForPhone(normalized: string, requested: BillSelection = 
   const ordersWithItems = allOrders.map((o) => {
     const items = itemsMap.get(o.id) || [];
     return {
+      id: o.id,
       orderNumber: o.orderNumber,
       status: o.status,
       guestType: o.guestType,
@@ -143,6 +146,7 @@ async function loadBillsForPhone(normalized: string, requested: BillSelection = 
       subtotal: o.subtotal,
       tax: o.tax,
       total: o.total,
+      amountPaid: o.amountPaid,
       discount: o.discount,
       paymentStatus: o.paymentStatus,
       paymentMethod: o.paymentMethod,
@@ -174,9 +178,11 @@ async function loadBillsForPhone(normalized: string, requested: BillSelection = 
     billSettings[key] = (await getSetting(key)) ?? "";
   }
   const taxRate = foodTaxPercent(await getSetting("food_tax_rate"));
+  const qrMode = effectiveMode(parseBillQrMode(billSettings[BILL_QR_MODE_KEY] || await getSetting(BILL_QR_MODE_KEY)), workerEnv());
   const billBranding = {
-    ...publicBillBranding(brandingFromSettings(billSettings)),
+    ...publicBillBranding(brandingFromSettings(billSettings), qrMode),
     taxRate,
+    qrMode,
   };
 
   return { unpaidOrders, paidOrders, latestCheckinId: selectedCheckinId, billBranding };

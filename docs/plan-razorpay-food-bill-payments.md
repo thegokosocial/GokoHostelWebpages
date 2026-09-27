@@ -1,6 +1,8 @@
 # Razorpay food-bill payments plan
 
-**Status:** reviewed on 23 September 2026 against the current repository layout and Razorpay's published API docs; implementation has not started. This is the separate food-payment plan requested for food bills. Website booking payments remain a separate workflow and environment selector.
+**Status (2026-09-27):** v1 implemented in source — Bill Settings `food_bill_qr_mode`, Cloudflare-only `food_qr_*` tables (0083), `foodQrPayment` engine (7-day `close_by`, unpaid expiry → regenerate), webhook branch, guest `/api/food/bills/qr` (share-token only), admin `/api/admin/food-payments` + Food ledger, admin Bill drawer + **share-token** My Bills show pay QR; **menu My Bills = items only (no QR)**; staff WhatsApp = **link only** (PNG attach deferred). Refunds stay manual in Razorpay Dashboard; no `guest_receipts` on capture. Production still needs D1 migrate `0083` + Live webhook QR events before enabling `razorpay_live`. Older sections below are historical design notes; prefer `docs/flows-food-kitchen.md`, `docs/api-map.md`, and `.cursor/plans/food_razorpay_dynamic_qr_*.plan.md` for current behavior.
+
+Website booking payments remain a separate workflow and environment selector.
 
 ## Current layout verified
 

@@ -254,6 +254,59 @@ export const nativeBookingWebhooks = sqliteTable("native_booking_webhooks", {
   check("native_webhook_state", sql`${t.state} IN ('received','retry','processed','ignored')`),
 ]);
 
+// Food bill dynamic QR payment tables (Cloudflare-only; not synced to Pi).
+export const foodQrAttempts = sqliteTable("food_qr_attempts", {
+  id: text("id").primaryKey(), requestKey: text("request_key").notNull().unique(),
+  environment: text("environment").notNull(), keyId: text("key_id").notNull(),
+  qrCodeId: text("qr_code_id").unique(), qrImageUrl: text("qr_image_url"),
+  paymentAmountPaise: integer("payment_amount_paise").notNull(),
+  snapshotDuePaise: integer("snapshot_due_paise").notNull(),
+  state: text("state").notNull().default("creating"),
+  closeBy: text("close_by"), foodOrderIds: text("food_order_ids").notNull().default("[]"),
+  checkinId: integer("checkin_id"), guestName: text("guest_name").notNull().default(""),
+  guestPhone: text("guest_phone").notNull().default(""), notes: text("notes").notNull().default("{}"),
+  createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  index("idx_food_qr_attempts_state").on(t.state, t.updatedAt),
+  index("idx_food_qr_attempts_checkin").on(t.checkinId),
+  check("food_qr_env", sql`${t.environment} IN ('test','live')`),
+  check("food_qr_amount", sql`${t.paymentAmountPaise} >= 100`),
+  check("food_qr_snapshot", sql`${t.snapshotDuePaise} >= 100`),
+  check("food_qr_state", sql`${t.state} IN ('creating','qr_unknown','active','paid','closed','expired')`),
+]);
+export const foodQrOrderClaims = sqliteTable("food_qr_order_claims", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  attemptId: text("attempt_id").notNull().references(() => foodQrAttempts.id),
+  orderId: integer("order_id").notNull(),
+  claimedAt: text("claimed_at").notNull(), releasedAt: text("released_at"),
+}, (t) => [
+  uniqueIndex("idx_food_qr_claims_unique").on(t.attemptId, t.orderId),
+  index("idx_food_qr_order_claims_order").on(t.orderId),
+]);
+export const foodQrPayments = sqliteTable("food_qr_payments", {
+  id: text("id").primaryKey(), attemptId: text("attempt_id").notNull().references(() => foodQrAttempts.id),
+  amountPaise: integer("amount_paise").notNull(), status: text("status").notNull(),
+  captured: integer("captured").notNull().default(0), refundedPaise: integer("refunded_paise").notNull().default(0),
+  feePaise: integer("fee_paise"), taxPaise: integer("tax_paise"),
+  method: text("method"), verifiedAt: text("verified_at").notNull(),
+}, (t) => [
+  index("idx_food_qr_payments_attempt").on(t.attemptId),
+  check("food_qr_pay_amount", sql`${t.amountPaise} >= 100`),
+  check("food_qr_pay_status", sql`${t.status} IN ('created','authorized','captured','refunded','failed')`),
+  check("food_qr_pay_captured", sql`${t.captured} IN (0,1)`),
+  check("food_qr_pay_refunded", sql`${t.refundedPaise} >= 0`),
+  check("food_qr_pay_fee", sql`${t.feePaise} IS NULL OR ${t.feePaise} >= 0`),
+  check("food_qr_pay_tax", sql`${t.taxPaise} IS NULL OR ${t.taxPaise} >= 0`),
+]);
+export const foodQrWebhooks = sqliteTable("food_qr_webhooks", {
+  eventId: text("event_id").primaryKey(), payloadHash: text("payload_hash").notNull(), eventType: text("event_type").notNull(),
+  qrCodeId: text("qr_code_id"), paymentId: text("payment_id"), attemptId: text("attempt_id"),
+  state: text("state").notNull().default("received"), receivedAt: text("received_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  index("idx_food_qr_webhooks_state").on(t.state, t.receivedAt),
+  check("food_qr_webhook_state", sql`${t.state} IN ('received','retry','processed','ignored')`),
+]);
+
 export const apiStats = sqliteTable("api_stats", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   month: text("month").notNull().unique(),

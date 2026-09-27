@@ -68,6 +68,14 @@ function requestFor(route: string, action: string): NextRequest {
     if (action === "refundTestPayment") body.paymentId = "pay_test123";
     if (action === "retryTestWebhook") body.eventId = "event-test-1";
   }
+  if (route.endsWith("food-payments/route.ts")) {
+    const id = "00000000-0000-4000-8000-000000000001";
+    if (action === "ensureFoodQr") {
+      body.requestKey = id;
+      body.orderIds = [1];
+    }
+    if (["getFoodQrAttempt", "reconcileFoodQrAttempt"].includes(action)) body.attemptId = id;
+  }
   return new NextRequest("http://localhost/api/admin/route", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -115,6 +115,9 @@ erDiagram
   checkins ||--o{ food_orders : tab
   checkins ||--o{ review_requests : funnel
   checkins ||--o{ food_bill_share_tokens : optional
+  food_orders ||--o{ food_qr_order_claims : razorpay_qr
+  food_qr_attempts ||--o{ food_qr_order_claims : claims
+  food_qr_attempts ||--o{ food_qr_payments : captures
   review_requests ||--o{ review_feedback : if_low_rating
   dorms ||--o{ room_type_mapping : channel_code
   room_type_mapping ||--o{ rate_plan_mapping : plans

@@ -4,12 +4,13 @@ import { isPiRuntime } from "@/lib/runtime";
 import { readGatewayBody } from "@/lib/gatewayRequestBody";
 import { receivePreviewWebhook, PreviewError } from "@/lib/razorpayPreview";
 import { peekRazorpayNotes, receiveNativeBookingWebhook, GuestCheckoutError } from "@/lib/nativeGuestCheckout";
+import { receiveFoodQrWebhook, FoodQrError } from "@/lib/foodQrPayment";
 import { RazorpayError } from "@/lib/razorpay";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
 
-/** TEST webhook. Routes by order notes: goko_checkout_id (native) vs goko_preview_attempt (preview). */
+/** Webhook router: food QR → native booking → preview, by order notes. */
 export async function POST(req: NextRequest) {
   if (isPiRuntime()) return NextResponse.json({ error: "Gateway webhooks are Cloudflare-owned" }, { status: 403, headers });
   const signature = req.headers.get("x-razorpay-signature") || "";
@@ -20,7 +21,9 @@ export async function POST(req: NextRequest) {
   try {
     const raw = await readGatewayBody(req, 65536);
     const notes = peekRazorpayNotes(raw);
-    const result = notes.checkoutId
+    const result = notes.foodAttemptId
+      ? await receiveFoodQrWebhook(raw, signature, eventId)
+      : notes.checkoutId
       ? await receiveNativeBookingWebhook(raw, signature, eventId)
       : await receivePreviewWebhook(raw, signature, eventId);
     return NextResponse.json(result, { headers });
@@ -30,6 +33,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status, headers });
     }
     if (error instanceof GuestCheckoutError && [400, 409, 413].includes(error.status)) {
+      return NextResponse.json({ error: error.message }, { status: error.status, headers });
+    }
+    if (error instanceof FoodQrError && [400, 409, 413].includes(error.status)) {
       return NextResponse.json({ error: error.message }, { status: error.status, headers });
     }
     if (error instanceof RazorpayError && error.httpStatus === 400) {

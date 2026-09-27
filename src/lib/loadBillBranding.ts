@@ -5,11 +5,13 @@ import {
   type BillBranding,
   DEFAULT_BILL_BRANDING,
 } from "@/lib/foodBillFormat";
+import { BILL_QR_MODE_KEY, parseBillQrMode, type BillQrMode } from "@/lib/foodBillQrMode";
 
 export type LoadedBillBranding = {
   ok: boolean;
   branding: BillBranding;
   paymentQrDataUrl?: string;
+  qrMode?: BillQrMode;
   error?: string;
 };
 
@@ -60,10 +62,11 @@ export async function loadBillBranding(
     }
     const settings = (data.settings || {}) as Record<string, string>;
     const branding = brandingFromSettings(settings);
+    const qrMode = parseBillQrMode(settings[BILL_QR_MODE_KEY]);
     const paymentQrDataUrl = embedQr && branding.paymentQrUrl
       ? await qrUrlToDataUrl(branding.paymentQrUrl)
       : undefined;
-    return { ok: true, branding, paymentQrDataUrl };
+    return { ok: true, branding, paymentQrDataUrl, qrMode };
   } catch {
     return {
       ok: false,

@@ -1,0 +1,60 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
+
+describe("admin food-payments + guest bill QR routes", () => {
+  const adminRoute = readFileSync("src/app/api/admin/food-payments/route.ts", "utf8");
+  const guestRoute = readFileSync("src/app/api/food/bills/qr/route.ts", "utf8");
+  const billsRoute = readFileSync("src/app/api/food/bills/route.ts", "utf8");
+  const hook = readFileSync("src/hooks/useFoodBillDynamicQr.ts", "utf8");
+  const card = readFileSync("src/components/food/GuestFoodBillCard.tsx", "utf8");
+  const ledger = readFileSync("src/components/admin/FoodPaymentsLedger.tsx", "utf8");
+  const ordersUi = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
+  const myBills = readFileSync("src/app/my-bills/page.tsx", "utf8");
+
+  it("admin ledger is admin-only; ensure/reconcile allow bill staff permissions", () => {
+    expect(adminRoute).toContain('listFoodQrAttempts: "admin_only"');
+    expect(adminRoute).toContain("ensureFoodQr");
+    expect(adminRoute).toContain("canGenerateFoodBills");
+    expect(adminRoute).toContain("ensureActiveFoodQrForOrders");
+    expect(adminRoute).toContain("isPiRuntime");
+  });
+
+  it("guest QR route is share-token only with checkin/walk-in scope and never trusts client amount", () => {
+    expect(guestRoute).toContain("ensureActiveFoodQrForOrders");
+    expect(guestRoute).toContain("getValidFoodBillShareToken");
+    expect(guestRoute).toContain("token: z.string().min(8).max(40)");
+    expect(guestRoute).toContain("phone-only mint is not allowed");
+    expect(guestRoute).toContain("Orders do not match this bill");
+    expect(guestRoute).toContain("Payment attempt does not match this bill");
+    expect(guestRoute).toContain("normalizeWalkinGuestName");
+    expect(guestRoute).not.toMatch(/amountPaise.*body|body\.amount/);
+    expect(guestRoute).toContain('action: z.enum(["ensure", "status"])');
+    expect(hook).toContain("Missing bill share token");
+    expect(hook).not.toMatch(/phone: opts\.phone/);
+  });
+
+  it("public bills payload includes order ids and effective qrMode", () => {
+    expect(billsRoute).toContain("id: o.id");
+    expect(billsRoute).toContain("amountPaid: o.amountPaid");
+    expect(billsRoute).toContain("effectiveMode");
+    expect(billsRoute).toContain("qrMode");
+  });
+
+  it("pay QR only on share-token My Bills + admin Bill drawer; menu items hide payment", () => {
+    expect(myBills).toContain("useFoodBillDynamicQr");
+    expect(myBills).toContain("myBillsShowsPayQr");
+    expect(myBills).toContain("myBillsHidePayment");
+    expect(myBills).toContain("shouldEnsureDynamicFoodQr");
+    expect(myBills).toContain("hidePayment={hidePayment}");
+    expect(myBills).not.toContain("Total Spent");
+    expect(myBills).not.toMatch(/variant=\"paid\"/);
+    expect(ordersUi).toContain("useFoodBillDynamicQr");
+    expect(ordersUi).not.toContain("Share image");
+    expect(ordersUi).not.toContain("shareBillImage");
+    expect(card).toContain("hidePayment");
+    expect(card).toContain("Razorpay payment received");
+    expect(hook).toContain("ensureFoodQr");
+    expect(ledger).toContain("listFoodQrAttempts");
+    expect(ledger).toContain("reconcileFoodQrAttempt");
+  });
+});

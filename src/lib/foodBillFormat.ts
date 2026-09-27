@@ -7,6 +7,7 @@ export const BILL_SETTINGS_KEYS = [
   "food_bill_upi_id",
   "food_bill_payment_qr_url",
   "food_bill_footer",
+  "food_bill_qr_mode",
 ] as const;
 
 export type BillSettingsKey = (typeof BILL_SETTINGS_KEYS)[number];
@@ -134,7 +135,7 @@ export function mergeBillLineItems<
 }
 
 /** Public-safe branding payload for guest APIs. */
-export function publicBillBranding(branding: BillBranding) {
+export function publicBillBranding(branding: BillBranding, qrMode?: string) {
   return {
     hostelName: branding.hostelName,
     location: branding.location,
@@ -142,5 +143,6 @@ export function publicBillBranding(branding: BillBranding) {
     upiId: branding.upiId,
     qrUrl: branding.paymentQrUrl,
     footer: branding.footer,
+    ...(qrMode ? { qrMode } : {}),
   };
 }

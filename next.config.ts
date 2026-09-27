@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" },
         { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-        { key: "Content-Security-Policy-Report-Only", value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://tagmanager.google.com; img-src 'self' data: blob: https://cdn.prod.website-files.com https://*.googleusercontent.com https://drive.google.com; media-src 'self' https://cdn.prod.website-files.com; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com; frame-src https://bookingengine.stayflexi.com" },
+        { key: "Content-Security-Policy-Report-Only", value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://tagmanager.google.com; img-src 'self' data: blob: https://cdn.prod.website-files.com https://*.googleusercontent.com https://drive.google.com https://rzp.io https://*.rzp.io; media-src 'self' https://cdn.prod.website-files.com; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com; frame-src https://bookingengine.stayflexi.com" },
       ],
     }];
   },

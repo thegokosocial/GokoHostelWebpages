@@ -11,6 +11,8 @@ import { loadBillBranding } from "@/lib/loadBillBranding";
 import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/food/GuestFoodBillCard";
 import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/lib/foodBillFormat";
 import { buildBillWhatsAppDraft } from "@/lib/billShare";
+import { useFoodBillDynamicQr } from "@/hooks/useFoodBillDynamicQr";
+import { isRazorpayBillMode } from "@/lib/foodBillQrUi";
 import { useStaffWhatsApp } from "@/components/admin/StaffWhatsAppProvider";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
@@ -920,6 +922,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [spBillWarning, setSpBillWarning] = useState(false);
   const [billBranding, setBillBranding] = useState<BillBranding>(DEFAULT_BILL_BRANDING);
   const [billBrandingReady, setBillBrandingReady] = useState(false);
+  const [billQrMode, setBillQrMode] = useState<"static" | "razorpay_test" | "razorpay_live">("static");
   const [whatsAppBusy, setWhatsAppBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   usePanelHistory(showHistory, () => setShowHistory(false));
@@ -1357,6 +1360,36 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     ? selectedGroupOrders.reduce((sum, o) => sum + foodDue(o), 0)
     : selectedGroup?.pendingAmount || 0;
   const billTotal = billOrders.reduce((sum, o) => sum + foodDue(o), 0);
+  const unpaidBillOrderIds = useMemo(
+    () => selectedGroupOrders.filter((o) => foodDue(o) > 0).map((o) => o.id),
+    [selectedGroupOrders],
+  );
+  const drawerDynamicQrEnabled =
+    drawerView === "bill"
+    && unpaidBillOrderIds.length > 0
+    && isRazorpayBillMode(billQrMode);
+  const { state: drawerQrState } = useFoodBillDynamicQr({
+    enabled: drawerDynamicQrEnabled,
+    orderIds: unpaidBillOrderIds,
+    password,
+    username,
+    admin: true,
+  });
+  const drawerDynamicQr =
+    !drawerDynamicQrEnabled || drawerQrState.status === "idle" || drawerQrState.status === "static"
+      ? null
+      : drawerQrState.status === "loading"
+        ? { status: "loading" as const }
+        : drawerQrState.status === "active"
+          ? {
+              status: "active" as const,
+              imageUrl: drawerQrState.imageUrl,
+              closeBy: drawerQrState.closeBy,
+              label: drawerQrState.label,
+            }
+          : drawerQrState.status === "paid"
+            ? { status: "paid" as const, label: drawerQrState.label }
+            : { status: "error" as const, message: drawerQrState.message };
 
   const groupHasSpPending = groupHasPendingSpecialPrice(selectedGroupOrders);
 
@@ -1368,8 +1401,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       return;
     }
     if (!billBrandingReady) {
-      const { branding } = await withBillBranding(password, username, showError, { embedQr: false });
-      setBillBranding(branding);
+      const loaded = await withBillBranding(password, username, showError, { embedQr: false });
+      setBillBranding(loaded.branding);
+      if (loaded.qrMode) setBillQrMode(loaded.qrMode);
       setBillBrandingReady(true);
     }
     setSpBillWarning(false);
@@ -1714,6 +1748,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                   }))}
                   variant={actualGroupPending > 0 ? "unpaid" : "paid"}
                   paymentDue={actualGroupPending}
+                  dynamicQr={drawerDynamicQr}
                   branding={{
                     hostelName: billBranding.hostelName,
                     location: billBranding.location,
@@ -1727,67 +1762,65 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     ),
                   }}
                   alwaysExpanded
-                  footerActions={
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setDrawerView("orders")}
-                        className="rounded-lg border border-brand-mist px-3 py-2 text-sm font-medium text-brand-green-dark/70 hover:bg-brand-sand"
-                      >
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const phone = selectedGroup.contactInfo
-                            || selectedGroupOrders.find((o) => o.guestPhone)?.guestPhone
-                            || "";
-                          const checkinId = selectedGroup.guestType === "hostel"
-                            ? parseInt(selectedGroup.key.replace("hostel_", ""), 10)
-                            : undefined;
-                          void shareBillViaWhatsApp(phone, selectedGroup.guestName, Number.isFinite(checkinId) ? checkinId : null);
-                        }}
-                        disabled={whatsAppBusy}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                      >
-                        {whatsAppBusy ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
-                        WhatsApp
-                      </button>
-                      {(hasPermission(role || "staff", permissions || {}, "canApplyFoodDiscounts")
-                        || hasPermission(role || "staff", permissions || {}, "canMarkPaid")) && (
-                        <button
-                          type="button"
-                          onClick={() => setDiscountModalGroup(selectedGroup)}
-                          disabled={busy === selectedGroup.key}
-                          className="flex items-center gap-1.5 rounded-lg border border-purple-500 bg-purple-50 dark:bg-purple-950 px-3 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 disabled:opacity-50"
-                        >
-                          <TagIcon className="h-3.5 w-3.5" />
-                          {selectedGroupOrders.reduce((s, o) => s + (o.discount || 0), 0) > 0
-                            ? `Discount · -₹${(selectedGroupOrders.reduce((s, o) => s + (o.discount || 0), 0) / 100).toFixed(0)}`
-                            : "Discount"}
-                        </button>
-                      )}
-                      {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (groupHasSpPending) {
-                              setSpBillWarning(true);
-                              setDrawerView("orders");
-                              return;
-                            }
-                            setPaymentModalMethod("online");
-                            setPaymentModalGroup(selectedGroup);
-                          }}
-                          disabled={busy === selectedGroup.key || groupHasSpPending || actualGroupPending <= 0}
-                          className="flex items-center gap-1.5 rounded-lg border border-green-500 bg-green-50 dark:bg-green-950 px-3 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 disabled:opacity-50"
-                        >
-                        <BanknoteIcon className="h-3.5 w-3.5" /> Pay · ₹{(actualGroupPending / 100).toFixed(0)}
-                        </button>
-                      )}
-                    </>
-                  }
                 />
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDrawerView("orders")}
+                    className="rounded-lg border border-brand-mist px-3 py-2 text-sm font-medium text-brand-green-dark/70 hover:bg-brand-sand"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const phone = selectedGroup.contactInfo
+                        || selectedGroupOrders.find((o) => o.guestPhone)?.guestPhone
+                        || "";
+                      const checkinId = selectedGroup.guestType === "hostel"
+                        ? parseInt(selectedGroup.key.replace("hostel_", ""), 10)
+                        : undefined;
+                      void shareBillViaWhatsApp(phone, selectedGroup.guestName, Number.isFinite(checkinId) ? checkinId : null);
+                    }}
+                    disabled={whatsAppBusy}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  >
+                    {whatsAppBusy ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
+                    WhatsApp
+                  </button>
+                  {(hasPermission(role || "staff", permissions || {}, "canApplyFoodDiscounts")
+                    || hasPermission(role || "staff", permissions || {}, "canMarkPaid")) && (
+                    <button
+                      type="button"
+                      onClick={() => setDiscountModalGroup(selectedGroup)}
+                      disabled={busy === selectedGroup.key}
+                      className="flex items-center gap-1.5 rounded-lg border border-purple-500 bg-purple-50 dark:bg-purple-950 px-3 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 disabled:opacity-50"
+                    >
+                      <TagIcon className="h-3.5 w-3.5" />
+                      {selectedGroupOrders.reduce((s, o) => s + (o.discount || 0), 0) > 0
+                        ? `Discount · -₹${(selectedGroupOrders.reduce((s, o) => s + (o.discount || 0), 0) / 100).toFixed(0)}`
+                        : "Discount"}
+                    </button>
+                  )}
+                  {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (groupHasSpPending) {
+                          setSpBillWarning(true);
+                          setDrawerView("orders");
+                          return;
+                        }
+                        setPaymentModalMethod("online");
+                        setPaymentModalGroup(selectedGroup);
+                      }}
+                      disabled={busy === selectedGroup.key || groupHasSpPending || actualGroupPending <= 0}
+                      className="flex items-center gap-1.5 rounded-lg border border-green-500 bg-green-50 dark:bg-green-950 px-3 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 disabled:opacity-50"
+                    >
+                      <BanknoteIcon className="h-3.5 w-3.5" /> Pay · ₹{(actualGroupPending / 100).toFixed(0)}
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
             <>

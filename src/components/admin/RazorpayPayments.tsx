@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { WebsitePaymentsLedger } from "@/components/admin/WebsitePaymentsLedger";
+import { FoodPaymentsLedger } from "@/components/admin/FoodPaymentsLedger";
 import {
   managementSectionTabActiveClass,
   managementSectionTabClass,
@@ -37,10 +38,7 @@ export function RazorpayPayments({ password, username }: { password: string; use
       {tab === "room" ? (
         <WebsitePaymentsLedger password={password} username={username} />
       ) : (
-        <section className="rounded-xl border border-border p-6 text-center">
-          <h4 className="font-semibold text-foreground">Food payments</h4>
-          <p className="mt-1 text-sm text-muted-foreground">Food payment records will be available here soon.</p>
-        </section>
+        <FoodPaymentsLedger password={password} username={username} />
       )}
     </div>
   );

@@ -1135,3 +1135,27 @@ Cloudflare-only; excluded from Pi sync allowlist by omission.
 ### `native_booking_payments` / `native_booking_refunds` / `native_booking_webhooks`
 
 Mirror preview recovery semantics with **variable** amounts (≥100 paise). Webhook inbox keyed by `event_id`; route via `notes.goko_checkout_id`. Migration `0066_gateway_receivables.sql` adds optional `fee_paise` and `tax_paise` provider evidence to native booking payments; `0068_gateway_settlement_allocations.sql` creates the Cloudflare-only payout map.
+
+# Food bill Razorpay QR (migration 0083)
+
+Cloudflare-only; Pi migrator skips `0083_food_qr_payments.sql`. Engine: `foodQrPayment.ts`.
+
+### `food_qr_attempts`
+
+| Column | Notes |
+|--------|-------|
+| `id` / `request_key` | UUID PK; unique client request key |
+| `environment` | `test` \| `live` |
+| `state` | `creating` \| `qr_unknown` \| `active` \| `paid` \| `closed` \| `expired` |
+| `payment_amount_paise` / `snapshot_due_paise` | ≥100; server-computed due |
+| `food_order_ids` | JSON snapshot of claimed order ids |
+| `qr_code_id` / `qr_image_url` / `close_by` | Razorpay QR entity + echoed expiry |
+| `guest_name` / `guest_phone` | Display/ledger only (not in Razorpay notes) |
+
+### `food_qr_order_claims`
+
+One unreleased claim per `order_id` (partial unique index) → `attempt_id`. Blocks cash `markOrderPaid` while active.
+
+### `food_qr_payments` / `food_qr_webhooks`
+
+Provider `pay_*` evidence + event inbox (`event_id` uniqueness). Capture path does **not** write `guest_receipts` in v1.

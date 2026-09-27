@@ -70,13 +70,14 @@ describe("admin mobile navigation", () => {
     expect(management).toContain('validValues: visibleTabs.map((t) => t.id)');
   });
 
-  it("keeps Razorpay payment records under Management with a room tab and food placeholder", () => {
+  it("keeps Razorpay payment records under Management with Room and Food ledgers", () => {
     expect(management).toContain('id: "razorpayPayments", label: "Razorpay payments"');
     expect(management).toContain('import("./RazorpayPayments")');
     const razorpayPayments = readFileSync("src/components/admin/RazorpayPayments.tsx", "utf8");
     expect(razorpayPayments).toContain('aria-label="Razorpay payment tabs"');
     expect(razorpayPayments).toContain("WebsitePaymentsLedger");
-    expect(razorpayPayments).toContain("Food payment records will be available here soon.");
+    expect(razorpayPayments).toContain("FoodPaymentsLedger");
+    expect(razorpayPayments).not.toContain("Food payment records will be available here soon.");
     expect(bookingSettings).not.toContain("WebsitePaymentsLedger");
     expect(websitePayments).toContain("25 entries per page");
     expect(websitePayments).toContain("DateRangePicker");

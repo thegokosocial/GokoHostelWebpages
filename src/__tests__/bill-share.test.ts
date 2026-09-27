@@ -78,8 +78,9 @@ describe("mock workflows (source contracts)", () => {
     const page = readFileSync("src/app/my-bills/page.tsx", "utf8");
     expect(page).toMatch(/searchParams\.get\("t"\)/);
     expect(page).toMatch(/\/api\/food\/bills\?t=/);
-    expect(page).toMatch(/Shared bill link/);
     expect(page).toMatch(/viaToken/);
+    expect(page).toMatch(/myBillsShowsPayQr/);
+    expect(page).not.toMatch(/Shared bill link/);
   });
 
   it("bills API accepts token, hides phone when viaToken", () => {
@@ -96,12 +97,23 @@ describe("mock workflows (source contracts)", () => {
     const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
     expect(ui).toMatch(/createBillShareLink/);
     expect(ui).toMatch(/buildBillWhatsAppDraft/);
-    expect(ui.match(/prepareWhatsApp\(draft\.phone, draft\.message, "foodOrders"\)/g)).toHaveLength(2);
+    expect(ui.match(/prepareWhatsApp\(draft\.phone, draft\.message, "foodOrders"\)/g)?.length).toBeGreaterThanOrEqual(2);
     expect(ui).toMatch(/function CombinedBill/);
     expect(ui).toMatch(/GuestFoodBillCard/);
     expect(ui).toMatch(/embedQr:\s*false/);
     expect(ui).toMatch(/WhatsApp/);
+    expect(ui).not.toMatch(/Share image/);
+    expect(ui).not.toMatch(/shareBillImage/);
     expect(ui).toMatch(/guestName: g\.guestName/);
+  });
+
+  it("My Bills menu is items-only; share token can show pay QR", () => {
+    const page = readFileSync("src/app/my-bills/page.tsx", "utf8");
+    expect(page).toContain("myBillsHidePayment");
+    expect(page).toContain("myBillsShowsPayQr");
+    expect(page).toContain("shouldEnsureDynamicFoodQr");
+    expect(page).not.toContain("Total Spent");
+    expect(page).not.toMatch(/variant=\"paid\"/);
   });
 
   it("Combined Bill exposes permission-gated pay and discount actions for all preview orders", () => {

@@ -47,6 +47,16 @@ export type GuestFoodBillBranding = {
   qrUrl?: string;
   footer?: string;
   taxRate?: number;
+  qrMode?: string;
+};
+
+/** Optional Razorpay dynamic-QR overlay for unpaid bills. */
+export type GuestFoodBillDynamicQr = {
+  status: "loading" | "active" | "paid" | "error" | "static";
+  imageUrl?: string | null;
+  closeBy?: string | null;
+  label?: string;
+  message?: string;
 };
 
 function formatRupees(paise: number): string {
@@ -78,6 +88,8 @@ export function GuestFoodBillCard({
   onToggle,
   footerActions,
   paymentDue,
+  dynamicQr,
+  hidePayment = false,
   className = "",
 }: {
   orders: GuestFoodBillOrder[];
@@ -88,6 +100,9 @@ export function GuestFoodBillCard({
   onToggle?: () => void;
   footerActions?: ReactNode;
   paymentDue?: number;
+  dynamicQr?: GuestFoodBillDynamicQr | null;
+  /** Menu My Bills: items only — never show UPI/QR pay block */
+  hidePayment?: boolean;
   className?: string;
 }) {
   const accent = branding.accent || DEFAULT_BILL_BRANDING.accent;
@@ -116,7 +131,11 @@ export function GuestFoodBillCard({
   const { cgst, sgst } = splitGstPaise(tax);
   const rateForLabels = tax > 0 ? foodTaxRateFromAmounts(subtotal, tax) : (branding.taxRate || 0);
   const { cgstRate, sgstRate } = splitGstRate(rateForLabels);
-  const showPayment = variant === "unpaid" && due > 0 && !!(branding.qrUrl || branding.upiId);
+  const dynamicActive = !hidePayment && dynamicQr && dynamicQr.status !== "static";
+  const qrSrc = !hidePayment && dynamicQr?.status === "active" && dynamicQr.imageUrl
+    ? dynamicQr.imageUrl
+    : (!hidePayment && !dynamicActive ? branding.qrUrl : undefined);
+  const showPayment = !hidePayment && variant === "unpaid" && due > 0 && !!(qrSrc || branding.upiId || dynamicActive);
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
   const latest = orders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b), orders[0]);
@@ -199,29 +218,55 @@ export function GuestFoodBillCard({
 
       {showPayment && !pendingPrice && (
         <div className="mt-4 border-t border-dashed border-zinc-200 pt-4 text-center dark:border-white/10">
-          {branding.qrUrl && (
+          {dynamicQr?.status === "loading" && (
+            <p className="text-sm text-zinc-500">Preparing payment QR…</p>
+          )}
+          {dynamicQr?.status === "error" && (
+            <p className="text-sm text-red-600">{dynamicQr.message || "Payment QR unavailable"}</p>
+          )}
+          {dynamicQr?.status === "paid" && (
+            <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+              {dynamicQr.label || "Razorpay payment received"}
+            </p>
+          )}
+          {qrSrc && dynamicQr?.status !== "paid" && (
+            // eslint-disable-next-line @next/next/no-img-element -- Razorpay CDN / static upload URLs
             <img
-              src={branding.qrUrl}
+              src={qrSrc}
               alt="Payment QR"
-              className="mx-auto h-36 w-36 bg-white object-contain p-1"
+              className="mx-auto h-44 w-44 max-w-[70vw] bg-white object-contain p-2 sm:h-40 sm:w-40"
+              decoding="async"
             />
           )}
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-            Pay{" "}
-            <span className="font-semibold" style={{ color: accent }}>
-              {formatRupees(due)}
-            </span>
-            {" "}via UPI
-          </p>
-          {branding.upiId && (
-            <p className="mt-0.5 font-mono text-xs text-zinc-400">{branding.upiId}</p>
+          {dynamicQr?.status !== "paid" && dynamicQr?.status !== "error" && (
+            <>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+                Pay{" "}
+                <span className="font-semibold" style={{ color: accent }}>
+                  {formatRupees(due)}
+                </span>
+                {" "}via UPI
+                {dynamicActive && dynamicQr?.status === "active" ? " (exact amount)" : ""}
+              </p>
+              {dynamicQr?.status === "active" && dynamicQr.closeBy && (
+                <p className="mt-0.5 text-[11px] text-zinc-400">
+                  QR valid until {new Date(dynamicQr.closeBy).toLocaleString("en-IN")}
+                </p>
+              )}
+              {!dynamicActive && branding.upiId && (
+                <p className="mt-0.5 font-mono text-xs text-zinc-400">{branding.upiId}</p>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {variant === "paid" && (
+      {(variant === "paid" || dynamicQr?.status === "paid") && (
         <p className="mt-2 text-xs text-zinc-400">
           Settled{orders.some((o) => o.paymentMethod) ? ` · ${[...new Set(orders.map((o) => o.paymentMethod).filter(Boolean))].join(", ")}` : ""}
+          {orders.some((o) => o.paymentMethod === "razorpay" || o.paymentMethod === "razorpay_test")
+            ? " · Razorpay payment received"
+            : ""}
         </p>
       )}
 

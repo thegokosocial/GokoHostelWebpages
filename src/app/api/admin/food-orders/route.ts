@@ -118,6 +118,16 @@ export async function POST(req: NextRequest) {
       return new Map(modCounts.map((r) => [r.orderId, r.count]));
     }
 
+    async function rejectIfActiveFoodQr(orderIds: number[]) {
+      const { hasActiveFoodQrClaim } = await import("@/lib/foodQrPayment");
+      if (await hasActiveFoodQrClaim(orderIds)) {
+        return NextResponse.json({
+          error: "These orders have an active Razorpay QR payment. Wait for it to complete or expire before changing totals or payment.",
+        }, { status: 409 });
+      }
+      return null;
+    }
+
     function paymentForEditedTotal(order: Awaited<ReturnType<typeof getFoodOrderById>> | null, total: number) {
       if (!order) return {};
       const paid = foodAmountPaid(order);
@@ -264,6 +274,10 @@ export async function POST(req: NextRequest) {
         if (!currentOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
         if (currentOrder.status === "cancelled") return NextResponse.json({ error: "Order is already cancelled" }, { status: 409 });
         if (foodAmountPaid(currentOrder) > 0) return NextResponse.json({ error: "Paid or partially paid orders cannot be cancelled" }, { status: 409 });
+        {
+          const blocked = await rejectIfActiveFoodQr([orderId]);
+          if (blocked) return blocked;
+        }
 
         await updateFoodOrderStatus(orderId, "cancelled", cancelledReason || "Cancelled by admin");
         await restoreStock(orderId);
@@ -480,6 +494,10 @@ export async function POST(req: NextRequest) {
         if (existingOrders.some((order) => order.status === "cancelled" || foodDue(order) <= 0)) {
           return NextResponse.json({ error: "Every selected order must have an outstanding balance" }, { status: 409 });
         }
+        {
+          const blocked = await rejectIfActiveFoodQr(orderIds);
+          if (blocked) return blocked;
+        }
         const itemsByOrder = await getFoodOrderItemsBatch(orderIds);
         if (existingOrders.some((order) => (itemsByOrder.get(order.id) || []).some((item) => item.status !== "voided" && item.pricingStatus === "pending"))) {
           return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });
@@ -606,6 +624,10 @@ export async function POST(req: NextRequest) {
         const initialOrder = await getFoodOrderById(orderId);
         if (!initialOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
         if (initialOrder.status === "cancelled") return NextResponse.json({ error: "This order cannot be edited" }, { status: 400 });
+        {
+          const blocked = await rejectIfActiveFoodQr([orderId]);
+          if (blocked) return blocked;
+        }
 
         const refundAmount = refund ? Number(refund.amountPaise) : 0;
         if (refund && (!Number.isSafeInteger(refundAmount) || refundAmount <= 0)) {
@@ -893,6 +915,10 @@ export async function POST(req: NextRequest) {
       case "voidItem": {
         const { orderId, orderItemId, reason } = rest;
         if (!orderId || !orderItemId) return NextResponse.json({ error: "orderId and orderItemId required" }, { status: 400 });
+        {
+          const blocked = await rejectIfActiveFoodQr([orderId]);
+          if (blocked) return blocked;
+        }
 
         const db = getDb();
         const itemRows = await db.select().from(foodOrderItems).where(eq(foodOrderItems.id, orderItemId)).limit(1);
@@ -940,6 +966,10 @@ export async function POST(req: NextRequest) {
         const finalPrice = Number(price);
         if (!Number.isInteger(orderId) || !Number.isInteger(orderItemId) || !Number.isInteger(finalPrice) || finalPrice <= 0) {
           return NextResponse.json({ error: "A positive final price is required" }, { status: 400 });
+        }
+        {
+          const blocked = await rejectIfActiveFoodQr([orderId]);
+          if (blocked) return blocked;
         }
         const order = await getFoodOrderById(orderId);
         const [item] = await getDb().select().from(foodOrderItems).where(and(eq(foodOrderItems.id, orderItemId), eq(foodOrderItems.orderId, orderId))).limit(1);
@@ -993,6 +1023,10 @@ export async function POST(req: NextRequest) {
         }
         if (!Number.isInteger(newQuantity) || newQuantity < 0) {
           return NextResponse.json({ error: "newQuantity must be a non-negative whole number" }, { status: 400 });
+        }
+        {
+          const blocked = await rejectIfActiveFoodQr([orderId]);
+          if (blocked) return blocked;
         }
         const db = getDb();
 
@@ -1071,6 +1105,10 @@ export async function POST(req: NextRequest) {
 
         const existingOrders = await Promise.all(orderIds.map((orderId: number) => getFoodOrderById(orderId)));
         if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
+        {
+          const blocked = await rejectIfActiveFoodQr(orderIds);
+          if (blocked) return blocked;
+        }
 
         const discTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
 
@@ -1170,6 +1208,10 @@ export async function POST(req: NextRequest) {
         const rmTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
         const existingOrders = await Promise.all(removeOrderIds.map((orderId: number) => getFoodOrderById(orderId)));
         if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
+        {
+          const blocked = await rejectIfActiveFoodQr(removeOrderIds);
+          if (blocked) return blocked;
+        }
 
         // Only clear discounts with no real collection (unpaid + 100%-zeroed mistakes).
         const removableIds = removeOrderIds.filter((oid: number, idx: number) => {
@@ -1250,6 +1292,10 @@ export async function POST(req: NextRequest) {
       case "reassignOrder": {
         const { orderId, checkinId, guestName, roomInfo } = rest;
         if (!orderId || !checkinId) return NextResponse.json({ error: "orderId and checkinId required" }, { status: 400 });
+        {
+          const blocked = await rejectIfActiveFoodQr([orderId]);
+          if (blocked) return blocked;
+        }
 
         await updateFoodOrder(orderId, {
           checkinId,
@@ -1636,6 +1682,23 @@ export async function POST(req: NextRequest) {
 
         const order = await getFoodOrderById(orderId);
         if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+        {
+          const blocked = await rejectIfActiveFoodQr([orderId]);
+          if (blocked) return blocked;
+        }
+        const razorpayLocked = order.paymentMethod === "razorpay" || order.paymentMethod === "razorpay_test";
+        if (razorpayLocked) {
+          if (newPaymentMethod !== undefined && newPaymentMethod !== order.paymentMethod) {
+            return NextResponse.json({
+              error: "Razorpay food QR payments cannot be rewritten to cash/online. Refund in the Razorpay Dashboard if needed.",
+            }, { status: 409 });
+          }
+          if (newPaymentStatus !== undefined && newPaymentStatus !== "paid") {
+            return NextResponse.json({
+              error: "Razorpay food QR captures cannot be reversed here. Refund in the Razorpay Dashboard if needed.",
+            }, { status: 409 });
+          }
+        }
         if (newPaymentStatus === "paid") {
           const pendingItems = await getFoodOrderItems(orderId);
           if (pendingItems.some((item) => item.status !== "voided" && item.pricingStatus === "pending")) return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });

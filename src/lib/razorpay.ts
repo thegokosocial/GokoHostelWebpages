@@ -20,7 +20,7 @@ function fetchSignal(ms: number): AbortSignal | undefined {
   return undefined;
 }
 const paise = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
-export const razorpayId = (prefix: "order" | "pay" | "rfnd") => z.string().regex(new RegExp(`^${prefix}_[A-Za-z0-9]+$`)).max(80);
+export const razorpayId = (prefix: "order" | "pay" | "rfnd" | "qr") => z.string().regex(new RegExp(`^${prefix}_[A-Za-z0-9]+$`)).max(80);
 const notes = z.record(z.string()).or(z.array(z.unknown()).length(0)).optional();
 export const razorpayOrderSchema = z.object({
   entity: z.literal("order"), id: razorpayId("order"), amount: paise,
@@ -217,4 +217,89 @@ export async function fetchRazorpayBookingRefunds(paymentId: string, environment
 }
 export async function fetchRazorpayBookingRefund(refundId: string, environment: RazorpayEnvironment = "test") {
   return parse(razorpayRefundSchema, await request(`refunds/${razorpayId("rfnd").parse(refundId)}`, "GET", undefined, environment));
+}
+
+// --- Razorpay QR Code (food bill dynamic QR) ---
+
+export const razorpayQrCodeSchema = z.object({
+  entity: z.literal("qr_code"),
+  id: razorpayId("qr"),
+  name: z.string().optional(),
+  usage: z.enum(["single_use", "multiple_use"]),
+  type: z.enum(["upi_qr"]).optional(),
+  image_url: z.string().url(),
+  payment_amount: paise.nullable().optional(),
+  status: z.enum(["active", "closed"]),
+  fixed_amount: z.boolean(),
+  payments_amount_received: paise.optional(),
+  payments_count_received: z.number().int().min(0).optional(),
+  close_by: z.number().int().optional(),
+  closed_at: z.number().int().optional(),
+  close_reason: z.string().optional(),
+  customer_id: z.string().nullable().optional(),
+  notes,
+});
+export type RazorpayQrCode = z.infer<typeof razorpayQrCodeSchema>;
+
+/** QR payments may not have order_id (no Razorpay Order created for QR flow). */
+export const razorpayQrPaymentSchema = z.object({
+  entity: z.literal("payment"),
+  id: razorpayId("pay"),
+  order_id: razorpayId("order").nullable().optional(),
+  amount: paise,
+  currency: z.literal("INR"),
+  status: z.enum(["created", "authorized", "captured", "refunded", "failed"]),
+  captured: z.boolean(),
+  amount_refunded: paise,
+  method: z.string().nullable().optional(),
+  fee: paise.nullable().optional(),
+  tax: paise.nullable().optional(),
+  error_code: z.string().max(120).nullable().optional(),
+  error_description: z.string().max(500).nullable().optional(),
+  error_reason: z.string().max(120).nullable().optional(),
+});
+export type RazorpayQrPayment = z.infer<typeof razorpayQrPaymentSchema>;
+
+export async function createRazorpayFoodQr(input: {
+  amountPaise: number; attemptId: string; closeBy?: number; environment?: RazorpayEnvironment;
+}) {
+  const environment = input.environment ?? "test";
+  z.number().int().min(100).parse(input.amountPaise);
+  const body: Record<string, unknown> = {
+    type: "upi_qr",
+    name: `Goko Food ${input.attemptId.slice(0, 8)}`,
+    usage: "single_use",
+    fixed_amount: true,
+    payment_amount: input.amountPaise,
+    notes: { goko_food_attempt: z.string().uuid().parse(input.attemptId) },
+  };
+  if (input.closeBy) body.close_by = input.closeBy;
+  return parse(razorpayQrCodeSchema, await request("payments/qr_codes", "POST", body, environment));
+}
+
+export async function fetchRazorpayFoodQr(qrCodeId: string, environment: RazorpayEnvironment = "test") {
+  return parse(razorpayQrCodeSchema, await request(`payments/qr_codes/${razorpayId("qr").parse(qrCodeId)}`, "GET", undefined, environment));
+}
+
+export async function fetchRazorpayFoodQrPayments(qrCodeId: string, environment: RazorpayEnvironment = "test") {
+  const items = parse(
+    collection(razorpayQrPaymentSchema),
+    await request(`payments/qr_codes/${razorpayId("qr").parse(qrCodeId)}/payments?count=100`, "GET", undefined, environment),
+  ).items;
+  if (items.length === 100) throw new RazorpayError("INVALID_RESPONSE");
+  return items;
+}
+
+export async function closeRazorpayFoodQr(qrCodeId: string, environment: RazorpayEnvironment = "test") {
+  return parse(razorpayQrCodeSchema, await request(`payments/qr_codes/${razorpayId("qr").parse(qrCodeId)}/close`, "POST", undefined, environment));
+}
+
+/** Recovery: find QR codes by notes.goko_food_attempt (attempt UUID). */
+export async function listRazorpayFoodQrs(environment: RazorpayEnvironment = "test") {
+  const items = parse(
+    collection(razorpayQrCodeSchema),
+    await request("payments/qr_codes?count=100", "GET", undefined, environment),
+  ).items;
+  if (items.length === 100) throw new RazorpayError("INVALID_RESPONSE");
+  return items;
 }

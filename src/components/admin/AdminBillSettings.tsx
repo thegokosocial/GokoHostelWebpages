@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { AdminLoading } from "./AdminLoading";
 import { SaveIcon, RefreshCwIcon, UploadIcon, Trash2Icon } from "lucide-react";
 import { DEFAULT_BILL_BRANDING, parseAccentHex } from "@/lib/foodBillFormat";
+import { parseBillQrMode, type BillQrMode } from "@/lib/foodBillQrMode";
 
 type BillSettings = {
   food_bill_hostel_name: string;
@@ -16,6 +17,7 @@ type BillSettings = {
   food_bill_upi_id: string;
   food_bill_payment_qr_url: string;
   food_bill_footer: string;
+  food_bill_qr_mode: BillQrMode;
 };
 
 const DEFAULTS: BillSettings = {
@@ -25,7 +27,14 @@ const DEFAULTS: BillSettings = {
   food_bill_upi_id: "",
   food_bill_payment_qr_url: "",
   food_bill_footer: DEFAULT_BILL_BRANDING.footer,
+  food_bill_qr_mode: "static",
 };
+
+const QR_MODE_OPTIONS: Array<{ value: BillQrMode; label: string; hint: string }> = [
+  { value: "static", label: "Static QR image", hint: "Uploaded UPI QR; guest may enter amount; staff verifies" },
+  { value: "razorpay_test", label: "Razorpay dynamic (Test)", hint: "Fixed-amount UPI QR via Razorpay Test keys" },
+  { value: "razorpay_live", label: "Razorpay dynamic (Live)", hint: "Fixed-amount UPI QR via Razorpay Live keys" },
+];
 
 export function AdminBillSettings({ password, username }: { password: string; username?: string }) {
   const { showError, showSuccess } = useAdminToast();
@@ -59,6 +68,7 @@ export function AdminBillSettings({ password, username }: { password: string; us
         food_bill_upi_id: s.food_bill_upi_id || "",
         food_bill_payment_qr_url: s.food_bill_payment_qr_url || "",
         food_bill_footer: s.food_bill_footer || DEFAULTS.food_bill_footer,
+        food_bill_qr_mode: parseBillQrMode(s.food_bill_qr_mode),
       });
       setDirty(false);
     } catch (e: unknown) {
@@ -219,8 +229,42 @@ export function AdminBillSettings({ password, username }: { password: string; us
         </div>
 
         <div>
-          <Label>Payment QR image</Label>
-          <p className="mt-0.5 text-xs text-brand-green-dark/50">JPEG, PNG, or WebP. Shown on PDF and My Bills.</p>
+          <Label>Bill payment QR</Label>
+          <p className="mt-0.5 text-xs text-brand-green-dark/50">
+            Static uses the uploaded image below. Razorpay creates a single-use fixed-amount QR per unpaid bill
+            (auto-refreshes if expired while still unpaid).
+          </p>
+          <div className="mt-3 space-y-2">
+            {QR_MODE_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={`flex cursor-pointer gap-3 rounded-xl border px-3 py-2.5 text-sm ${
+                  settings.food_bill_qr_mode === opt.value
+                    ? "border-brand-green bg-brand-sand/50"
+                    : "border-brand-mist bg-white dark:bg-card"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="food_bill_qr_mode"
+                  className="mt-1"
+                  checked={settings.food_bill_qr_mode === opt.value}
+                  onChange={() => update("food_bill_qr_mode", opt.value)}
+                />
+                <span>
+                  <span className="font-medium text-brand-green-dark dark:text-zinc-100">{opt.label}</span>
+                  <span className="mt-0.5 block text-xs text-brand-green-dark/55 dark:text-zinc-400">{opt.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Label>Static payment QR image</Label>
+          <p className="mt-0.5 text-xs text-brand-green-dark/50">
+            JPEG, PNG, or WebP. Used when mode is Static, or as fallback if Razorpay is not ready.
+          </p>
           {settings.food_bill_payment_qr_url ? (
             <div className="mt-3 flex flex-wrap items-start gap-4">
               <img

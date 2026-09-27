@@ -34,6 +34,9 @@ vi.mock("@/db/queries", () => ({
   abandonIncompleteFoodOrder: q.abandonIncompleteFoodOrder,
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
+vi.mock("@/lib/foodQrPayment", () => ({
+  hasActiveFoodQrClaim: vi.fn(async () => false),
+}));
 vi.mock("@/lib/guestReceipts", () => ({ latestReceiptAccount: q.latestReceiptAccount, createGuestReceipt: q.createGuestReceipt, receiptBusinessDate: vi.fn(() => "2026-09-22"), resolveReceiptAccount: q.resolveReceiptAccount }));
 vi.mock("@/lib/pushNotify", () => ({ dispatchPush: q.dispatchPush, notificationFoodBody: q.notificationFoodBody }));
 
@@ -288,6 +291,32 @@ describe("admin market-pricing workflows", () => {
     expect(q.getDb).toHaveBeenCalled();
     expect(q.createGuestReceipt).toHaveBeenCalledWith(expect.objectContaining({ kind: "reversal", accountId: 7, amount: -10000 }));
     expect(q.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "food_payment_modified", target: "order:10" }));
+  });
+
+  it("refuses to rewrite or reverse a Razorpay food QR capture via updatePaymentDetails", async () => {
+    q.getFoodOrderById.mockResolvedValue({
+      ...order,
+      paymentStatus: "paid",
+      paymentMethod: "razorpay_test",
+      total: 10000,
+      amountPaid: 10000,
+      paidBy: "razorpay",
+    });
+
+    const methodRewrite = await POST(actionReq("updatePaymentDetails", {
+      orderId: 10,
+      paymentMethod: "cash",
+    }));
+    expect(methodRewrite.status).toBe(409);
+    expect(await methodRewrite.json()).toMatchObject({ error: expect.stringMatching(/cannot be rewritten/i) });
+
+    const statusRevert = await POST(actionReq("updatePaymentDetails", {
+      orderId: 10,
+      paymentStatus: "pending",
+    }));
+    expect(statusRevert.status).toBe(409);
+    expect(await statusRevert.json()).toMatchObject({ error: expect.stringMatching(/cannot be reversed/i) });
+    expect(q.updateFoodOrderPayment).not.toHaveBeenCalled();
   });
 
   it("collects only the outstanding balance when a partial order is completed", async () => {

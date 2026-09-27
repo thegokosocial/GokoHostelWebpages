@@ -5,6 +5,12 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { DEFAULT_BILL_BRANDING } from "@/lib/foodBillFormat";
 import { GuestFoodBillCard } from "@/components/food/GuestFoodBillCard";
+import { useFoodBillDynamicQr } from "@/hooks/useFoodBillDynamicQr";
+import {
+  myBillsHidePayment,
+  myBillsShowsPayQr,
+  shouldEnsureDynamicFoodQr,
+} from "@/lib/foodBillQrUi";
 
 interface BillItem {
   menuItemId: number;
@@ -17,6 +23,7 @@ interface BillItem {
 }
 
 interface BillOrder {
+  id?: number;
   orderNumber: string;
   status: string;
   guestType: string;
@@ -25,6 +32,7 @@ interface BillOrder {
   subtotal: number;
   tax: number;
   total: number;
+  amountPaid?: number;
   discount: number;
   paymentStatus: string;
   paymentMethod: string | null;
@@ -41,6 +49,7 @@ type BillBrandingPublic = {
   qrUrl: string;
   footer: string;
   taxRate: number;
+  qrMode?: string;
 };
 
 type GuestChoice = { scope: "hostel" | "walkin"; name: string; nameKey?: string };
@@ -62,6 +71,7 @@ const DEFAULT_PUBLIC_BRANDING: BillBrandingPublic = {
   qrUrl: "",
   footer: DEFAULT_BILL_BRANDING.footer,
   taxRate: 0,
+  qrMode: "static",
 };
 
 function MyBillsContent() {
@@ -85,7 +95,6 @@ function MyBillsContent() {
   const [unpaidOrders, setUnpaidOrders] = useState<BillOrder[]>([]);
   const [paidOrders, setPaidOrders] = useState<BillOrder[]>([]);
   const [guestChoices, setGuestChoices] = useState<GuestChoice[]>([]);
-  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [billBranding, setBillBranding] = useState<BillBrandingPublic>(DEFAULT_PUBLIC_BRANDING);
 
   const applyBillsPayload = useCallback((data: {
@@ -106,7 +115,6 @@ function MyBillsContent() {
     } else if (data.phone) {
       setPhone(data.phone);
     }
-    setExpandedOrders(new Set((data.unpaidOrders || []).length ? ["unpaid-tab"] : []));
     setSubmitted(true);
   }, []);
 
@@ -175,15 +183,6 @@ function MyBillsContent() {
     setGuestChoices([]);
   };
 
-  const toggleOrder = (key: string) => {
-    setExpandedOrders((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   useEffect(() => {
     if (tokenParam) {
       void fetchBillsByToken(tokenParam);
@@ -223,9 +222,42 @@ function MyBillsContent() {
   };
 
   const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + o.total, 0);
-  const paidTotal = paidOrders.reduce((sum, o) => sum + o.total, 0);
-  const totalDiscount = [...unpaidOrders, ...paidOrders].reduce((sum, o) => sum + (o.discount || 0), 0);
-  const totalSpent = unpaidTotal + paidTotal;
+  const unpaidOrderIds = unpaidOrders.map((o) => o.id).filter((id): id is number => typeof id === "number" && id > 0);
+  const showPayQr = myBillsShowsPayQr(viaToken) && unpaidOrderIds.length > 0;
+  const hidePayment = myBillsHidePayment(viaToken);
+  const dynamicEnabled = shouldEnsureDynamicFoodQr({
+    showPayQr,
+    unpaidOrderCount: unpaidOrderIds.length,
+    qrMode: billBranding.qrMode,
+    ready: submitted && !loading,
+  });
+  const { state: qrState } = useFoodBillDynamicQr({
+    enabled: dynamicEnabled,
+    orderIds: unpaidOrderIds,
+    token: viaToken ? tokenParam : undefined,
+  });
+  const dynamicQr =
+    hidePayment || !dynamicEnabled || qrState.status === "idle" || qrState.status === "static"
+      ? null
+      : qrState.status === "loading"
+        ? { status: "loading" as const }
+        : qrState.status === "active"
+          ? {
+              status: "active" as const,
+              imageUrl: qrState.imageUrl,
+              closeBy: qrState.closeBy,
+              label: qrState.label,
+            }
+          : qrState.status === "paid"
+            ? { status: "paid" as const, label: qrState.label }
+            : { status: "error" as const, message: qrState.message };
+
+  const menuBranding: BillBrandingPublic = {
+    ...billBranding,
+    qrUrl: "",
+    upiId: "",
+  };
+  const payBranding = billBranding;
 
   return (
     <div className="min-h-screen goko-mesh goko-noise bg-brand-sand dark:bg-background">
@@ -238,15 +270,17 @@ function MyBillsContent() {
           ← Back
         </button>
 
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-green/10">
-            <svg className="h-7 w-7 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
-            </svg>
+        {!submitted && (
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-green/10">
+              <svg className="h-7 w-7 text-brand-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-brand-green">My Bills</h1>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">View your food orders & bills</p>
           </div>
-          <h1 className="text-2xl font-bold text-brand-green">My Bills</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">View your food orders & bills</p>
-        </div>
+        )}
 
         {tokenParam && loading && !submitted ? (
           <div className="rounded-2xl bg-white/95 dark:bg-card/95 p-8 text-center shadow-xl dark:shadow-none">
@@ -318,103 +352,50 @@ function MyBillsContent() {
           </motion.form>
         ) : (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-            <div className="mb-4 flex items-center justify-between rounded-xl bg-white/80 dark:bg-card/80 px-4 py-2.5 backdrop-blur-sm">
-              <span className="text-sm text-gray-600 dark:text-gray-300">
-                {viaToken ? "Shared bill link" : `+91 ${formatPhone(phone)}`}
-              </span>
-              <button type="button" onClick={handleChangeNumber} className="text-sm font-medium text-brand-green">
-                {viaToken ? "Look up number" : "Change"}
-              </button>
-            </div>
-
             {loading ? (
               <div className="rounded-2xl bg-white/95 dark:bg-card/95 p-8 text-center shadow-xl dark:shadow-none">
                 <p className="text-brand-green">Loading bills…</p>
               </div>
             ) : (
               <>
-                {(unpaidOrders.length > 0 || paidOrders.length > 0) && (
-                  <div className="mb-4 rounded-2xl bg-white/95 dark:bg-card/95 p-4 shadow-xl dark:shadow-none backdrop-blur-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-500">Total Spent</span>
-                      <span className="text-xl font-bold text-brand-green-dark dark:text-brand-green">
-                        ₹{Math.round(totalSpent / 100)}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-4 border-t border-gray-100 dark:border-white/10 pt-2">
-                      {totalDiscount > 0 && (
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-2 w-2 rounded-full bg-purple-500" />
-                          <span className="text-sm text-purple-700 dark:text-purple-400">
-                            {Math.round((totalDiscount / (totalSpent + totalDiscount)) * 100)}% off (₹{Math.round(totalDiscount / 100)})
-                          </span>
-                        </div>
-                      )}
-                      {paidTotal > 0 && (
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-2 w-2 rounded-full bg-green-500" />
-                          <span className="text-sm text-green-700 dark:text-green-400">₹{Math.round(paidTotal / 100)} paid</span>
-                        </div>
-                      )}
-                      {unpaidTotal > 0 && (
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-2 w-2 rounded-full bg-amber-500" />
-                          <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-                            ₹{Math.round(totalSpent / 100) - Math.round(paidTotal / 100)} unpaid
-                          </span>
-                        </div>
-                      )}
-                      {unpaidTotal === 0 && paidTotal > 0 && !totalDiscount && (
-                        <span className="text-sm font-semibold text-green-600">All paid</span>
-                      )}
-                      {unpaidTotal === 0 && paidTotal === 0 && totalDiscount > 0 && (
-                        <span className="text-sm font-semibold text-green-600">All settled</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {unpaidOrders.length > 0 && (
+                {/* Menu (phone): open-tab items only — no QR, no paid history, no spend summary.
+                    Share token: open tab through pay QR — no paid history, no spend summary. */}
+                {unpaidOrders.length > 0 ? (
                   <div className="mb-6">
-                    <div className="mb-3 flex items-center justify-between px-1">
-                      <h2 className="text-lg font-bold text-brand-green">Open tab</h2>
-                      <span className="rounded-full bg-amber-400/90 px-3 py-1 text-sm font-bold text-amber-900">
-                        ₹{Math.round(unpaidTotal / 100)}
-                      </span>
-                    </div>
+                    {viaToken && (
+                      <div className="mb-3 flex items-center justify-between px-1">
+                        <h2 className="text-lg font-bold text-brand-green">Open tab</h2>
+                        <span className="rounded-full bg-amber-400/90 px-3 py-1 text-sm font-bold text-amber-900">
+                          ₹{Math.round(unpaidTotal / 100)}
+                        </span>
+                      </div>
+                    )}
                     <GuestFoodBillCard
                       orders={unpaidOrders}
                       variant="unpaid"
-                      branding={billBranding}
-                      expanded={expandedOrders.has("unpaid-tab")}
-                      onToggle={() => toggleOrder("unpaid-tab")}
+                      branding={hidePayment ? menuBranding : payBranding}
+                      dynamicQr={dynamicQr}
+                      hidePayment={hidePayment}
+                      alwaysExpanded
                     />
                   </div>
-                )}
-
-                {paidOrders.length > 0 && (
-                  <div className="mb-6">
-                    <div className="mb-3 px-1">
-                      <h2 className="text-lg font-bold text-brand-green-dark/70">Paid</h2>
-                    </div>
-                    <GuestFoodBillCard
-                      orders={paidOrders}
-                      variant="paid"
-                      branding={billBranding}
-                      expanded={expandedOrders.has("paid-tab")}
-                      onToggle={() => toggleOrder("paid-tab")}
-                    />
-                  </div>
-                )}
-
-                {unpaidOrders.length === 0 && paidOrders.length === 0 && (
+                ) : (
                   <div className="rounded-2xl bg-white/95 dark:bg-card/95 p-8 text-center shadow-xl dark:shadow-none backdrop-blur-sm">
-                    <span className="text-4xl">📭</span>
-                    <p className="mt-3 text-gray-600 dark:text-gray-400">No bills found for this number</p>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      {paidOrders.length > 0 ? "No open tab — all settled" : "No bills found for this number"}
+                    </p>
                   </div>
                 )}
 
-                <div className="mt-6 text-center">
+                {!viaToken && (
+                  <div className="mb-2 text-center">
+                    <button type="button" onClick={handleChangeNumber} className="text-sm font-medium text-brand-green">
+                      Change number
+                    </button>
+                  </div>
+                )}
+
+                <div className="mt-4 text-center">
                   <button
                     type="button"
                     onClick={handleBack}

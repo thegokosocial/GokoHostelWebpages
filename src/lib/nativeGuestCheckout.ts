@@ -2005,16 +2005,17 @@ export async function listWebsiteCheckoutAttempts(filters: WebsiteCheckoutAttemp
 }
 
 /** Peek notes without full processing — used by webhook router. */
-export function peekRazorpayNotes(raw: Uint8Array): { checkoutId?: string; previewAttemptId?: string } {
+export function peekRazorpayNotes(raw: Uint8Array): { checkoutId?: string; previewAttemptId?: string; foodAttemptId?: string } {
   try {
     const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw)) as {
       payload?: Record<string, { entity?: { notes?: Record<string, string> | unknown[] } }>;
     };
-    const entities = [value.payload?.payment?.entity, value.payload?.order?.entity, value.payload?.refund?.entity];
+    const entities = [value.payload?.payment?.entity, value.payload?.order?.entity, value.payload?.refund?.entity, value.payload?.qr_code?.entity];
     for (const entity of entities) {
       const notes = entity?.notes;
       if (notes && !Array.isArray(notes)) {
         if (typeof notes.goko_checkout_id === "string") return { checkoutId: notes.goko_checkout_id };
+        if (typeof notes.goko_food_attempt === "string") return { foodAttemptId: notes.goko_food_attempt };
         if (typeof notes.goko_preview_attempt === "string") return { previewAttemptId: notes.goko_preview_attempt };
       }
     }
