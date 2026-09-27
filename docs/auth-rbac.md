@@ -74,7 +74,9 @@ Booking Settings saves additionally require the revision returned by `getSetting
 
 `/api/admin/reviews`: entry gate is admin **or** `canViewReviews`. Mutations require the dedicated key (`canSendReviewRequests`, `canManageReviewSettings`, `canEditReviewRequests`) in addition to that entry gate — view alone no longer unlocks send/edit/settings.
 
-`/api/admin/import` uses the shared session and `canAddCheckin`. `/api/admin/upload` uses the shared session and `canAddCheckin` or `canEditRecords`.
+`/api/admin/import` uses the shared session and `canAddCheckin`. `/api/admin/upload` uses the shared session and `canAddCheckin` or `canEditRecords`. `/api/admin/bulk-import-accounts` uses `authenticateSimple` only — any authenticated staff/manager/admin can download expense/income templates and upload files; it does **not** check `canAddExpense` / `canAddIncome` (UI may still hide the tile).
+
+Checkins Management ops: `healthCheck`, `runBackup`, `getAuditRetention` / `setAuditRetention` / `cleanupAuditLog` are `admin_only`. `getAuditLog` / `getInventoryAuditLog` use `canViewAudit`; `getSystemLogs` uses `canViewLogs`.
 
 Form C: token = `ADMIN_PASSWORD` or fallback `"goko-form-c-secret"`.
 

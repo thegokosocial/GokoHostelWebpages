@@ -78,8 +78,8 @@ Native physical hold creation/release, read-only owner recovery (`getNativeInven
 | `/api/admin/qr-history` | `canUseQRGenerator` (admin bypass) | `list` / `save` / `delete` |
 | `/api/admin/quick-links` | `canViewQuickLinks`; mutations admin-only | Sections and link/QR cards: `list`, `saveSection`, `deleteSection`, `saveItem`, `deleteItem`, `reorder` |
 | `/api/admin/upload` | **env** admin or manager only | Drive upload for records |
-| `/api/admin/import` | **env** admin or manager only | Check-in XLSX |
-| `/api/admin/bulk-import-accounts` | `authenticateUser` | Expense/income XLSX |
+| `/api/admin/import` | session + `canAddCheckin` | Check-in XLSX template/import |
+| `/api/admin/bulk-import-accounts` | `authenticateSimple` (any authenticated user) | Expense/income XLSX; no expense/income permission key |
 | `/api/bookings/sync` | **env** admin or manager | Gmail OTA parse |
 | `/api/sync` | `ADMIN_PASSWORD` or `SYNC_SECRET` | Pi ↔ CF + failover + deploy/shutdown Pi |
 | `/api/cron/aiosell-inventory` | `Authorization: Bearer CRON_SECRET` | Scheduled retry of durable inventory_dirty rows; accepted pushes clear only the dirty cells sent |
