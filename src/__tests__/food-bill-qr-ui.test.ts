@@ -237,4 +237,15 @@ describe("foodBillQrStaffCaption", () => {
     expect(foodBillQrStaffCaption({ dynamicStatus: "loading" })?.kind).toBe("loading");
     expect(foodBillQrStaffCaption({ hidePayment: true, dynamicStatus: "active", hasUpiIntent: true })).toBeNull();
   });
+
+  it("hides captions for paid and error; labels pure static when no dynamic overlay", () => {
+    expect(foodBillQrStaffCaption({ dynamicStatus: "paid", hasUpiIntent: true })).toBeNull();
+    expect(foodBillQrStaffCaption({ dynamicStatus: "error" })).toBeNull();
+    expect(foodBillQrStaffCaption({ dynamicStatus: null, razorpayMode: true })).toEqual({
+      kind: "phonepe_static", text: "PhonePe static QR",
+    });
+    expect(foodBillQrStaffCaption({
+      dynamicStatus: "loading", hidePayment: false,
+    })).toEqual({ kind: "loading", text: "Preparing Razorpay QR…" });
+  });
 });

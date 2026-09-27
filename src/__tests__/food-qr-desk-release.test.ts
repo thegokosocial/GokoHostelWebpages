@@ -32,6 +32,7 @@ describe("desk-release source contracts (money safety)", () => {
     expect(engine).toContain("A Razorpay payment was already captured for this bill");
     expect(engine).toContain("hasUpiIntent: Boolean(upiIntent)");
     expect(engine).toContain("foodQrBlocksDeskPayment");
+    expect(engine).toContain('["active", "creating", "qr_unknown"].includes(attempt.state)');
   });
 
   it("markOrderPaid supersedes QR; other mutators still reject active claims", () => {

@@ -515,7 +515,8 @@ export async function releaseFoodQrForDeskPayment(orderIds: number[]): Promise<{
       await assertUnpaidForDesk();
 
       const [attempt] = await getDb().select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
-      if (attempt?.qrCodeId && !foodQrBlocksDeskPayment(attempt.state, false)) {
+      // Only close still-open attempts; terminal paid/closed/expired skip the provider call.
+      if (attempt?.qrCodeId && ["active", "creating", "qr_unknown"].includes(attempt.state)) {
         try {
           await closeRazorpayFoodQr(attempt.qrCodeId, attempt.environment as RazorpayEnvironment);
         } catch {

@@ -143,4 +143,94 @@ describe("markOrderPaid desk-release API mapping", () => {
     // batch mock may or may not complete; must not 400 for missing Received-in
     expect(res.status).not.toBe(400);
   });
+
+  it("requires explicit Received-in for split after QR release", async () => {
+    const res = await POST(req({
+      orderIds: [10],
+      paymentMethod: "split",
+      cashReceived: 4000,
+      changeGiven: 0,
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: expect.stringMatching(/Select Received-in/i) });
+    expect(q.resolveReceiptAccount).not.toHaveBeenCalled();
+  });
+
+  it("rejects onlineAccountId 0 after QR release", async () => {
+    const res = await POST(req({
+      orderIds: [10],
+      paymentMethod: "online",
+      onlineAccountId: 0,
+      cashReceived: 0,
+      changeGiven: 0,
+    }));
+    expect(res.status).toBe(400);
+    expect(q.resolveReceiptAccount).not.toHaveBeenCalled();
+  });
+
+  it("allows silent food default when no QR was released", async () => {
+    q.releaseFoodQrForDeskPayment.mockResolvedValueOnce({ releasedAttemptIds: [] });
+    await POST(req({
+      orderIds: [10],
+      paymentMethod: "online",
+      cashReceived: 0,
+      changeGiven: 0,
+    }));
+    expect(q.resolveReceiptAccount).toHaveBeenCalledWith("food", undefined);
+  });
+
+  it("propagates non-FoodQrError from desk release", async () => {
+    q.releaseFoodQrForDeskPayment.mockRejectedValueOnce(new Error("D1 unavailable"));
+    const res = await POST(req({
+      orderIds: [10],
+      paymentMethod: "cash",
+      cashReceived: 10000,
+      changeGiven: 0,
+    }));
+    expect(res.status).toBe(500);
+  });
+
+  it("still calls release before multi-order online pay", async () => {
+    q.getFoodOrderById.mockImplementation(async (id: number) => ({
+      id,
+      orderNumber: `F-${id}`,
+      status: "placed",
+      paymentStatus: "pending",
+      paymentMethod: "",
+      amountPaid: 0,
+      amountRefunded: 0,
+      total: 10000,
+      cashReceived: 0,
+      changeGiven: 0,
+      guestName: "Ada",
+      paidBy: "",
+    }));
+    q.getFoodOrderItemsBatch.mockResolvedValue(new Map([
+      [10, []],
+      [11, []],
+    ]));
+    q.getDb.mockReturnValue({
+      batch: vi.fn(async (writes: unknown[]) => writes),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(async () => [
+            { id: 10, status: "placed", paymentStatus: "pending", amountPaid: 0, amountRefunded: 0, total: 10000 },
+            { id: 11, status: "placed", paymentStatus: "pending", amountPaid: 0, amountRefunded: 0, total: 10000 },
+          ]),
+        })),
+      })),
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => undefined) })) })),
+      insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
+    });
+
+    await POST(req({
+      orderIds: [10, 11],
+      paymentMethod: "online",
+      onlineAccountId: 9,
+      cashReceived: 0,
+      changeGiven: 0,
+    }));
+    expect(q.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10, 11]);
+    expect(q.resolveReceiptAccount).toHaveBeenCalledWith("food", 9);
+  });
 });

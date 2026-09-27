@@ -30,6 +30,19 @@ vi.mock("@/lib/cashPaymentJournal", () => ({
   recordCashPaymentEvent: vi.fn(async () => ({ duplicate: false })),
   recordCashPaymentCorrection: vi.fn(async () => ({ duplicate: false })),
 }));
+const foodQr = vi.hoisted(() => ({
+  hasActiveFoodQrClaim: vi.fn(async () => false),
+  releaseFoodQrForDeskPayment: vi.fn(async () => ({ releasedAttemptIds: [] as string[] })),
+  FoodQrError: class FoodQrError extends Error {
+    status: number;
+    constructor(message: string, status = 409) {
+      super(message);
+      this.name = "FoodQrError";
+      this.status = status;
+    }
+  },
+}));
+vi.mock("@/lib/foodQrPayment", () => foodQr);
 
 import { POST } from "@/app/api/admin/food-orders/route";
 
@@ -195,6 +208,8 @@ describe("food payment D1 persistence", () => {
     q.resolveReceiptAccount.mockResolvedValue(7);
     q.latestReceiptAccount.mockResolvedValue(7);
     q.getDb.mockReturnValue(db);
+    foodQr.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: [] });
+    foodQr.hasActiveFoodQrClaim.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -430,5 +445,62 @@ describe("food payment D1 persistence", () => {
     expect(sqlite.prepare("SELECT source_id, amount_paise FROM cash_payment_events ORDER BY source_id").all()).toEqual([
       { source_id: 11, amount_paise: 300 },
     ]);
+  });
+
+  it("after closing a dynamic QR, online Mark Paid without Received-in does not write money", async () => {
+    foodQr.releaseFoodQrForDeskPayment.mockResolvedValueOnce({ releasedAttemptIds: ["att-1"] });
+    const response = await POST(request({ orderIds: [10], paymentMethod: "online" }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/Select Received-in/i) });
+    expect(sqlite.prepare("SELECT payment_status, amount_paid FROM food_orders WHERE id = 10").get()).toEqual({
+      payment_status: "pending",
+      amount_paid: 0,
+    });
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM guest_receipts").get()).toEqual({ n: 0 });
+    expect(q.resolveReceiptAccount).not.toHaveBeenCalled();
+  });
+
+  it("after closing a dynamic QR, online Mark Paid with Received-in persists the receipt", async () => {
+    foodQr.releaseFoodQrForDeskPayment.mockResolvedValueOnce({ releasedAttemptIds: ["att-1"] });
+    const response = await POST(request({ orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }));
+    expect(response.status).toBe(200);
+    expect(foodQr.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
+    expect(sqlite.prepare("SELECT payment_status, amount_paid, payment_method FROM food_orders WHERE id = 10").get()).toMatchObject({
+      payment_status: "paid",
+      amount_paid: 400,
+      payment_method: "online",
+    });
+    expect(sqlite.prepare("SELECT account_id, amount FROM guest_receipts").all()).toEqual([
+      { account_id: 7, amount: 400 },
+    ]);
+  });
+
+  it("after closing a dynamic QR, cash Mark Paid still persists without a bank", async () => {
+    foodQr.releaseFoodQrForDeskPayment.mockResolvedValueOnce({ releasedAttemptIds: ["att-1"] });
+    const response = await POST(request({
+      orderIds: [10],
+      paymentMethod: "cash",
+      cashReceived: 400,
+      changeGiven: 0,
+    }));
+    expect(response.status).toBe(200);
+    expect(sqlite.prepare("SELECT payment_method, amount_paid FROM food_orders WHERE id = 10").get()).toMatchObject({
+      payment_method: "cash",
+      amount_paid: 400,
+    });
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM guest_receipts").get()).toEqual({ n: 0 });
+  });
+
+  it("aborts Mark Paid with 409 when desk release reports Razorpay already captured", async () => {
+    foodQr.releaseFoodQrForDeskPayment.mockRejectedValueOnce(
+      new foodQr.FoodQrError("A Razorpay payment was already captured for this bill. Refresh before recording desk payment.", 409),
+    );
+    const response = await POST(request({ orderIds: [10], paymentMethod: "online", onlineAccountId: 7 }));
+    expect(response.status).toBe(409);
+    expect(sqlite.prepare("SELECT payment_status, amount_paid FROM food_orders WHERE id = 10").get()).toEqual({
+      payment_status: "pending",
+      amount_paid: 0,
+    });
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM guest_receipts").get()).toEqual({ n: 0 });
   });
 });
