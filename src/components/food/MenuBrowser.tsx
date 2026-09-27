@@ -58,7 +58,6 @@ interface MenuBrowserProps {
 }
 
 type DietFilter = "all" | "veg" | "nonveg";
-type CuratedFilter = "chef-special" | "goko-special" | null;
 
 function parseTags(tagsStr: string): string[] {
   try {
@@ -76,21 +75,18 @@ function formatPrice(paise: number): string {
 export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFromCart }: MenuBrowserProps) {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [dietFilter, setDietFilter] = useState<DietFilter>("all");
-  const [curatedFilter, setCuratedFilter] = useState<CuratedFilter>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const closeCategory = () => {
     setSelectedCategory(null);
     setSearchQuery("");
     setDietFilter("all");
-    setCuratedFilter(null);
   };
 
   const selectCategory = (categoryId: number) => {
     setSelectedCategory(categoryId);
     setSearchQuery("");
     setDietFilter("all");
-    setCuratedFilter(null);
   };
 
   usePanelHistory(selectedCategory !== null, closeCategory);
@@ -112,13 +108,6 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       });
     }
 
-    if (curatedFilter) {
-      result = result.filter((item) => {
-        const tags = parseTags(item.tags).map((t) => t.toLowerCase());
-        return tags.includes(curatedFilter);
-      });
-    }
-
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(
@@ -129,16 +118,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     }
 
     return result;
-  }, [items, selectedCategory, dietFilter, curatedFilter, searchQuery]);
-
-  const hasChefSpecial = useMemo(
-    () => items.some((i) => i.categoryId === selectedCategory && parseTags(i.tags).map((t) => t.toLowerCase()).includes("chef-special")),
-    [items, selectedCategory]
-  );
-  const hasGokoSpecial = useMemo(
-    () => items.some((i) => i.categoryId === selectedCategory && parseTags(i.tags).map((t) => t.toLowerCase()).includes("goko-special")),
-    [items, selectedCategory]
-  );
+  }, [items, selectedCategory, dietFilter, searchQuery]);
 
   const getCartQuantity = (menuItemId: number): number => {
     const found = cart.find((c) => c.menuItemId === menuItemId);
@@ -206,7 +186,7 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="grid h-[calc(100dvh-6.5rem)] min-h-[26rem] grid-cols-[4.25rem_minmax(0,1fr)] gap-1.5 overflow-hidden px-2 pb-0 sm:h-[calc(100dvh-7.5rem)] sm:min-h-[30rem] sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3 sm:px-3"
+      className="grid h-[calc(100dvh-4.75rem)] min-h-[26rem] grid-cols-[4.25rem_minmax(0,1fr)] gap-1.5 overflow-hidden px-2 pb-0 sm:h-[calc(100dvh-5.5rem)] sm:min-h-[30rem] sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3 sm:px-3"
     >
       <nav aria-label="Food categories" className="min-h-0 overflow-y-auto overscroll-contain pr-1">
         <button
@@ -266,12 +246,17 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
         </AnimatePresence>
       </div>
 
-      {/* Diet filter */}
-      <div className="mb-1 flex shrink-0 flex-nowrap gap-1 overflow-x-auto pb-0.5 sm:mb-2 sm:gap-2">
+      {/* Diet filter — All / Veg / Non-veg only, always one row */}
+      <div
+        role="group"
+        aria-label="Diet filter"
+        className="mb-1 grid shrink-0 grid-cols-3 gap-1 sm:mb-2 sm:gap-1.5"
+      >
         <motion.button
+          type="button"
           whileTap={{ scale: 0.95 }}
           onClick={() => setDietFilter("all")}
-          className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all duration-200 sm:px-4 sm:py-2 sm:text-xs ${
+          className={`min-w-0 rounded-full px-1.5 py-1.5 text-center text-[11px] font-medium transition-all duration-200 sm:px-3 sm:py-2 sm:text-xs ${
             dietFilter === "all"
               ? "bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 shadow-sm dark:shadow-none"
               : "bg-gray-100 dark:bg-[#1c1c1c] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-[#2a2a2a]"
@@ -280,63 +265,35 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
           All
         </motion.button>
         <motion.button
+          type="button"
           whileTap={{ scale: 0.95 }}
           onClick={() => setDietFilter("veg")}
-          className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all duration-200 sm:gap-1.5 sm:px-4 sm:py-2 sm:text-xs ${
+          className={`flex min-w-0 items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11px] font-medium transition-all duration-200 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs ${
             dietFilter === "veg"
               ? "bg-green-600 text-white shadow-sm dark:shadow-none"
               : "bg-gray-100 dark:bg-[#1c1c1c] text-gray-600 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-950"
           }`}
         >
-          <span className="h-2 w-2 rounded-full bg-green-500" />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
           Veg
         </motion.button>
         <motion.button
+          type="button"
           whileTap={{ scale: 0.95 }}
           onClick={() => setDietFilter("nonveg")}
-          className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-all duration-200 sm:gap-1.5 sm:px-4 sm:py-2 sm:text-xs ${
+          className={`flex min-w-0 items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11px] font-medium transition-all duration-200 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs ${
             dietFilter === "nonveg"
               ? "bg-red-600 text-white shadow-sm dark:shadow-none"
               : "bg-gray-100 dark:bg-[#1c1c1c] text-gray-600 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-950"
           }`}
         >
-          <span className="h-2 w-2 rounded-full bg-red-500" />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
           Non-veg
         </motion.button>
       </div>
 
-      {/* Curated filter chips */}
-      {(hasChefSpecial || hasGokoSpecial) && (
-      <div className="mb-2 flex shrink-0 flex-nowrap gap-1.5 overflow-x-auto pb-0.5 sm:mb-4 sm:gap-2">
-          {hasChefSpecial && (
-            <button
-              onClick={() => setCuratedFilter(curatedFilter === "chef-special" ? null : "chef-special")}
-              className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-medium transition sm:gap-1.5 sm:px-4 sm:py-2 sm:text-xs ${
-                curatedFilter === "chef-special"
-                  ? "bg-purple-600 text-white"
-                  : "bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50"
-              }`}
-            >
-              👨‍🍳 Chef Special
-            </button>
-          )}
-          {hasGokoSpecial && (
-            <button
-              onClick={() => setCuratedFilter(curatedFilter === "goko-special" ? null : "goko-special")}
-              className={`flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-medium transition sm:gap-1.5 sm:px-4 sm:py-2 sm:text-xs ${
-                curatedFilter === "goko-special"
-                  ? "bg-indigo-600 text-white"
-                  : "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
-              }`}
-            >
-              ⭐ Goko Special
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Items grid */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-14">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-[calc(3.75rem+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="popLayout">
           {filteredItems.length === 0 ? (
             <motion.p
