@@ -348,13 +348,13 @@ function AdminPageInner() {
                 setMobileMenuOpen(false);
               }
             }}
-            className="h-dvh w-screen max-w-none data-[side=right]:w-screen gap-0 overflow-hidden border-brand-mist bg-white/95 p-0 backdrop-blur-md dark:bg-zinc-900/95 lg:hidden sm:max-w-none"
+            className="h-dvh gap-0 overflow-x-hidden border-brand-mist bg-white/95 p-0 backdrop-blur-md dark:bg-zinc-900/95 lg:hidden data-[side=right]:w-screen data-[side=right]:max-w-none data-[side=right]:sm:max-w-none"
           >
             <SheetHeader className="shrink-0 border-b border-brand-mist px-4 py-3 text-left dark:border-zinc-800">
               <SheetTitle className="font-display text-lg font-bold text-brand-green dark:text-zinc-100">Admin navigation</SheetTitle>
             </SheetHeader>
             <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3" aria-label="Admin sections">
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4">
                 {visibleNavItems.map((item) => (
                   <button
                     key={item.id}
@@ -367,14 +367,14 @@ function AdminPageInner() {
                       setSection(item.id);
                     }}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      "flex min-w-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200",
                       section === item.id
                         ? "bg-brand-green text-white dark:text-zinc-900 shadow-sm"
                         : "text-brand-green-dark/70 dark:text-zinc-400 hover:bg-brand-green/[0.06] dark:hover:bg-zinc-800"
                     )}
                   >
-                    {item.icon}
-                    {item.label}
+                    <span className="shrink-0">{item.icon}</span>
+                    <span className="min-w-0 truncate">{item.label}</span>
                   </button>
                 ))}
               </div>
