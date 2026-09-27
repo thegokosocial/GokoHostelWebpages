@@ -55,6 +55,7 @@ export function useFoodBillDynamicQr(opts: {
   const applyAttempt = useCallback((attempt: Parameters<typeof mapFoodQrAttemptToUi>[0]) => {
     const next = mapFoodQrAttemptToUi(attempt);
     if (next.status === "active") attemptIdRef.current = next.attemptId;
+    else if (next.status === "loading" && next.attemptId) attemptIdRef.current = next.attemptId;
     else if (next.status === "paid") attemptIdRef.current = attempt?.attemptId || attempt?.id || null;
     commitState(next);
   }, [commitState]);
@@ -99,6 +100,7 @@ export function useFoodBillDynamicQr(opts: {
       const data = await res.json().catch(() => ({}));
       const next = mapFoodQrEnsureResponse({ ok: res.ok, status: res.status, body: data });
       if (next.status === "active") attemptIdRef.current = next.attemptId;
+      else if (next.status === "loading" && next.attemptId) attemptIdRef.current = next.attemptId;
       commitState(next);
     } catch (e: unknown) {
       commitState({ status: "error", message: e instanceof Error ? e.message : "Could not prepare payment QR" });

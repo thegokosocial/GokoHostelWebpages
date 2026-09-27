@@ -23,7 +23,7 @@ const bodySchema = z.object({
   token: z.string().min(8).max(40),
   attemptId: z.string().uuid().optional(),
   action: z.enum(["ensure", "status"]).default("ensure"),
-});
+}).strict(); // reject client money fields — QR total comes from order snapshot only
 
 /**
  * Guest-facing: ensure/status a dynamic Razorpay QR for unpaid bill orders.

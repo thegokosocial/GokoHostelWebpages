@@ -31,13 +31,20 @@ const razorpay = vi.hoisted(() => ({
       return value;
     },
   }),
-  razorpayCredentials: vi.fn(() => ({ keyId: "rzp_test_x", keySecret: "sec" })),
-  workerEnv: vi.fn(() => "cloudflare"),
+  razorpayCredentials: vi.fn(() => ({ keyId: "rzp_test_xxxxxxxxx", keySecret: "sec" })),
+  workerEnv: vi.fn(() => ({
+    RAZORPAY_TEST_KEY_ID: "rzp_test_xxxxxxxxx",
+    RAZORPAY_TEST_KEY_SECRET: "test_secret_value_ok",
+  })),
   allRazorpayWebhookSecrets: vi.fn(() => []),
   verifyRazorpaySignature: vi.fn(async () => false),
   RazorpayError: class RazorpayError extends Error {
-    constructor(code: string, public status = 400) {
-      super(code);
+    constructor(code: string, public httpStatus = 503) {
+      super(
+        code === "UNAVAILABLE" || code === "INVALID_RESPONSE"
+          ? "Unable to verify the gateway result. Reconcile before trying again."
+          : code,
+      );
       this.name = "RazorpayError";
     }
   },
@@ -45,22 +52,25 @@ const razorpay = vi.hoisted(() => ({
 
 const runtime = vi.hoisted(() => ({ isPi: false }));
 const getDb = vi.hoisted(() => vi.fn());
-
-vi.mock("@/db", () => ({ getDb }));
-vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => runtime.isPi }));
-vi.mock("@/lib/razorpay", () => razorpay);
-vi.mock("@/db/queries", () => ({
+const queries = vi.hoisted(() => ({
   getSetting: vi.fn(async () => "razorpay_test"),
-  getFoodOrdersByIds: vi.fn(async () => []),
+  getFoodOrdersByIds: vi.fn(async () => [] as Array<Record<string, unknown>>),
   getFoodOrderItemsBatch: vi.fn(async () => new Map()),
   updateFoodOrderPayment: vi.fn(async () => undefined),
 }));
 
+vi.mock("@/db", () => ({ getDb }));
+vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => runtime.isPi }));
+vi.mock("@/lib/razorpay", () => razorpay);
+vi.mock("@/db/queries", () => queries);
+
 import {
   FoodQrError,
   closeActiveFoodQrAttempt,
+  ensureActiveFoodQrForOrders,
   foodQrSnapshot,
   hasActiveFoodQrClaim,
+  reconcileFoodQrAttempt,
   releaseFoodQrForDeskPayment,
 } from "@/lib/foodQrPayment";
 
@@ -125,29 +135,47 @@ function createFoodQrTables(sqlite: SQLite.Database) {
 
 function insertActiveAttempt(
   sqlite: SQLite.Database,
-  opts: { attemptId: string; orderId: number; requestKey: string; qrCodeId?: string | null; notes?: string },
+  opts: {
+    attemptId: string;
+    orderId: number;
+    requestKey: string;
+    qrCodeId?: string | null;
+    notes?: string;
+    orderIds?: number[];
+    amountPaise?: number;
+  },
 ) {
   const now = new Date().toISOString();
   const closeBy = new Date(Date.now() + 86400000).toISOString();
+  const orderIds = opts.orderIds ?? [opts.orderId];
+  const amount = opts.amountPaise ?? 10000;
+  const defaultNotes = JSON.stringify({
+    fingerprint: orderIds.map((id) => `${id}:${amount}`).join("|"),
+    orderSnapshot: orderIds.map((id) => ({ orderId: id, duePaise: amount, priorPaidPaise: 0, total: amount })),
+  });
   sqlite.prepare(`
     INSERT INTO food_qr_attempts (
       id, request_key, environment, state, qr_code_id, qr_image_url, payment_amount_paise, snapshot_due_paise,
       food_order_ids, close_by, notes, created_at, updated_at
-    ) VALUES (?, ?, 'test', 'active', ?, 'https://example.com/p.png', 10000, 10000, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, 'test', 'active', ?, 'https://example.com/p.png', ?, ?, ?, ?, ?, ?, ?)
   `).run(
     opts.attemptId,
     opts.requestKey,
     opts.qrCodeId === undefined ? "qr_test1" : opts.qrCodeId,
-    JSON.stringify([opts.orderId]),
+    amount,
+    amount,
+    JSON.stringify(orderIds),
     closeBy,
-    opts.notes ?? "{}",
+    opts.notes ?? defaultNotes,
     now,
     now,
   );
-  sqlite.prepare(`
-    INSERT INTO food_qr_order_claims (attempt_id, order_id, claimed_at, released_at)
-    VALUES (?, ?, ?, NULL)
-  `).run(opts.attemptId, opts.orderId, now);
+  for (const orderId of orderIds) {
+    sqlite.prepare(`
+      INSERT INTO food_qr_order_claims (attempt_id, order_id, claimed_at, released_at)
+      VALUES (?, ?, ?, NULL)
+    `).run(opts.attemptId, orderId, now);
+  }
 }
 
 describe("releaseFoodQrForDeskPayment (disposable SQLite)", () => {
@@ -443,5 +471,198 @@ describe("closeActiveFoodQrAttempt (disposable SQLite)", () => {
       status: expect.any(Number),
     });
     expect(razorpay.closeRazorpayFoodQr).not.toHaveBeenCalled();
+  });
+
+  it("Retire proceeds when reconcile throws UNAVAILABLE (no local capture)", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-unavail" });
+    razorpay.fetchRazorpayFoodQr.mockRejectedValue(new razorpay.RazorpayError("UNAVAILABLE"));
+
+    await expect(closeActiveFoodQrAttempt(ATTEMPT_A)).resolves.toEqual({
+      releasedAttemptIds: [ATTEMPT_A],
+    });
+    expect(sqlite.prepare("SELECT state FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({
+      state: "closed",
+    });
+    await expect(hasActiveFoodQrClaim([10])).resolves.toBe(false);
+  });
+
+  it("Retire proceeds when reconcile throws INVALID_RESPONSE", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-invalid" });
+    razorpay.fetchRazorpayFoodQr.mockRejectedValue(new razorpay.RazorpayError("INVALID_RESPONSE"));
+
+    await expect(releaseFoodQrForDeskPayment([10])).resolves.toEqual({
+      releasedAttemptIds: [ATTEMPT_A],
+    });
+    expect(sqlite.prepare("SELECT state FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({
+      state: "closed",
+    });
+  });
+
+  it("reconcile succeeds with null close_reason on active QR (schema regression path)", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-null-close" });
+    razorpay.fetchRazorpayFoodQr.mockResolvedValue({
+      id: "qr_test1",
+      status: "active",
+      image_url: "https://example.com/p.png",
+      image_content: null,
+      close_by: null,
+      close_reason: null,
+    });
+
+    const snap = await reconcileFoodQrAttempt(ATTEMPT_A);
+    expect(snap.state).toBe("active");
+  });
+});
+
+describe("ensureActiveFoodQrForOrders remint (disposable SQLite)", () => {
+  let sqlite: SQLite.Database;
+
+  beforeEach(() => {
+    runtime.isPi = false;
+    sqlite = new SQLite(":memory:");
+    createFoodQrTables(sqlite);
+    getDb.mockReturnValue(drizzle(sqlite, { schema }));
+    queries.getSetting.mockResolvedValue("razorpay_test");
+    queries.getFoodOrderItemsBatch.mockResolvedValue(new Map());
+    queries.getFoodOrdersByIds.mockReset();
+    razorpay.closeRazorpayFoodQr.mockClear();
+    razorpay.fetchRazorpayFoodQr.mockClear();
+    razorpay.fetchRazorpayFoodQrPayments.mockClear();
+    razorpay.createRazorpayFoodQr.mockReset();
+    razorpay.fetchRazorpayFoodQrPayments.mockResolvedValue([]);
+    razorpay.fetchRazorpayFoodQr.mockResolvedValue({
+      id: "qr_test1",
+      status: "active",
+      image_url: "https://example.com/p.png",
+      image_content: null,
+      close_by: Math.floor(Date.now() / 1000) + 86400,
+      close_reason: null,
+    });
+    razorpay.closeRazorpayFoodQr.mockResolvedValue({
+      id: "qr_test1",
+      status: "closed",
+      image_url: null,
+      image_content: null,
+      close_by: null,
+      close_reason: null,
+    });
+    razorpay.createRazorpayFoodQr.mockImplementation(async (input: { attemptId: string; amountPaise: number }) => ({
+      id: `qr_new_${input.attemptId.slice(0, 6)}`,
+      entity: "qr_code",
+      usage: "single_use",
+      type: "upi_qr",
+      image_url: "https://example.com/new.png",
+      image_content: "upi://pay?pa=x@ybl&am=200.00",
+      payment_amount: input.amountPaise,
+      status: "active",
+      fixed_amount: true,
+      close_by: Math.floor(Date.now() / 1000) + 86400,
+      close_reason: null,
+      notes: { goko_food_attempt: input.attemptId },
+    }));
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it("fingerprint mismatch provider-closes old QR, expires claims, mints new attempt", async () => {
+    insertActiveAttempt(sqlite, {
+      attemptId: ATTEMPT_A,
+      orderId: 10,
+      requestKey: "rk-old-bill",
+      amountPaise: 10000,
+    });
+    queries.getFoodOrdersByIds.mockResolvedValue([
+      {
+        id: 10, orderNumber: "F-10", status: "placed", paymentStatus: "pending",
+        total: 10000, amountPaid: 0, amountRefunded: 0, guestName: "Pawan", guestPhone: "1", checkinId: null,
+      },
+      {
+        id: 11, orderNumber: "F-11", status: "placed", paymentStatus: "pending",
+        total: 10000, amountPaid: 0, amountRefunded: 0, guestName: "Pawan", guestPhone: "1", checkinId: null,
+      },
+    ]);
+
+    const snap = await ensureActiveFoodQrForOrders({
+      requestKey: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      orderIds: [10, 11],
+      createdBy: "admin",
+    });
+
+    expect(razorpay.closeRazorpayFoodQr).toHaveBeenCalledWith("qr_test1", "test");
+    expect(sqlite.prepare("SELECT state FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({
+      state: "expired",
+    });
+    expect(sqlite.prepare("SELECT released_at IS NOT NULL AS r FROM food_qr_order_claims WHERE order_id = 10").get())
+      .toEqual({ r: 1 });
+    expect(snap.state).toBe("active");
+    expect(snap.attemptId).not.toBe(ATTEMPT_A);
+    await expect(hasActiveFoodQrClaim([10, 11])).resolves.toBe(true);
+  });
+
+  it("remint aborts when old attempt already has capture", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-paid-old" });
+    sqlite.prepare(`
+      INSERT INTO food_qr_payments (id, attempt_id, amount_paise, status, captured, refunded_paise, verified_at)
+      VALUES ('pay_old', ?, 10000, 'captured', 1, 0, ?)
+    `).run(ATTEMPT_A, new Date().toISOString());
+    queries.getFoodOrdersByIds.mockResolvedValue([
+      {
+        id: 10, orderNumber: "F-10", status: "placed", paymentStatus: "pending",
+        total: 10000, amountPaid: 0, amountRefunded: 0, guestName: "Pawan", guestPhone: "1", checkinId: null,
+      },
+      {
+        id: 11, orderNumber: "F-11", status: "placed", paymentStatus: "pending",
+        total: 5000, amountPaid: 0, amountRefunded: 0, guestName: "Pawan", guestPhone: "1", checkinId: null,
+      },
+    ]);
+
+    await expect(ensureActiveFoodQrForOrders({
+      requestKey: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      orderIds: [10, 11],
+      createdBy: "admin",
+    })).rejects.toMatchObject({ status: 409 });
+    expect(sqlite.prepare("SELECT released_at FROM food_qr_order_claims WHERE order_id = 10").get()).toEqual({
+      released_at: null,
+    });
+  });
+
+  it("stress: alternating fingerprints remint without leaked claims", async () => {
+    const ordersA = [{
+      id: 10, orderNumber: "F-10", status: "placed", paymentStatus: "pending",
+      total: 10000, amountPaid: 0, amountRefunded: 0, guestName: "P", guestPhone: "1", checkinId: null,
+    }];
+    const ordersB = [
+      ...ordersA,
+      {
+        id: 11, orderNumber: "F-11", status: "placed", paymentStatus: "pending",
+        total: 10000, amountPaid: 0, amountRefunded: 0, guestName: "P", guestPhone: "1", checkinId: null,
+      },
+    ];
+
+    queries.getFoodOrdersByIds.mockResolvedValue(ordersA);
+    await ensureActiveFoodQrForOrders({
+      requestKey: "11111111-1111-4111-8111-111111111111",
+      orderIds: [10],
+      createdBy: "admin",
+    });
+
+    for (let i = 0; i < 8; i++) {
+      const useB = i % 2 === 0;
+      queries.getFoodOrdersByIds.mockResolvedValue(useB ? ordersB : ordersA);
+      razorpay.createRazorpayFoodQr.mockClear();
+      razorpay.closeRazorpayFoodQr.mockClear();
+      await ensureActiveFoodQrForOrders({
+        requestKey: crypto.randomUUID(),
+        orderIds: useB ? [10, 11] : [10],
+        createdBy: "admin",
+      });
+      expect(razorpay.closeRazorpayFoodQr).toHaveBeenCalled();
+      const openClaims = sqlite.prepare(`
+        SELECT COUNT(*) AS n FROM food_qr_order_claims WHERE released_at IS NULL
+      `).get() as { n: number };
+      expect(openClaims.n).toBe(useB ? 2 : 1);
+    }
   });
 });

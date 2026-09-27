@@ -363,16 +363,17 @@ describe("closeActiveFoodQr admin action", () => {
 });
 
 describe("wiring: ledger columns + kitchen reject + admin banner", () => {
-  it("FoodPaymentsLedger exposes Room-like columns and Close QR", () => {
+  it("FoodPaymentsLedger exposes Room-like columns and Retire QR", () => {
     const ledger = readFileSync("src/components/admin/FoodPaymentsLedger.tsx", "utf8");
     expect(ledger).toContain("Outcome");
     expect(ledger).toContain("Orders");
     expect(ledger).toContain("QR / payments");
     expect(ledger).toContain("closeActiveFoodQr");
-    expect(ledger).toContain("Close QR");
+    expect(ledger).toContain("Retire QR");
     expect(ledger).toContain("Reconcile");
     expect(ledger).toContain("foodQrAttemptOutcome");
     expect(ledger).toContain("limit: 100");
+    expect(ledger).toContain("!row.qrCodeId");
   });
 
   it("kitchen updateItemQuantity rejects active QR claims", () => {
@@ -381,19 +382,22 @@ describe("wiring: ledger columns + kitchen reject + admin banner", () => {
     expect(kitchen).toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
   });
 
-  it("AdminFoodOrders banners Close QR and uses ACTIVE_FOOD_QR_EDIT_BLOCKED", () => {
+  it("AdminFoodOrders banners Retire QR and uses ACTIVE_FOOD_QR_EDIT_BLOCKED", () => {
     const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
     expect(ui).toContain("Active Razorpay QR locks");
     expect(ui).toContain("closeActiveFoodQr");
     expect(ui).toContain("reconcileFoodQrAttempt");
     expect(ui).toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
-    expect(ui).toContain("Open Bill to Reconcile");
+    expect(ui).toContain("Retire QR");
+    expect(ui).toContain("foodBillQrRetireAttemptId");
   });
 
-  it("foodQrPayment wires closeActiveFoodQrAttempt through desk release", () => {
+  it("foodQrPayment wires Retire via finalizeOpenFoodQrAttempt + desk release", () => {
     const src = readFileSync("src/lib/foodQrPayment.ts", "utf8");
     expect(src).toContain("export async function closeActiveFoodQrAttempt");
     expect(src).toContain("return releaseFoodQrForDeskPayment(orderIds)");
+    expect(src).toContain("finalizeOpenFoodQrAttempt");
+    expect(src).toContain('finalizeOpenFoodQrAttempt(existing.attemptId, "expired")');
     expect(src).toContain("Math.min(opts.limit || 100, 100)");
   });
 });

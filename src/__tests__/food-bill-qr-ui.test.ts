@@ -74,6 +74,19 @@ describe("shouldEnsureDynamicFoodQr", () => {
   });
 });
 
+describe("foodBillQrUiLocksEdits / foodBillQrRetireAttemptId", () => {
+  it("locks edits for active and loading; retire id from active or preparing", async () => {
+    const { foodBillQrUiLocksEdits, foodBillQrRetireAttemptId } = await import("@/lib/foodBillQrUi");
+    expect(foodBillQrUiLocksEdits("active")).toBe(true);
+    expect(foodBillQrUiLocksEdits("loading")).toBe(true);
+    expect(foodBillQrUiLocksEdits("paid")).toBe(false);
+    expect(foodBillQrRetireAttemptId({ status: "active", attemptId: "a1", imageUrl: null, upiIntent: null, closeBy: null, amountPaise: 0, label: "x" })).toBe("a1");
+    expect(foodBillQrRetireAttemptId({ status: "loading", attemptId: "a2" })).toBe("a2");
+    expect(foodBillQrRetireAttemptId({ status: "loading" })).toBeNull();
+    expect(foodBillQrRetireAttemptId({ status: "idle" })).toBeNull();
+  });
+});
+
 describe("mapFoodQrAttemptToUi", () => {
   it("maps active with image", () => {
     expect(mapFoodQrAttemptToUi({
@@ -108,8 +121,19 @@ describe("mapFoodQrAttemptToUi", () => {
     })).toEqual({ status: "paid", label: "razorpay_test" });
   });
 
-  it("maps creating/qr_unknown/expired/closed to loading (regenerate path)", () => {
-    for (const state of ["creating", "qr_unknown", "expired", "closed"]) {
+  it("maps creating/qr_unknown to loading with attemptId (Retire while preparing)", () => {
+    expect(mapFoodQrAttemptToUi({ attemptId: "a1", state: "creating" })).toEqual({
+      status: "loading",
+      attemptId: "a1",
+    });
+    expect(mapFoodQrAttemptToUi({ attemptId: "a1", state: "qr_unknown" })).toEqual({
+      status: "loading",
+      attemptId: "a1",
+    });
+  });
+
+  it("maps expired/closed to loading without attemptId (ensure remint path)", () => {
+    for (const state of ["expired", "closed"]) {
       expect(mapFoodQrAttemptToUi({ attemptId: "a1", state })).toEqual({ status: "loading" });
     }
   });

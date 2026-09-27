@@ -56,6 +56,10 @@ For local review, use `GOKO_BOOKING_UI_PREVIEW=true` and `/book/preview`; otherw
 
 Confirmation email is sent best-effort after server-authoritative fulfilment (or accepted pay-at-property). A durable outbox with independent retries is still a follow-up; mail failure must never create a duplicate booking or charge.
 
+## Payment amount trust boundary
+
+Sticky Review / estimated totals are display-only. `POST /api/guest-booking/checkout` accepts a **strict** body (dates, rooms/`ratePlanId`, guest, persons, paymentChoice) — injected `amount` / `dueNowPaise` / `subtotal` are rejected. The server allocates beds, reloads Inventory rates, builds `dueNowPaise`, and creates the Razorpay order from that value. Verify requires provider `evidence.amount ===` stored `dueNowPaise`. Editing the estimate in DevTools cannot change the charged order. Regression: `payment-amount-spoof.test.ts`, underpay/overpay cases in `native-guest-payment.test.ts`, strict-schema poison fields in `native-guest-checkout.test.ts`.
+
 ## Verification boundaries
 
 Commit review: 104 files / 1,671 tests passed after fixing checkout-day double tariff eligibility. Regression verifies occupied-night adult2 is mandatory and closed departure still blocks sales. Production build passed with existing unrelated lint warnings. Current workflow docs were corrected to remove obsolete guest-count/fixture claims. Local D1 connectivity and production tariff/deployment verification remain separate gates; payments stay disabled.

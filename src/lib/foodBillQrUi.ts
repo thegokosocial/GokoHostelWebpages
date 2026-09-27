@@ -132,7 +132,7 @@ export function pickFoodOnlineAccountId(opts: {
 
 export type FoodBillQrUiState =
   | { status: "idle" }
-  | { status: "loading" }
+  | { status: "loading"; attemptId?: string }
   | {
       status: "active";
       attemptId: string;
@@ -145,6 +145,18 @@ export type FoodBillQrUiState =
   | { status: "paid"; label: string }
   | { status: "error"; message: string }
   | { status: "static" };
+
+/** Bill drawer / Save: open Razorpay QR (active or still preparing). */
+export function foodBillQrUiLocksEdits(status: FoodBillQrUiState["status"]): boolean {
+  return status === "active" || status === "loading";
+}
+
+/** Attempt id for Retire when UI is active or creating/qr_unknown loading. */
+export function foodBillQrRetireAttemptId(state: FoodBillQrUiState): string | null {
+  if (state.status === "active" && state.attemptId) return state.attemptId;
+  if (state.status === "loading" && state.attemptId) return state.attemptId;
+  return null;
+}
 
 export type FoodQrAttemptPayload = {
   attemptId?: string;
@@ -213,7 +225,10 @@ export function mapFoodQrAttemptToUi(attempt: FoodQrAttemptPayload | null | unde
       label: attempt.paymentMethodLabel || "Pay exact amount via UPI",
     };
   }
-  if (attempt.state === "creating" || attempt.state === "qr_unknown" || attempt.state === "expired" || attempt.state === "closed") {
+  if (attempt.state === "creating" || attempt.state === "qr_unknown") {
+    return id ? { status: "loading", attemptId: id } : { status: "loading" };
+  }
+  if (attempt.state === "expired" || attempt.state === "closed") {
     return { status: "loading" };
   }
   return { status: "error", message: "Payment QR is not ready" };

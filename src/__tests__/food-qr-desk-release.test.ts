@@ -24,15 +24,17 @@ describe("desk-release source contracts (money safety)", () => {
   const modal = readFileSync("src/components/admin/RecordPaymentModal.tsx", "utf8");
   const adminFood = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
 
-  it("exports releaseFoodQrForDeskPayment with reconcile → close → re-check → release", () => {
+  it("exports releaseFoodQrForDeskPayment with finalize (reconcile → close → re-check → release)", () => {
     expect(engine).toContain("export async function releaseFoodQrForDeskPayment");
+    expect(engine).toContain("finalizeOpenFoodQrAttempt");
+    expect(engine).toContain("assertFoodQrUnpaidForRelease");
     expect(engine).toContain("closeRazorpayFoodQr");
     expect(engine).toContain("releaseClaims(attemptId)");
-    expect(engine).toContain('state: "closed"');
+    expect(engine).toContain('state: terminal');
     expect(engine).toContain("A Razorpay payment was already captured for this bill");
     expect(engine).toContain("hasUpiIntent: Boolean(upiIntent)");
     expect(engine).toContain("foodQrBlocksDeskPayment");
-    expect(engine).toContain('["active", "creating", "qr_unknown"].includes(attempt.state)');
+    expect(engine).toContain("OPEN_FOOD_QR_STATES");
   });
 
   it("markOrderPaid supersedes QR; other mutators still reject active claims", () => {

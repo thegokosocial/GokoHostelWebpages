@@ -98,12 +98,12 @@ export function FoodPaymentsLedger({ password, username }: { password: string; u
     try {
       const res = await apiCall({ action: "closeActiveFoodQr", attemptId });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Close failed");
+      if (!res.ok) throw new Error(data.error || "Retire failed");
       const n = Array.isArray(data.releasedAttemptIds) ? data.releasedAttemptIds.length : 0;
-      showSuccess(n ? "QR closed — totals can be edited again" : "No open QR to close");
+      showSuccess(n ? "QR retired — totals can be edited again" : "No open QR to retire");
       await load();
     } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : "Close failed");
+      showError(e instanceof Error ? e.message : "Retire failed");
     } finally {
       setBusyId(null);
     }
@@ -120,7 +120,7 @@ export function FoodPaymentsLedger({ password, username }: { password: string; u
             Razorpay QR attempts for food bills (Cloudflare-only).
             {" "}
             <span className="text-foreground/80">
-              Reconcile pulls Razorpay (apply paid / expire closed). Close QR cancels an unpaid open QR so staff can edit totals.
+              Reconcile pulls Razorpay (apply paid / expire closed). Retire QR cancels an unpaid open QR at Razorpay so a new bill QR can mint and totals can be edited.
             </span>
           </p>
         </div>
@@ -212,7 +212,8 @@ export function FoodPaymentsLedger({ password, username }: { password: string; u
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={busyId === row.id || row.state === "paid"}
+                          disabled={busyId === row.id || row.state === "paid" || !row.qrCodeId}
+                          title={!row.qrCodeId ? "No gateway QR yet — use Retire QR" : undefined}
                           onClick={() => void reconcile(row.id)}
                         >
                           {busyId === row.id ? "…" : "Reconcile"}
@@ -225,7 +226,7 @@ export function FoodPaymentsLedger({ password, username }: { password: string; u
                             disabled={busyId === row.id}
                             onClick={() => void closeQr(row.id)}
                           >
-                            Close QR
+                            Retire QR
                           </Button>
                         )}
                       </div>

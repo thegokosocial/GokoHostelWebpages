@@ -65,6 +65,31 @@ describe("razorpayQrCodeSchema", () => {
     expect(razorpayQrCodeSchema.safeParse(closed).success).toBe(true);
   });
 
+  it("accepts active QR with null close_by/closed_at/close_reason (live Reconcile regression)", () => {
+    const activeNullCloses = {
+      ...SAMPLE_QR_CODE,
+      close_by: null,
+      closed_at: null,
+      close_reason: null,
+      customer_id: null,
+    };
+    const result = razorpayQrCodeSchema.safeParse(activeNullCloses);
+    expect(result.success).toBe(true);
+  });
+
+  it.each(["on_demand", "paid", "expired"] as const)("accepts close_reason %s", (close_reason) => {
+    expect(razorpayQrCodeSchema.safeParse({
+      ...SAMPLE_QR_CODE,
+      status: "closed" as const,
+      close_reason,
+      closed_at: 1700000000,
+    }).success).toBe(true);
+  });
+
+  it("accepts null image_url defensively", () => {
+    expect(razorpayQrCodeSchema.safeParse({ ...SAMPLE_QR_CODE, image_url: null }).success).toBe(true);
+  });
+
   it("rejects invalid entity", () => {
     expect(razorpayQrCodeSchema.safeParse({ ...SAMPLE_QR_CODE, entity: "order" }).success).toBe(false);
   });

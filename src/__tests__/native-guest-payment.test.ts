@@ -241,6 +241,30 @@ describe("Native guest payment verify / reconcile / min-amount", () => {
     expect(calls).toHaveLength(before);
   });
 
+  it("verifyGuestPayment rejects underpaid provider evidence (amount < dueNowPaise)", async () => {
+    const seeded = await seedReadyCheckout({ amount: 50000 });
+    const p = payment(seeded.orderId!, 100, "captured", "pay_UNDER");
+    await expect(verifyGuestPayment(
+      seeded.id, OWNER, p.id, seeded.orderId!, sign(`${seeded.orderId}|${p.id}`),
+    )).rejects.toMatchObject({ code: "MISMATCH" });
+    expect(sqlite.prepare("SELECT count(*) n FROM native_booking_payments").get()).toEqual({ n: 0 });
+    expect(sqlite.prepare("SELECT state FROM native_booking_checkouts WHERE id=?").get(seeded.id))
+      .toEqual({ state: "ready" });
+    expect(sqlite.prepare("SELECT status FROM bookings WHERE id=?").get(seeded.bookingId))
+      .toEqual({ status: "hold" });
+  });
+
+  it("verifyGuestPayment rejects overpaid provider evidence (amount > dueNowPaise)", async () => {
+    const seeded = await seedReadyCheckout({ amount: 50000 });
+    const p = payment(seeded.orderId!, 99999, "captured", "pay_OVER");
+    await expect(verifyGuestPayment(
+      seeded.id, OWNER, p.id, seeded.orderId!, sign(`${seeded.orderId}|${p.id}`),
+    )).rejects.toMatchObject({ code: "MISMATCH" });
+    expect(sqlite.prepare("SELECT count(*) n FROM native_booking_payments").get()).toEqual({ n: 0 });
+    expect(sqlite.prepare("SELECT status FROM bookings WHERE id=?").get(seeded.bookingId))
+      .toEqual({ status: "hold" });
+  });
+
   it("reconcileGuestCheckout recovers after payment.failed then a later capture", async () => {
     const seeded = await seedReadyCheckout();
     payment(seeded.orderId!, seeded.amount, "failed", "pay_DUMMYFAIL");

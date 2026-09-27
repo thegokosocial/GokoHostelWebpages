@@ -29,6 +29,8 @@ async function mockAdminApi(page: Page) {
         ? { settings: DEFAULT_WEBSITE_BOOKING_SETTINGS, revision: "e2e" }
       : url.pathname === "/api/admin/booking-payments" && body.action === "listTestAttempts"
         ? { attempts: [], webhooks: [], previewEnabled: false, nativeCheckoutReady: false }
+      : url.pathname === "/api/admin/food-payments" && body.action === "listFoodQrAttempts"
+        ? { attempts: [] }
       : body.action === "getAuditRetention"
         ? { years: 3, months: 0, totalMonths: 36, cutoff: "2023-01-01", eligible: { auditLog: 0, bookingHistory: 0, attendanceHistory: 0, total: 0 } }
       : body.action === "getBedHistory"
@@ -495,7 +497,7 @@ test("desktop Management navigation opens every admin tab", async ({ page }) => 
   await page.getByRole("button", { name: "Razorpay payments", exact: true }).click();
   await expect(page.getByRole("tab", { name: "Room", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("tab", { name: "Food", exact: true }).click();
-  await expect(page.getByText("Food payment records will be available here soon.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Food payments" })).toBeVisible();
 
   // Menu and Bill Settings are grouped under the Food Settings navigation item.
   await page.getByRole("button", { name: "Food Settings", exact: true }).click();

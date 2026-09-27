@@ -227,17 +227,19 @@ export const razorpayQrCodeSchema = z.object({
   name: z.string().optional(),
   usage: z.enum(["single_use", "multiple_use"]),
   type: z.enum(["upi_qr"]).optional(),
-  image_url: z.string().url(),
+  /** Active QRs always have a URL; closed/edge responses may null it. */
+  image_url: z.string().url().nullish(),
   /** Raw UPI intent (`upi://pay?...`) for merchant-rendered square QRs. Optional until Razorpay enables qr_image_content. */
-  image_content: z.string().min(1).max(2000).optional(),
+  image_content: z.string().min(1).max(2000).nullish(),
   payment_amount: paise.nullable().optional(),
   status: z.enum(["active", "closed"]),
   fixed_amount: z.boolean(),
   payments_amount_received: paise.optional(),
   payments_count_received: z.number().int().min(0).optional(),
-  close_by: z.number().int().optional(),
-  closed_at: z.number().int().optional(),
-  close_reason: z.string().optional(),
+  // Razorpay returns null for these while status=active — .optional() alone rejects null.
+  close_by: z.number().int().nullish(),
+  closed_at: z.number().int().nullish(),
+  close_reason: z.string().nullish(),
   customer_id: z.string().nullable().optional(),
   notes,
 });

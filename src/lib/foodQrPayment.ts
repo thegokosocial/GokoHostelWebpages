@@ -267,13 +267,14 @@ export async function ensureActiveFoodQrForOrders(input: {
 
     if (fingerprintMatch && existing.state === "active" && existing.imageUrl) {
       if (existing.closeBy && new Date(existing.closeBy).getTime() <= Date.now()) {
-        const reconciled = await reconcileFoodQrAttempt(existing.attemptId);
+        const reconciled = await reconcileFoodQrAttempt(existing.attemptId).catch(() => existing);
         if (reconciled.state === "paid") return reconciled;
         if (["expired", "closed"].includes(reconciled.state) ||
             (reconciled.state === "active" && reconciled.closeBy && new Date(reconciled.closeBy).getTime() <= Date.now())) {
-          await releaseClaims(existing.attemptId);
-          await getDb().update(attempts).set({ state: "expired", updatedAt: timestamp() })
-            .where(and(eq(attempts.id, existing.attemptId), inArray(attempts.state, ["active", "creating", "qr_unknown"])));
+          // Past close_by — retire at Razorpay then remint below.
+          await finalizeOpenFoodQrAttempt(existing.attemptId, "expired").catch((error) => {
+            if (error instanceof FoodQrError && error.status === 409) throw error;
+          });
         } else {
           return reconciled;
         }
@@ -283,12 +284,10 @@ export async function ensureActiveFoodQrForOrders(input: {
     } else if (fingerprintMatch && (existing.state === "qr_unknown" || existing.state === "creating")) {
       return reconcileFoodQrAttempt(existing.attemptId).catch(() => existing);
     } else if (!fingerprintMatch) {
-      // Due/order-set changed — close unpaid claim so a new QR can be minted
+      // Due/order-set changed — provider-close + expire so a new QR can be minted.
       const reconciled = await reconcileFoodQrAttempt(existing.attemptId).catch(() => existing);
       if (reconciled.state === "paid") return reconciled;
-      await releaseClaims(existing.attemptId);
-      await getDb().update(attempts).set({ state: "expired", updatedAt: timestamp() })
-        .where(and(eq(attempts.id, existing.attemptId), inArray(attempts.state, ["active", "creating", "qr_unknown"])));
+      await finalizeOpenFoodQrAttempt(existing.attemptId, "expired");
     }
   }
   return createFoodQrAttempt({ ...input, orderIds: unpaid.map((o) => o.id) });
@@ -474,8 +473,73 @@ export function foodQrBlocksDeskPayment(state: string, hasCapturedPayment: boole
 const DESK_RELEASE_ABORT =
   "A Razorpay payment was already captured for this bill. Refresh before recording desk payment.";
 
+const OPEN_FOOD_QR_STATES = ["active", "creating", "qr_unknown"] as const;
+
 /**
- * Close one open food QR by attempt id (ledger Close / Bill drawer).
+ * Reconcile best-effort, then abort only if paid/capture is known.
+ * Gateway/parse failures (RazorpayError) do not block Retire when unpaid locally —
+ * otherwise staff cannot clear locks when Reconcile itself is broken.
+ */
+async function assertFoodQrUnpaidForRelease(attemptId: string) {
+  let state = "";
+  try {
+    const snap = await reconcileFoodQrAttempt(attemptId);
+    state = snap.state;
+  } catch (error) {
+    const [row] = await getDb().select({ state: attempts.state }).from(attempts).where(eq(attempts.id, attemptId)).limit(1);
+    state = row?.state || "";
+    const captured = await getDb().select({ id: payments.id }).from(payments)
+      .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1))).limit(1);
+    if (foodQrBlocksDeskPayment(state, captured.length > 0)) {
+      throw new FoodQrError(DESK_RELEASE_ABORT, 409);
+    }
+    if (error instanceof FoodQrError && /capture evidence is not ready/i.test(error.message)) {
+      throw error;
+    }
+    // RazorpayError / transient reconcile failures: continue if no local capture.
+    return;
+  }
+  const captured = await getDb().select({ id: payments.id }).from(payments)
+    .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1))).limit(1);
+  if (foodQrBlocksDeskPayment(state, captured.length > 0)) {
+    throw new FoodQrError(DESK_RELEASE_ABORT, 409);
+  }
+}
+
+/**
+ * Provider-close (best-effort) + release claims + set terminal state.
+ * Staff Retire → `closed`; bill-change remint → `expired`.
+ */
+async function finalizeOpenFoodQrAttempt(
+  attemptId: string,
+  terminal: "closed" | "expired",
+): Promise<boolean> {
+  await assertFoodQrUnpaidForRelease(attemptId);
+
+  const [attempt] = await getDb().select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
+  if (!attempt || !OPEN_FOOD_QR_STATES.includes(attempt.state as typeof OPEN_FOOD_QR_STATES[number])) {
+    // Already terminal — still heal stuck claims.
+    await releaseClaims(attemptId);
+    return false;
+  }
+
+  if (attempt.qrCodeId) {
+    try {
+      await closeRazorpayFoodQr(attempt.qrCodeId, attempt.environment as RazorpayEnvironment);
+    } catch {
+      // Best-effort; second unpaid assert still blocks if a capture landed.
+    }
+  }
+
+  await assertFoodQrUnpaidForRelease(attemptId);
+  await releaseClaims(attemptId);
+  await getDb().update(attempts).set({ state: terminal, updatedAt: timestamp() })
+    .where(and(eq(attempts.id, attemptId), inArray(attempts.state, [...OPEN_FOOD_QR_STATES])));
+  return true;
+}
+
+/**
+ * Retire one open food QR by attempt id (ledger / Bill drawer Retire QR).
  * Reuses desk release: reconcile → abort if captured → close provider QR → release claims.
  */
 export async function closeActiveFoodQrAttempt(attemptId: string): Promise<{ releasedAttemptIds: string[] }> {
@@ -511,46 +575,12 @@ export async function releaseFoodQrForDeskPayment(orderIds: number[]): Promise<{
 
     const releasedAttemptIds: string[] = [];
     for (const attemptId of attemptIds) {
-      const assertUnpaidForDesk = async () => {
-        let state = "";
-        try {
-          const snap = await reconcileFoodQrAttempt(attemptId);
-          state = snap.state;
-        } catch (error) {
-          const [row] = await getDb().select({ state: attempts.state }).from(attempts).where(eq(attempts.id, attemptId)).limit(1);
-          state = row?.state || "";
-          const captured = await getDb().select({ id: payments.id }).from(payments)
-            .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1))).limit(1);
-          if (foodQrBlocksDeskPayment(state, captured.length > 0)) {
-            throw new FoodQrError(DESK_RELEASE_ABORT, 409);
-          }
-          throw error;
-        }
-        const captured = await getDb().select({ id: payments.id }).from(payments)
-          .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1))).limit(1);
-        if (foodQrBlocksDeskPayment(state, captured.length > 0)) {
-          throw new FoodQrError(DESK_RELEASE_ABORT, 409);
-        }
-      };
-
-      await assertUnpaidForDesk();
-
-      const [attempt] = await getDb().select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
-      // Only close still-open attempts; terminal paid/closed/expired skip the provider call.
-      if (attempt?.qrCodeId && ["active", "creating", "qr_unknown"].includes(attempt.state)) {
-        try {
-          await closeRazorpayFoodQr(attempt.qrCodeId, attempt.environment as RazorpayEnvironment);
-        } catch {
-          // Best-effort close; second assert still blocks if a capture landed.
-        }
+      const finalized = await finalizeOpenFoodQrAttempt(attemptId, "closed");
+      if (finalized) releasedAttemptIds.push(attemptId);
+      else {
+        // Terminal heal still counts as released for desk Mark Paid callers.
+        releasedAttemptIds.push(attemptId);
       }
-
-      await assertUnpaidForDesk();
-
-      await releaseClaims(attemptId);
-      await getDb().update(attempts).set({ state: "closed", updatedAt: timestamp() })
-        .where(and(eq(attempts.id, attemptId), inArray(attempts.state, ["active", "creating", "qr_unknown"])));
-      releasedAttemptIds.push(attemptId);
     }
     return { releasedAttemptIds };
   } catch (error) {

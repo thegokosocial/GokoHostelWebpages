@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 import { readFileSync } from "node:fs";
 import SQLite from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -292,6 +293,20 @@ describe("prepareGuestCheckout", () => {
       ...input,
       persons: 2,
     })).rejects.toThrow(/different checkout/);
+  });
+
+  it("rejects client-injected money fields (DOM/API spoof) via strict selection schema", async () => {
+    for (const poison of [
+      { amount: 0 },
+      { dueNowPaise: 0 },
+      { subtotal: 0 },
+      { total: 1 },
+      { amountPaise: 100 },
+    ]) {
+      await expect(prepareGuestCheckout(prepareInput(poison))).rejects.toBeInstanceOf(ZodError);
+    }
+    expect(sqlite.prepare("SELECT count(*) n FROM native_booking_checkouts").get()).toEqual({ n: 0 });
+    expect(sqlite.prepare("SELECT count(*) n FROM bookings").get()).toEqual({ n: 0 });
   });
 
   it("rejects when destination is not native", async () => {

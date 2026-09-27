@@ -32,6 +32,7 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(guestRoute).toContain("Payment attempt does not match this bill");
     expect(guestRoute).toContain("normalizeWalkinGuestName");
     expect(guestRoute).not.toMatch(/amountPaise.*body|body\.amount/);
+    expect(guestRoute).toContain("}).strict()");
     expect(guestRoute).toContain('action: z.enum(["ensure", "status"])');
     expect(hook).toContain("Missing bill share token");
     expect(hook).not.toMatch(/phone: opts\.phone/);
@@ -76,6 +77,6 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(ledger).toContain("reconcileFoodQrAttempt");
     expect(ledger).toContain("closeActiveFoodQr");
     expect(ledger).toContain("foodQrAttemptOutcome");
-    expect(ledger).toContain("Close QR");
+    expect(ledger).toContain("Retire QR");
   });
 });
