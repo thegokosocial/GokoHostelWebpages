@@ -186,10 +186,16 @@ export default function FoodOrderPage() {
       setFetchError("");
 
       const session = loadFoodGuestSession();
+      const rememberedPhone = localStorage.getItem("gokoFoodPhone") || null;
       if (session?.phone) {
         setGuestInfo(session);
         setView("menu");
         fetchMyOrders(session.phone);
+      } else if (rememberedPhone) {
+        // Session lost (new tab / bills round-trip) but phone remembered — restore menu, not phone entry.
+        setSavedPhone(rememberedPhone);
+        setAutoReorder(true);
+        setView("phone");
       } else {
         setView("phone");
       }
@@ -585,7 +591,7 @@ export default function FoodOrderPage() {
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setView("cart")}
-          className="goko-gradient-cta fixed bottom-3 inset-x-3 z-50 mx-auto flex w-max max-w-full items-center gap-2 rounded-xl px-4 py-2.5 shadow-2xl"
+          className="goko-gradient-cta fixed inset-x-4 z-50 mx-auto flex w-max max-w-full items-center gap-2 rounded-xl px-4 py-2.5 shadow-2xl bottom-[max(0.75rem,env(safe-area-inset-bottom))]"
         >
           <div className="relative">
             <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">

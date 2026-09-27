@@ -92,7 +92,10 @@ async function guestEnterAndAddSoap(page: Page) {
   await page.getByPlaceholder("98765 43210").fill("9876543210");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Menu" })).toBeVisible({ timeout: 15_000 });
-  await page.getByText("Snacks", { exact: true }).click();
+  await expect(page.getByRole("group", { name: "Diet filter" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "All", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Veg", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Non-veg", exact: true })).toBeVisible();
   await expect(page.getByText("Soap", { exact: true })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Add", exact: true }).first().click();
   await page.getByRole("button", { name: /View Cart/i }).click();
@@ -109,6 +112,46 @@ test("guest /food-order places successfully", async ({ page }) => {
   expect(String(placeBodies[0]?.idempotencyKey || "")).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
   );
+  expect(placeBodies[0]).toMatchObject({ createdBy: "guest", guestType: "walkin" });
+});
+
+test("guest diet filter empty state and section heading stay flat (no category rail)", async ({ page }) => {
+  await mockGuestFoodApis(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.removeItem("gokoFoodPhone");
+    localStorage.removeItem("gokoFoodCart");
+    sessionStorage.removeItem("gokoFoodSession");
+  });
+  await page.goto("/food-order");
+  await page.getByPlaceholder("98765 43210").fill("9876543210");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Menu" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Snacks" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: /categor/i })).toHaveCount(0);
+  await page.getByRole("button", { name: "Veg", exact: true }).click();
+  await expect(page.getByText(/No veg items/i)).toBeVisible();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.getByText("Soap", { exact: true })).toBeVisible();
+});
+
+test("guest retries reuse the same idempotencyKey until success", async ({ page }) => {
+  const placeBodies = await mockGuestFoodApis(page, {
+    placeResponse: (attempt) => {
+      if (attempt === 1) {
+        return { status: 500, json: { error: "Failed to place order", detail: "transient" } };
+      }
+      return { json: { success: true, orderId: 2, orderNumber: "G100-2", total: 50000 } };
+    },
+  });
+  await guestEnterAndAddSoap(page);
+  await page.getByRole("button", { name: /Place Order/i }).click();
+  await expect(page.getByText(/Failed to place order|Network error|transient/i)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: /Place Order/i }).click();
+  await expect(page.getByRole("heading", { name: /Order Placed/i })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => placeBodies.length).toBe(2);
+  expect(placeBodies[0]?.idempotencyKey).toBeTruthy();
+  expect(placeBodies[0]?.idempotencyKey).toBe(placeBodies[1]?.idempotencyKey);
 });
 
 test("guest place shows stock insufficiency error", async ({ page }) => {

@@ -47,9 +47,9 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | Path | Role | Auth |
 |------|------|------|
 | `/self-checkin` | ID check-in over hero video with frosted glass form shells; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
-| `/food-order` | Menu + cart; after selecting a category, the guest menu keeps the sorted category list in an independently scrollable vertical left rail beside a dish pane whose item list scrolls independently; the home category-card view is unchanged | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
+| `/food-order` | Flat menu + cart; sticky search and one-line All/Veg/Non-veg filters; dishes grouped under category headings; floating View Cart FAB with safe-area inset | phone in localStorage; session in `sessionStorage.gokoFoodSession`; missing session + remembered phone auto-restores menu; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
-| `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); shared `GuestFoodBillCard`; back → previous page |
+| `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); shared `GuestFoodBillCard`; Back to menu → `/food-order` |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |
 | `/review/[token]` | Rating funnel | token |
 | `/admin` | PMS SPA | direct username/password form creates an HttpOnly session; authenticated API calls use that session (legacy password fields remain only for compatibility); phone/tablet section navigation is a full-viewport scroll-contained modal drawer with a blurred glass surface (overrides Sheet `w-3/4` / `sm:max-w-sm` via `data-[side=right]:w-screen` + `data-[side=right]:(sm:)max-w-none`; X, section choice, or blank drawer area closes it — Sheet closes after `section` URL commits so Base UI focus-restore cannot cancel `router.push`); Management tab dropdown options layer above their dismiss surface but remain below global navigation; long task, attendance, and payroll dialogs scroll within the viewport; public order-history sheets use dynamic viewport sizing |

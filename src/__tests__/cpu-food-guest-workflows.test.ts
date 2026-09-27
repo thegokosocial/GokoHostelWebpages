@@ -541,25 +541,26 @@ describe("food-order CPU/SSR split", () => {
   it("centers the cart FAB and reorder toast without Framer y fighting left-1/2 translate", () => {
     const page = readFile("src/app/food-order/page.tsx");
     expect(page).toContain("inset-x-4");
+    expect(page).toContain("bottom-[max(0.75rem,env(safe-area-inset-bottom))]");
     expect(page).not.toContain("left-1/2");
     expect(page).not.toContain("-translate-x-1/2");
   });
 
-  it("keeps the home category view and adds a selected-category rail for guests", () => {
+  it("shows a flat diet-only guest menu with category section headings and no sidebar rail", () => {
     const page = readFile("src/app/food-order/page.tsx");
     const menu = readFile("src/components/food/MenuBrowser.tsx");
-    expect(menu).toContain('aria-label="Food categories"');
-    expect(menu).toContain('aria-current={cat.id === selectedCategory ? "page" : undefined}');
-    expect(menu).toContain("grid-cols-[4.25rem_minmax(0,1fr)]");
+    expect(menu).toContain('aria-label="Diet filter"');
+    expect(menu).toContain("grid grid-cols-3 gap-1.5");
     expect(menu).toContain("grid grid-cols-2 gap-2 sm:gap-3");
-    expect(menu).toContain("onClick={() => selectCategory(cat.id)}");
-    expect(menu).toContain("h-[calc(100dvh-6.5rem)]");
-    expect(menu).toContain("pb-14");
-    expect(menu).toContain("overflow-y-auto overscroll-contain");
-    expect(menu).toContain("min-h-0 flex-1 overflow-y-auto");
+    expect(menu).toContain("dietEmptyMessage");
+    expect(menu).toContain("pb-[calc(4.5rem+env(safe-area-inset-bottom))]");
+    expect(menu).not.toContain('aria-label="Food categories"');
+    expect(menu).not.toContain("grid-cols-[4.25rem_minmax(0,1fr)]");
+    expect(menu).not.toContain("selectCategory");
+    expect(menu).not.toContain("h-[calc(100dvh-6.5rem)]");
     expect(menu).not.toContain("{item.description}");
-    expect(menu).toContain("flex-nowrap gap-1 overflow-x-auto");
     expect(page).toContain('view === "menu" ? "max-w-7xl pb-0 pt-1"');
+    expect(page).toContain("setAutoReorder(true)");
     expect(page).toContain('className="hidden sm:inline"');
   });
 
