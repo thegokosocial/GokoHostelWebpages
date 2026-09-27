@@ -466,6 +466,79 @@ export async function hasActiveFoodQrClaim(orderIds: number[]): Promise<boolean>
   }
 }
 
+/** Pure gate: desk Mark Paid must not proceed once Razorpay capture is known. */
+export function foodQrBlocksDeskPayment(state: string, hasCapturedPayment: boolean): boolean {
+  return state === "paid" || hasCapturedPayment;
+}
+
+const DESK_RELEASE_ABORT =
+  "A Razorpay payment was already captured for this bill. Refresh before recording desk payment.";
+
+/**
+ * Close open food Razorpay QRs and release claims so Mark Paid can record cash/online/split.
+ * Aborts if a capture is already applied or visible — never double-settle.
+ */
+export async function releaseFoodQrForDeskPayment(orderIds: number[]): Promise<{ releasedAttemptIds: string[] }> {
+  if (!orderIds.length || isPiRuntime()) return { releasedAttemptIds: [] };
+  try {
+    const claimRows = await collectInBatches(orderIds, (batch) =>
+      getDb().select({ attemptId: claims.attemptId }).from(claims)
+        .where(and(inArray(claims.orderId, batch), sql`${claims.releasedAt} IS NULL`)),
+    );
+    const attemptIds = [...new Set(claimRows.map((row) => row.attemptId))];
+    if (!attemptIds.length) return { releasedAttemptIds: [] };
+
+    const releasedAttemptIds: string[] = [];
+    for (const attemptId of attemptIds) {
+      const assertUnpaidForDesk = async () => {
+        let state = "";
+        try {
+          const snap = await reconcileFoodQrAttempt(attemptId);
+          state = snap.state;
+        } catch (error) {
+          const [row] = await getDb().select({ state: attempts.state }).from(attempts).where(eq(attempts.id, attemptId)).limit(1);
+          state = row?.state || "";
+          const captured = await getDb().select({ id: payments.id }).from(payments)
+            .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1))).limit(1);
+          if (foodQrBlocksDeskPayment(state, captured.length > 0)) {
+            throw new FoodQrError(DESK_RELEASE_ABORT, 409);
+          }
+          throw error;
+        }
+        const captured = await getDb().select({ id: payments.id }).from(payments)
+          .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1))).limit(1);
+        if (foodQrBlocksDeskPayment(state, captured.length > 0)) {
+          throw new FoodQrError(DESK_RELEASE_ABORT, 409);
+        }
+      };
+
+      await assertUnpaidForDesk();
+
+      const [attempt] = await getDb().select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
+      if (attempt?.qrCodeId && !foodQrBlocksDeskPayment(attempt.state, false)) {
+        try {
+          await closeRazorpayFoodQr(attempt.qrCodeId, attempt.environment as RazorpayEnvironment);
+        } catch {
+          // Best-effort close; second assert still blocks if a capture landed.
+        }
+      }
+
+      await assertUnpaidForDesk();
+
+      await releaseClaims(attemptId);
+      await getDb().update(attempts).set({ state: "closed", updatedAt: timestamp() })
+        .where(and(eq(attempts.id, attemptId), inArray(attempts.state, ["active", "creating", "qr_unknown"])));
+      releasedAttemptIds.push(attemptId);
+    }
+    return { releasedAttemptIds };
+  } catch (error) {
+    if (error instanceof FoodQrError) throw error;
+    const msg = error instanceof Error ? error.message : String(error);
+    if (/no such table|food_qr_/i.test(msg)) return { releasedAttemptIds: [] };
+    throw error;
+  }
+}
+
 // --- Webhook handling ---
 
 const supportedQrEvents = new Set(["qr_code.credited", "qr_code.closed", "payment.captured"]);
@@ -626,12 +699,14 @@ export async function foodQrSnapshot(attemptId: string) {
   if (!attempt) throw new FoodQrError("Attempt not found", 404);
   const payRows = await db.select().from(payments).where(eq(payments.attemptId, attemptId));
   const rzpEnv = attempt.environment as RazorpayEnvironment;
+  const upiIntent = upiIntentFromNotes(attempt.notes);
   return {
     attemptId: attempt.id,
     state: attempt.state,
     amountPaise: attempt.paymentAmountPaise,
     imageUrl: attempt.qrImageUrl,
-    upiIntent: upiIntentFromNotes(attempt.notes),
+    upiIntent,
+    hasUpiIntent: Boolean(upiIntent),
     closeBy: attempt.closeBy,
     environment: rzpEnv,
     paymentMethodLabel: paymentMethodLabel(rzpEnv),

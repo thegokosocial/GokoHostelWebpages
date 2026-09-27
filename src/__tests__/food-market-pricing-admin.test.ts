@@ -36,6 +36,15 @@ vi.mock("@/db/queries", () => ({
 vi.mock("@/db", () => ({ getDb: q.getDb }));
 vi.mock("@/lib/foodQrPayment", () => ({
   hasActiveFoodQrClaim: vi.fn(async () => false),
+  releaseFoodQrForDeskPayment: vi.fn(async () => ({ releasedAttemptIds: [] })),
+  FoodQrError: class FoodQrError extends Error {
+    status: number;
+    constructor(message: string, status = 409) {
+      super(message);
+      this.name = "FoodQrError";
+      this.status = status;
+    }
+  },
 }));
 vi.mock("@/lib/guestReceipts", () => ({ latestReceiptAccount: q.latestReceiptAccount, createGuestReceipt: q.createGuestReceipt, receiptBusinessDate: vi.fn(() => "2026-09-22"), resolveReceiptAccount: q.resolveReceiptAccount }));
 vi.mock("@/lib/pushNotify", () => ({ dispatchPush: q.dispatchPush, notificationFoodBody: q.notificationFoodBody }));

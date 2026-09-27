@@ -2212,6 +2212,16 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           guestName={paymentModalGroup.guestName}
           initialMethod={paymentModalMethod}
           password={password} username={username} receiptKind="food"
+          requireAccountPick={
+            drawerDynamicQrEnabled
+            && (drawerQrState.status === "active" || drawerQrState.status === "loading")
+          }
+          accountPickHint={
+            drawerDynamicQrEnabled
+            && (drawerQrState.status === "active" || drawerQrState.status === "loading")
+              ? "Guest may have paid the reception PhonePe QR — pick the account that received the money. Saving closes any open Razorpay bill QR."
+              : undefined
+          }
           onConfirm={async (method, cashReceived, changeGiven, onlineAccountId, receiptId) => {
             const saved = await markGroupPaid(paymentModalGroup, method, cashReceived, changeGiven, onlineAccountId, receiptId);
             if (saved) setPaymentModalGroup(null);

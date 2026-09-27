@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  foodBillQrStaffCaption,
   isRazorpayBillMode,
   mapFoodQrAttemptToUi,
   mapFoodQrEnsureResponse,
@@ -176,9 +177,10 @@ describe("claim guards + guest QR contracts stay wired", () => {
   const myBills = readFileSync("src/app/my-bills/page.tsx", "utf8");
   const engine = readFileSync("src/lib/foodQrPayment.ts", "utf8");
 
-  it("active QR claims block payment + total-changing mutators", () => {
+  it("active QR claims block total-changing mutators; Mark Paid supersedes via desk release", () => {
     expect(foodOrders).toContain("rejectIfActiveFoodQr");
-    expect(foodOrders.match(/rejectIfActiveFoodQr/g)?.length).toBeGreaterThanOrEqual(8);
+    expect(foodOrders).toContain("releaseFoodQrForDeskPayment");
+    expect(foodOrders.match(/rejectIfActiveFoodQr/g)?.length).toBeGreaterThanOrEqual(7);
     expect(foodOrders).toContain("cancelUnpaidOrder");
     expect(foodOrders).toContain("applyDiscount");
     expect(foodOrders).toContain("removeDiscount");
@@ -190,6 +192,7 @@ describe("claim guards + guest QR contracts stay wired", () => {
     expect(foodOrders).toContain("Razorpay food QR payments cannot be rewritten");
     expect(foodOrders).toContain("Razorpay food QR captures cannot be reversed");
     expect(engine).toContain("isPiRuntime()) return false");
+    expect(engine).toContain("releaseFoodQrForDeskPayment");
   });
 
   it("guest QR is token-only with scope checks and never trusts client amount", () => {
@@ -207,6 +210,7 @@ describe("claim guards + guest QR contracts stay wired", () => {
     expect(card).toContain("maxPx={280}");
     expect(card).toContain("branding.qrUrl");
     expect(card).toContain("Never show Razorpay's branded poster");
+    expect(card).toContain("foodBillQrStaffCaption");
     expect(card).not.toMatch(/dynamicQr\.imageUrl/);
     expect(card).not.toContain("crossOrigin");
   });
@@ -216,5 +220,21 @@ describe("claim guards + guest QR contracts stay wired", () => {
     expect(myBills).toContain("myBillsHidePayment");
     expect(myBills).toContain("shouldEnsureDynamicFoodQr");
     expect(myBills).toContain("hidePayment={hidePayment}");
+  });
+});
+
+describe("foodBillQrStaffCaption", () => {
+  it("labels Razorpay square vs PhonePe static vs unavailable fallback", () => {
+    expect(foodBillQrStaffCaption({
+      dynamicStatus: "active", hasUpiIntent: true, razorpayMode: true,
+    })).toEqual({ kind: "razorpay", text: "Razorpay UPI · exact amount" });
+    expect(foodBillQrStaffCaption({
+      dynamicStatus: "active", hasUpiIntent: false, razorpayMode: true,
+    })).toEqual({ kind: "phonepe_fallback", text: "PhonePe static QR (Razorpay square unavailable)" });
+    expect(foodBillQrStaffCaption({
+      dynamicStatus: "static", razorpayMode: false,
+    })).toEqual({ kind: "phonepe_static", text: "PhonePe static QR" });
+    expect(foodBillQrStaffCaption({ dynamicStatus: "loading" })?.kind).toBe("loading");
+    expect(foodBillQrStaffCaption({ hidePayment: true, dynamicStatus: "active", hasUpiIntent: true })).toBeNull();
   });
 });

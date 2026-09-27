@@ -4,23 +4,45 @@ import { accounts, guestReceipts } from "@/db/schema";
 import { syncInsert } from "@/db/syncMeta";
 import { getSetting } from "@/db/queries";
 
+/** Same key as `ensurePlatformProfile("Razorpay Website")` / Platform Receivables. */
+export const RAZORPAY_WEBSITE_PLATFORM_KEY = "razorpay-website";
+
 export function receiptBusinessDate(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(now);
 }
 
-export async function requireActiveReceiptAccount(accountId: unknown): Promise<number> {
+/** Pure eligibility for Received-in banks (unit-tested). Room never accepts virtuals. */
+export function isEligibleReceiptAccount(
+  account: { isActive?: number | boolean | null; isVirtual?: number | boolean | null; platformKey?: string | null },
+  kind: "food" | "room",
+): boolean {
+  if (Number(account.isActive) !== 1) return false;
+  if (Number(account.isVirtual) !== 1) return true;
+  return kind === "food" && account.platformKey === RAZORPAY_WEBSITE_PLATFORM_KEY;
+}
+
+export async function requireActiveReceiptAccount(
+  accountId: unknown,
+  kind: "food" | "room" = "room",
+): Promise<number> {
   const id = Number(accountId);
   if (!Number.isInteger(id) || id <= 0) throw new Error("Receiving bank is required for online payment");
   const db = getDb();
-  const row = await db.select({ id: accounts.id }).from(accounts)
-    .where(and(eq(accounts.id, id), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
-  if (!row[0]) throw new Error("Selected receiving bank is not active");
+  const row = await db.select({
+    id: accounts.id,
+    isActive: accounts.isActive,
+    isVirtual: accounts.isVirtual,
+    platformKey: accounts.platformKey,
+  }).from(accounts).where(eq(accounts.id, id)).limit(1);
+  if (!row[0] || !isEligibleReceiptAccount(row[0], kind)) {
+    throw new Error("Selected receiving bank is not active");
+  }
   return id;
 }
 
 export async function resolveReceiptAccount(kind: "food" | "room", supplied: unknown): Promise<number> {
   const configured = supplied ?? await getSetting(kind === "food" ? "food_online_receipt_account_id" : "room_online_receipt_account_id");
-  return requireActiveReceiptAccount(configured);
+  return requireActiveReceiptAccount(configured, kind);
 }
 
 export async function createGuestReceipt(data: {

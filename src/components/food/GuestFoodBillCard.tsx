@@ -12,6 +12,7 @@ import {
 } from "@/lib/foodBillFormat";
 import { foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { foodAmountPaid } from "@/lib/foodPaymentBalance";
+import { foodBillQrStaffCaption, isRazorpayBillMode } from "@/lib/foodBillQrUi";
 import { AutoQrCode } from "@/components/sections/AutoQrCode";
 
 export type GuestFoodBillItem = {
@@ -143,6 +144,12 @@ export function GuestFoodBillCard({
   const showExactDynamic = !!dynamicUpiIntent && dynamicQr?.status === "active";
   const showPayment = !hidePayment && variant === "unpaid" && due > 0
     && !!(dynamicUpiIntent || qrSrc || branding.upiId || dynamicActive);
+  const staffQrCaption = foodBillQrStaffCaption({
+    hidePayment,
+    dynamicStatus: dynamicQr?.status ?? (showPayment ? "static" : null),
+    hasUpiIntent: !!dynamicUpiIntent,
+    razorpayMode: isRazorpayBillMode(branding.qrMode),
+  });
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
   const latest = orders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b), orders[0]);
@@ -226,7 +233,7 @@ export function GuestFoodBillCard({
       {showPayment && !pendingPrice && (
         <div className="mt-4 border-t border-dashed border-zinc-200 pt-4 text-center dark:border-white/10">
           {dynamicQr?.status === "loading" && (
-            <p className="text-sm text-zinc-500">Preparing payment QR…</p>
+            <p className="text-sm text-zinc-500">{staffQrCaption?.text || "Preparing Razorpay QR…"}</p>
           )}
           {dynamicQr?.status === "error" && (
             <p className="text-sm text-red-600">{dynamicQr.message || "Payment QR unavailable"}</p>
@@ -248,9 +255,12 @@ export function GuestFoodBillCard({
               decoding="async"
             />
           )}
-          {dynamicQr?.status !== "paid" && dynamicQr?.status !== "error" && (
+          {dynamicQr?.status !== "paid" && dynamicQr?.status !== "error" && dynamicQr?.status !== "loading" && (
             <>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+              {staffQrCaption && (
+                <p className="mt-2 text-[11px] text-zinc-400">{staffQrCaption.text}</p>
+              )}
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                 Pay{" "}
                 <span className="font-semibold" style={{ color: accent }}>
                   {formatRupees(due)}
@@ -258,7 +268,7 @@ export function GuestFoodBillCard({
                 {" "}via UPI
                 {showExactDynamic ? " (exact amount)" : ""}
               </p>
-              {showExactDynamic && dynamicQr.closeBy && (
+              {showExactDynamic && dynamicQr?.closeBy && (
                 <p className="mt-0.5 text-[11px] text-zinc-400">
                   QR valid until {new Date(dynamicQr.closeBy).toLocaleString("en-IN")}
                 </p>

@@ -1154,7 +1154,7 @@ Cloudflare-only; Pi migrator skips `0083_food_qr_payments.sql`. Engine: `foodQrP
 
 ### `food_qr_order_claims`
 
-One unreleased claim per `order_id` (partial unique index) → `attempt_id`. Blocks cash `markOrderPaid` while active.
+One unreleased claim per `order_id` (partial unique index) → `attempt_id`. Blocks total-changing mutators and `updatePaymentDetails` while active. `markOrderPaid` calls `releaseFoodQrForDeskPayment` (close + release, abort if already captured) instead of 409.
 
 ### `food_qr_payments` / `food_qr_webhooks`
 

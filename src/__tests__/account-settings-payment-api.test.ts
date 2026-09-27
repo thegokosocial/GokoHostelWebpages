@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const mocks = vi.hoisted(() => ({ authenticateUser: vi.fn(), getDb: vi.fn(), getSetting: vi.fn(), setSetting: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  authenticateUser: vi.fn(),
+  getDb: vi.fn(),
+  getSetting: vi.fn(),
+  setSetting: vi.fn(),
+  ensurePlatformProfile: vi.fn(),
+  isPiRuntime: vi.fn(() => false),
+}));
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: mocks.authenticateUser }));
 vi.mock("@/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/db/queries", () => ({ getSetting: mocks.getSetting, setSetting: mocks.setSetting }));
+vi.mock("@/lib/platformReceivables", () => ({ ensurePlatformProfile: mocks.ensurePlatformProfile }));
+vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => mocks.isPiRuntime() }));
 
 import { POST } from "@/app/api/admin/account-settings/route";
 
@@ -26,19 +35,31 @@ describe("Food payment account selection API", () => {
     mocks.authenticateUser.mockResolvedValue(admin);
     mocks.getSetting.mockResolvedValue("");
     mocks.setSetting.mockResolvedValue(undefined);
+    mocks.ensurePlatformProfile.mockResolvedValue({ platformKey: "razorpay-website" });
+    mocks.isPiRuntime.mockReturnValue(false);
   });
 
-  it("returns active real accounts to a canMarkPaid user", async () => {
-    const rows = [{ id: 3, name: "Sunny HDFC", nickname: "HDFC", isActive: 1 }];
-    const where = vi.fn().mockResolvedValue(rows);
+  it("returns active real accounts plus Razorpay Website virtual to a canMarkPaid user", async () => {
+    const banks = [{ id: 3, name: "Sunny HDFC", nickname: "HDFC", isActive: 1 }];
+    const razorpay = [{ id: 9, name: "Razorpay Website Receivable", nickname: "", isActive: 1 }];
+    const limit = vi.fn().mockResolvedValue(razorpay);
+    const where = vi.fn(() => Object.assign(Promise.resolve(banks), { limit }));
     mocks.getDb.mockReturnValue({ select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where }) }) });
     mocks.authenticateUser.mockResolvedValue({ ...staff, permissions: { canMarkPaid: true } });
 
     const response = await POST(request("getFoodReceiptAccounts"));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ accounts: rows, foodOnlineReceiptAccountId: "" });
+    expect(await response.json()).toEqual({
+      accounts: [
+        ...banks,
+        { id: 9, name: "Razorpay Website Receivable", nickname: "Website / Razorpay", isActive: 1 },
+      ],
+      foodOnlineReceiptAccountId: "",
+    });
+    expect(mocks.ensurePlatformProfile).toHaveBeenCalledWith("Razorpay Website");
     expect(where).toHaveBeenCalled();
+    expect(limit).toHaveBeenCalled();
   });
 
   it("does not expose payment accounts without canMarkPaid", async () => {

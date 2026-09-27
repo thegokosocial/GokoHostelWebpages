@@ -25,6 +25,8 @@ export function RecordPaymentModal({
   allowPartial = false,
   secondaryActionLabel,
   onSecondaryAction,
+  requireAccountPick = false,
+  accountPickHint,
 }: {
   totalAmount: number;
   guestName: string;
@@ -42,6 +44,9 @@ export function RecordPaymentModal({
   allowPartial?: boolean;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => boolean | void | Promise<boolean | void>;
+  /** When true, leave Received-in empty until staff picks (open dynamic food QR). */
+  requireAccountPick?: boolean;
+  accountPickHint?: string;
 }) {
   const refund = mode === "refund";
   const correction = mode === "correction";
@@ -77,9 +82,13 @@ export function RecordPaymentModal({
       .then((r) => r.ok ? r.json() : null).then((data) => {
         if (!data) return;
         setAccounts((data.accounts || []).filter((a: ReceiptAccount) => a.isActive));
+        if (requireAccountPick) {
+          setOnlineAccountId("");
+          return;
+        }
         setOnlineAccountId(String(receiptKind === "food" ? data.foodOnlineReceiptAccountId || "" : data.roomOnlineReceiptAccountId || ""));
       }).catch(() => {});
-  }, [password, username, receiptKind]);
+  }, [password, username, receiptKind, requireAccountPick]);
 
   const totalRupees = totalAmount / scale;
   const correctionAmountParse = correction && allowPartial
@@ -285,6 +294,9 @@ export function RecordPaymentModal({
               {receiptKind && !correction && <label className="block text-left text-xs font-medium text-blue-900 dark:text-blue-200">Received in
                 <select value={onlineAccountId} onChange={(e) => setOnlineAccountId(e.target.value)} className="mt-1 w-full rounded border border-blue-200 bg-white px-2 py-2 text-sm text-brand-green-dark"><option value="">Select bank…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nickname || a.name}</option>)}</select>
               </label>}
+              {receiptKind && !correction && accountPickHint && (
+                <p className="text-left text-[11px] leading-snug text-blue-800/80 dark:text-blue-200/80">{accountPickHint}</p>
+              )}
             </div>
           )}
 
@@ -327,6 +339,9 @@ export function RecordPaymentModal({
               {receiptKind && !correction && <label className="block text-xs font-medium text-brand-green-dark/70">Online amount received in
                 <select value={onlineAccountId} onChange={(e) => setOnlineAccountId(e.target.value)} className="mt-1 w-full rounded border border-input bg-white px-2 py-2 text-sm"><option value="">Select bank…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nickname || a.name}</option>)}</select>
               </label>}
+              {receiptKind && !correction && accountPickHint && (
+                <p className="text-[11px] leading-snug text-brand-green-dark/60">{accountPickHint}</p>
+              )}
             </div>
           )}
           {allowPartial && (

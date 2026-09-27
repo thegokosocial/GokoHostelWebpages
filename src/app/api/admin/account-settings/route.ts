@@ -9,6 +9,9 @@ import { calculateEmployeePayroll } from "@/lib/employeeAttendance";
 import { todayIST } from "@/lib/utils";
 import { parseExpenseCategories, parseIncomeCategories } from "@/lib/accountCategories";
 import { permissionEnabled } from "@/lib/actionPermissions";
+import { RAZORPAY_WEBSITE_PLATFORM_KEY } from "@/lib/guestReceipts";
+import { ensurePlatformProfile } from "@/lib/platformReceivables";
+import { isPiRuntime } from "@/lib/runtime";
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,11 +69,30 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ accounts: items, foodOnlineReceiptAccountId, roomOnlineReceiptAccountId });
       }
       case "getFoodReceiptAccounts": {
-        const [items, defaultId] = await Promise.all([
+        // Reuse room Razorpay Website virtual for food Received-in (desk UPI into Razorpay).
+        if (!isPiRuntime()) {
+          try { await ensurePlatformProfile("Razorpay Website"); } catch { /* list banks even if ensure fails */ }
+        }
+        const [banks, defaultId, razorpayVirtual] = await Promise.all([
           db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, isActive: accounts.isActive })
             .from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))),
           getSetting("food_online_receipt_account_id"),
+          db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, isActive: accounts.isActive })
+            .from(accounts)
+            .where(and(
+              eq(accounts.isActive, 1),
+              eq(accounts.isVirtual, 1),
+              eq(accounts.platformKey, RAZORPAY_WEBSITE_PLATFORM_KEY),
+            ))
+            .limit(1),
         ]);
+        const items = [...banks];
+        if (razorpayVirtual[0] && !items.some((a) => a.id === razorpayVirtual[0].id)) {
+          items.push({
+            ...razorpayVirtual[0],
+            nickname: razorpayVirtual[0].nickname?.trim() || "Website / Razorpay",
+          });
+        }
         return NextResponse.json({ accounts: items, foodOnlineReceiptAccountId: defaultId });
       }
       case "saveReceiptDefaults": {

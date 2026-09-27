@@ -115,3 +115,36 @@ export function mapFoodQrEnsureResponse(opts: {
 export function parseBillQrModeForUi(raw: string | null | undefined): BillQrMode {
   return parseBillQrMode(raw);
 }
+
+export type FoodBillQrStaffCaption =
+  | { kind: "loading"; text: string }
+  | { kind: "razorpay"; text: string }
+  | { kind: "phonepe_static"; text: string }
+  | { kind: "phonepe_fallback"; text: string }
+  | null;
+
+/**
+ * Subtle staff-facing channel label under the bill QR.
+ * Distinguishes Razorpay square UPI from Bill Settings PhonePe static (incl. silent fallback).
+ */
+export function foodBillQrStaffCaption(opts: {
+  hidePayment?: boolean;
+  dynamicStatus?: "loading" | "active" | "paid" | "error" | "static" | null;
+  hasUpiIntent?: boolean;
+  razorpayMode?: boolean;
+}): FoodBillQrStaffCaption {
+  if (opts.hidePayment) return null;
+  const status = opts.dynamicStatus ?? null;
+  if (status === "paid" || status === "error") return null;
+  if (status === "loading") return { kind: "loading", text: "Preparing Razorpay QR…" };
+  if (status === "active" && opts.hasUpiIntent) {
+    return { kind: "razorpay", text: "Razorpay UPI · exact amount" };
+  }
+  if (status === "active" && !opts.hasUpiIntent) {
+    return { kind: "phonepe_fallback", text: "PhonePe static QR (Razorpay square unavailable)" };
+  }
+  if (status === "static" || status == null) {
+    return { kind: "phonepe_static", text: "PhonePe static QR" };
+  }
+  return null;
+}

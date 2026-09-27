@@ -491,9 +491,18 @@ export async function POST(req: NextRequest) {
         if (existingOrders.some((order) => order.status === "cancelled" || foodDue(order) <= 0)) {
           return NextResponse.json({ error: "Every selected order must have an outstanding balance" }, { status: 409 });
         }
+        // Desk pay supersedes open Razorpay bill QRs (close + release). Abort if already captured.
+        let releasedFoodQrAttemptIds: string[] = [];
         {
-          const blocked = await rejectIfActiveFoodQr(orderIds);
-          if (blocked) return blocked;
+          const { releaseFoodQrForDeskPayment, FoodQrError } = await import("@/lib/foodQrPayment");
+          try {
+            releasedFoodQrAttemptIds = (await releaseFoodQrForDeskPayment(orderIds)).releasedAttemptIds;
+          } catch (error) {
+            if (error instanceof FoodQrError) {
+              return NextResponse.json({ error: error.message }, { status: error.status });
+            }
+            throw error;
+          }
         }
         const itemsByOrder = await getFoodOrderItemsBatch(orderIds);
         if (existingOrders.some((order) => (itemsByOrder.get(order.id) || []).some((item) => item.status !== "voided" && item.pricingStatus === "pending"))) {
@@ -519,6 +528,16 @@ export async function POST(req: NextRequest) {
         const referenceSnapshot = existingOrders.length > 1 ? `${firstReference} + ${existingOrders.length - 1} more` : firstReference;
         const guestNames = new Set(existingOrders.map((order) => order.guestName || "guest"));
         const guestNameSnapshot = guestNames.size === 1 ? [...guestNames][0] : "Combined bill";
+        // After closing a dynamic QR, never silently fall back to food_online_receipt_account_id
+        // (guest may have paid reception PhonePe / another bank).
+        if (releasedFoodQrAttemptIds.length > 0 && allocations.some((a) => a.onlineAmount > 0)) {
+          const explicitAccountId = Number(onlineAccountId);
+          if (!Number.isInteger(explicitAccountId) || explicitAccountId <= 0) {
+            return NextResponse.json({
+              error: "Select Received-in — an open Razorpay bill QR was closed for this payment",
+            }, { status: 400 });
+          }
+        }
         const accountId = allocations.some((allocation) => allocation.onlineAmount > 0)
           ? await resolveReceiptAccount("food", onlineAccountId)
           : undefined;
