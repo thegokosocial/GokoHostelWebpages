@@ -49,4 +49,21 @@ describe("guest menu diet filters and floating cart", () => {
     expect(page).toContain("bottom-[max(0.75rem,env(safe-area-inset-bottom))]");
     expect(page).toContain("View Cart");
   });
+
+  it("searches all categories and lands on the hit category after Add", () => {
+    expect(menu).toContain("Search all dishes");
+    expect(menu).toContain("const searching = q.length > 0");
+    expect(menu).toContain("searching");
+    expect(menu).toContain("items.filter(");
+    expect(menu).toMatch(/searchQuery\.trim\(\)[\s\S]*setSelectedCategory\(item\.categoryId\)/);
+    expect(menu).toMatch(/setSelectedCategory\(item\.categoryId\)[\s\S]*setSearchQuery\(""\)/);
+  });
+
+  it("centers a red clear-search control without Framer translate fight", () => {
+    expect(menu).toContain('aria-label="Clear search"');
+    expect(menu).toContain("bg-red-500");
+    expect(menu).toContain("absolute inset-y-0 right-0 flex items-center");
+    expect(menu).not.toMatch(/Clear search[\s\S]{0,400}top-1\/2 -translate-y-1\/2/);
+    expect(menu).not.toMatch(/bg-gray-300[\s\S]{0,80}Clear search|Clear search[\s\S]{0,200}bg-gray-300/);
+  });
 });

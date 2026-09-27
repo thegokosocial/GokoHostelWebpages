@@ -47,7 +47,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | Path | Role | Auth |
 |------|------|------|
 | `/self-checkin` | ID check-in over hero video with frosted glass form shells; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
-| `/food-order` | Menu + cart; category rail + dish pane; diet filters All/Veg/Non-veg only (one row); floating View Cart with safe-area; checkout shows hostel name+dorm or locked walk-in name when known | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
+| `/food-order` | Menu + cart; category rail + dish pane; diet All/Veg/Non-veg; global dish search (Add lands on hit category); floating View Cart with safe-area; checkout shows hostel name+dorm or locked walk-in name when known | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
 | `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); shared `GuestFoodBillCard`; back → `/food-order` (`router.push`, keeps guest session) |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |

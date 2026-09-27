@@ -96,9 +96,23 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
     [categories]
   );
 
+  const categoryOrder = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const cat of categories) map.set(cat.id, cat.displayOrder);
+    return map;
+  }, [categories]);
+
   const filteredItems = useMemo(() => {
-    let result = items.filter((i) => i.categoryId === selectedCategory);
-    result = result.sort((a, b) => a.displayOrder - b.displayOrder);
+    const q = searchQuery.toLowerCase().trim();
+    const searching = q.length > 0;
+    // Global search: match every category; empty search stays on the selected rail category.
+    let result = searching
+      ? items.filter(
+          (item) =>
+            item.name.toLowerCase().includes(q) ||
+            (item.nameKannada && item.nameKannada.includes(q))
+        )
+      : items.filter((i) => i.categoryId === selectedCategory);
 
     if (dietFilter !== "all") {
       result = result.filter((item) => {
@@ -108,17 +122,17 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       });
     }
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (item) =>
-          item.name.toLowerCase().includes(q) ||
-          (item.nameKannada && item.nameKannada.includes(q))
-      );
-    }
+    result = result.sort((a, b) => {
+      if (searching) {
+        const catDelta =
+          (categoryOrder.get(a.categoryId) ?? 0) - (categoryOrder.get(b.categoryId) ?? 0);
+        if (catDelta !== 0) return catDelta;
+      }
+      return a.displayOrder - b.displayOrder;
+    });
 
     return result;
-  }, [items, selectedCategory, dietFilter, searchQuery]);
+  }, [items, selectedCategory, dietFilter, searchQuery, categoryOrder]);
 
   const getCartQuantity = (menuItemId: number): number => {
     const found = cart.find((c) => c.menuItemId === menuItemId);
@@ -138,6 +152,11 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       quantity: 1,
       imageUrl: item.imageUrl || "",
     });
+    // From a global hit, land on that dish's category (keep diet; clear search).
+    if (searchQuery.trim()) {
+      setSelectedCategory(item.categoryId);
+      setSearchQuery("");
+    }
   };
 
   if (selectedCategory === null) {
@@ -221,29 +240,29 @@ export function MenuBrowser({ categories, items, cart, onAddToCart, onRemoveFrom
       </nav>
 
       <div className="flex min-h-0 min-w-0 flex-col">
-        {/* Search */}
+        {/* Search — global across categories while typing */}
         <div className="relative mb-1 shrink-0">
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search dishes…"
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 pr-7 text-[11px] outline-none transition-all duration-200 focus:border-brand-green focus:bg-white focus-visible:goko-focus focus:shadow-sm dark:border-border dark:bg-muted dark:text-foreground dark:focus:bg-accent dark:focus:shadow-none sm:px-3 sm:py-2 sm:text-xs"
+          placeholder="Search all dishes…"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 pr-9 text-[11px] outline-none transition-all duration-200 focus:border-brand-green focus:bg-white focus-visible:goko-focus focus:shadow-sm dark:border-border dark:bg-muted dark:text-foreground dark:focus:bg-accent dark:focus:shadow-none sm:px-3 sm:py-2 sm:pr-10 sm:text-xs"
         />
-        <AnimatePresence>
-          {searchQuery && (
-            <motion.button
+        {searchQuery ? (
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1.5 sm:pr-2">
+            <button
               type="button"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
+              aria-label="Clear search"
               onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center rounded-full bg-gray-300 text-white transition-colors hover:bg-gray-400"
+              className="pointer-events-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
             >
-              <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </motion.button>
-          )}
-        </AnimatePresence>
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Diet filter — All / Veg / Non-veg only, always one row */}

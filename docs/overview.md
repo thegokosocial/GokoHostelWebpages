@@ -97,7 +97,7 @@ Sitemap (`src/app/sitemap.ts`) lists those marketing paths only. `robots.ts` **d
 | Path | Role |
 |------|------|
 | `/self-checkin` | Phone lookup → form → Vision → Drive → D1 |
-| `/food-order` | Menu + cart; category rail + dish pane; All/Veg/Non-veg diet row; floating View Cart; known guest name at checkout (`localStorage` `gokoFoodCart` / `gokoFoodPhone`) |
+| `/food-order` | Menu + cart; category rail + dish pane; All/Veg/Non-veg; global search; floating View Cart; known guest name at checkout (`localStorage` `gokoFoodCart` / `gokoFoodPhone`) |
 | `/food-order/status` | Poll order status ~10s |
 | `/my-bills` | Paid / unpaid food by phone or opaque `?t=` share token |
 | `/kitchen` | Staff queue, 5s poll, Bluetooth ESC/POS |
