@@ -319,10 +319,7 @@ export async function POST(req: NextRequest) {
           if (!menuItem) return NextResponse.json({ error: `Menu item #${item.menuItemId} not found` }, { status: 400 });
           if (menuItem.price <= 0 && menuItem.priceOnRequest !== 1) return NextResponse.json({ error: `"${menuItem.name}" has invalid price` }, { status: 400 });
           const qty = item.quantity || 1;
-          if (menuItem.trackInventory && menuItem.stockQuantity < qty) {
-            const left = menuItem.stockQuantity;
-            return NextResponse.json({ error: left === 0 ? `"${menuItem.name}" is out of stock` : `"${menuItem.name}" only has ${left} left in stock` }, { status: 400 });
-          }
+          // Tracked stock may go negative on staff place; guest order API still gates.
           validatedItems.push({
             menuItemId: menuItem.id,
             itemName: menuItem.name,
@@ -721,9 +718,6 @@ export async function POST(req: NextRequest) {
               throw Object.assign(new Error("Menu item is no longer available"), { status: 409 });
             }
             inventoryItems.set(menuItemId, menu);
-            if (menu.trackInventory && menu.stockQuantity < delta) {
-              throw Object.assign(new Error(`"${menu.name}" only has ${menu.stockQuantity} left in stock`), { status: 409 });
-            }
           }
           for (const menuItemId of inventoryDeltas.keys()) {
             if (inventoryItems.has(menuItemId)) continue;
@@ -779,8 +773,7 @@ export async function POST(req: NextRequest) {
             AND ${foodOrderItems.quantity} = ${item.quantity} AND ${foodOrderItems.itemPrice} = ${item.itemPrice}
             AND ${foodOrderItems.status} = ${item.status} AND ${foodOrderItems.pricingStatus} = ${item.pricingStatus})`);
           for (const [id, delta] of inventoryDeltas) guards.push(sql`EXISTS (SELECT 1 FROM ${menuItems}
-            WHERE ${menuItems.id} = ${id} AND ${menuItems.trackInventory} = ${inventoryItems.get(id)!.trackInventory}
-            AND (${menuItems.trackInventory} = 0 OR ${menuItems.stockQuantity} >= ${Math.max(0, delta)}))`);
+            WHERE ${menuItems.id} = ${id} AND ${menuItems.trackInventory} = ${inventoryItems.get(id)!.trackInventory})`);
           writes.push(tx.insert(foodOrderEditBatches).values(syncInsert({
             operationId, orderId: sql`CASE WHEN ${guards[0]} THEN ${orderId} ELSE NULL END`,
             requestJson: requestedJson, actor: actorName, createdAt: now,
@@ -829,11 +822,13 @@ export async function POST(req: NextRequest) {
               }).where(and(
                 eq(menuItems.id, menuItemId),
                 eq(menuItems.trackInventory, 1),
-                sql`${menuItems.stockQuantity} >= ${delta}`,
               )));
             } else if (delta < 0) {
-              writes.push(tx.update(menuItems).set({ stockQuantity: sql`${menuItems.stockQuantity} + ${Math.abs(delta)}`, isAvailable: 1 })
-                .where(and(eq(menuItems.id, menuItemId), eq(menuItems.trackInventory, 1))));
+              const restoreQty = Math.abs(delta);
+              writes.push(tx.update(menuItems).set({
+                stockQuantity: sql`${menuItems.stockQuantity} + ${restoreQty}`,
+                isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} + ${restoreQty} > 0 THEN 1 ELSE 0 END`,
+              }).where(and(eq(menuItems.id, menuItemId), eq(menuItems.trackInventory, 1))));
             }
           }
 
@@ -1060,9 +1055,6 @@ export async function POST(req: NextRequest) {
 
         if (newQuantity > oldQty && trackedMenuItem?.trackInventory) {
           stockReserved = await decrementStockIfAvailable(targetItem.menuItemId, newQuantity - oldQty);
-          if (!stockReserved) {
-            return NextResponse.json({ error: `"${trackedMenuItem.name}" only has ${trackedMenuItem.stockQuantity} left in stock` }, { status: 409 });
-          }
         }
 
         if (newQuantity <= 0) {

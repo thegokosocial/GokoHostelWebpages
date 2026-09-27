@@ -831,7 +831,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
                 {filteredItems.map((item) => {
                   const tags = parseTags(item.tags);
                   const isLowStock = item.trackInventory && item.stockQuantity <= item.lowStockThreshold;
-                  const isZeroStock = item.trackInventory && item.stockQuantity === 0;
+                  const isZeroStock = item.trackInventory && item.stockQuantity <= 0;
                   const isExpanded = expandedItemCard === item.id;
                   return (
                     <div key={item.id} data-item-id={item.id} className={cn("rounded-xl border border-brand-mist bg-white dark:bg-card shadow-sm dark:shadow-none", !item.isAvailable && "opacity-60")}>
@@ -958,7 +958,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
                     {filteredItems.map((item) => {
                       const tags = parseTags(item.tags);
                       const isLowStock = item.trackInventory && item.stockQuantity <= item.lowStockThreshold;
-                      const isZeroStock = item.trackInventory && item.stockQuantity === 0;
+                      const isZeroStock = item.trackInventory && item.stockQuantity <= 0;
                       return (
                         <tr key={item.id} data-item-id={item.id} className={cn("border-b border-brand-mist/60 last:border-b-0 hover:bg-brand-sand/30", !item.isAvailable && "opacity-60")}>
                           <td className="px-3 py-3">

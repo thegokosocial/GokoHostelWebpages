@@ -7,7 +7,7 @@ const dbState = vi.hoisted(() => ({ getDb: vi.fn() }));
 
 vi.mock("@/db", () => ({ getDb: dbState.getDb }));
 
-import { decrementStockIfAvailable } from "@/db/queries";
+import { addStock, decrementStockIfAvailable } from "@/db/queries";
 
 function d1Client(sqlite: SQLite.Database) {
   const result = (value: unknown) => ({ results: value, success: true, meta: {} });
@@ -69,10 +69,28 @@ describe("food inventory D1 integration", () => {
       .toEqual({ stock_quantity: 0, is_available: 0 });
   });
 
-  it("rejects an exhausted reservation without changing the database", async () => {
-    await expect(decrementStockIfAvailable(1, 4)).resolves.toBe(false);
+  it("allows staff oversell past available stock into negatives", async () => {
+    await expect(decrementStockIfAvailable(1, 4)).resolves.toBe(true);
     expect(sqlite.prepare("SELECT stock_quantity, is_available FROM menu_items WHERE id = 1").get())
-      .toEqual({ stock_quantity: 3, is_available: 1 });
+      .toEqual({ stock_quantity: -1, is_available: 0 });
+
+    await expect(decrementStockIfAvailable(1, 2)).resolves.toBe(true);
+    expect(sqlite.prepare("SELECT stock_quantity, is_available FROM menu_items WHERE id = 1").get())
+      .toEqual({ stock_quantity: -3, is_available: 0 });
+  });
+
+  it("restock from negative restores positive availability (-10 + 40 → 30)", async () => {
+    sqlite.prepare("UPDATE menu_items SET stock_quantity = -10, is_available = 0 WHERE id = 1").run();
+    await addStock(1, 40);
+    expect(sqlite.prepare("SELECT stock_quantity, is_available FROM menu_items WHERE id = 1").get())
+      .toEqual({ stock_quantity: 30, is_available: 1 });
+  });
+
+  it("partial restock that stays non-positive keeps unavailable", async () => {
+    sqlite.prepare("UPDATE menu_items SET stock_quantity = -10, is_available = 0 WHERE id = 1").run();
+    await addStock(1, 5);
+    expect(sqlite.prepare("SELECT stock_quantity, is_available FROM menu_items WHERE id = 1").get())
+      .toEqual({ stock_quantity: -5, is_available: 0 });
   });
 
   it("does not reserve untracked items and treats invalid deltas as no-ops", async () => {

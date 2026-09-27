@@ -734,7 +734,7 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
                       )}
                       {item.trackInventory && (
                         <p className={`text-xs font-medium ${
-                          item.stockQuantity === 0 ? "text-red-600" :
+                          item.stockQuantity <= 0 ? "text-red-600" :
                           isLow ? "text-orange-600" : "text-gray-500"
                         }`}>
                           Stock: {item.stockQuantity}
@@ -1343,7 +1343,8 @@ function OrderCard({
 
   const addItemResults = useMemo(() => {
     if (!showAddItem) return [];
-    const available = menuItems.filter((m) => m.isAvailable === 1);
+    // Tracked items stay orderable for kitchen even when stock drove isAvailable to 0.
+    const available = menuItems.filter((m) => m.isAvailable === 1 || !!m.trackInventory);
     if (addItemSearch.trim()) {
       const q = addItemSearch.toLowerCase().trim();
       return available.filter(

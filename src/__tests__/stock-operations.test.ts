@@ -7,13 +7,14 @@ import { describe, it, expect } from "vitest";
  */
 
 function simulateDecrementStock(currentQty: number, decrementBy: number) {
-  const newQty = Math.max(0, currentQty - decrementBy);
+  const newQty = currentQty - decrementBy;
   const isAvailable = newQty > 0 ? 1 : 0;
   return { stockQuantity: newQty, isAvailable };
 }
 
 function simulateAddStock(currentQty: number, addBy: number) {
-  return { stockQuantity: currentQty + addBy, isAvailable: 1 };
+  const newQty = currentQty + addBy;
+  return { stockQuantity: newQty, isAvailable: newQty > 0 ? 1 : 0 };
 }
 
 describe("Stock decrement logic", () => {
@@ -29,15 +30,21 @@ describe("Stock decrement logic", () => {
     expect(result.isAvailable).toBe(0);
   });
 
-  it("never goes below zero", () => {
+  it("allows stock to go negative for staff oversell", () => {
     const result = simulateDecrementStock(2, 10);
-    expect(result.stockQuantity).toBe(0);
+    expect(result.stockQuantity).toBe(-8);
     expect(result.isAvailable).toBe(0);
   });
 
-  it("handles zero stock decrement", () => {
+  it("decrements further from zero into negatives", () => {
     const result = simulateDecrementStock(0, 1);
-    expect(result.stockQuantity).toBe(0);
+    expect(result.stockQuantity).toBe(-1);
+    expect(result.isAvailable).toBe(0);
+  });
+
+  it("decrements further from an already-negative balance", () => {
+    const result = simulateDecrementStock(-4, 2);
+    expect(result.stockQuantity).toBe(-6);
     expect(result.isAvailable).toBe(0);
   });
 
@@ -67,7 +74,19 @@ describe("Stock add logic", () => {
     expect(result.isAvailable).toBe(1);
   });
 
-  it("adding zero stock keeps same quantity", () => {
+  it("restocks from negative into positive (e.g. -10 + 40 → 30)", () => {
+    const result = simulateAddStock(-10, 40);
+    expect(result.stockQuantity).toBe(30);
+    expect(result.isAvailable).toBe(1);
+  });
+
+  it("partial restock that stays non-positive keeps unavailable", () => {
+    const result = simulateAddStock(-10, 5);
+    expect(result.stockQuantity).toBe(-5);
+    expect(result.isAvailable).toBe(0);
+  });
+
+  it("adding zero to positive stock keeps available", () => {
     const result = simulateAddStock(10, 0);
     expect(result.stockQuantity).toBe(10);
     expect(result.isAvailable).toBe(1);
@@ -76,60 +95,37 @@ describe("Stock add logic", () => {
 
 describe("Concurrent stock operations (race condition scenario)", () => {
   it("atomic decrement prevents lost updates", () => {
-    // Scenario: Two orders for 1 item each, stock starts at 10
-    // With read-modify-write: both read 10, both write 9 → WRONG (lost update)
-    // With atomic SQL: first writes 9, second writes 8 → CORRECT
     let stock = 10;
-
-    // Simulate atomic: each operation sees the RESULT of the previous
-    stock = Math.max(0, stock - 1); // Order A
+    stock = stock - 1;
     expect(stock).toBe(9);
-
-    stock = Math.max(0, stock - 1); // Order B sees updated value
+    stock = stock - 1;
     expect(stock).toBe(8);
   });
 
-  it("atomic decrement handles overselling correctly", () => {
-    // Stock = 1, two concurrent orders for 1 each
-    // Atomic SQL: first gets it (stock=0, unavailable), second sees 0
+  it("atomic decrement allows concurrent oversell into negatives", () => {
     let stock = 1;
-
-    stock = Math.max(0, stock - 1);
+    stock = stock - 1;
     expect(stock).toBe(0);
-
-    stock = Math.max(0, stock - 1);
-    expect(stock).toBe(0); // Can't go negative
+    stock = stock - 1;
+    expect(stock).toBe(-1);
   });
 });
 
 describe("Food order total calculation", () => {
   it("calculates subtotal correctly", () => {
     const items = [
-      { price: 15000, quantity: 2 }, // ₹150 × 2
-      { price: 8000, quantity: 1 },  // ₹80 × 1
-      { price: 5000, quantity: 3 },  // ₹50 × 3
+      { price: 15000, quantity: 2 },
+      { price: 8000, quantity: 1 },
+      { price: 5000, quantity: 3 },
     ];
     const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    expect(subtotal).toBe(53000); // ₹530.00 in paise
+    expect(subtotal).toBe(53000);
   });
 
   it("calculates tax correctly at 5%", () => {
-    const subtotal = 10000; // ₹100 in paise
+    const subtotal = 10000;
     const taxRate = 5;
     const tax = Math.round((subtotal * taxRate) / 100);
-    expect(tax).toBe(500); // ₹5.00
-  });
-
-  it("calculates total as subtotal + tax", () => {
-    const subtotal = 10000;
-    const tax = 500;
-    expect(subtotal + tax).toBe(10500);
-  });
-
-  it("handles zero-value edge case", () => {
-    const subtotal = 0;
-    const tax = Math.round((subtotal * 5) / 100);
-    expect(tax).toBe(0);
-    expect(subtotal + tax).toBe(0);
+    expect(tax).toBe(500);
   });
 });

@@ -403,6 +403,19 @@ describe("POST /api/food/order", () => {
     expect(q.createFoodOrder).not.toHaveBeenCalled();
   });
 
+  it("rejects guest orders when tracked stock is zero or negative", async () => {
+    q.getMenuItemById.mockResolvedValue({ id: 2, name: "Soap", price: 500, priceOnRequest: 0, isAvailable: 1, trackInventory: 1, stockQuantity: 0 });
+    const zero = await postOrder(orderReq({ ...validOrder, items: [{ menuItemId: 2, quantity: 1 }] }));
+    expect(zero.status).toBe(400);
+    expect(await zero.json()).toMatchObject({ error: expect.stringMatching(/out of stock/i) });
+
+    q.getMenuItemById.mockResolvedValue({ id: 2, name: "Soap", price: 500, priceOnRequest: 0, isAvailable: 1, trackInventory: 1, stockQuantity: -4 });
+    const neg = await postOrder(orderReq({ ...validOrder, items: [{ menuItemId: 2, quantity: 1 }] }));
+    expect(neg.status).toBe(400);
+    expect(await neg.json()).toMatchObject({ error: expect.stringMatching(/only has -4 left|out of stock/i) });
+    expect(q.createFoodOrder).not.toHaveBeenCalled();
+  });
+
   it("keeps a stable client idempotency key until success in FoodCart", async () => {
     const source = readFile("src/components/food/FoodCart.tsx");
     expect(source).toMatch(/useState\(\(\) => crypto\.randomUUID\(\)\)/);

@@ -172,6 +172,8 @@ interface MenuItem {
   priceText: string;
   tags: string;
   isAvailable: number;
+  trackInventory?: number;
+  stockQuantity?: number;
 }
 
 interface MenuCategory {
@@ -707,17 +709,24 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
           {displayItems.map((item) => {
             const cartItem = cart.find((c) => c.menuItemId === item.id);
             const qty = cartItem?.quantity || 0;
+            const tracked = !!item.trackInventory;
+            const stockLow = tracked && (item.stockQuantity ?? 0) <= 0;
+            const staffOrderable = tracked || item.isAvailable === 1;
             return (
-            <div key={item.id} className={cn("flex items-center justify-between rounded-lg border border-brand-mist p-2.5", item.isAvailable === 0 && "opacity-50")}>
+            <div key={item.id} className={cn("flex items-center justify-between rounded-lg border border-brand-mist p-2.5", !staffOrderable && "opacity-50", stockLow && "opacity-80")}>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-brand-green-dark">{item.name}</p>
-                {item.isAvailable === 0 ? (
-                  <p className="text-xs font-medium text-red-500">Out of Stock</p>
+                {!staffOrderable ? (
+                  <p className="text-xs font-medium text-red-500">Unavailable</p>
+                ) : stockLow ? (
+                  <p className="text-xs font-medium text-amber-600">Stock: {item.stockQuantity ?? 0} (oversell OK)</p>
+                ) : tracked ? (
+                  <p className="text-xs text-brand-green-dark/60">₹{(item.price / 100).toFixed(0)} · Stock: {item.stockQuantity ?? 0}</p>
                 ) : (
                   <p className="text-xs text-brand-green-dark/60">₹{(item.price / 100).toFixed(0)}</p>
                 )}
               </div>
-              {item.isAvailable === 0 ? (
+              {!staffOrderable ? (
                 <span className="ml-2 rounded-full bg-red-100 dark:bg-red-900/50 px-2 py-0.5 text-xs text-red-600 dark:text-red-400">Unavailable</span>
               ) : qty > 0 ? (
                 <div className="ml-2 flex items-center gap-1">

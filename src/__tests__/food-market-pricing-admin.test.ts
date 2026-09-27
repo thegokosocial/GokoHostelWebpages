@@ -485,20 +485,40 @@ describe("admin market-pricing workflows", () => {
     }));
   });
 
-  it("rejects an admin quantity increase when tracked stock is exhausted", async () => {
+  it("allows an admin quantity increase when tracked stock is exhausted", async () => {
     const trackedItem = { ...pendingItem, itemPrice: 200, quantity: 2, lineTotal: 400, pricingStatus: "fixed" };
     q.getFoodOrderItems.mockResolvedValue([trackedItem]);
     q.getMenuItemById.mockResolvedValue({ id: 4, name: "Shampoo", trackInventory: 1, stockQuantity: 0 });
-    q.decrementStockIfAvailable.mockResolvedValue(false);
+    q.getSetting.mockResolvedValue("0");
+    q.decrementStockIfAvailable.mockResolvedValue(true);
 
     const response = await POST(actionReq("updateItemQuantity", {
       orderId: 10, orderItemId: 20, newQuantity: 3,
     }));
 
-    expect(response.status).toBe(409);
-    expect((await response.json()).error).toContain("Shampoo");
-    expect(q.updateFoodOrderItemQuantity).not.toHaveBeenCalled();
-    expect(q.addOrderModification).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(q.decrementStockIfAvailable).toHaveBeenCalledWith(4, 1);
+    expect(q.updateFoodOrderItemQuantity).toHaveBeenCalled();
+  });
+
+  it("placeOrderForGuest succeeds when tracked stock is already negative", async () => {
+    q.getMenuItemById.mockResolvedValue({
+      id: 4, name: "Shampoo", price: 500, priceOnRequest: 0, trackInventory: 1, stockQuantity: -4, isAvailable: 0,
+    });
+    q.getSetting.mockResolvedValue("0");
+    q.getNextOrderNumber.mockResolvedValue("D266-99");
+    q.createFoodOrder.mockResolvedValue([{ id: 99, orderNumber: "D266-99", total: 1000 }]);
+
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Walk-in",
+      guestPhone: "9876543210",
+      items: [{ menuItemId: 4, quantity: 2 }],
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(q.decrementStock).toHaveBeenCalledWith(4, 2);
   });
 
   it("rejects a quantity reduction that would make the order overpaid", async () => {

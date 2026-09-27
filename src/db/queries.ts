@@ -1645,13 +1645,14 @@ export async function decrementStock(menuItemId: number, quantity: number) {
   const item = await db.select().from(menuItems).where(eq(menuItems.id, menuItemId)).limit(1);
   if (!item[0] || !item[0].trackInventory) return;
 
+  // Staff oversell may drive stock negative; guest APIs gate before calling.
   await db.update(menuItems).set({
-    stockQuantity: sql`MAX(0, ${menuItems.stockQuantity} - ${quantity})`,
+    stockQuantity: sql`${menuItems.stockQuantity} - ${quantity}`,
     isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} - ${quantity} <= 0 THEN 0 ELSE ${menuItems.isAvailable} END`,
   }).where(eq(menuItems.id, menuItemId));
 }
 
-/** Atomically reserves tracked inventory for an order edit or kitchen add. */
+/** Atomically decrements tracked inventory (may go negative). Returns false for untracked items. */
 export async function decrementStockIfAvailable(menuItemId: number, quantity: number): Promise<boolean> {
   if (!Number.isInteger(quantity) || quantity <= 0) return true;
   const db = getDb();
@@ -1661,7 +1662,6 @@ export async function decrementStockIfAvailable(menuItemId: number, quantity: nu
   }).where(and(
     eq(menuItems.id, menuItemId),
     eq(menuItems.trackInventory, 1),
-    sql`${menuItems.stockQuantity} >= ${quantity}`,
   )).returning({ id: menuItems.id });
   return updated.length > 0;
 }
@@ -1670,7 +1670,7 @@ export async function addStock(menuItemId: number, quantity: number) {
   const db = getDb();
   await db.update(menuItems).set({
     stockQuantity: sql`${menuItems.stockQuantity} + ${quantity}`,
-    isAvailable: 1,
+    isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} + ${quantity} > 0 THEN 1 ELSE 0 END`,
   }).where(eq(menuItems.id, menuItemId));
 }
 
@@ -1682,7 +1682,7 @@ export async function restoreStock(orderId: number) {
   for (const item of items) {
     await db.update(menuItems).set({
       stockQuantity: sql`${menuItems.stockQuantity} + ${item.quantity}`,
-      isAvailable: 1,
+      isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} + ${item.quantity} > 0 THEN 1 ELSE 0 END`,
     }).where(
       and(eq(menuItems.id, item.menuItemId), eq(menuItems.trackInventory, 1))
     );

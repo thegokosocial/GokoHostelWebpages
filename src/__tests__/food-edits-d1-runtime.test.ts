@@ -72,11 +72,12 @@ describe("food edits through actual D1/workerd", () => {
     expect((await rows("audit_log")).results).toHaveLength(1);
     expect((await request({ changes: [{ itemId: 20, quantity: 5 }] })).status).toBe(409);
   });
-  it("rejects insufficient stock without any writes", async () => {
+  it("allows staff oversell when stock is insufficient (qty goes negative)", async () => {
     await state.db.update(schema.menuItems).set({ stockQuantity: 1 });
-    expect((await request()).status).toBe(409);
-    expect((await rows("food_order_edit_batches")).results).toHaveLength(0);
-    expect((await rows("food_order_items")).results[0]).toMatchObject({ quantity: 2 });
+    // Default edit: quantity 2 → 4 needs delta 2; stock 1 → -1
+    expect((await request()).status).toBe(200);
+    expect((await rows("food_order_items")).results[0]).toMatchObject({ quantity: 4 });
+    expect((await rows("menu_items")).results[0]).toMatchObject({ stock_quantity: -1, is_available: 0 });
   });
   it.each([1.5, -1, Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER])("rejects invalid or overflowing quantity %s without writes", async (quantity) => {
     expect((await request({ changes: [{ itemId: 20, quantity }] })).status).toBe(400);
@@ -112,14 +113,17 @@ describe("food edits through actual D1/workerd", () => {
     expect((await rows("food_order_edit_batches")).results).toHaveLength(0);
     expect((await rows("menu_items")).results[0]).toMatchObject({ stock_quantity: 10 });
   });
-  it.each(["UPDATE food_orders SET amount_paid = 100 WHERE id = 10", "UPDATE menu_items SET stock_quantity = 0 WHERE id = 4"])("rejects a concurrent payment or stock change: %s", async (mutation) => {
+  it("rejects a concurrent payment change", async () => {
     const batch = state.db.batch.bind(state.db);
-    state.db.batch = async (writes: unknown[]) => { await binding.prepare(mutation).run(); return batch(writes); };
+    state.db.batch = async (writes: unknown[]) => {
+      await binding.prepare("UPDATE food_orders SET amount_paid = 100 WHERE id = 10").run();
+      return batch(writes);
+    };
     expect((await request()).status).toBe(409);
     expect((await rows("food_order_items")).results[0]).toMatchObject({ quantity: 2 });
     expect((await rows("food_order_edit_batches")).results).toHaveLength(0);
   });
-  it("allows only one concurrent claim of the last stock unit", async () => {
+  it("item optimistic concurrency still serializes same-line races (stock no longer blocks the loser)", async () => {
     await state.db.update(schema.menuItems).set({ stockQuantity: 1 });
     const batch = state.db.batch.bind(state.db);
     let arrivals = 0;
@@ -130,6 +134,7 @@ describe("food edits through actual D1/workerd", () => {
       await ready;
       return batch(writes);
     };
+    // Both prepare qty 2→3; winner updates the line, loser fails item OCC (not stock).
     const responses = await Promise.all(["concurrent-a", "concurrent-b"].map((operationId) => request({ operationId, changes: [{ itemId: 20, quantity: 3 }] })));
     expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
     expect((await rows("menu_items")).results[0]).toMatchObject({ stock_quantity: 0 });

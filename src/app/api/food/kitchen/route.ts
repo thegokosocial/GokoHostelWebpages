@@ -233,9 +233,6 @@ export async function POST(req: NextRequest) {
         if (!menuItem) return NextResponse.json({ error: "Menu item not found" }, { status: 404 });
         if (menuItem.trackInventory) {
           stockReserved = await decrementStockIfAvailable(targetItem.menuItemId, newQuantity - oldQty);
-          if (!stockReserved) {
-            return NextResponse.json({ error: `"${menuItem.name}" only has ${menuItem.stockQuantity} left in stock` }, { status: 409 });
-          }
         }
       }
 
@@ -298,11 +295,12 @@ export async function POST(req: NextRequest) {
       if (!menuItem) {
         return NextResponse.json({ error: "Menu item not found" }, { status: 404 });
       }
-      if (!menuItem.isAvailable) {
+      // Tracked inventory may be OOS / negative for staff; untracked still respects manual toggle.
+      if (!menuItem.trackInventory && !menuItem.isAvailable) {
         return NextResponse.json({ error: "Menu item is not available" }, { status: 400 });
       }
-      if (menuItem.trackInventory && !(await decrementStockIfAvailable(menuItem.id, quantity))) {
-        return NextResponse.json({ error: `"${menuItem.name}" only has ${menuItem.stockQuantity} left in stock` }, { status: 409 });
+      if (menuItem.trackInventory) {
+        await decrementStockIfAvailable(menuItem.id, quantity);
       }
 
       const db = getDb();
