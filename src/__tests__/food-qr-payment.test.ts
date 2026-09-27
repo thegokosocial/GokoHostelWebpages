@@ -199,9 +199,11 @@ describe("FoodQrError", () => {
 });
 
 describe("claim helper + ensure remint contracts", () => {
-  it("hasActiveFoodQrClaim is Pi-safe; desk release and ensure remint stay wired", () => {
+  it("hasActiveFoodQrClaim is Pi-safe; desk release, Close QR, and ensure remint stay wired", () => {
     const src = readFileSync("src/lib/foodQrPayment.ts", "utf8");
     expect(src).toContain("releaseFoodQrForDeskPayment");
+    expect(src).toContain("closeActiveFoodQrAttempt");
+    expect(src).toContain("return releaseFoodQrForDeskPayment(orderIds)");
     expect(src).toContain("foodQrBlocksDeskPayment");
     expect(src).toContain("isPiRuntime()) return false");
     expect(src).toContain("Due/order-set changed");

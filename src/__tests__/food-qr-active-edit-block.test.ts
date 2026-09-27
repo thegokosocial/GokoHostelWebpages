@@ -9,6 +9,8 @@ import {
   parseFoodQrOrderIds,
 } from "@/lib/foodBillQrUi";
 
+const ATTEMPT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
 const q = vi.hoisted(() => ({
   authenticateUser: vi.fn(),
   getFoodOrderById: vi.fn(),
@@ -61,13 +63,13 @@ vi.mock("@/db/queries", () => ({
 }));
 vi.mock("@/db", () => ({ getDb: q.getDb }));
 vi.mock("@/lib/foodQrPayment", () => ({
-  hasActiveFoodQrClaim: (...args: unknown[]) => q.hasActiveFoodQrClaim(...args),
-  releaseFoodQrForDeskPayment: (...args: unknown[]) => q.releaseFoodQrForDeskPayment(...args),
-  closeActiveFoodQrAttempt: (...args: unknown[]) => q.closeActiveFoodQrAttempt(...args),
-  listFoodQrAttempts: (...args: unknown[]) => q.listFoodQrAttempts(...args),
-  reconcileFoodQrAttempt: (...args: unknown[]) => q.reconcileFoodQrAttempt(...args),
-  ensureActiveFoodQrForOrders: (...args: unknown[]) => q.ensureActiveFoodQrForOrders(...args),
-  getFoodQrAttempt: (...args: unknown[]) => q.getFoodQrAttempt(...args),
+  hasActiveFoodQrClaim: q.hasActiveFoodQrClaim,
+  releaseFoodQrForDeskPayment: q.releaseFoodQrForDeskPayment,
+  closeActiveFoodQrAttempt: q.closeActiveFoodQrAttempt,
+  listFoodQrAttempts: q.listFoodQrAttempts,
+  reconcileFoodQrAttempt: q.reconcileFoodQrAttempt,
+  ensureActiveFoodQrForOrders: q.ensureActiveFoodQrForOrders,
+  getFoodQrAttempt: q.getFoodQrAttempt,
   FoodQrError: class FoodQrError extends Error {
     status: number;
     constructor(message: string, status = 409) {
@@ -132,32 +134,65 @@ function paymentsReq(action: string, body: Record<string, unknown> = {}) {
 }
 
 describe("foodQrAttemptOutcome + search helpers", () => {
-  it("derives Room-like outcomes", () => {
-    expect(foodQrAttemptOutcome({ state: "paid" })).toBe("Paid");
-    expect(foodQrAttemptOutcome({ state: "active", payments: [{ captured: 1 }] })).toBe("Paid");
-    expect(foodQrAttemptOutcome({ state: "active" })).toBe("Active");
-    expect(foodQrAttemptOutcome({ state: "expired" })).toBe("Expired");
-    expect(foodQrAttemptOutcome({ state: "closed" })).toBe("Closed");
-    expect(foodQrAttemptOutcome({ state: "creating" })).toBe("Creating");
-    expect(foodQrAttemptIsCloseable("active")).toBe(true);
-    expect(foodQrAttemptIsCloseable("paid")).toBe(false);
+  it.each([
+    [{ state: "paid" }, "Paid"],
+    [{ state: "active", payments: [{ captured: 1 }] }, "Paid"],
+    [{ state: "active", payments: [{ captured: true }] }, "Paid"],
+    [{ state: "active", payments: [{ captured: 0 }] }, "Active"],
+    [{ state: "active" }, "Active"],
+    [{ state: "expired" }, "Expired"],
+    [{ state: "closed" }, "Closed"],
+    [{ state: "creating" }, "Creating"],
+    [{ state: "qr_unknown" }, "Creating"],
+    [{ state: "weird" }, "Unknown"],
+  ])("outcome %# → %j", (input, expected) => {
+    expect(foodQrAttemptOutcome(input)).toBe(expected);
   });
 
-  it("parses order ids and matches ledger search", () => {
+  it.each([
+    ["active", true],
+    ["creating", true],
+    ["qr_unknown", true],
+    ["paid", false],
+    ["expired", false],
+    ["closed", false],
+    ["loading", false],
+  ] as const)("foodQrAttemptIsCloseable(%s) = %s", (state, expected) => {
+    expect(foodQrAttemptIsCloseable(state)).toBe(expected);
+  });
+
+  it("parses order ids from arrays, JSON strings, and rejects junk", () => {
     expect(parseFoodQrOrderIds("[10,20]")).toEqual([10, 20]);
-    expect(parseFoodQrOrderIds([10, "x"])).toEqual([10]);
-    expect(foodQrAttemptMatchesQuery({
-      guestName: "Pawan",
-      guestPhone: "123",
-      qrCodeId: "qr_abc",
-      foodOrderIds: "[68]",
-      payments: [{ id: "pay_xyz" }],
-    }, "pay_xyz")).toBe(true);
-    expect(foodQrAttemptMatchesQuery({ guestName: "Pawan" }, "manu")).toBe(false);
+    expect(parseFoodQrOrderIds([10, "x", -1, 0, 3.5, "7"])).toEqual([10, 7]);
+    expect(parseFoodQrOrderIds("not-json")).toEqual([]);
+    expect(parseFoodQrOrderIds(null)).toEqual([]);
+    expect(parseFoodQrOrderIds(undefined)).toEqual([]);
+    expect(parseFoodQrOrderIds("")).toEqual([]);
+  });
+
+  it("matches ledger search across guest, phone, order, qr_, pay_, attempt id", () => {
+    const row = {
+      id: ATTEMPT,
+      guestName: "Pawan Dhiran",
+      guestPhone: "9876543210",
+      qrCodeId: "qr_abc123",
+      foodOrderIds: "[68,69]",
+      payments: [{ id: "pay_xyz" }, { id: "pay_other" }],
+    };
+    expect(foodQrAttemptMatchesQuery(row, "")).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, "  ")).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, "pawan")).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, "9876")).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, "68")).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, "qr_abc")).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, "pay_xyz")).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, ATTEMPT.slice(0, 8))).toBe(true);
+    expect(foodQrAttemptMatchesQuery(row, "manu")).toBe(false);
+    expect(foodQrAttemptMatchesQuery({ guestName: "Pawan" }, "pay_")).toBe(false);
   });
 });
 
-describe("active QR blocks saveOrderEdits / updateItemQuantity", () => {
+describe("active QR blocks mutating food-order actions", () => {
   beforeEach(() => {
     for (const fn of Object.values(q)) fn.mockReset();
     q.isPiRuntime.mockReturnValue(false);
@@ -192,6 +227,44 @@ describe("active QR blocks saveOrderEdits / updateItemQuantity", () => {
     expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
   });
 
+  it("voidItem returns 409 when claim exists", async () => {
+    const res = await foodOrdersPost(ordersReq("voidItem", {
+      orderId: 10,
+      orderItemId: 20,
+      reason: "oops",
+    }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
+    expect(q.getDb).not.toHaveBeenCalled();
+  });
+
+  it("cancelUnpaidOrder returns 409 when claim exists", async () => {
+    const res = await foodOrdersPost(ordersReq("cancelUnpaidOrder", { orderId: 10 }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
+    expect(q.updateFoodOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("applyDiscount returns 409 when claim exists", async () => {
+    const res = await foodOrdersPost(ordersReq("applyDiscount", {
+      orderIds: [10],
+      discountAmount: 1000,
+      reason: "comp",
+    }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
+  });
+
+  it("updatePaymentDetails returns 409 when claim exists", async () => {
+    const res = await foodOrdersPost(ordersReq("updatePaymentDetails", {
+      orderId: 10,
+      paymentStatus: "paid",
+      paymentMethod: "cash",
+    }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
+  });
+
   it("scopes claim check to the edited order id; no claim ⇒ not 409", async () => {
     q.getFoodOrderById.mockResolvedValue({ ...order, id: 11 });
     q.hasActiveFoodQrClaim.mockResolvedValue(true);
@@ -220,7 +293,7 @@ describe("closeActiveFoodQr admin action", () => {
     for (const fn of Object.values(q)) fn.mockReset();
     q.isPiRuntime.mockReturnValue(false);
     q.authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
-    q.closeActiveFoodQrAttempt.mockResolvedValue({ releasedAttemptIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"] });
+    q.closeActiveFoodQrAttempt.mockResolvedValue({ releasedAttemptIds: [ATTEMPT] });
   });
 
   it("closeActiveFoodQr releases attempt and is staff-allowed via canMarkPaid", async () => {
@@ -229,14 +302,63 @@ describe("closeActiveFoodQr admin action", () => {
       displayName: "Staff",
       permissions: { canMarkPaid: true },
     });
-    const res = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", {
-      attemptId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    }));
+    const res = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: ATTEMPT }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      releasedAttemptIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+    expect(await res.json()).toEqual({ releasedAttemptIds: [ATTEMPT] });
+    expect(q.closeActiveFoodQrAttempt).toHaveBeenCalledWith(ATTEMPT);
+  });
+
+  it.each([
+    { canGenerateFoodBills: true },
+    { canViewFoodOrders: true },
+  ])("allows staff with %j", async (permissions) => {
+    q.authenticateUser.mockResolvedValue({ role: "staff", displayName: "Staff", permissions });
+    const res = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: ATTEMPT }));
+    expect(res.status).toBe(200);
+  });
+
+  it("forbids staff without bill/pay/view permissions", async () => {
+    q.authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Staff",
+      permissions: { canEditFoodOrders: true },
     });
-    expect(q.closeActiveFoodQrAttempt).toHaveBeenCalledWith("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const res = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: ATTEMPT }));
+    expect(res.status).toBe(403);
+    expect(q.closeActiveFoodQrAttempt).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid attemptId before calling close helper", async () => {
+    const res = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: "not-a-uuid" }));
+    expect(res.status).toBe(400);
+    expect(q.closeActiveFoodQrAttempt).not.toHaveBeenCalled();
+  });
+
+  it("maps FoodQrError from close helper to HTTP status", async () => {
+    const { FoodQrError } = await import("@/lib/foodQrPayment");
+    q.closeActiveFoodQrAttempt.mockRejectedValue(new FoodQrError("already captured", 409));
+    const res = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: ATTEMPT }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/already captured/i);
+  });
+
+  it("returns 403 on Pi runtime", async () => {
+    q.isPiRuntime.mockReturnValue(true);
+    const res = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: ATTEMPT }));
+    expect(res.status).toBe(403);
+    expect(q.closeActiveFoodQrAttempt).not.toHaveBeenCalled();
+  });
+
+  it("keeps listFoodQrAttempts admin-only while close is staff-OR", async () => {
+    q.authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Staff",
+      permissions: { canMarkPaid: true },
+    });
+    const list = await foodPaymentsPost(paymentsReq("listFoodQrAttempts", { limit: 10 }));
+    expect(list.status).toBe(403);
+    const close = await foodPaymentsPost(paymentsReq("closeActiveFoodQr", { attemptId: ATTEMPT }));
+    expect(close.status).toBe(200);
   });
 });
 
@@ -250,6 +372,7 @@ describe("wiring: ledger columns + kitchen reject + admin banner", () => {
     expect(ledger).toContain("Close QR");
     expect(ledger).toContain("Reconcile");
     expect(ledger).toContain("foodQrAttemptOutcome");
+    expect(ledger).toContain("limit: 100");
   });
 
   it("kitchen updateItemQuantity rejects active QR claims", () => {
@@ -262,6 +385,15 @@ describe("wiring: ledger columns + kitchen reject + admin banner", () => {
     const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
     expect(ui).toContain("Active Razorpay QR locks");
     expect(ui).toContain("closeActiveFoodQr");
+    expect(ui).toContain("reconcileFoodQrAttempt");
     expect(ui).toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
+    expect(ui).toContain("Open Bill to Reconcile");
+  });
+
+  it("foodQrPayment wires closeActiveFoodQrAttempt through desk release", () => {
+    const src = readFileSync("src/lib/foodQrPayment.ts", "utf8");
+    expect(src).toContain("export async function closeActiveFoodQrAttempt");
+    expect(src).toContain("return releaseFoodQrForDeskPayment(orderIds)");
+    expect(src).toContain("Math.min(opts.limit || 100, 100)");
   });
 });
