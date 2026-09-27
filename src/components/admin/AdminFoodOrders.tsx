@@ -34,6 +34,7 @@ import { INCOMPLETE_FOOD_ORDER_BANNER, isIncompleteFoodOrder } from "@/lib/foodO
 import { latestWalkinOrder, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
 import { formatTimeSince } from "@/lib/formatTimeSince";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 
 async function withBillBranding(
   password: string,
@@ -292,6 +293,7 @@ export function AdminFoodOrders({ password, username, role, permissions = {} }: 
 // ─── Place Order ─────────────────────────────────────────────────────────────
 
 function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }: { apiCall: (body: any) => Promise<Response>; prefillGuest: PrefillGuest | null; onPrefillConsumed: () => void; onOrderPlaced?: () => void }) {
+  const { runAction } = useActionProgress();
   // Lock Order More guest locally; re-apply when prop arrives late (async tab URL). Do not clear parent on mount.
   const [lockedPrefill, setLockedPrefill] = useState<PrefillGuest | null>(prefillGuest);
   const [guestSelectionExpanded, setGuestSelectionExpanded] = useState(!prefillGuest);
@@ -465,46 +467,48 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
     if (guestType === "table" && !selectedTable) { setError("Please select a table"); return; }
     if (cart.length === 0) { setError("Cart is empty"); return; }
 
-    setSubmitting(true);
-    try {
-      // Table orders are walkin orders with table name + auto-generated session ID as phone
-      const tablePhone = guestType === "table"
-        ? (tableSessionId || `${Date.now()}`)
-        : undefined;
+    await runAction("Placing order…", async () => {
+      setSubmitting(true);
+      try {
+        // Table orders are walkin orders with table name + auto-generated session ID as phone
+        const tablePhone = guestType === "table"
+          ? (tableSessionId || `${Date.now()}`)
+          : undefined;
 
-      const res = await apiCall({
-        action: "placeOrderForGuest",
-        idempotencyKey,
-        guestType: guestType === "table" ? "walkin" : guestType,
-        checkinId: guestType === "hostel" ? selectedGuest?.id : undefined,
-        guestName: name,
-        guestPhone: guestType === "walkin" ? walkinPhone.trim() : guestType === "table" ? tablePhone : undefined,
-        roomInfo: guestType === "hostel" ? selectedGuest?.bedInfo : guestType === "table" ? `Table ${selectedTable}` : undefined,
-        items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
-        specialInstructions,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIdempotencyKey(crypto.randomUUID());
-        setCart([]);
-        setSpecialInstructions("");
-        setSelectedGuest(null);
-        setWalkinName("");
-        setWalkinPhone("");
-        setTableGuestName("");
-        setSelectedTable(null);
-        if (onOrderPlaced) {
-          onOrderPlaced();
+        const res = await apiCall({
+          action: "placeOrderForGuest",
+          idempotencyKey,
+          guestType: guestType === "table" ? "walkin" : guestType,
+          checkinId: guestType === "hostel" ? selectedGuest?.id : undefined,
+          guestName: name,
+          guestPhone: guestType === "walkin" ? walkinPhone.trim() : guestType === "table" ? tablePhone : undefined,
+          roomInfo: guestType === "hostel" ? selectedGuest?.bedInfo : guestType === "table" ? `Table ${selectedTable}` : undefined,
+          items: cart.map((c) => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
+          specialInstructions,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setIdempotencyKey(crypto.randomUUID());
+          setCart([]);
+          setSpecialInstructions("");
+          setSelectedGuest(null);
+          setWalkinName("");
+          setWalkinPhone("");
+          setTableGuestName("");
+          setSelectedTable(null);
+          if (onOrderPlaced) {
+            onOrderPlaced();
+          } else {
+            setSuccessMsg(`Order ${data.orderNumber} placed! Total: ₹${(data.total / 100).toFixed(0)}`);
+          }
         } else {
-          setSuccessMsg(`Order ${data.orderNumber} placed! Total: ₹${(data.total / 100).toFixed(0)}`);
+          const data = await res.json().catch(() => ({}));
+          setError(data.error || "Failed to place order");
         }
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || "Failed to place order");
+      } finally {
+        setSubmitting(false);
       }
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   if (loadingMenu) return <LoadingState />;
@@ -874,6 +878,7 @@ interface SummaryGroup {
 
 function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder, role, permissions }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string; onOrderMore: (guest: PrefillGuest) => void; onAddNewOrder?: () => void; role?: Role; permissions?: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
+  const { runAction } = useActionProgress();
   const prepareWhatsApp = useStaffWhatsApp();
   const [hostelGuests, setHostelGuests] = useState<GuestWithTab[]>([]);
   const [walkinOrders, setWalkinOrders] = useState<Order[]>([]);
@@ -1260,22 +1265,24 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   };
 
   const handleCancelUnpaidOrder = async (order: Order) => {
-    setActionBusy(`cancel_order_${order.id}`);
-    try {
-      const res = await apiCall({ action: "cancelUnpaidOrder", orderId: order.id, cancelledReason: "Cancelled by admin" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showError("Cancel order", data.error || "Could not cancel order");
-        return;
+    await runAction("Cancelling order…", async () => {
+      setActionBusy(`cancel_order_${order.id}`);
+      try {
+        const res = await apiCall({ action: "cancelUnpaidOrder", orderId: order.id, cancelledReason: "Cancelled by admin" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showError("Cancel order", data.error || "Could not cancel order");
+          return;
+        }
+        setCancelOrderId(null);
+        if (selectedGroup) await refreshAfterEdit(selectedGroup);
+        showSuccess("Order cancelled");
+      } catch (error) {
+        showError("Cancel order", error instanceof Error ? error.message : "Could not cancel order");
+      } finally {
+        setActionBusy(null);
       }
-      setCancelOrderId(null);
-      if (selectedGroup) await refreshAfterEdit(selectedGroup);
-      showSuccess("Order cancelled");
-    } catch (error) {
-      showError("Cancel order", error instanceof Error ? error.message : "Could not cancel order");
-    } finally {
-      setActionBusy(null);
-    }
+    });
   };
 
   const handleSetItemPrice = async (orderId: number, itemId: number, priceRupees: number, label: string) => {
@@ -1301,42 +1308,46 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       key, operationId: refund?.editOperationId || crypto.randomUUID(),
     };
     const operationId = editRequests.current[order.id].operationId;
-    savingOrders.current.add(order.id);
-    setActionBusy(`save_${order.id}`);
-    try {
-      const res = await apiCall({
-        action: "saveOrderEdits", orderId: order.id, changes, operationId,
-        refund: refund ? {
-          operationId: refund.operationId || crypto.randomUUID(), amountPaise: refund.amountPaise,
-          method: refund.method, cashReceived: refund.cashReceived, onlineAccountId: refund.onlineAccountId,
-          receiptId: refund.receiptId, note: refund.note,
-        } : undefined,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        delete editRequests.current[order.id];
-        setPendingQtyChanges((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
-        setQuantityReasons((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
-        setDraftEdits((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
-        setRefundForEdit(null);
-        setEditingOrderId(null);
-        if (selectedGroup) await refreshAfterEdit(selectedGroup);
-        showSuccess(refund ? "Order saved and refund recorded" : "Order edits saved");
-        return true;
-      }
-      if (res.status === 409 && data.requiresRefund && Number(data.refundAmount) > 0) {
-        setRefundForEdit({ orderId: order.id, changes, amountPaise: Number(data.refundAmount), operationId });
+    const saved = await runAction("Saving order changes…", async () => {
+      savingOrders.current.add(order.id);
+      setActionBusy(`save_${order.id}`);
+      try {
+        const res = await apiCall({
+          action: "saveOrderEdits", orderId: order.id, changes, operationId,
+          refund: refund ? {
+            operationId: refund.operationId || crypto.randomUUID(), amountPaise: refund.amountPaise,
+            method: refund.method, cashReceived: refund.cashReceived, onlineAccountId: refund.onlineAccountId,
+            receiptId: refund.receiptId, note: refund.note,
+          } : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          delete editRequests.current[order.id];
+          setPendingQtyChanges((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+          setQuantityReasons((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+          setDraftEdits((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+          setRefundForEdit(null);
+          setEditingOrderId(null);
+          if (selectedGroup) await refreshAfterEdit(selectedGroup);
+          showSuccess(refund ? "Order saved and refund recorded" : "Order edits saved");
+          return true;
+        }
+        if (res.status === 409 && data.requiresRefund && Number(data.refundAmount) > 0) {
+          setRefundForEdit({ orderId: order.id, changes, amountPaise: Number(data.refundAmount), operationId });
+          return false;
+        }
+        showError("Save order edits", data.error || "Could not save order edits");
         return false;
+      } catch (error) {
+        showError("Save order edits", error instanceof Error ? error.message : "Could not save order edits");
+        return false;
+      } finally {
+        savingOrders.current.delete(order.id);
+        setActionBusy(null);
       }
-      showError("Save order edits", data.error || "Could not save order edits");
-      return false;
-    } catch (error) {
-      showError("Save order edits", error instanceof Error ? error.message : "Could not save order edits");
-      return false;
-    } finally {
-      savingOrders.current.delete(order.id);
-      setActionBusy(null);
-    }
+    });
+    if (saved === undefined) return false;
+    return saved;
   };
 
   const actualGroupTotal = selectedGroupOrders.length > 0
@@ -1395,37 +1406,46 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     const unpaidOrders = orders.filter((o) => foodDue(o) > 0);
     const orderIds = unpaidOrders.map((o) => o.id);
     if (orderIds.length === 0) return false;
-    setBusy(group.key);
-    try {
-      const res = await apiCall({ action: "markOrderPaid", orderIds, paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId });
-      if (res.ok) {
-        await load();
-        setSelectedGroupKey(null);
-        return true;
+    const label = orderIds.length > 1
+      ? `Recording payment for ${orderIds.length} orders…`
+      : "Recording payment…";
+    const paid = await runAction(label, async () => {
+      setBusy(group.key);
+      try {
+        const res = await apiCall({ action: "markOrderPaid", orderIds, paymentMethod, cashReceived, changeGiven, onlineAccountId, receiptId });
+        if (res.ok) {
+          await load();
+          setSelectedGroupKey(null);
+          return true;
+        }
+        const data = await res.json().catch(() => ({}));
+        showError("Payment", data.error || "Could not record payment");
+        return false;
+      } catch (error) {
+        showError("Payment", error instanceof Error ? error.message : "Could not record payment");
+        return false;
+      } finally {
+        setBusy(null);
       }
-      const data = await res.json().catch(() => ({}));
-      showError("Payment", data.error || "Could not record payment");
-      return false;
-    } catch (error) {
-      showError("Payment", error instanceof Error ? error.message : "Could not record payment");
-      return false;
-    } finally {
-      setBusy(null);
-    }
+    });
+    if (paid === undefined) return false;
+    return paid;
   };
 
   const updatePayment = async (order: Order, updates: Record<string, unknown>) => {
-    setBusy(`payment_${order.id}`);
-    try {
-      const res = await apiCall({ action: "updatePaymentDetails", orderId: order.id, ...updates });
-      if (res.ok && selectedGroup) {
-        setPaymentEditOrder(null);
-        await refreshAfterEdit(selectedGroup);
-      } else if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        showError("Payment", data.error || "Could not update payment");
-      }
-    } finally { setBusy(null); }
+    await runAction("Updating payment…", async () => {
+      setBusy(`payment_${order.id}`);
+      try {
+        const res = await apiCall({ action: "updatePaymentDetails", orderId: order.id, ...updates });
+        if (res.ok && selectedGroup) {
+          setPaymentEditOrder(null);
+          await refreshAfterEdit(selectedGroup);
+        } else if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showError("Payment", data.error || "Could not update payment");
+        }
+      } finally { setBusy(null); }
+    });
   };
 
   const revertPayment = async (order: Order) => updatePayment(order, {
@@ -2235,27 +2255,31 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                 showError("Discount", "No unpaid orders to discount");
                 return;
               }
-              const res = await apiCall({ action: "applyDiscount", orderIds, ...data });
-              const body = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                showError("Discount", body.error || "Could not apply discount");
-                return;
-              }
-              showSuccess("Discount applied");
-              await refreshAfterEdit(discountModalGroup);
-              setDiscountModalGroup(null);
+              await runAction("Applying discount…", async () => {
+                const res = await apiCall({ action: "applyDiscount", orderIds, ...data });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  showError("Discount", body.error || "Could not apply discount");
+                  return;
+                }
+                showSuccess("Discount applied");
+                await refreshAfterEdit(discountModalGroup);
+                setDiscountModalGroup(null);
+              });
             }}
             onRemove={removableDiscount > 0 ? async () => {
               const orderIds = removeOrders.map((o) => o.id);
-              const res = await apiCall({ action: "removeDiscount", orderIds });
-              const body = await res.json().catch(() => ({}));
-              if (!res.ok) {
-                showError("Remove discount", body.error || "Could not remove discount");
-                return;
-              }
-              showSuccess("Discount removed");
-              await refreshAfterEdit(discountModalGroup);
-              setDiscountModalGroup(null);
+              await runAction("Removing discount…", async () => {
+                const res = await apiCall({ action: "removeDiscount", orderIds });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  showError("Remove discount", body.error || "Could not remove discount");
+                  return;
+                }
+                showSuccess("Discount removed");
+                await refreshAfterEdit(discountModalGroup);
+                setDiscountModalGroup(null);
+              });
             } : undefined}
             onClose={() => setDiscountModalGroup(null)}
           />
@@ -2404,6 +2428,7 @@ function VoidReasonPopup({ itemName, isModification = false, onVoid, onCancel, b
 
 function CombinedBill({ apiCall, password, username, role, permissions }: { apiCall: (body: any) => Promise<Response>; password: string; username?: string; role: Role; permissions: Record<string, boolean> }) {
   const { showError, showSuccess } = useAdminToast();
+  const { runAction } = useActionProgress();
   const prepareWhatsApp = useStaffWhatsApp();
   const [guests, setGuests] = useState<CombinedGuestOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -2585,18 +2610,23 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
 
   const handleCombinedPayment = async (method: string, cashReceived: number, changeGiven: number, onlineAccountId?: number, receiptId?: string) => {
     if (combinedOrderIds.length === 0) return;
-    setActionBusy(true);
-    try {
-      const res = await apiCall({ action: "markOrderPaid", orderIds: combinedOrderIds, paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { showError("Combined payment", data.error || "Could not record payment"); return; }
-      setPaymentOpen(false);
-      setSelectedIds([]);
-      setPreview(null);
-      showSuccess("Combined payment recorded");
-      const guestsRes = await apiCall({ action: "getCombinedBillOptions" });
-      if (guestsRes.ok) setGuests((await guestsRes.json()).guests || []);
-    } finally { setActionBusy(false); }
+    const label = combinedOrderIds.length > 1
+      ? `Recording payment for ${combinedOrderIds.length} orders…`
+      : "Recording payment…";
+    await runAction(label, async () => {
+      setActionBusy(true);
+      try {
+        const res = await apiCall({ action: "markOrderPaid", orderIds: combinedOrderIds, paymentMethod: method, cashReceived, changeGiven, onlineAccountId, receiptId });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showError("Combined payment", data.error || "Could not record payment"); return; }
+        setPaymentOpen(false);
+        setSelectedIds([]);
+        setPreview(null);
+        showSuccess("Combined payment recorded");
+        const guestsRes = await apiCall({ action: "getCombinedBillOptions" });
+        if (guestsRes.ok) setGuests((await guestsRes.json()).guests || []);
+      } finally { setActionBusy(false); }
+    });
   };
 
   const cardBranding = (orders: any[]) => ({
@@ -2828,30 +2858,34 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
           currentDiscount={combinedDiscount}
           guestName={`Combined bill · ${preview.guests.length} guests`}
           onApply={async (data) => {
-            setActionBusy(true);
-            try {
-              if (combinedApplyOrderIds.length === 0) {
-                showError("Combined discount", "No unpaid orders to discount");
-                return;
-              }
-              const res = await apiCall({ action: "applyDiscount", orderIds: combinedApplyOrderIds, ...data });
-              const body = await res.json().catch(() => ({}));
-              if (!res.ok) { showError("Combined discount", body.error || "Could not apply discount"); return; }
-              setDiscountOpen(false);
-              showSuccess("Combined discount applied");
-              await reloadCombinedPreview();
-            } finally { setActionBusy(false); }
+            if (combinedApplyOrderIds.length === 0) {
+              showError("Combined discount", "No unpaid orders to discount");
+              return;
+            }
+            await runAction("Applying discount…", async () => {
+              setActionBusy(true);
+              try {
+                const res = await apiCall({ action: "applyDiscount", orderIds: combinedApplyOrderIds, ...data });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) { showError("Combined discount", body.error || "Could not apply discount"); return; }
+                setDiscountOpen(false);
+                showSuccess("Combined discount applied");
+                await reloadCombinedPreview();
+              } finally { setActionBusy(false); }
+            });
           }}
           onRemove={combinedDiscount > 0 ? async () => {
-            setActionBusy(true);
-            try {
-              const res = await apiCall({ action: "removeDiscount", orderIds: combinedRemoveOrderIds });
-              const body = await res.json().catch(() => ({}));
-              if (!res.ok) { showError("Combined discount", body.error || "Could not remove discount"); return; }
-              setDiscountOpen(false);
-              showSuccess("Combined discount removed");
-              await reloadCombinedPreview();
-            } finally { setActionBusy(false); }
+            await runAction("Removing discount…", async () => {
+              setActionBusy(true);
+              try {
+                const res = await apiCall({ action: "removeDiscount", orderIds: combinedRemoveOrderIds });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) { showError("Combined discount", body.error || "Could not remove discount"); return; }
+                setDiscountOpen(false);
+                showSuccess("Combined discount removed");
+                await reloadCombinedPreview();
+              } finally { setActionBusy(false); }
+            });
           } : undefined}
           onClose={() => !actionBusy && setDiscountOpen(false)}
         />

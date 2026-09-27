@@ -10,6 +10,7 @@ import {
 import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, stayNights, civilWeekday, unassignedOtaOnNight, type AvailabilitySummary, type NightAvailability } from "@/lib/inventoryAvailability";
 import type { Role } from "./types";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 
 type Props = { password: string; username?: string; role: Role; permissions: Record<string, boolean> };
 
@@ -843,6 +844,7 @@ function AvailabilityPreviewPanel({ preview, loading, mode, scopeReady }: { prev
 function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   data: GridData | null; password: string; username?: string; onClose: () => void; onSaved: () => void;
 }) {
+  const { runAction } = useActionProgress();
   const [tab, setTab] = useState<"blockBeds" | "unblockBeds" | "availability" | "setRates" | "adjustRates" | "restrictions">("blockBeds");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string>("");
@@ -1039,6 +1041,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
   const retryPmsSync = async () => {
     if (!retryPayload || saving) return;
     const payload = retryPayload;
+    await runAction("Syncing with PMS…", async () => {
     setSaving(true);
     setResultIsError(false);
     setResult("Retrying PMS sync…");
@@ -1071,6 +1074,7 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
     } finally {
       setSaving(false);
     }
+    });
   };
 
   const DaySelector = ({ days, setDays }: { days: number[]; setDays: (d: number[]) => void }) => (
@@ -1098,57 +1102,61 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
 
   const handleBlockBeds = async () => {
     if (!blockBedIds.length || !blockStart || !blockExclusiveEnd) return;
-    setSaving(true);
-    setResultIsError(false);
-    setResult("Updating… Saving the block and syncing with PMS.");
-    try {
-      const res = await fetch("/api/admin/inventory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, username, action: "blockBeds", bedIds: blockBedIds, dormId: blockDormId, startDate: blockStart, endDate: blockExclusiveEnd, reason: blockReason }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
+    await runAction("Saving block…", async () => {
+      setSaving(true);
+      setResultIsError(false);
+      setResult("Updating… Saving the block and syncing with PMS.");
+      try {
+        const res = await fetch("/api/admin/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, username, action: "blockBeds", bedIds: blockBedIds, dormId: blockDormId, startDate: blockStart, endDate: blockExclusiveEnd, reason: blockReason }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          setResultIsError(true);
+          setResult(json.error || "Block update failed");
+          return;
+        }
+        completePmsAction(json, `Blocked ${json.blocked} bed(s).`, { syncType: "inventory", dates: json.syncScope?.dates || inclusiveNights(blockStart, blockEnd), dormIds: json.syncScope?.dormIds || [blockDormId] });
+      } catch {
+        setRetryPayload({ syncType: "inventory", dates: inclusiveNights(blockStart, blockEnd), dormIds: [blockDormId] });
         setResultIsError(true);
-        setResult(json.error || "Block update failed");
-        return;
-      }
-      completePmsAction(json, `Blocked ${json.blocked} bed(s).`, { syncType: "inventory", dates: json.syncScope?.dates || inclusiveNights(blockStart, blockEnd), dormIds: json.syncScope?.dormIds || [blockDormId] });
-    } catch {
-      setRetryPayload({ syncType: "inventory", dates: inclusiveNights(blockStart, blockEnd), dormIds: [blockDormId] });
-      setResultIsError(true);
-      setResult("The block may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
-    } finally { setSaving(false); }
+        setResult("The block may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
+      } finally { setSaving(false); }
+    });
   };
 
   const handleUnblockBeds = async () => {
     if (!unblockIds.length) return;
-    setSaving(true);
-    setResultIsError(false);
-    setResult("Updating… Removing the block and syncing with PMS.");
-    try {
-      const res = await fetch("/api/admin/inventory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, username, action: "unblockBeds", blockIds: unblockIds }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
+    await runAction("Removing block…", async () => {
+      setSaving(true);
+      setResultIsError(false);
+      setResult("Updating… Removing the block and syncing with PMS.");
+      try {
+        const res = await fetch("/api/admin/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, username, action: "unblockBeds", blockIds: unblockIds }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          setResultIsError(true);
+          setResult(json.error || "Unblock update failed");
+          return;
+        }
+        completePmsAction(json, "Beds unblocked.", { syncType: "inventory", dates: json.syncScope?.dates || [], dormIds: json.syncScope?.dormIds || [] });
+      } catch {
+        const selected = activeBlocks.filter((block) => unblockIds.includes(block.id));
+        setRetryPayload({
+          syncType: "inventory",
+          dates: [...new Set(selected.flatMap((block) => stayNights(block.startDate, block.endDate)))],
+          dormIds: [...new Set(selected.map((block) => block.dormId))],
+        });
         setResultIsError(true);
-        setResult(json.error || "Unblock update failed");
-        return;
-      }
-      completePmsAction(json, "Beds unblocked.", { syncType: "inventory", dates: json.syncScope?.dates || [], dormIds: json.syncScope?.dormIds || [] });
-    } catch {
-      const selected = activeBlocks.filter((block) => unblockIds.includes(block.id));
-      setRetryPayload({
-        syncType: "inventory",
-        dates: [...new Set(selected.flatMap((block) => stayNights(block.startDate, block.endDate)))],
-        dormIds: [...new Set(selected.map((block) => block.dormId))],
-      });
-      setResultIsError(true);
-      setResult("The unblock may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
-    } finally { setSaving(false); }
+        setResult("The unblock may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
+      } finally { setSaving(false); }
+    });
   };
 
   const handleBulkAvailability = async () => {
@@ -1161,125 +1169,133 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
       `${availabilityMode === "set" ? "Set" : "Clear"} availability for ${availabilityDormIds.length} room${availabilityDormIds.length === 1 ? "" : "s"} across ${affectedNights} night${affectedNights === 1 ? "" : "s"}?${availabilityMode === "set" ? `\n\nOTA/PMS slots remaining: ${value}.` : "\n\nThis removes the default override and restores calculated availability."}`,
     );
     if (!confirmed) return;
-    setSaving(true);
-    setResultIsError(false);
-    setResult("Updating… Saving availability and syncing with PMS.");
-    try {
-      const res = await fetch("/api/admin/inventory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password, username, action: "bulkSetAvailability",
-          dormIds: availabilityDormIds,
-          startDate: availabilityStart,
-          endDate: availabilityEnd,
-          dayFilter: availabilityDays,
-          mode: availabilityMode,
-          onlineRemaining: availabilityMode === "set" ? value : undefined,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
+    await runAction("Saving availability…", async () => {
+      setSaving(true);
+      setResultIsError(false);
+      setResult("Updating… Saving availability and syncing with PMS.");
+      try {
+        const res = await fetch("/api/admin/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            password, username, action: "bulkSetAvailability",
+            dormIds: availabilityDormIds,
+            startDate: availabilityStart,
+            endDate: availabilityEnd,
+            dayFilter: availabilityDays,
+            mode: availabilityMode,
+            onlineRemaining: availabilityMode === "set" ? value : undefined,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          setResultIsError(true);
+          setResult(json.error || "Availability update failed");
+          if (json.partial) onSaved();
+          return;
+        }
+        const count = availabilityMode === "set" ? json.updated : json.cleared;
+        const capMessage = json.capped ? ` ${json.capped} cell(s) capped to available inventory.` : "";
+        const unmappedMessage = json.unmappedDormIds?.length ? ` ${json.unmappedDormIds.length} unmapped dorm(s) are local-only.` : "";
+        completePmsAction(json, `${availabilityMode === "set" ? "Updated" : "Cleared"} ${count} availability cell(s).${capMessage}${unmappedMessage}`, { syncType: "inventory", dates: json.syncScope?.dates || filteredDatesForRetry(availabilityStart, availabilityEnd, availabilityDays), dormIds: json.syncScope?.dormIds || availabilityDormIds });
+      } catch {
+        setRetryPayload({ syncType: "inventory", dates: filteredDatesForRetry(availabilityStart, availabilityEnd, availabilityDays), dormIds: availabilityDormIds });
         setResultIsError(true);
-        setResult(json.error || "Availability update failed");
-        if (json.partial) onSaved();
-        return;
+        setResult("The availability may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
+      } finally {
+        setSaving(false);
       }
-      const count = availabilityMode === "set" ? json.updated : json.cleared;
-      const capMessage = json.capped ? ` ${json.capped} cell(s) capped to available inventory.` : "";
-      const unmappedMessage = json.unmappedDormIds?.length ? ` ${json.unmappedDormIds.length} unmapped dorm(s) are local-only.` : "";
-      completePmsAction(json, `${availabilityMode === "set" ? "Updated" : "Cleared"} ${count} availability cell(s).${capMessage}${unmappedMessage}`, { syncType: "inventory", dates: json.syncScope?.dates || filteredDatesForRetry(availabilityStart, availabilityEnd, availabilityDays), dormIds: json.syncScope?.dormIds || availabilityDormIds });
-    } catch {
-      setRetryPayload({ syncType: "inventory", dates: filteredDatesForRetry(availabilityStart, availabilityEnd, availabilityDays), dormIds: availabilityDormIds });
-      setResultIsError(true);
-      setResult("The availability may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   const handleSetRates = async () => {
     if (!rateRpIds.length || !rateStart || !rateEnd || !rateValue) return;
-    setSaving(true);
-    setResultIsError(false);
-    setResult("Updating… Saving rates and syncing with PMS.");
-    try {
-      const dates = inclusiveNights(rateStart, rateEnd);
-      const res = await fetch("/api/admin/inventory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, username, action: "bulkSetRates", ratePlanIds: rateRpIds, dates, dayFilter: rateDays, rate: parseInt(rateValue), adult1Rate: parseInt(rateValue) }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
+    await runAction("Saving rates…", async () => {
+      setSaving(true);
+      setResultIsError(false);
+      setResult("Updating… Saving rates and syncing with PMS.");
+      try {
+        const dates = inclusiveNights(rateStart, rateEnd);
+        const res = await fetch("/api/admin/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, username, action: "bulkSetRates", ratePlanIds: rateRpIds, dates, dayFilter: rateDays, rate: parseInt(rateValue), adult1Rate: parseInt(rateValue) }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          setResultIsError(true);
+          setResult(json.error || "Rate update failed");
+          return;
+        }
+        completePmsAction(json, `Updated ${json.updated} rate(s).`, { syncType: "rates", dates: json.syncScope?.dates || dates, ratePlanIds: json.syncScope?.ratePlanIds || rateRpIds });
+      } catch {
+        setRetryPayload({ syncType: "rates", dates: inclusiveNights(rateStart, rateEnd).filter((date) => rateDays.length === 0 || rateDays.includes(civilWeekday(date))), ratePlanIds: rateRpIds });
         setResultIsError(true);
-        setResult(json.error || "Rate update failed");
-        return;
-      }
-      completePmsAction(json, `Updated ${json.updated} rate(s).`, { syncType: "rates", dates: json.syncScope?.dates || dates, ratePlanIds: json.syncScope?.ratePlanIds || rateRpIds });
-    } catch {
-      setRetryPayload({ syncType: "rates", dates: inclusiveNights(rateStart, rateEnd).filter((date) => rateDays.length === 0 || rateDays.includes(civilWeekday(date))), ratePlanIds: rateRpIds });
-      setResultIsError(true);
-      setResult("The rates may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
-    } finally { setSaving(false); }
+        setResult("The rates may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
+      } finally { setSaving(false); }
+    });
   };
 
   const handleAdjustRates = async () => {
     if (!adjustRpIds.length || !adjustStart || !adjustEnd || !adjustValue) return;
-    setSaving(true);
-    setResultIsError(false);
-    setResult("Updating… Adjusting rates and syncing with PMS.");
-    try {
-      const res = await fetch("/api/admin/inventory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, username, action: "bulkAdjustRates", ratePlanIds: adjustRpIds, startDate: adjustStart, endDate: adjustEnd, dayFilter: adjustDays, direction: adjustDirection, value: parseInt(adjustValue), type: adjustType }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
+    await runAction("Saving rates…", async () => {
+      setSaving(true);
+      setResultIsError(false);
+      setResult("Updating… Adjusting rates and syncing with PMS.");
+      try {
+        const res = await fetch("/api/admin/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, username, action: "bulkAdjustRates", ratePlanIds: adjustRpIds, startDate: adjustStart, endDate: adjustEnd, dayFilter: adjustDays, direction: adjustDirection, value: parseInt(adjustValue), type: adjustType }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          setResultIsError(true);
+          setResult(json.error || "Rate adjustment failed");
+          return;
+        }
+        completePmsAction(json, `Adjusted ${json.updated} rate(s).`, { syncType: "rates", dates: json.syncScope?.dates || inclusiveNights(adjustStart, adjustEnd).filter((date) => adjustDays.length === 0 || adjustDays.includes(civilWeekday(date))), ratePlanIds: json.syncScope?.ratePlanIds || adjustRpIds });
+      } catch {
+        setRetryPayload({ syncType: "rates", dates: inclusiveNights(adjustStart, adjustEnd).filter((date) => adjustDays.length === 0 || adjustDays.includes(civilWeekday(date))), ratePlanIds: adjustRpIds });
         setResultIsError(true);
-        setResult(json.error || "Rate adjustment failed");
-        return;
-      }
-      completePmsAction(json, `Adjusted ${json.updated} rate(s).`, { syncType: "rates", dates: json.syncScope?.dates || inclusiveNights(adjustStart, adjustEnd).filter((date) => adjustDays.length === 0 || adjustDays.includes(civilWeekday(date))), ratePlanIds: json.syncScope?.ratePlanIds || adjustRpIds });
-    } catch {
-      setRetryPayload({ syncType: "rates", dates: inclusiveNights(adjustStart, adjustEnd).filter((date) => adjustDays.length === 0 || adjustDays.includes(civilWeekday(date))), ratePlanIds: adjustRpIds });
-      setResultIsError(true);
-      setResult("The rate adjustment may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
-    } finally { setSaving(false); }
+        setResult("The rate adjustment may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
+      } finally { setSaving(false); }
+    });
   };
 
   const handleSetRestrictions = async () => {
     if (!restrictRpIds.length || !restrictStart || !restrictEnd || !restrictType) return;
-    setSaving(true);
-    setResultIsError(false);
-    setResult("Updating… Saving restrictions and syncing with PMS.");
-    try {
-      const booleanTypes = ["stopSell", "closeOnArrival", "closeOnDeparture"];
-      const numVal = parseInt(String(restrictValue));
-      const val = booleanTypes.includes(restrictType) ? (restrictValue === true || restrictValue === "true") : (isNaN(numVal) ? null : numVal);
-      const res = await fetch("/api/admin/inventory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, username, action: "bulkSetRestrictions", ratePlanIds: restrictRpIds, startDate: restrictStart, endDate: restrictEnd, dayFilter: restrictDays, restrictionType: restrictType, value: val }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
+    await runAction("Saving restrictions…", async () => {
+      setSaving(true);
+      setResultIsError(false);
+      setResult("Updating… Saving restrictions and syncing with PMS.");
+      try {
+        const booleanTypes = ["stopSell", "closeOnArrival", "closeOnDeparture"];
+        const numVal = parseInt(String(restrictValue));
+        const val = booleanTypes.includes(restrictType) ? (restrictValue === true || restrictValue === "true") : (isNaN(numVal) ? null : numVal);
+        const res = await fetch("/api/admin/inventory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, username, action: "bulkSetRestrictions", ratePlanIds: restrictRpIds, startDate: restrictStart, endDate: restrictEnd, dayFilter: restrictDays, restrictionType: restrictType, value: val }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          setResultIsError(true);
+          setResult(json.error || "Restriction update failed");
+          return;
+        }
+        completePmsAction(json, `Updated ${json.updated} restriction(s).`, { syncType: "restrictions", dates: json.syncScope?.dates || inclusiveNights(restrictStart, restrictEnd).filter((date) => restrictDays.length === 0 || restrictDays.includes(civilWeekday(date))), ratePlanIds: json.syncScope?.ratePlanIds || restrictRpIds, patch: json.syncScope?.patch });
+      } catch {
+        const booleanTypes = ["stopSell", "closeOnArrival", "closeOnDeparture"];
+        const numVal = parseInt(String(restrictValue));
+        const retryPatch = booleanTypes.includes(restrictType)
+          ? { [restrictType]: restrictValue === true || restrictValue === "true" }
+          : { [restrictType]: Number.isNaN(numVal) ? null : numVal };
+        setRetryPayload({ syncType: "restrictions", dates: inclusiveNights(restrictStart, restrictEnd).filter((date) => restrictDays.length === 0 || restrictDays.includes(civilWeekday(date))), ratePlanIds: restrictRpIds, patch: retryPatch });
         setResultIsError(true);
-        setResult(json.error || "Restriction update failed");
-        return;
-      }
-      completePmsAction(json, `Updated ${json.updated} restriction(s).`, { syncType: "restrictions", dates: json.syncScope?.dates || inclusiveNights(restrictStart, restrictEnd).filter((date) => restrictDays.length === 0 || restrictDays.includes(civilWeekday(date))), ratePlanIds: json.syncScope?.ratePlanIds || restrictRpIds, patch: json.syncScope?.patch });
-    } catch {
-      const booleanTypes = ["stopSell", "closeOnArrival", "closeOnDeparture"];
-      const numVal = parseInt(String(restrictValue));
-      const retryPatch = booleanTypes.includes(restrictType)
-        ? { [restrictType]: restrictValue === true || restrictValue === "true" }
-        : { [restrictType]: Number.isNaN(numVal) ? null : numVal };
-      setRetryPayload({ syncType: "restrictions", dates: inclusiveNights(restrictStart, restrictEnd).filter((date) => restrictDays.length === 0 || restrictDays.includes(civilWeekday(date))), ratePlanIds: restrictRpIds, patch: retryPatch });
-      setResultIsError(true);
-      setResult("The restrictions may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
-    } finally { setSaving(false); }
+        setResult("The restrictions may be saved locally, but PMS confirmation was lost. You can retry PMS sync below.");
+      } finally { setSaving(false); }
+    });
   };
 
   return (

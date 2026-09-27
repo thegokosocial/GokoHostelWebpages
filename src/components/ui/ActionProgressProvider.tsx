@@ -57,11 +57,11 @@ export function ActionProgressProvider({ children }: { children: ReactNode }) {
           aria-busy="true"
           aria-label={state.label}
           onKeyDown={(event) => event.preventDefault()}
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/10 px-4 backdrop-blur-[1px] outline-none dark:bg-black/25"
+          className="fixed inset-0 z-[110] flex touch-none items-center justify-center bg-black/10 px-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] backdrop-blur-[1px] outline-none dark:bg-black/25"
         >
-          <div className="flex min-w-[11rem] items-center justify-center gap-2 rounded-full border border-brand-mist/20 bg-white/95 px-4 py-2.5 text-sm font-medium text-brand-green-dark shadow-lg dark:border-white/10 dark:bg-zinc-900/95 dark:text-zinc-100">
-            <Loader2Icon className="h-4 w-4 animate-spin text-brand-green dark:text-green-400" aria-hidden="true" />
-            <span>{state.label}</span>
+          <div className="flex max-w-[min(20rem,calc(100vw-2rem))] min-w-[11rem] items-center justify-center gap-2 rounded-full border border-brand-mist/20 bg-white/95 px-4 py-2.5 text-sm font-medium text-brand-green-dark shadow-lg dark:border-white/10 dark:bg-zinc-900/95 dark:text-zinc-100">
+            <Loader2Icon className="h-4 w-4 shrink-0 animate-spin text-brand-green dark:text-green-400" aria-hidden="true" />
+            <span className="min-w-0 text-center leading-snug">{state.label}</span>
           </div>
         </div>
       )}

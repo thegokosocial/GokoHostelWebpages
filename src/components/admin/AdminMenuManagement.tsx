@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { hasPermission, type Role } from "./types";
 import { useAdminToast } from "@/components/admin/AdminToast";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 import { SiteImageField } from "./SiteImageField";
 import { foodImageSrc } from "@/lib/foodImage";
 
@@ -147,6 +148,7 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
   const scrollBackItemId = useRef<number | null>(null);
 
   const { showError, showSuccess } = useAdminToast();
+  const { runAction } = useActionProgress();
 
   const apiCall = useCallback(async (body: Record<string, any>) => {
     const payload: Record<string, any> = { password, ...body };
@@ -398,11 +400,13 @@ export function AdminMenuManagement({ password, username, role, permissions = {}
   };
 
   const bulkToggle = async (categoryId: number, available: boolean) => {
-    setSaving(true);
-    try {
-      await apiCall({ action: "bulkToggleAvailability", categoryId, isAvailable: available });
-      await loadItems();
-    } finally { setSaving(false); }
+    await runAction("Updating availability…", async () => {
+      setSaving(true);
+      try {
+        await apiCall({ action: "bulkToggleAvailability", categoryId, isAvailable: available });
+        await loadItems();
+      } finally { setSaving(false); }
+    });
   };
 
   const handleAddStock = async (menuItemId: number) => {

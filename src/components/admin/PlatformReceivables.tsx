@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { useAdminToast } from "@/components/admin/AdminToast";
+import { useActionProgress } from "@/components/ui/ActionProgressProvider";
 import { cn } from "@/lib/utils";
 import { matchesReceivableFilters, pruneReceivableSelection, selectedReceivableTotals, type ReceivableTotalRow } from "@/lib/platformReceivableView";
 import type { Role } from "./types";
@@ -28,6 +29,7 @@ const platformLabel = (key: string) => ({
 
 export function PlatformReceivables({ password, username }: { password: string; username?: string; role?: Role }) {
   const { showError, showSuccess } = useAdminToast();
+  const { runAction } = useActionProgress();
   const [rows, setRows] = useState<PlatformRow[]>([]);
   const [websitePayments, setWebsitePayments] = useState<WebsiteRow[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -83,11 +85,13 @@ export function PlatformReceivables({ password, username }: { password: string; 
     return selectedReceivableTotals(totalRows, amounts);
   }, [amounts, rows, selected, websitePayments]);
   const createSettlement = async () => {
-    setBusy(true);
-    try {
-      const data = await call("createSettlement", { ...form, bankAccountId: Number(form.bankAccountId) });
-      setSettlementId(String(data.id)); setForm((old) => ({ ...old, amount: "", reference: "" })); showSuccess("Payout recorded in the receiving bank account"); await load();
-    } catch (error) { showError(error instanceof Error ? error.message : "Could not record payout"); } finally { setBusy(false); }
+    await runAction("Recording payout…", async () => {
+      setBusy(true);
+      try {
+        const data = await call("createSettlement", { ...form, bankAccountId: Number(form.bankAccountId) });
+        setSettlementId(String(data.id)); setForm((old) => ({ ...old, amount: "", reference: "" })); showSuccess("Payout recorded in the receiving bank account"); await load();
+      } catch (error) { showError(error instanceof Error ? error.message : "Could not record payout"); } finally { setBusy(false); }
+    });
   };
   const toggle = (row: PlatformRow | WebsiteRow) => {
     const key = keyFor(row);
@@ -99,9 +103,9 @@ export function PlatformReceivables({ password, username }: { password: string; 
   const allocateSelected = async () => {
     if (!settlementId || selected.length === 0) { showError("Choose a payout and at least one outstanding entry"); return; }
     if (!currentSettlement) { showError("Select a valid payout"); return; }
-    setBusy(true);
+    let allocations: Array<Record<string, unknown>>;
     try {
-      const allocations = selected.map((key) => {
+      allocations = selected.map((key) => {
         const [type, ...parts] = key.split(":");
         const amount = Number(amounts[key]);
         if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter a positive amount for every selected entry");
@@ -109,39 +113,51 @@ export function PlatformReceivables({ password, username }: { password: string; 
         return type === "website" ? { type: "website", paymentId: parts.join(":"), allocatedPaise }
           : { type: "ota", bookingId: Number(parts[0]), bookingCycle: Number(parts[1]), allocatedPaise };
       });
-      await call("allocateBatch", { settlementId: Number(settlementId), allocations }); showSuccess("Selected payout allocations recorded"); setSelected([]); setAmounts({}); await load();
-    } catch (error) { showError(error instanceof Error ? error.message : "Could not allocate payout"); }
-    finally { setBusy(false); }
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Could not allocate payout");
+      return;
+    }
+    await runAction("Allocating payout…", async () => {
+      setBusy(true);
+      try {
+        await call("allocateBatch", { settlementId: Number(settlementId), allocations }); showSuccess("Selected payout allocations recorded"); setSelected([]); setAmounts({}); await load();
+      } catch (error) { showError(error instanceof Error ? error.message : "Could not allocate payout"); }
+      finally { setBusy(false); }
+    });
   };
   const refreshFees = async (paymentId?: string) => {
-    setBusy(true);
-    try {
-      const data = await call("refreshWebsiteFees", paymentId ? { paymentId } : {});
-      if (paymentId) {
-        showSuccess(data.stillPending
-          ? "Razorpay refreshed; fee/tax still pending — enter manually if the provider has no values yet"
-          : "Gateway fee and tax verified from Razorpay");
-      } else {
-        showSuccess(`Refreshed ${data.attempted || 0} pending payment(s); ${data.updated || 0} updated, ${data.stillPending || 0} still pending`);
-      }
-      await load();
-    } catch (error) { showError(error instanceof Error ? error.message : "Could not refresh gateway fees"); }
-    finally { setBusy(false); }
+    await runAction("Refreshing fees…", async () => {
+      setBusy(true);
+      try {
+        const data = await call("refreshWebsiteFees", paymentId ? { paymentId } : {});
+        if (paymentId) {
+          showSuccess(data.stillPending
+            ? "Razorpay refreshed; fee/tax still pending — enter manually if the provider has no values yet"
+            : "Gateway fee and tax verified from Razorpay");
+        } else {
+          showSuccess(`Refreshed ${data.attempted || 0} pending payment(s); ${data.updated || 0} updated, ${data.stillPending || 0} still pending`);
+        }
+        await load();
+      } catch (error) { showError(error instanceof Error ? error.message : "Could not refresh gateway fees"); }
+      finally { setBusy(false); }
+    });
   };
   const saveManualFees = async (paymentId: string) => {
     const draft = feeDrafts[paymentId] || { fee: "", tax: "" };
-    setBusy(true);
-    try {
-      await call("setWebsiteFees", {
-        paymentId,
-        ...(draft.fee.trim() ? { fee: draft.fee.trim() } : {}),
-        ...(draft.tax.trim() ? { tax: draft.tax.trim() } : {}),
-      });
-      showSuccess("Gateway fee/tax saved");
-      setFeeDrafts((current) => { const next = { ...current }; delete next[paymentId]; return next; });
-      await load();
-    } catch (error) { showError(error instanceof Error ? error.message : "Could not save gateway fees"); }
-    finally { setBusy(false); }
+    await runAction("Saving fees…", async () => {
+      setBusy(true);
+      try {
+        await call("setWebsiteFees", {
+          paymentId,
+          ...(draft.fee.trim() ? { fee: draft.fee.trim() } : {}),
+          ...(draft.tax.trim() ? { tax: draft.tax.trim() } : {}),
+        });
+        showSuccess("Gateway fee/tax saved");
+        setFeeDrafts((current) => { const next = { ...current }; delete next[paymentId]; return next; });
+        await load();
+      } catch (error) { showError(error instanceof Error ? error.message : "Could not save gateway fees"); }
+      finally { setBusy(false); }
+    });
   };
   const bookingDetails = (booking: Booking) => <><strong>{booking?.guestName || "Guest details unavailable"}</strong><br />{booking?.gokoBookingId || booking?.bookingRef || "No booking reference"} · {booking?.checkinDate || "—"} to {booking?.checkoutDate || "—"}</>;
   const feeControls = (row: WebsiteRow) => {
