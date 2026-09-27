@@ -52,11 +52,13 @@ function mockWebsiteHappyPath(paymentCount: number, settlementPaise: number) {
     environment: "live" as const,
   }));
 
-  q.batch.mockImplementation(async (statements: Array<Promise<Array<{ id: number }> | (() => Promise<Array<{ id: number }>>)>>) => {
+  q.batch.mockImplementation(async (statements: unknown[]) => {
     const out: Array<Array<{ id: number }>> = [];
     for (const stmt of statements) {
-      const rows = typeof stmt === "function" ? await stmt() : await stmt;
-      out.push(Array.isArray(rows) ? rows : [{ id: out.length + 1 }]);
+      const rows = typeof stmt === "function"
+        ? await (stmt as () => Promise<unknown>)()
+        : await (stmt as Promise<unknown>);
+      out.push(Array.isArray(rows) ? rows as Array<{ id: number }> : [{ id: out.length + 1 }]);
     }
     return out;
   });

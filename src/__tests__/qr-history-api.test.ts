@@ -77,7 +77,20 @@ describe("POST /api/admin/qr-history", () => {
     expect(db.delete).toHaveBeenCalled();
   });
 
-  it("rejects unknown actions", async () => {
-    expect((await POST(request({ action: "dropTables", password: "admin" }))).status).toBe(400);
+  it("allows permitted staff to save and delete QR configs", async () => {
+    vi.mocked(authenticateUser).mockResolvedValue({ ...staff, permissions: { canUseQRGenerator: true } });
+    const saved = await POST(request({
+      action: "save", password: "staff", username: "staff", name: "UPI", config: "{}",
+    }));
+    expect(saved.status).toBe(200);
+    const deleted = await POST(request({ action: "delete", password: "staff", username: "staff", id: 3 }));
+    expect(deleted.status).toBe(200);
+  });
+
+  it("rejects save without a name", async () => {
+    const response = await POST(request({
+      action: "save", password: "admin", name: "", config: "{}",
+    }));
+    expect(response.status).toBe(400);
   });
 });

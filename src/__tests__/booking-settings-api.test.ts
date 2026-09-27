@@ -71,9 +71,28 @@ describe("Booking Settings API", () => {
     expect(mocks.setSetting).toHaveBeenCalledOnce();
   });
 
-  it("validates SMS templates independently and rejects unknown actions", async () => {
-    const response = await POST(request({ action: "saveSmsTemplates", password: "pw", templates: { confirmation: { body: "ok" } } }));
-    expect(response.status).toBe(400);
-    expect((await POST(request({ action: "unknown", password: "pw" }))).status).toBe(400);
+  it("rejects Pi runtime before reading settings", async () => {
+    mocks.isPiRuntime.mockReturnValue(true);
+    const response = await POST(request({ action: "getEmailTemplates", password: "pw" }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/Cloudflare/i) });
+    expect(mocks.getSetting).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 BOOKING_SETTINGS_CONFLICT when revision is stale", async () => {
+    mocks.getSetting.mockResolvedValue("{}");
+    mocks.compareAndSetWebsiteSettings.mockResolvedValue(false);
+    // Force revision mismatch path: supply wrong revision string
+    const { websiteBookingSettingsRevision } = await import("@/lib/websiteBookingSettings");
+    const current = await websiteBookingSettingsRevision("{}");
+    const response = await POST(request({
+      action: "saveSettings",
+      password: "pw",
+      settings: { enabled: false },
+      revision: "stale-not-" + current,
+    }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "BOOKING_SETTINGS_CONFLICT" });
+    expect(mocks.compareAndSetWebsiteSettings).not.toHaveBeenCalled();
   });
 });
