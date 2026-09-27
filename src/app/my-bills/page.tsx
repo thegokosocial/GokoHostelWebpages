@@ -214,7 +214,11 @@ function MyBillsContent() {
   };
 
   const handleBack = () => {
-    router.push("/food-order");
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/food-order");
+    }
   };
 
   const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + o.total, 0);

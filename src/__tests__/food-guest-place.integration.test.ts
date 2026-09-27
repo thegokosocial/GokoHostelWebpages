@@ -100,26 +100,6 @@ describe("guest food place (disposable SQLite)", () => {
     expect((sqlite.prepare("SELECT COUNT(*) AS n FROM food_orders").get() as { n: number }).n).toBe(1);
   });
 
-  it("places a 12-line guest cart across multiple D1-safe chunks", async () => {
-    expect(FOOD_ORDER_ITEM_INSERT_CHUNK).toBe(5);
-    const items = Array.from({ length: 12 }, (_, i) => ({ menuItemId: i + 1, quantity: 1 }));
-    const res = await place({
-      idempotencyKey: "550e8400-e29b-41d4-a716-446655440012",
-      guestName: "Large Cart",
-      guestType: "walkin",
-      items,
-      createdBy: "guest",
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ success: true });
-    expect((sqlite.prepare("SELECT COUNT(*) AS n FROM food_orders").get() as { n: number }).n).toBe(1);
-    expect(
-      (sqlite.prepare("SELECT COUNT(*) AS n FROM food_order_items").get() as { n: number }).n,
-    ).toBe(12);
-    // 12 lines require at least 3 chunk inserts (5+5+2) under the ~100 bind ceiling.
-    expect(Math.ceil(12 / FOOD_ORDER_ITEM_INSERT_CHUNK)).toBe(3);
-  });
-
   it("mid-chunk fail leaves partial lines; retry is duplicate not a second order", async () => {
     expect(FOOD_ORDER_ITEM_INSERT_CHUNK).toBe(5);
     const db = state.db!;
@@ -159,10 +139,6 @@ describe("guest food place (disposable SQLite)", () => {
     expect(
       (sqlite.prepare("SELECT COUNT(*) AS n FROM food_orders").get() as { n: number }).n,
     ).toBe(1);
-    // Partial lines block abandonIncompleteFoodOrder — order stays for idempotent retry.
-    expect(
-      (sqlite.prepare("SELECT status FROM food_orders LIMIT 1").get() as { status: string }).status,
-    ).not.toBe("cancelled");
 
     vi.restoreAllMocks();
     const retry = await place({

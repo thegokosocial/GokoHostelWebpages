@@ -57,8 +57,7 @@ export function FoodCart({
 }: FoodCartProps) {
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [itemNotes, setItemNotes] = useState<Record<number, string>>({});
-  const knownWalkinName = guestInfo.guestType === "walkin" ? guestInfo.name.trim() : "";
-  const [walkinName, setWalkinName] = useState(knownWalkinName);
+  const [walkinName, setWalkinName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -75,20 +74,13 @@ export function FoodCart({
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
-  useEffect(() => {
-    if (knownWalkinName) setWalkinName(knownWalkinName);
-  }, [knownWalkinName]);
-
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const taxAmount = Math.round((subtotal * taxRate) / 100);
   const total = subtotal + taxAmount;
   const hasPendingPrice = cart.some((item) => item.priceOnRequest === 1);
-  const walkinNameLocked = Boolean(knownWalkinName);
 
   const handlePlaceOrder = async () => {
-    const name = guestInfo.guestType === "hostel"
-      ? guestInfo.name.trim()
-      : (walkinNameLocked ? knownWalkinName : walkinName.trim());
+    const name = guestInfo.guestType === "hostel" ? guestInfo.name : walkinName.trim();
     if (!name) {
       setError("Please enter your name");
       return;
@@ -327,10 +319,6 @@ export function FoodCart({
               <p className="text-xs text-brand-green dark:text-brand-green-dark">{guestInfo.roomInfo}</p>
             )}
             <p className="text-xs text-brand-green/80 dark:text-brand-green-dark">Charged to room tab</p>
-          </div>
-        ) : walkinNameLocked ? (
-          <div className="mb-3 rounded-lg bg-brand-green/10 dark:bg-brand-green/20 p-3">
-            <p className="text-sm font-medium text-brand-green-dark dark:text-brand-green">{knownWalkinName}</p>
           </div>
         ) : (
           <div className="mb-3">
