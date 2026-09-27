@@ -1393,6 +1393,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           ? {
               status: "active" as const,
               imageUrl: drawerQrState.imageUrl,
+              upiIntent: drawerQrState.upiIntent,
               closeBy: drawerQrState.closeBy,
               label: drawerQrState.label,
             }

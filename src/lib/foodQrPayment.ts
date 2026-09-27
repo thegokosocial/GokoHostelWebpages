@@ -33,6 +33,26 @@ function cloudOnly() {
 
 export type OrderSnapshotEntry = { orderId: number; duePaise: number; priorPaidPaise: number; total: number };
 
+type AttemptNotes = {
+  orderSnapshot?: OrderSnapshotEntry[];
+  fingerprint?: string;
+  upiIntent?: string;
+  exceptions?: string[];
+};
+
+function parseAttemptNotes(raw: string | null | undefined): AttemptNotes {
+  try {
+    return (JSON.parse(String(raw || "{}")) || {}) as AttemptNotes;
+  } catch {
+    return {};
+  }
+}
+
+function upiIntentFromNotes(raw: string | null | undefined): string | null {
+  const intent = parseAttemptNotes(raw).upiIntent?.trim();
+  return intent && intent.length > 0 ? intent : null;
+}
+
 export function buildFingerprint(entries: OrderSnapshotEntry[]): string {
   const sorted = [...entries].sort((a, b) => a.orderId - b.orderId);
   return sorted.map((e) => `${e.orderId}:${e.duePaise}`).join("|");
@@ -170,10 +190,14 @@ export async function createFoodQrAttempt(input: { requestKey: string; orderIds:
     } catch {
       qr = await createRazorpayFoodQr({ amountPaise: totalDuePaise, attemptId: id, environment: rzpEnv });
     }
+    const [creating] = await db.select().from(attempts).where(eq(attempts.id, id)).limit(1);
+    const notes = parseAttemptNotes(creating?.notes);
+    if (qr.image_content?.trim()) notes.upiIntent = qr.image_content.trim();
     await db.update(attempts).set({
       qrCodeId: qr.id,
       qrImageUrl: qr.image_url,
       closeBy: qr.close_by ? new Date(qr.close_by * 1000).toISOString() : null,
+      notes: JSON.stringify(notes),
       state: "active",
       updatedAt: timestamp(),
     }).where(and(eq(attempts.id, id), ne(attempts.state, "active")));
@@ -275,18 +299,28 @@ export async function reconcileFoodQrAttempt(attemptId: string) {
   cloudOnly();
   z.string().uuid().parse(attemptId);
   const db = getDb();
-  const [attempt] = await db.select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
+  let [attempt] = await db.select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
   if (!attempt) throw new FoodQrError("Attempt not found", 404);
   if (["paid", "closed", "expired"].includes(attempt.state)) return foodQrSnapshot(attemptId);
 
   const rzpEnv = attempt.environment as RazorpayEnvironment;
 
-  if (attempt.qrCodeId) {
+  const qrCodeId = attempt.qrCodeId;
+  if (qrCodeId) {
     // Fetch QR status
-    const qr = await fetchRazorpayFoodQr(attempt.qrCodeId, rzpEnv);
+    const qr = await fetchRazorpayFoodQr(qrCodeId, rzpEnv);
+
+    // Backfill UPI intent when create response lacked image_content
+    if (qr.image_content?.trim() && !upiIntentFromNotes(attempt.notes)) {
+      const notes = parseAttemptNotes(attempt.notes);
+      notes.upiIntent = qr.image_content.trim();
+      await db.update(attempts).set({ notes: JSON.stringify(notes), updatedAt: timestamp() })
+        .where(eq(attempts.id, attemptId));
+      attempt = { ...attempt, notes: JSON.stringify(notes) };
+    }
 
     // Fetch and record payments
-    const qrPayments = await fetchRazorpayFoodQrPayments(attempt.qrCodeId, rzpEnv);
+    const qrPayments = await fetchRazorpayFoodQrPayments(qrCodeId, rzpEnv);
     for (const payment of qrPayments) {
       await recordFoodQrPayment(attempt, payment);
     }
@@ -597,6 +631,7 @@ export async function foodQrSnapshot(attemptId: string) {
     state: attempt.state,
     amountPaise: attempt.paymentAmountPaise,
     imageUrl: attempt.qrImageUrl,
+    upiIntent: upiIntentFromNotes(attempt.notes),
     closeBy: attempt.closeBy,
     environment: rzpEnv,
     paymentMethodLabel: paymentMethodLabel(rzpEnv),

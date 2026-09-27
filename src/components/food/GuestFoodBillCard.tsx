@@ -12,6 +12,7 @@ import {
 } from "@/lib/foodBillFormat";
 import { foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { foodAmountPaid } from "@/lib/foodPaymentBalance";
+import { AutoQrCode } from "@/components/sections/AutoQrCode";
 
 export type GuestFoodBillItem = {
   name?: string;
@@ -54,6 +55,8 @@ export type GuestFoodBillBranding = {
 export type GuestFoodBillDynamicQr = {
   status: "loading" | "active" | "paid" | "error" | "static";
   imageUrl?: string | null;
+  /** Prefer rendering a square QR from this UPI intent when present. */
+  upiIntent?: string | null;
   closeBy?: string | null;
   label?: string;
   message?: string;
@@ -132,10 +135,14 @@ export function GuestFoodBillCard({
   const rateForLabels = tax > 0 ? foodTaxRateFromAmounts(subtotal, tax) : (branding.taxRate || 0);
   const { cgstRate, sgstRate } = splitGstRate(rateForLabels);
   const dynamicActive = !hidePayment && dynamicQr && dynamicQr.status !== "static";
-  const qrSrc = !hidePayment && dynamicQr?.status === "active" && dynamicQr.imageUrl
-    ? dynamicQr.imageUrl
-    : (!hidePayment && !dynamicActive ? branding.qrUrl : undefined);
-  const showPayment = !hidePayment && variant === "unpaid" && due > 0 && !!(qrSrc || branding.upiId || dynamicActive);
+  const dynamicUpiIntent = !hidePayment && dynamicQr?.status === "active" ? (dynamicQr.upiIntent || null) : null;
+  // Never show Razorpay's branded poster. Prefer square UPI QR; else Bill Settings static QR.
+  const qrSrc = !hidePayment && !dynamicUpiIntent && dynamicQr?.status !== "paid"
+    ? branding.qrUrl
+    : undefined;
+  const showExactDynamic = !!dynamicUpiIntent && dynamicQr?.status === "active";
+  const showPayment = !hidePayment && variant === "unpaid" && due > 0
+    && !!(dynamicUpiIntent || qrSrc || branding.upiId || dynamicActive);
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
   const latest = orders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b), orders[0]);
@@ -229,8 +236,11 @@ export function GuestFoodBillCard({
               {dynamicQr.label || "Razorpay payment received"}
             </p>
           )}
-          {qrSrc && dynamicQr?.status !== "paid" && (
-            // eslint-disable-next-line @next/next/no-img-element -- Razorpay CDN / static upload URLs
+          {dynamicUpiIntent && dynamicQr?.status !== "paid" && (
+            <AutoQrCode data={dynamicUpiIntent} label="Payment QR" maxPx={280} />
+          )}
+          {!dynamicUpiIntent && qrSrc && dynamicQr?.status !== "paid" && (
+            // eslint-disable-next-line @next/next/no-img-element -- Bill Settings static QR upload
             <img
               src={qrSrc}
               alt="Payment QR"
@@ -246,14 +256,14 @@ export function GuestFoodBillCard({
                   {formatRupees(due)}
                 </span>
                 {" "}via UPI
-                {dynamicActive && dynamicQr?.status === "active" ? " (exact amount)" : ""}
+                {showExactDynamic ? " (exact amount)" : ""}
               </p>
-              {dynamicQr?.status === "active" && dynamicQr.closeBy && (
+              {showExactDynamic && dynamicQr.closeBy && (
                 <p className="mt-0.5 text-[11px] text-zinc-400">
                   QR valid until {new Date(dynamicQr.closeBy).toLocaleString("en-IN")}
                 </p>
               )}
-              {!dynamicActive && branding.upiId && (
+              {!showExactDynamic && branding.upiId && (
                 <p className="mt-0.5 font-mono text-xs text-zinc-400">{branding.upiId}</p>
               )}
             </>

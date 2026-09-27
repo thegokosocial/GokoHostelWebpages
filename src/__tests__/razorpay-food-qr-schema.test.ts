@@ -93,6 +93,18 @@ describe("razorpayQrCodeSchema", () => {
     };
     expect(razorpayQrCodeSchema.safeParse(minimal).success).toBe(true);
   });
+
+  it("accepts optional image_content UPI intent", () => {
+    const withContent = {
+      ...SAMPLE_QR_CODE,
+      image_content: "upi://pay?pa=qmart.razorpay@hdfcbank&am=150.00&cu=INR",
+    };
+    const result = razorpayQrCodeSchema.safeParse(withContent);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.image_content).toMatch(/^upi:\/\//);
+    }
+  });
 });
 
 describe("razorpayQrPaymentSchema", () => {

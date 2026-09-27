@@ -228,6 +228,8 @@ export const razorpayQrCodeSchema = z.object({
   usage: z.enum(["single_use", "multiple_use"]),
   type: z.enum(["upi_qr"]).optional(),
   image_url: z.string().url(),
+  /** Raw UPI intent (`upi://pay?...`) for merchant-rendered square QRs. Optional until Razorpay enables qr_image_content. */
+  image_content: z.string().min(1).max(2000).optional(),
   payment_amount: paise.nullable().optional(),
   status: z.enum(["active", "closed"]),
   fixed_amount: z.boolean(),

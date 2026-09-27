@@ -206,6 +206,13 @@ describe("claim helper + ensure remint contracts", () => {
     expect(src).toContain("QR closed as paid but capture evidence is not ready yet");
     expect(src).toContain('order.status === "cancelled"');
   });
+
+  it("persists and exposes upiIntent from Razorpay image_content", () => {
+    const src = readFileSync("src/lib/foodQrPayment.ts", "utf8");
+    expect(src).toContain("upiIntent");
+    expect(src).toContain("image_content");
+    expect(src).toContain("upiIntentFromNotes");
+  });
 });
 
 describe("fingerprint idempotency", () => {

@@ -8,7 +8,15 @@ import { parseBillQrMode, type BillQrMode } from "@/lib/foodBillQrMode";
 export type FoodBillQrUiState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "active"; attemptId: string; imageUrl: string; closeBy: string | null; amountPaise: number; label: string }
+  | {
+      status: "active";
+      attemptId: string;
+      imageUrl: string | null;
+      upiIntent: string | null;
+      closeBy: string | null;
+      amountPaise: number;
+      label: string;
+    }
   | { status: "paid"; label: string }
   | { status: "error"; message: string }
   | { status: "static" };
@@ -18,6 +26,7 @@ export type FoodQrAttemptPayload = {
   id?: string;
   state?: string;
   imageUrl?: string | null;
+  upiIntent?: string | null;
   closeBy?: string | null;
   amountPaise?: number;
   paymentMethodLabel?: string;
@@ -66,11 +75,14 @@ export function mapFoodQrAttemptToUi(attempt: FoodQrAttemptPayload | null | unde
   if (attempt.state === "paid") {
     return { status: "paid", label: attempt.paymentMethodLabel || "Razorpay payment received" };
   }
-  if (attempt.state === "active" && attempt.imageUrl) {
+  const upiIntent = attempt.upiIntent?.trim() || null;
+  const imageUrl = attempt.imageUrl?.trim() || null;
+  if (attempt.state === "active" && (upiIntent || imageUrl)) {
     return {
       status: "active",
       attemptId: id,
-      imageUrl: attempt.imageUrl,
+      imageUrl,
+      upiIntent,
       closeBy: attempt.closeBy || null,
       amountPaise: attempt.amountPaise || 0,
       label: attempt.paymentMethodLabel || "Pay exact amount via UPI",

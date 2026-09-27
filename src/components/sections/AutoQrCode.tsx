@@ -5,10 +5,13 @@ import { useEffect, useState } from "react";
 type Props = {
   data: string;
   label: string;
+  /** CSS max edge length in px (default 360). */
+  maxPx?: number;
 };
 
-export function AutoQrCode({ data, label }: Props) {
+export function AutoQrCode({ data, label, maxPx = 360 }: Props) {
   const [src, setSrc] = useState("");
+  const sizeCss = `min(70vw, ${maxPx}px)`;
 
   useEffect(() => {
     let cancelled = false;
@@ -43,8 +46,23 @@ export function AutoQrCode({ data, label }: Props) {
   }, [data]);
 
   if (!src) {
-    return <div className="h-[min(80vw,420px)] w-full max-w-[360px] animate-pulse rounded-lg bg-brand-mist/30" aria-label={`Generating ${label}`} />;
+    return (
+      <div
+        className="mx-auto animate-pulse rounded-lg bg-brand-mist/30"
+        style={{ width: sizeCss, height: sizeCss }}
+        aria-label={`Generating ${label}`}
+      />
+    );
   }
 
-  return <img src={src} alt={label} loading="lazy" className="h-auto w-auto max-w-full object-contain" style={{ width: "min(100%, 360px)", maxHeight: "min(80vw, 420px)" }} />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- blob URL from qr-code-styling
+    <img
+      src={src}
+      alt={label}
+      loading="lazy"
+      className="mx-auto bg-white object-contain p-2"
+      style={{ width: sizeCss, height: sizeCss, maxWidth: "100%" }}
+    />
+  );
 }

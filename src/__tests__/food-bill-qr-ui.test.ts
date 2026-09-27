@@ -73,9 +73,23 @@ describe("mapFoodQrAttemptToUi", () => {
       status: "active",
       attemptId: "a1",
       imageUrl: "https://rzp.io/i/x",
+      upiIntent: null,
       closeBy: "2099-01-01",
       amountPaise: 10000,
       label: "Pay exact amount via UPI",
+    });
+  });
+
+  it("maps active with upiIntent alone (no poster)", () => {
+    expect(mapFoodQrAttemptToUi({
+      attemptId: "a1",
+      state: "active",
+      upiIntent: "upi://pay?pa=x@ybl&am=2.00",
+      amountPaise: 200,
+    })).toMatchObject({
+      status: "active",
+      upiIntent: "upi://pay?pa=x@ybl&am=2.00",
+      imageUrl: null,
     });
   });
 
@@ -186,9 +200,14 @@ describe("claim guards + guest QR contracts stay wired", () => {
     expect(guestQr).toContain("Payment attempt does not match this bill");
   });
 
-  it("GuestFoodBillCard hidePayment gates QR img; mobile QR uses max-w", () => {
+  it("GuestFoodBillCard prefers square AutoQrCode; falls back to static bill QR not Razorpay poster", () => {
     expect(card).toContain("hidePayment");
-    expect(card).toContain("max-w-[70vw]");
+    expect(card).toContain("AutoQrCode");
+    expect(card).toContain("dynamicUpiIntent");
+    expect(card).toContain("maxPx={280}");
+    expect(card).toContain("branding.qrUrl");
+    expect(card).toContain("Never show Razorpay's branded poster");
+    expect(card).not.toMatch(/dynamicQr\.imageUrl/);
     expect(card).not.toContain("crossOrigin");
   });
 

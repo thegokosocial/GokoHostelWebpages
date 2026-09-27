@@ -55,6 +55,7 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(ordersUi).not.toContain("shareBillImage");
     expect(card).toContain("hidePayment");
     expect(card).toContain("Razorpay payment received");
+    expect(card).toContain("upiIntent");
     expect(hook).toContain("ensureFoodQr");
     expect(ledger).toContain("listFoodQrAttempts");
     expect(ledger).toContain("reconcileFoodQrAttempt");

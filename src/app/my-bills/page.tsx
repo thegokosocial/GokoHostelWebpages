@@ -241,6 +241,7 @@ function MyBillsContent() {
           ? {
               status: "active" as const,
               imageUrl: qrState.imageUrl,
+              upiIntent: qrState.upiIntent,
               closeBy: qrState.closeBy,
               label: qrState.label,
             }
