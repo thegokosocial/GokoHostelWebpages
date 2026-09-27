@@ -31,6 +31,8 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(guestRoute).toContain('action: z.enum(["ensure", "status"])');
     expect(hook).toContain("Missing bill share token");
     expect(hook).not.toMatch(/phone: opts\.phone/);
+    expect(hook).not.toContain("Missing admin credentials");
+    expect(hook).toContain('password: opts.password || ""');
   });
 
   it("public bills payload includes order ids and effective qrMode", () => {

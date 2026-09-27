@@ -55,10 +55,11 @@ export function useFoodBillDynamicQr(opts: {
       const orderIds = orderKey.split(",").map((s) => Number(s));
       let res: Response;
       if (opts.admin) {
-        if (!opts.password) throw new Error("Missing admin credentials");
+        // Admin SPA clears the password after login; empty string uses the session cookie
+        // (same as /api/admin/food-orders). Do not require a non-empty password here.
         const body: Record<string, unknown> = {
           action: "ensureFoodQr",
-          password: opts.password,
+          password: opts.password || "",
           requestKey: requestKeyRef.current,
           orderIds,
         };
@@ -96,10 +97,9 @@ export function useFoodBillDynamicQr(opts: {
     try {
       let res: Response;
       if (opts.admin) {
-        if (!opts.password) return;
         const body: Record<string, unknown> = {
           action: "reconcileFoodQrAttempt",
-          password: opts.password,
+          password: opts.password || "",
           attemptId,
         };
         if (opts.username) body.username = opts.username;
