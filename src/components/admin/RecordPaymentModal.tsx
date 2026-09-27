@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { BanknoteIcon, SmartphoneIcon, XIcon } from "lucide-react";
 import { correctionDisabledHint, parseCorrectionAmountInput } from "@/lib/otaPaymentCorrectionUi";
+import { pickFoodOnlineAccountId } from "@/lib/foodBillQrUi";
 
 type PaymentTab = "cash" | "online" | "split";
 type AmountUnit = "paise" | "rupees";
@@ -27,6 +28,7 @@ export function RecordPaymentModal({
   onSecondaryAction,
   requireAccountPick = false,
   accountPickHint,
+  preferRazorpayReceipt = false,
 }: {
   totalAmount: number;
   guestName: string;
@@ -47,6 +49,8 @@ export function RecordPaymentModal({
   /** When true, leave Received-in empty until staff picks (open dynamic food QR). */
   requireAccountPick?: boolean;
   accountPickHint?: string;
+  /** Food + Razorpay bill mode: preselect Razorpay a/c when not forcing an empty pick. */
+  preferRazorpayReceipt?: boolean;
 }) {
   const refund = mode === "refund";
   const correction = mode === "correction";
@@ -81,14 +85,24 @@ export function RecordPaymentModal({
     void fetch(roomAccountList ? "/api/admin/bookings" : "/api/admin/account-settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then((r) => r.ok ? r.json() : null).then((data) => {
         if (!data) return;
-        setAccounts((data.accounts || []).filter((a: ReceiptAccount) => a.isActive));
+        const active = (data.accounts || []).filter((a: ReceiptAccount) => a.isActive);
+        setAccounts(active);
+        if (receiptKind === "food") {
+          setOnlineAccountId(pickFoodOnlineAccountId({
+            accounts: active,
+            requireAccountPick,
+            preferRazorpay: preferRazorpayReceipt,
+            foodOnlineReceiptAccountId: data.foodOnlineReceiptAccountId,
+          }));
+          return;
+        }
         if (requireAccountPick) {
           setOnlineAccountId("");
           return;
         }
-        setOnlineAccountId(String(receiptKind === "food" ? data.foodOnlineReceiptAccountId || "" : data.roomOnlineReceiptAccountId || ""));
+        setOnlineAccountId(String(data.roomOnlineReceiptAccountId || ""));
       }).catch(() => {});
-  }, [password, username, receiptKind, requireAccountPick]);
+  }, [password, username, receiptKind, requireAccountPick, preferRazorpayReceipt]);
 
   const totalRupees = totalAmount / scale;
   const correctionAmountParse = correction && allowPartial

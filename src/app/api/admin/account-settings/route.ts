@@ -9,6 +9,7 @@ import { calculateEmployeePayroll } from "@/lib/employeeAttendance";
 import { todayIST } from "@/lib/utils";
 import { parseExpenseCategories, parseIncomeCategories } from "@/lib/accountCategories";
 import { permissionEnabled } from "@/lib/actionPermissions";
+import { FOOD_RAZORPAY_RECEIPT_NICKNAME } from "@/lib/foodBillQrUi";
 import { RAZORPAY_WEBSITE_PLATFORM_KEY } from "@/lib/guestReceipts";
 import { ensurePlatformProfile } from "@/lib/platformReceivables";
 import { isPiRuntime } from "@/lib/runtime";
@@ -90,7 +91,8 @@ export async function POST(req: NextRequest) {
         if (razorpayVirtual[0] && !items.some((a) => a.id === razorpayVirtual[0].id)) {
           items.push({
             ...razorpayVirtual[0],
-            nickname: razorpayVirtual[0].nickname?.trim() || "Website / Razorpay",
+            // Short food UI label; DB nickname stays "Razorpay Website pending payout".
+            nickname: FOOD_RAZORPAY_RECEIPT_NICKNAME,
           });
         }
         return NextResponse.json({ accounts: items, foodOnlineReceiptAccountId: defaultId });

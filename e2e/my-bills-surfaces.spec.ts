@@ -59,6 +59,8 @@ async function mockBillsApis(
     unpaid?: typeof UNPAID[];
     paid?: typeof PAID[];
     qrEnsure?: { status?: number; json: Record<string, unknown> };
+    /** When ensure reports paid, second bills GET returns empty unpaid (onPaid refetch). */
+    clearUnpaidAfterPaidEnsure?: boolean;
   } = {},
 ) {
   const viaToken = !!opts.viaToken;
@@ -66,13 +68,17 @@ async function mockBillsApis(
   const paid = opts.paid ?? [PAID];
   const branding = opts.qrMode === "razorpay_test" ? BRANDING_RZP : BRANDING_STATIC;
   const qrCalls: Record<string, unknown>[] = [];
+  let billsGets = 0;
 
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/food/bills" && route.request().method() === "GET") {
+      billsGets += 1;
+      // After QR reports paid, onPaid refetches — clear open tab so UI catches up.
+      const unpaidNow = opts.clearUnpaidAfterPaidEnsure && billsGets > 1 ? [] : unpaid;
       await route.fulfill({
         json: {
-          unpaidOrders: unpaid,
+          unpaidOrders: unpaidNow,
           paidOrders: paid,
           billBranding: branding,
           viaToken,
@@ -217,10 +223,13 @@ test.describe("My Bills guest surfaces (mobile)", () => {
     await mockBillsApis(page, {
       viaToken: true,
       qrMode: "razorpay_test",
+      clearUnpaidAfterPaidEnsure: true,
       qrEnsure: { status: 409, json: { paid: true, error: "Nothing unpaid on these orders" } },
     });
     await page.goto("/my-bills?t=opaque-share-token-xyz", { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("Already paid")).toBeVisible({ timeout: 15_000 });
+    // onPaid refetches bills; open tab clears (may skip the brief "Already paid" flash)
+    await expect(page.getByText("No open tab — all settled")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Pineapple Juice")).toHaveCount(0);
     await expect(page.getByAltText("Payment QR")).toHaveCount(0);
   });
 

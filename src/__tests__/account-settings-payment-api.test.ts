@@ -53,13 +53,33 @@ describe("Food payment account selection API", () => {
     expect(await response.json()).toEqual({
       accounts: [
         ...banks,
-        { id: 9, name: "Razorpay Website Receivable", nickname: "Website / Razorpay", isActive: 1 },
+        { id: 9, name: "Razorpay Website Receivable", nickname: "Razorpay a/c", isActive: 1 },
       ],
       foodOnlineReceiptAccountId: "",
     });
     expect(mocks.ensurePlatformProfile).toHaveBeenCalledWith("Razorpay Website");
     expect(where).toHaveBeenCalled();
     expect(limit).toHaveBeenCalled();
+  });
+
+  it("always overlays Razorpay a/c even when DB nickname is the long pending-payout name", async () => {
+    const banks = [{ id: 3, name: "Sunny HDFC", nickname: "HDFC", isActive: 1 }];
+    const razorpay = [{
+      id: 9,
+      name: "Razorpay Website Receivable",
+      nickname: "Razorpay Website pending payout",
+      isActive: 1,
+    }];
+    const limit = vi.fn().mockResolvedValue(razorpay);
+    const where = vi.fn(() => Object.assign(Promise.resolve(banks), { limit }));
+    mocks.getDb.mockReturnValue({ select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where }) }) });
+
+    const response = await POST(request("getFoodReceiptAccounts"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.accounts.find((a: { id: number }) => a.id === 9)?.nickname).toBe("Razorpay a/c");
+    expect(body.accounts.find((a: { id: number }) => a.id === 9)?.nickname).not.toContain("pending payout");
   });
 
   it("does not expose payment accounts without canMarkPaid", async () => {

@@ -5,6 +5,64 @@
 
 import { parseBillQrMode, type BillQrMode } from "@/lib/foodBillQrMode";
 
+/**
+ * Food Received-in dropdown nickname for the Razorpay Website virtual.
+ * Applied as an API overlay in getFoodReceiptAccounts — DB nickname stays long.
+ */
+export const FOOD_RAZORPAY_RECEIPT_NICKNAME = "Razorpay a/c";
+
+/** Food order paymentMethod set by Razorpay QR capture (live or test). */
+export function isRazorpayFoodPaymentMethod(method?: string | null): boolean {
+  return method === "razorpay" || method === "razorpay_test";
+}
+
+/** Staff-facing method chips / Settled line (razorpay → Razorpay). */
+export function formatFoodPaymentMethodLabel(method: string): string {
+  if (isRazorpayFoodPaymentMethod(method)) return "Razorpay";
+  return method;
+}
+
+/** Unique labels for bill Settled footer, e.g. " · Razorpay, online". */
+export function formatFoodBillSettledMethods(
+  methods: Array<string | null | undefined>,
+): string {
+  const labels = [...new Set(
+    methods
+      .filter((m): m is string => typeof m === "string" && m.trim().length > 0)
+      .map((m) => formatFoodPaymentMethodLabel(m.trim())),
+  )];
+  return labels.length ? ` · ${labels.join(", ")}` : "";
+}
+
+/** Whether paid-notify should fire (once per attempt lifecycle). */
+export function shouldNotifyFoodQrPaid(prevNotified: boolean, status: string): boolean {
+  return !prevNotified && status === "paid";
+}
+
+/** markOrderPaid 409 when Razorpay (or prior desk pay) already zeroed the due. */
+export function isFoodOrderAlreadySettledError(message: string | null | undefined): boolean {
+  return /every selected order must have an outstanding balance/i.test(String(message || ""));
+}
+
+/** Pick Received-in id for food Record Payment (empty while QR active). */
+export function pickFoodOnlineAccountId(opts: {
+  accounts: { id: number; nickname?: string | null }[];
+  requireAccountPick?: boolean;
+  preferRazorpay?: boolean;
+  foodOnlineReceiptAccountId?: string | number | null;
+}): string {
+  if (opts.requireAccountPick) return "";
+  if (opts.preferRazorpay) {
+    const rzp = opts.accounts.find(
+      (a) => (a.nickname || "").trim() === FOOD_RAZORPAY_RECEIPT_NICKNAME,
+    );
+    if (rzp) return String(rzp.id);
+  }
+  const def = opts.foodOnlineReceiptAccountId;
+  if (def != null && String(def).trim() !== "") return String(def);
+  return "";
+}
+
 export type FoodBillQrUiState =
   | { status: "idle" }
   | { status: "loading" }

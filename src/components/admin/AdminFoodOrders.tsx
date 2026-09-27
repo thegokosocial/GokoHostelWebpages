@@ -12,7 +12,11 @@ import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/foo
 import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/lib/foodBillFormat";
 import { buildBillWhatsAppDraft } from "@/lib/billShare";
 import { useFoodBillDynamicQr } from "@/hooks/useFoodBillDynamicQr";
-import { isRazorpayBillMode } from "@/lib/foodBillQrUi";
+import {
+  isFoodOrderAlreadySettledError,
+  isRazorpayBillMode,
+  isRazorpayFoodPaymentMethod,
+} from "@/lib/foodBillQrUi";
 import { useStaffWhatsApp } from "@/components/admin/StaffWhatsAppProvider";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
@@ -1377,12 +1381,26 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     drawerView === "bill"
     && unpaidBillOrderIds.length > 0
     && isRazorpayBillMode(billQrMode);
+  const selectedGroupRef = useRef(selectedGroup);
+  selectedGroupRef.current = selectedGroup;
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const refreshAfterEditRef = useRef(refreshAfterEdit);
+  refreshAfterEditRef.current = refreshAfterEdit;
+  const onFoodQrPaid = useCallback(() => {
+    void (async () => {
+      const group = selectedGroupRef.current;
+      if (group) await refreshAfterEditRef.current(group);
+      await loadRef.current();
+    })();
+  }, []);
   const { state: drawerQrState } = useFoodBillDynamicQr({
     enabled: drawerDynamicQrEnabled,
     orderIds: unpaidBillOrderIds,
     password,
     username,
     admin: true,
+    onPaid: onFoodQrPaid,
   });
   const drawerDynamicQr =
     !drawerDynamicQrEnabled || drawerQrState.status === "idle" || drawerQrState.status === "static"
@@ -1463,6 +1481,13 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           return true;
         }
         const data = await res.json().catch(() => ({}));
+        // Razorpay capture already settled the tab; UI may still be stale.
+        if (res.status === 409 && isFoodOrderAlreadySettledError(data.error)) {
+          showSuccess("Already paid via Razorpay");
+          await refreshAfterEdit(group);
+          await load();
+          return true;
+        }
         showError("Payment", data.error || "Could not record payment");
         return false;
       } catch (error) {
@@ -1812,19 +1837,56 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                         : "Discount"}
                     </button>
                   )}
-                  {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && (
+                  {hasPermission(role || "staff", permissions || {}, "canMarkPaid") && actualGroupPending > 0 && (
                     <button
                       type="button"
                       onClick={() => {
-                        if (groupHasSpPending) {
-                          setSpBillWarning(true);
-                          setDrawerView("orders");
-                          return;
-                        }
-                        setPaymentModalMethod("online");
-                        setPaymentModalGroup(selectedGroup);
+                        void (async () => {
+                          if (!selectedGroup) return;
+                          if (groupHasSpPending) {
+                            setSpBillWarning(true);
+                            setDrawerView("orders");
+                            return;
+                          }
+                          if (drawerQrState.status === "paid") {
+                            showSuccess("Already paid via Razorpay");
+                            await refreshAfterEdit(selectedGroup);
+                            await load();
+                            return;
+                          }
+                          if (
+                            isRazorpayBillMode(billQrMode)
+                            && drawerQrState.status === "active"
+                            && drawerQrState.attemptId
+                          ) {
+                            try {
+                              const body: Record<string, unknown> = {
+                                action: "reconcileFoodQrAttempt",
+                                password: password || "",
+                                attemptId: drawerQrState.attemptId,
+                              };
+                              if (username) body.username = username;
+                              const res = await fetch("/api/admin/food-payments", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(body),
+                              });
+                              const data = await res.json().catch(() => ({}));
+                              if (res.ok && data.attempt?.state === "paid") {
+                                showSuccess("Already paid via Razorpay");
+                                await refreshAfterEdit(selectedGroup);
+                                await load();
+                                return;
+                              }
+                            } catch {
+                              /* fall through to Record Payment */
+                            }
+                          }
+                          setPaymentModalMethod("online");
+                          setPaymentModalGroup(selectedGroup);
+                        })();
                       }}
-                      disabled={busy === selectedGroup.key || groupHasSpPending || actualGroupPending <= 0}
+                      disabled={busy === selectedGroup.key || groupHasSpPending}
                       className="flex items-center gap-1.5 rounded-lg border border-green-500 bg-green-50 dark:bg-green-950 px-3 py-2 text-sm font-medium text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50 disabled:opacity-50"
                     >
                       <BanknoteIcon className="h-3.5 w-3.5" /> Pay · ₹{(actualGroupPending / 100).toFixed(0)}
@@ -1904,6 +1966,14 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           {isEditing && <span className="rounded-full bg-brand-green px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
                           <StatusBadge status={order.status} />
                           <OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />
+                          {isRazorpayFoodPaymentMethod(order.paymentMethod) && (
+                            <span
+                              data-testid={`food-order-razorpay-${order.id}`}
+                              className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-800 dark:bg-sky-900/50 dark:text-sky-300"
+                            >
+                              Razorpay
+                            </span>
+                          )}
                           {order.hasModifications && (
                             <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">Modified</span>
                           )}
@@ -2215,6 +2285,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           requireAccountPick={
             drawerDynamicQrEnabled
             && (drawerQrState.status === "active" || drawerQrState.status === "loading")
+          }
+          preferRazorpayReceipt={
+            isRazorpayBillMode(billQrMode)
+            && !(drawerQrState.status === "active" || drawerQrState.status === "loading")
           }
           accountPickHint={
             drawerDynamicQrEnabled

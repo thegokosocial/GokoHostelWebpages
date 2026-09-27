@@ -14,6 +14,7 @@ import { foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { foodAmountPaid } from "@/lib/foodPaymentBalance";
 import {
   foodBillQrStaffCaption,
+  formatFoodBillSettledMethods,
   isRazorpayBillMode,
   resolveFoodBillPayQrSource,
 } from "@/lib/foodBillQrUi";
@@ -298,10 +299,7 @@ export function GuestFoodBillCard({
 
       {(variant === "paid" || dynamicQr?.status === "paid") && (
         <p className="mt-2 text-xs text-zinc-400">
-          Settled{orders.some((o) => o.paymentMethod) ? ` · ${[...new Set(orders.map((o) => o.paymentMethod).filter(Boolean))].join(", ")}` : ""}
-          {orders.some((o) => o.paymentMethod === "razorpay" || o.paymentMethod === "razorpay_test")
-            ? " · Razorpay payment received"
-            : ""}
+          Settled{formatFoodBillSettledMethods(orders.map((o) => o.paymentMethod))}
         </p>
       )}
 

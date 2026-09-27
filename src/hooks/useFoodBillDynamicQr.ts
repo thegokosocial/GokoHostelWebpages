@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   mapFoodQrAttemptToUi,
   mapFoodQrEnsureResponse,
+  shouldNotifyFoodQrPaid,
   type FoodBillQrUiState,
 } from "@/lib/foodBillQrUi";
 
@@ -29,6 +30,8 @@ export function useFoodBillDynamicQr(opts: {
   username?: string;
   /** When true, use admin food-payments route */
   admin?: boolean;
+  /** Fired once when UI enters paid (ensure or poll). Reload orders so Pay/Pending catch up. */
+  onPaid?: () => void;
 }) {
   const orderKey = useMemo(
     () => [...opts.orderIds].filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b).join(","),
@@ -37,20 +40,31 @@ export function useFoodBillDynamicQr(opts: {
   const [state, setState] = useState<FoodBillQrUiState>({ status: "idle" });
   const requestKeyRef = useRef(newRequestKey());
   const attemptIdRef = useRef<string | null>(null);
+  const onPaidRef = useRef(opts.onPaid);
+  onPaidRef.current = opts.onPaid;
+  const paidNotifiedRef = useRef(false);
+
+  const commitState = useCallback((next: FoodBillQrUiState) => {
+    setState(next);
+    if (shouldNotifyFoodQrPaid(paidNotifiedRef.current, next.status)) {
+      paidNotifiedRef.current = true;
+      onPaidRef.current?.();
+    }
+  }, []);
 
   const applyAttempt = useCallback((attempt: Parameters<typeof mapFoodQrAttemptToUi>[0]) => {
     const next = mapFoodQrAttemptToUi(attempt);
     if (next.status === "active") attemptIdRef.current = next.attemptId;
     else if (next.status === "paid") attemptIdRef.current = attempt?.attemptId || attempt?.id || null;
-    setState(next);
-  }, []);
+    commitState(next);
+  }, [commitState]);
 
   const ensure = useCallback(async () => {
     if (!opts.enabled || !orderKey) {
-      setState(opts.enabled ? { status: "idle" } : { status: "static" });
+      commitState(opts.enabled ? { status: "idle" } : { status: "static" });
       return;
     }
-    setState({ status: "loading" });
+    commitState({ status: "loading" });
     try {
       const orderIds = orderKey.split(",").map((s) => Number(s));
       let res: Response;
@@ -85,11 +99,11 @@ export function useFoodBillDynamicQr(opts: {
       const data = await res.json().catch(() => ({}));
       const next = mapFoodQrEnsureResponse({ ok: res.ok, status: res.status, body: data });
       if (next.status === "active") attemptIdRef.current = next.attemptId;
-      setState(next);
+      commitState(next);
     } catch (e: unknown) {
-      setState({ status: "error", message: e instanceof Error ? e.message : "Could not prepare payment QR" });
+      commitState({ status: "error", message: e instanceof Error ? e.message : "Could not prepare payment QR" });
     }
-  }, [opts.admin, opts.enabled, opts.password, opts.phone, opts.token, opts.username, orderKey]);
+  }, [commitState, opts.admin, opts.enabled, opts.password, opts.phone, opts.token, opts.username, orderKey]);
 
   const pollStatus = useCallback(async () => {
     const attemptId = attemptIdRef.current;
@@ -132,16 +146,17 @@ export function useFoodBillDynamicQr(opts: {
   useEffect(() => {
     requestKeyRef.current = newRequestKey();
     attemptIdRef.current = null;
+    paidNotifiedRef.current = false;
     if (!opts.enabled) {
-      setState({ status: "static" });
+      commitState({ status: "static" });
       return;
     }
     if (!orderKey) {
-      setState({ status: "idle" });
+      commitState({ status: "idle" });
       return;
     }
     void ensure();
-  }, [ensure, opts.enabled, orderKey]);
+  }, [commitState, ensure, opts.enabled, orderKey]);
 
   useEffect(() => {
     if (state.status !== "active" && state.status !== "loading") return;

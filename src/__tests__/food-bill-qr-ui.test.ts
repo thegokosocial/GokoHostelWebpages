@@ -1,15 +1,22 @@
 import { describe, it, expect } from "vitest";
 import {
+  FOOD_RAZORPAY_RECEIPT_NICKNAME,
   foodBillQrStaffCaption,
+  formatFoodBillSettledMethods,
+  formatFoodPaymentMethodLabel,
+  isFoodOrderAlreadySettledError,
   isRazorpayBillMode,
+  isRazorpayFoodPaymentMethod,
   mapFoodQrAttemptToUi,
   mapFoodQrEnsureResponse,
   myBillsHidePayment,
   myBillsShowsPaidHistory,
   myBillsShowsPayQr,
   myBillsShowsSpendSummary,
+  pickFoodOnlineAccountId,
   resolveFoodBillPayQrSource,
   shouldEnsureDynamicFoodQr,
+  shouldNotifyFoodQrPaid,
 } from "@/lib/foodBillQrUi";
 import { actionAllowed } from "@/lib/actionPermissions";
 import { readFileSync } from "fs";
@@ -213,6 +220,7 @@ describe("claim guards + guest QR contracts stay wired", () => {
     expect(card).toContain("maxPx={280}");
     expect(card).toContain("foodBillQrStaffCaption");
     expect(card).toContain("hasPosterImage");
+    expect(card).toContain("formatFoodBillSettledMethods");
     expect(card).not.toContain("crossOrigin");
     expect(card).not.toContain("jsQR");
   });
@@ -222,6 +230,51 @@ describe("claim guards + guest QR contracts stay wired", () => {
     expect(myBills).toContain("myBillsHidePayment");
     expect(myBills).toContain("shouldEnsureDynamicFoodQr");
     expect(myBills).toContain("hidePayment={hidePayment}");
+    expect(myBills).toContain("onPaid");
+  });
+});
+
+describe("isRazorpayFoodPaymentMethod + Settled labels + onPaid gate", () => {
+  it("recognizes live and test capture methods", () => {
+    expect(isRazorpayFoodPaymentMethod("razorpay")).toBe(true);
+    expect(isRazorpayFoodPaymentMethod("razorpay_test")).toBe(true);
+    expect(isRazorpayFoodPaymentMethod("online")).toBe(false);
+    expect(formatFoodPaymentMethodLabel("razorpay_test")).toBe("Razorpay");
+    expect(formatFoodPaymentMethodLabel("online")).toBe("online");
+  });
+
+  it("Settled suffix dedupes razorpay/razorpay_test and skips empty", () => {
+    expect(formatFoodBillSettledMethods(["razorpay", "razorpay_test", "online"])).toBe(" · Razorpay, online");
+    expect(formatFoodBillSettledMethods([undefined, null])).toBe("");
+  });
+
+  it("shouldNotifyFoodQrPaid is once-only", () => {
+    expect(shouldNotifyFoodQrPaid(false, "paid")).toBe(true);
+    expect(shouldNotifyFoodQrPaid(true, "paid")).toBe(false);
+  });
+});
+
+describe("isFoodOrderAlreadySettledError + pickFoodOnlineAccountId", () => {
+  it("detects the outstanding-balance 409 copy", () => {
+    expect(isFoodOrderAlreadySettledError("Every selected order must have an outstanding balance")).toBe(true);
+    expect(isFoodOrderAlreadySettledError("Could not record payment")).toBe(false);
+  });
+
+  it("prefers Razorpay a/c when requested; empty while requireAccountPick", () => {
+    const accounts = [
+      { id: 3, nickname: "HDFC" },
+      { id: 9, nickname: FOOD_RAZORPAY_RECEIPT_NICKNAME },
+    ];
+    expect(pickFoodOnlineAccountId({
+      accounts, requireAccountPick: true, preferRazorpay: true, foodOnlineReceiptAccountId: 3,
+    })).toBe("");
+    expect(pickFoodOnlineAccountId({
+      accounts, preferRazorpay: true, foodOnlineReceiptAccountId: 3,
+    })).toBe("9");
+    expect(pickFoodOnlineAccountId({
+      accounts, preferRazorpay: false, foodOnlineReceiptAccountId: 3,
+    })).toBe("3");
+    expect(FOOD_RAZORPAY_RECEIPT_NICKNAME).toBe("Razorpay a/c");
   });
 });
 

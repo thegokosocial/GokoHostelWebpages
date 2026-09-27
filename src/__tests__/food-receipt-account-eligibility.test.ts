@@ -60,7 +60,8 @@ describe("food receipt account wiring contracts", () => {
   it("getFoodReceiptAccounts ensures Razorpay Website and includes the virtual", () => {
     expect(accountSettings).toContain('ensurePlatformProfile("Razorpay Website")');
     expect(accountSettings).toContain("RAZORPAY_WEBSITE_PLATFORM_KEY");
-    expect(accountSettings).toContain("Website / Razorpay");
+    expect(accountSettings).toContain("FOOD_RAZORPAY_RECEIPT_NICKNAME");
+    expect(readFileSync("src/lib/foodBillQrUi.ts", "utf8")).toContain('FOOD_RAZORPAY_RECEIPT_NICKNAME = "Razorpay a/c"');
     expect(accountSettings).toContain("getFoodReceiptAccounts");
   });
 

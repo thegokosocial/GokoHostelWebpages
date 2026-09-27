@@ -102,8 +102,11 @@ describe("Payment History", () => {
     expect(summary).toContain('const unpaid = selectedGroupOrders.filter((o) => foodDue(o) > 0)');
     expect(summary).toContain('action: "markOrderPaid", orderIds');
     expect(summary).toContain("Pay · ₹{(actualGroupPending / 100).toFixed(0)}");
+    expect(summary).toContain("actualGroupPending > 0 && (");
     expect(source).toContain('hasPermission(role, permissions, "canViewFoodOrders")');
     expect(summary).toContain('<OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />');
+    expect(summary).toContain("isRazorpayFoodPaymentMethod(order.paymentMethod)");
+    expect(summary).toContain("food-order-razorpay-");
     expect(source).toContain('partial ? "Partial" : "Unpaid"');
     expect(summary).toContain('orders={billOrders.map((o) => ({');
     expect(summary).toContain('paymentDue={actualGroupPending}');

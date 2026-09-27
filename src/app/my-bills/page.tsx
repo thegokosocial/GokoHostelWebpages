@@ -231,6 +231,13 @@ function MyBillsContent() {
     enabled: dynamicEnabled,
     orderIds: unpaidOrderIds,
     token: viaToken ? tokenParam : undefined,
+    onPaid: () => {
+      if (tokenParam) void fetchBillsByToken(tokenParam);
+      else {
+        const digits = phone.replace(/\D/g, "");
+        if (digits.length >= 10) void fetchBillsByPhone(digits);
+      }
+    },
   });
   const dynamicQr =
     hidePayment || !dynamicEnabled || qrState.status === "idle" || qrState.status === "static"
