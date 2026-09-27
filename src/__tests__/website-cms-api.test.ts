@@ -697,6 +697,34 @@ describe("POST /api/admin/website/upload", () => {
     expect(putMediaObject).not.toHaveBeenCalled();
   });
 
+  it("allows menu folder for canManageMenuItems; rejects without it", async () => {
+    vi.mocked(authenticateUser).mockResolvedValue({
+      role: "staff",
+      displayName: "Menu",
+      permissions: { canManageMenuItems: true },
+    });
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "menu");
+    fd.set("file", jpegFile());
+    expect((await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }))).status).toBe(200);
+
+    vi.mocked(authenticateUser).mockResolvedValue(staff);
+    vi.mocked(putMediaObject).mockClear();
+    const denied = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", {
+      method: "POST",
+      body: (() => {
+        const f = new FormData();
+        f.set("password", "x");
+        f.set("folder", "menu");
+        f.set("file", jpegFile());
+        return f;
+      })(),
+    }));
+    expect(denied.status).toBe(403);
+    expect(putMediaObject).not.toHaveBeenCalled();
+  });
+
   it("stores an MP4 under hero-videos/ and accepts JPEG posters there", async () => {
     // ISO BMFF: size(4) + 'ftyp' + brand
     const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);

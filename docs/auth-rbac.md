@@ -198,7 +198,11 @@ Eligible OTA pay-at-property bookings have a dedicated payment flow: `collectOta
 
 ### `/api/admin/inventory`
 
-All actions: `canManageInventory`. Bulk actions write the local mutation, then wait for the bounded Aiosell push before reporting PMS success. If the local write succeeds but PMS rejects or times out, the response reports the failed sync separately and the UI offers a PMS-only retry; local inventory/rate/restriction data is retained. The protected scheduled inventory retry remains a server-side safety net for dirty inventory rows.
+All actions: `canManageInventory`. The route checks `permissions.canManageInventory` directly (not via `actionAllowed` aliases). Env managers with an empty permissions object are denied. Bulk actions write the local mutation, then wait for the bounded Aiosell push before reporting PMS success. If the local write succeeds but PMS rejects or times out, the response reports the failed sync separately and the UI offers a PMS-only retry; local inventory/rate/restriction data is retained. The protected scheduled inventory retry remains a server-side safety net for dirty inventory rows.
+
+### `/api/admin/analytics`
+
+Staff need `canViewAnalytics`. **Manager and admin roles bypass that key** (compatibility). Range max 366 days.
 
 ### `/api/admin/food-orders`
 
