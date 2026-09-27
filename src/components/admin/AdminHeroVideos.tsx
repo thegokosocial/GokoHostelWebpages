@@ -75,14 +75,16 @@ export function AdminHeroVideos({ password, username }: Props) {
   );
 
   async function uploadBlob(blob: Blob, filename: string) {
+    const type = blob.type || (filename.endsWith(".mp4") ? "video/mp4" : "image/jpeg");
+    const file = new File([blob], filename, { type });
     const fd = new FormData();
-    fd.append("file", blob, filename);
+    fd.append("file", file);
     fd.append("password", password);
     if (username) fd.append("username", username);
     fd.append("folder", "hero-videos");
     const res = await fetch("/api/admin/website/upload", { method: "POST", body: fd });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "Upload failed");
+    const json = await res.json().catch(() => ({} as { error?: string }));
+    if (!res.ok) throw new Error(json.error || `Upload failed (${res.status})`);
     return String(json.url || "");
   }
 

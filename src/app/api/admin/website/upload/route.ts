@@ -16,9 +16,16 @@ function folderPermission(folder: string) {
   return "admin_only" as const;
 }
 
-function maxBytesFor(folder: string, contentType: string) {
-  if (folder === "hero-videos" && contentType === "video/mp4") return VIDEO_MAX_BYTES;
-  return IMAGE_MAX_BYTES;
+/** Early buffer ceiling before magic-byte typing. Hero-videos allows MP4 up to 15MB; posters are re-checked at 5MB after JPEG magic. */
+function maxBytesFor(folder: string) {
+  return folder === "hero-videos" ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
+}
+
+function clientUploadError(error: unknown): string {
+  if (!(error instanceof Error)) return "Upload failed";
+  const msg = error.message.trim();
+  if (!msg || msg.length > 160 || msg.includes("\n")) return "Upload failed";
+  return msg;
 }
 
 function isJpeg(head: Uint8Array) {
@@ -75,16 +82,17 @@ export async function POST(req: NextRequest) {
     if (!FOLDERS.has(folder)) {
       return NextResponse.json({ error: "Invalid folder" }, { status: 400 });
     }
-    if (!(file instanceof File) || file.size === 0) {
+    // Workers FormData may yield Blob rather than a branded File; both expose size/arrayBuffer/type.
+    if (!(file instanceof Blob) || file.size === 0) {
       return NextResponse.json({ error: "No file" }, { status: 400 });
     }
 
     const declaredType = file.type || "application/octet-stream";
-    const maxBytes = maxBytesFor(folder, declaredType === "video/mp4" || folder === "hero-videos" ? (declaredType.includes("video") ? "video/mp4" : declaredType) : declaredType);
+    const maxBytes = maxBytesFor(folder);
 
     if (file.size > maxBytes) {
       return NextResponse.json({
-        error: folder === "hero-videos" && declaredType.startsWith("video/")
+        error: folder === "hero-videos"
           ? "Video is too large (max 15MB after encoding)"
           : "Image is too large (max 5MB)",
       }, { status: 400 });
@@ -143,6 +151,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: keyToMediaUrl(key) });
   } catch (error: unknown) {
     console.error("Website upload error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    return NextResponse.json({ error: clientUploadError(error) }, { status: 500 });
   }
 }

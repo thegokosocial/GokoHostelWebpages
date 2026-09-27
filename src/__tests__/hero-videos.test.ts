@@ -166,6 +166,10 @@ describe("hero video page wiring", () => {
     expect(admin).toContain("AdminHeroVideos");
     expect(admin).toContain("Hero Videos");
 
+    const heroUpload = readFileSync("src/components/admin/AdminHeroVideos.tsx", "utf8");
+    expect(heroUpload).toContain('new File([blob], filename, { type })');
+    expect(heroUpload).toContain('video/mp4');
+
     // Marketing pages stay force-static; heroes hydrate client-side
     expect(readFileSync("src/app/(marketing)/book/page.tsx", "utf8")).toContain('force-static');
     expect(readFileSync("src/app/(marketing)/book/page.tsx", "utf8")).not.toContain('force-dynamic');

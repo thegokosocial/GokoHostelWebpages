@@ -22,7 +22,7 @@ Managed under Website → **Hero Videos** (not per Events/Community form).
 
 - **Libraries:** desktop MP4 list + mobile MP4 list (R2 folder `hero-videos/`). Built-in A/B from git (`/videos/hero/...`) appear as virtual catalog entries.
 - **Assignments:** each marketing page picks one desktop + one mobile clip. Tablet uses the desktop file with CSS `object-cover` (no third upload).
-- **Encode:** admin browser runs ffmpeg.wasm once on upload (`processHeroVideo`), then POSTs processed MP4 (≤15MB) + JPEG poster.
+- **Encode:** admin browser runs ffmpeg.wasm once on upload (`processHeroVideo`), then POSTs processed MP4 (≤15MB) + JPEG poster as an explicit `File` with MIME (`video/mp4` / `image/jpeg`). Upload route early size gate for `hero-videos/` is **15MB** (folder-based, not MIME); type is confirmed from magic bytes (`ftyp` / JPEG SOI). Empty/`octet-stream` Content-Type must not fall back to the 5MB image ceiling.
 - **Public hydrate:** `HeroBackdrop` / `PageRibbon` take `pageKey` and fetch `/api/site?page=heroes` (shared module promise, `cache: default`, same `s-maxage=60` as other site pages). Seed props remain git A/B until live data arrives. When CMS URLs differ from the seed, `HeroBackdrop` remounts `<video>` (key includes mp4/webm) so the browser actually swaps the clip; matching URLs do not remount. No `force-dynamic` on marketing pages.
 - **Stills:** Events/Community still use CMS `hero.ribbonImage` (JPEG in `heroes/`) as reduced-motion / no-video fallback.
 

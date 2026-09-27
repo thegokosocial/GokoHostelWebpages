@@ -756,6 +756,59 @@ describe("POST /api/admin/website/upload", () => {
     expect(res.status).toBe(400);
     expect(putMediaObject).not.toHaveBeenCalled();
   });
+
+  it("accepts hero-videos MP4 over 5MB even with empty Content-Type (magic bytes, not MIME)", async () => {
+    // Regression: empty/octet-stream type used to apply the 5MB image ceiling and reject valid encodes.
+    const mp4 = new Uint8Array(6 * 1024 * 1024);
+    mp4[0] = 0x00; mp4[1] = 0x00; mp4[2] = 0x00; mp4[3] = 0x18;
+    mp4[4] = 0x66; mp4[5] = 0x74; mp4[6] = 0x79; mp4[7] = 0x70; // ftyp
+    mp4[8] = 0x69; mp4[9] = 0x73; mp4[10] = 0x6f; mp4[11] = 0x6d;
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "hero-videos");
+    fd.set("file", new File([mp4], "clip.mp4", { type: "" }));
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    expect(res.status).toBe(200);
+    expect(putMediaObject).toHaveBeenCalledWith(
+      expect.stringMatching(/^hero-videos\/.+\.mp4$/),
+      expect.anything(),
+      "video/mp4",
+    );
+  });
+
+  it("rejects empty-type non-media bytes in hero-videos", async () => {
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "hero-videos");
+    fd.set("file", new File([new Uint8Array(8).fill(7)], "clip.bin", { type: "" }));
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/MP4 or JPEG/i);
+    expect(putMediaObject).not.toHaveBeenCalled();
+  });
+
+  it("accepts a Blob (not File) part for hero-videos MP4", async () => {
+    const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "hero-videos");
+    fd.set("file", new Blob([mp4], { type: "video/mp4" }));
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    expect(res.status).toBe(200);
+    expect(putMediaObject).toHaveBeenCalled();
+  });
+
+  it("surfaces putMediaObject errors instead of opaque Upload failed", async () => {
+    vi.mocked(putMediaObject).mockRejectedValueOnce(new Error("R2 put rejected"));
+    const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "hero-videos");
+    fd.set("file", new File([mp4], "clip.mp4", { type: "video/mp4" }));
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe("R2 put rejected");
+  });
 });
 
 describe("GET /api/media/[...key]", () => {
