@@ -40,6 +40,20 @@ describe("Admin Quick Links API", () => {
     expect(list.status).toBe(200);
     const save = await POST(request({ action: "saveSection", password: "pw", name: "Useful" }));
     expect(save.status).toBe(403);
+    const del = await POST(request({ action: "deleteSection", password: "pw", id: 1 }));
+    expect(del.status).toBe(403);
+  });
+
+  it("rejects staff without canViewQuickLinks even for list", async () => {
+    mocks.authenticateUser.mockResolvedValue({ role: "staff", displayName: "No", permissions: {} });
+    expect((await POST(request({ action: "list", password: "pw" }))).status).toBe(403);
+  });
+
+  it("manager without admin role cannot mutate even with canViewQuickLinks", async () => {
+    mocks.authenticateUser.mockResolvedValue({
+      role: "manager", displayName: "Mgr", permissions: { canViewQuickLinks: true },
+    });
+    expect((await POST(request({ action: "saveSection", password: "pw", name: "X" }))).status).toBe(403);
   });
 
   it("rejects malformed section and item inputs before database writes", async () => {

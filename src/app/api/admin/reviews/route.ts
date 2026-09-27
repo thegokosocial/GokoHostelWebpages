@@ -31,11 +31,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No permission" }, { status: 403 });
     }
 
+    // Entry gate already requires canViewReviews. Mutations need the dedicated key
+    // (not OR'd with view — otherwise view-only staff could send/edit/settings).
     const actionPermissions: Record<string, ActionPerm> = {
-      sendWhatsApp: ["canSendReviewRequests", "canViewReviews"],
-      updateSettings: ["canManageReviewSettings", "canViewReviews"],
-      editReviewRequest: ["canEditReviewRequests", "canViewReviews"],
-      resetReviewRequest: ["canEditReviewRequests", "canViewReviews"],
+      sendWhatsApp: "canSendReviewRequests",
+      updateSettings: "canManageReviewSettings",
+      editReviewRequest: "canEditReviewRequests",
+      resetReviewRequest: "canEditReviewRequests",
     };
     const actionPermission = actionPermissions[String(action)];
     if (actionPermission && actionAllowed(role, permissions, actionPermission) !== "allowed") {

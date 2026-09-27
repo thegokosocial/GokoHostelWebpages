@@ -56,7 +56,7 @@ describe("Reviews admin action RBAC and settings", () => {
     expect((await POST(req({ action: "listResponses" }))).status).toBe(403);
   });
 
-  it("canViewReviews alone can read and (compat OR) mutate gated actions", async () => {
+  it("canViewReviews alone can read but cannot send, edit, reset, or update settings", async () => {
     q.authenticateUser.mockResolvedValue({
       role: "staff", displayName: "Viewer", permissions: { canViewReviews: true },
     });
@@ -64,21 +64,19 @@ describe("Reviews admin action RBAC and settings", () => {
     expect((await POST(req({ action: "listResponses" }))).status).toBe(200);
     expect((await POST(req({ action: "getAnalytics" }))).status).toBe(200);
 
-    // actionPermissions arrays are OR aliases — canViewReviews alone currently unlocks update/send/edit.
     expect((await POST(req({
       action: "updateSettings", settings: { review_google_url: "https://g.page/x" },
-    }))).status).toBe(200);
-    expect(q.setSetting).toHaveBeenCalled();
+    }))).status).toBe(403);
+    expect(q.setSetting).not.toHaveBeenCalled();
 
-    q.getReviewRequestByCheckinId.mockResolvedValue({ id: 8, token: "tok", whatsappSentCount: 0 });
     expect((await POST(req({
       action: "sendWhatsApp", checkinId: 1, guestName: "Ada", guestContact: "+44 7700 900123",
-    }))).status).toBe(200);
-    expect((await POST(req({ action: "editReviewRequest", reviewRequestId: 3, rating: 5 }))).status).toBe(200);
-    expect((await POST(req({ action: "resetReviewRequest", checkinId: 1 }))).status).toBe(200);
+    }))).status).toBe(403);
+    expect((await POST(req({ action: "editReviewRequest", reviewRequestId: 3, rating: 5 }))).status).toBe(403);
+    expect((await POST(req({ action: "resetReviewRequest", checkinId: 1 }))).status).toBe(403);
   });
 
-  it("staff without canViewReviews cannot reach mutation actions even with manage/send keys", async () => {
+  it("dedicated manage/send/edit keys still require the canViewReviews entry gate", async () => {
     q.authenticateUser.mockResolvedValue({
       role: "staff",
       displayName: "NoView",
@@ -90,7 +88,7 @@ describe("Reviews admin action RBAC and settings", () => {
     expect(q.setSetting).not.toHaveBeenCalled();
   });
 
-  it("canManageReviewSettings allows updateSettings and strips non-review keys", async () => {
+  it("canManageReviewSettings + canViewReviews allows updateSettings and strips non-review keys", async () => {
     q.authenticateUser.mockResolvedValue({
       role: "staff",
       displayName: "Settings",
@@ -114,7 +112,7 @@ describe("Reviews admin action RBAC and settings", () => {
     expect(q.setSetting).not.toHaveBeenCalled();
   });
 
-  it("canEditReviewRequests allows edit and reset", async () => {
+  it("canEditReviewRequests + canViewReviews allows edit and reset", async () => {
     q.authenticateUser.mockResolvedValue({
       role: "staff",
       displayName: "Editor",
@@ -130,7 +128,7 @@ describe("Reviews admin action RBAC and settings", () => {
     expect((await POST(req({ action: "resetReviewRequest" }))).status).toBe(400);
   });
 
-  it("canSendReviewRequests allows sendWhatsApp", async () => {
+  it("canSendReviewRequests + canViewReviews allows sendWhatsApp", async () => {
     q.authenticateUser.mockResolvedValue({
       role: "staff",
       displayName: "Sender",
