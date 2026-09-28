@@ -264,6 +264,9 @@ describe("releaseFoodQrForDeskPayment (disposable SQLite)", () => {
     const result = await releaseFoodQrForDeskPayment([10]);
     expect(result.releasedAttemptIds).toEqual([ATTEMPT_A]);
     expect(razorpay.closeRazorpayFoodQr).toHaveBeenCalledWith("qr_test1", "test");
+    // One reconcile round-trip before close; post-close uses local capture check only.
+    expect(razorpay.fetchRazorpayFoodQr).toHaveBeenCalledTimes(1);
+    expect(razorpay.fetchRazorpayFoodQrPayments).toHaveBeenCalledTimes(1);
 
     const claim = sqlite.prepare("SELECT released_at FROM food_qr_order_claims WHERE order_id = 10").get() as {
       released_at: string | null;
@@ -504,6 +507,25 @@ describe("closeActiveFoodQrAttempt (disposable SQLite)", () => {
       status: expect.any(Number),
     });
     expect(razorpay.closeRazorpayFoodQr).not.toHaveBeenCalled();
+  });
+
+  it("aborts after provider close when a local capture row appears (post-close local check)", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-race-local" });
+    razorpay.closeRazorpayFoodQr.mockImplementation(async () => {
+      sqlite.prepare(`
+        INSERT INTO food_qr_payments (id, attempt_id, amount_paise, status, captured, refunded_paise, verified_at)
+        VALUES ('pay_race', ?, 10000, 'captured', 1, 0, ?)
+      `).run(ATTEMPT_A, new Date().toISOString());
+      return {
+        id: "qr_test1", status: "closed", image_url: null, image_content: null,
+        close_by: null, close_reason: "paid",
+      };
+    });
+
+    await expect(releaseFoodQrForDeskPayment([10])).rejects.toMatchObject({ status: 409 });
+    expect(sqlite.prepare("SELECT state FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({
+      state: "active",
+    });
   });
 
   it("Retire proceeds when reconcile throws UNAVAILABLE (no local capture)", async () => {

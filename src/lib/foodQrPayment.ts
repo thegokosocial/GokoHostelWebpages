@@ -604,6 +604,16 @@ async function assertFoodQrUnpaidForRelease(attemptId: string) {
   }
 }
 
+/** Post-close capture race: local DB only (avoids a second Razorpay reconcile round-trip). */
+async function assertLocalCaptureBlocksDesk(attemptId: string) {
+  const [row] = await getDb().select({ state: attempts.state }).from(attempts).where(eq(attempts.id, attemptId)).limit(1);
+  const captured = await getDb().select({ id: payments.id }).from(payments)
+    .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1))).limit(1);
+  if (foodQrBlocksDeskPayment(row?.state || "", captured.length > 0)) {
+    throw new FoodQrError(DESK_RELEASE_ABORT, 409);
+  }
+}
+
 /**
  * Provider-close (best-effort) + release claims + set terminal state.
  * Staff Retire → `closed`; bill-change remint → `expired`.
@@ -625,11 +635,11 @@ async function finalizeOpenFoodQrAttempt(
     try {
       await closeRazorpayFoodQr(attempt.qrCodeId, attempt.environment as RazorpayEnvironment);
     } catch {
-      // Best-effort; second unpaid assert still blocks if a capture landed.
+      // Best-effort; local capture check still blocks if a payment row landed.
     }
   }
 
-  await assertFoodQrUnpaidForRelease(attemptId);
+  await assertLocalCaptureBlocksDesk(attemptId);
   await releaseClaims(attemptId);
   await getDb().update(attempts).set({ state: terminal, updatedAt: timestamp() })
     .where(and(eq(attempts.id, attemptId), inArray(attempts.state, [...OPEN_FOOD_QR_STATES])));

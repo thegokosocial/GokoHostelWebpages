@@ -91,6 +91,14 @@ describe("food QR paid UX — wiring contracts", () => {
     expect(hook).toContain("onPaid?: () => void");
   });
 
+  it("hook remints on closed/expired and when remintKey changes", () => {
+    expect(hook).toContain("remintKey");
+    expect(hook).toContain("remintIfTerminal");
+    expect(hook).toContain('state === "closed" || state === "expired"');
+    expect(hook).toContain("remintingRef");
+    expect(hook).toContain("ensureRef");
+  });
+
   it("admin Bill: onPaid refresh, Pay guards, Razorpay chip, hide Pay at ₹0", () => {
     expect(ordersUi).toContain("onPaid: onFoodQrPaid");
     expect(ordersUi).toContain("refreshAfterEditRef");

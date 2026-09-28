@@ -219,6 +219,11 @@ function MyBillsContent() {
 
   const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + o.total, 0);
   const unpaidOrderIds = unpaidOrders.map((o) => o.id).filter((id): id is number => typeof id === "number" && id > 0);
+  const unpaidRemintKey = unpaidOrders
+    .filter((o) => typeof o.id === "number" && o.id > 0)
+    .map((o) => `${o.id}:${o.total - (o.amountPaid || 0)}`)
+    .sort()
+    .join("|");
   const showPayQr = myBillsShowsPayQr(viaToken) && unpaidOrderIds.length > 0;
   const hidePayment = myBillsHidePayment(viaToken);
   const dynamicEnabled = shouldEnsureDynamicFoodQr({
@@ -230,6 +235,7 @@ function MyBillsContent() {
   const { state: qrState } = useFoodBillDynamicQr({
     enabled: dynamicEnabled,
     orderIds: unpaidOrderIds,
+    remintKey: unpaidRemintKey,
     token: viaToken ? tokenParam : undefined,
     onPaid: () => {
       if (tokenParam) void fetchBillsByToken(tokenParam);

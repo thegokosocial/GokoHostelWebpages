@@ -17,6 +17,10 @@ function newRequestKey(): string {
   return `rq_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function isTerminalFoodQrState(state: string | undefined | null): boolean {
+  return state === "closed" || state === "expired";
+}
+
 /**
  * Ensure + poll a Razorpay food-bill QR for unpaid order ids.
  * Guest: /api/food/bills/qr · Admin: /api/admin/food-payments ensureFoodQr
@@ -24,6 +28,11 @@ function newRequestKey(): string {
 export function useFoodBillDynamicQr(opts: {
   enabled: boolean;
   orderIds: number[];
+  /**
+   * When unpaid dues change after auto-retire, bump this so ensure remints
+   * without leaving Bill / share (e.g. `id:duePaise|…`).
+   */
+  remintKey?: string;
   phone?: string;
   token?: string;
   password?: string;
@@ -37,12 +46,15 @@ export function useFoodBillDynamicQr(opts: {
     () => [...opts.orderIds].filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b).join(","),
     [opts.orderIds],
   );
+  const remintKey = opts.remintKey ?? "";
   const [state, setState] = useState<FoodBillQrUiState>({ status: "idle" });
   const requestKeyRef = useRef(newRequestKey());
   const attemptIdRef = useRef<string | null>(null);
   const onPaidRef = useRef(opts.onPaid);
   onPaidRef.current = opts.onPaid;
   const paidNotifiedRef = useRef(false);
+  const remintingRef = useRef(false);
+  const ensureRef = useRef<() => Promise<void>>(async () => undefined);
 
   const commitState = useCallback((next: FoodBillQrUiState) => {
     setState(next);
@@ -52,13 +64,31 @@ export function useFoodBillDynamicQr(opts: {
     }
   }, []);
 
+  /** After Retire/edit closes a QR, remint once so Bill/share does not stick on Preparing. */
+  const remintIfTerminal = useCallback((attemptState: string | undefined | null) => {
+    if (!isTerminalFoodQrState(attemptState)) return false;
+    // Already reminting — do not loop; caller maps the response normally.
+    if (remintingRef.current) return false;
+    remintingRef.current = true;
+    attemptIdRef.current = null;
+    requestKeyRef.current = newRequestKey();
+    void ensureRef.current().finally(() => {
+      remintingRef.current = false;
+    });
+    return true;
+  }, []);
+
   const applyAttempt = useCallback((attempt: Parameters<typeof mapFoodQrAttemptToUi>[0]) => {
+    if (remintIfTerminal(attempt?.state)) {
+      commitState({ status: "loading" });
+      return;
+    }
     const next = mapFoodQrAttemptToUi(attempt);
     if (next.status === "active") attemptIdRef.current = next.attemptId;
     else if (next.status === "loading" && next.attemptId) attemptIdRef.current = next.attemptId;
     else if (next.status === "paid") attemptIdRef.current = attempt?.attemptId || attempt?.id || null;
     commitState(next);
-  }, [commitState]);
+  }, [commitState, remintIfTerminal]);
 
   const ensure = useCallback(async () => {
     if (!opts.enabled || !orderKey) {
@@ -98,6 +128,10 @@ export function useFoodBillDynamicQr(opts: {
         });
       }
       const data = await res.json().catch(() => ({}));
+      if (res.ok && data.attempt && remintIfTerminal(data.attempt.state)) {
+        commitState({ status: "loading" });
+        return;
+      }
       const next = mapFoodQrEnsureResponse({ ok: res.ok, status: res.status, body: data });
       if (next.status === "active") attemptIdRef.current = next.attemptId;
       else if (next.status === "loading" && next.attemptId) attemptIdRef.current = next.attemptId;
@@ -105,7 +139,9 @@ export function useFoodBillDynamicQr(opts: {
     } catch (e: unknown) {
       commitState({ status: "error", message: e instanceof Error ? e.message : "Could not prepare payment QR" });
     }
-  }, [commitState, opts.admin, opts.enabled, opts.password, opts.phone, opts.token, opts.username, orderKey]);
+  }, [commitState, opts.admin, opts.enabled, opts.password, opts.phone, opts.token, opts.username, orderKey, remintIfTerminal]);
+
+  ensureRef.current = ensure;
 
   const pollStatus = useCallback(async () => {
     const attemptId = attemptIdRef.current;
@@ -149,6 +185,7 @@ export function useFoodBillDynamicQr(opts: {
     requestKeyRef.current = newRequestKey();
     attemptIdRef.current = null;
     paidNotifiedRef.current = false;
+    remintingRef.current = false;
     if (!opts.enabled) {
       commitState({ status: "static" });
       return;
@@ -158,7 +195,7 @@ export function useFoodBillDynamicQr(opts: {
       return;
     }
     void ensure();
-  }, [commitState, ensure, opts.enabled, orderKey]);
+  }, [commitState, ensure, opts.enabled, orderKey, remintKey]);
 
   useEffect(() => {
     if (state.status !== "active" && state.status !== "loading") return;

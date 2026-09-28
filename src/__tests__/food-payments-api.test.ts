@@ -58,10 +58,14 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(myBills).toContain("hidePayment={hidePayment}");
     expect(myBills).toContain("onPaid");
     expect(myBills).toContain("fetchBillsByToken");
+    expect(myBills).toContain("remintKey: unpaidRemintKey");
     expect(myBills).not.toContain("Total Spent");
     expect(myBills).not.toMatch(/variant=\"paid\"/);
     expect(ordersUi).toContain("useFoodBillDynamicQr");
     expect(ordersUi).toContain("onPaid: onFoodQrPaid");
+    expect(ordersUi).toContain("remintKey: unpaidBillRemintKey");
+    expect(ordersUi).not.toContain("Open Razorpay bill QR");
+    expect(ordersUi).not.toContain("Retire QR");
     expect(ordersUi).toContain("isFoodOrderAlreadySettledError");
     expect(ordersUi).toContain("Already paid via Razorpay");
     expect(ordersUi).toContain("preferRazorpayReceipt");
@@ -76,6 +80,7 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(hook).toContain("ensureFoodQr");
     expect(hook).toContain("onPaid");
     expect(hook).toContain("paidNotifiedRef");
+    expect(hook).toContain("remintIfTerminal");
     expect(ledger).toContain("listFoodQrAttempts");
     expect(ledger).toContain("DateRangePicker");
     expect(ledger).toContain("fromDate");

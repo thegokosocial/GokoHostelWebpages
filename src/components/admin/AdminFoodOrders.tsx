@@ -13,7 +13,6 @@ import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/li
 import { buildBillWhatsAppDraft } from "@/lib/billShare";
 import { useFoodBillDynamicQr } from "@/hooks/useFoodBillDynamicQr";
 import {
-  foodBillQrRetireAttemptId,
   isFoodOrderAlreadySettledError,
   isRazorpayBillMode,
   isRazorpayFoodPaymentMethod,
@@ -1378,6 +1377,15 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
     () => selectedGroupOrders.filter((o) => foodDue(o) > 0).map((o) => o.id),
     [selectedGroupOrders],
   );
+  /** Due fingerprint so Save/auto-retire remints while Bill stays open. */
+  const unpaidBillRemintKey = useMemo(
+    () => selectedGroupOrders
+      .filter((o) => foodDue(o) > 0)
+      .map((o) => `${o.id}:${foodDue(o)}`)
+      .sort()
+      .join("|"),
+    [selectedGroupOrders],
+  );
   const drawerDynamicQrEnabled =
     drawerView === "bill"
     && unpaidBillOrderIds.length > 0
@@ -1398,6 +1406,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const { state: drawerQrState } = useFoodBillDynamicQr({
     enabled: drawerDynamicQrEnabled,
     orderIds: unpaidBillOrderIds,
+    remintKey: unpaidBillRemintKey,
     password,
     username,
     admin: true,
@@ -1760,96 +1769,6 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                   <div className="flex justify-between"><span>{actualGroupPending > 0 ? "Unpaid bill" : "Paid bill"}</span><b>₹{(billTotal / 100).toFixed(0)}</b></div>
                   {actualGroupPending > 0 && <p className="mt-1 text-[11px] text-orange-700">Paid orders are excluded from the bill items below.</p>}
                 </div>
-                {foodBillQrRetireAttemptId(drawerQrState) && (
-                  <div className="mb-3 rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-2.5 dark:bg-amber-950/40">
-                    <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
-                      Open Razorpay bill QR
-                    </p>
-                    <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">
-                      Editing totals retires this unpaid QR automatically (same as Static). Reconcile if the guest already paid; Retire cancels without editing.
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {(() => {
-                        const retireId = foodBillQrRetireAttemptId(drawerQrState);
-                        if (!retireId) return null;
-                        return (
-                          <>
-                            {drawerQrState.status === "active" && (
-                              <button
-                                type="button"
-                                className="rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:bg-amber-950"
-                                disabled={busy === selectedGroup.key}
-                                onClick={() => {
-                                  void (async () => {
-                                    setBusy(selectedGroup.key);
-                                    try {
-                                      const body: Record<string, unknown> = {
-                                        action: "reconcileFoodQrAttempt",
-                                        password: password || "",
-                                        attemptId: retireId,
-                                      };
-                                      if (username) body.username = username;
-                                      const res = await fetch("/api/admin/food-payments", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify(body),
-                                      });
-                                      const data = await res.json().catch(() => ({}));
-                                      if (!res.ok) throw new Error(data.error || "Reconcile failed");
-                                      showSuccess(`QR ${data.attempt?.state || "updated"}`);
-                                      await refreshAfterEdit(selectedGroup);
-                                      await load();
-                                    } catch (e: unknown) {
-                                      showError("Reconcile", e instanceof Error ? e.message : "Failed");
-                                    } finally {
-                                      setBusy(null);
-                                    }
-                                  })();
-                                }}
-                              >
-                                Reconcile
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="rounded-lg bg-amber-800 px-2.5 py-1 text-[11px] font-semibold text-white"
-                              disabled={busy === selectedGroup.key}
-                              onClick={() => {
-                                void (async () => {
-                                  setBusy(selectedGroup.key);
-                                  try {
-                                    const body: Record<string, unknown> = {
-                                      action: "closeActiveFoodQr",
-                                      password: password || "",
-                                      attemptId: retireId,
-                                    };
-                                    if (username) body.username = username;
-                                    const res = await fetch("/api/admin/food-payments", {
-                                      method: "POST",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify(body),
-                                    });
-                                    const data = await res.json().catch(() => ({}));
-                                    if (!res.ok) throw new Error(data.error || "Retire failed");
-                                    showSuccess("QR retired — a new bill QR remints when needed");
-                                    await refreshAfterEdit(selectedGroup);
-                                    await load();
-                                  } catch (e: unknown) {
-                                    showError("Retire QR", e instanceof Error ? e.message : "Failed");
-                                  } finally {
-                                    setBusy(null);
-                                  }
-                                })();
-                              }}
-                            >
-                              Retire QR
-                            </button>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                )}
                 <GuestFoodBillCard
                   orders={billOrders.map((o) => ({
                     guestName: selectedGroup.guestName,

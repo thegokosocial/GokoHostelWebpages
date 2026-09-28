@@ -384,17 +384,20 @@ describe("wiring: ledger + kitchen release + admin Static-parity UX", () => {
     expect(kitchen).not.toContain("hasActiveFoodQrClaim");
   });
 
-  it("AdminFoodOrders unlocks Save; Retire optional; no edit lock banner", () => {
+  it("AdminFoodOrders unlocks Save; no Bill-drawer Retire chrome; remintKey on dues", () => {
     const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
     expect(ui).not.toContain("locks Save changes");
     expect(ui).not.toContain("Active Razorpay QR locks");
     expect(ui).not.toContain("foodBillQrUiLocksEdits");
     expect(ui).not.toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
-    expect(ui).toContain("Editing totals retires this unpaid QR automatically");
-    expect(ui).toContain("closeActiveFoodQr");
+    expect(ui).not.toContain("Open Razorpay bill QR");
+    expect(ui).not.toContain("Editing totals retires this unpaid QR automatically");
+    expect(ui).not.toContain("foodBillQrRetireAttemptId");
+    expect(ui).not.toContain("closeActiveFoodQr");
+    expect(ui).not.toContain("Retire QR");
+    expect(ui).toContain("unpaidBillRemintKey");
+    expect(ui).toContain("remintKey: unpaidBillRemintKey");
     expect(ui).toContain("reconcileFoodQrAttempt");
-    expect(ui).toContain("Retire QR");
-    expect(ui).toContain("foodBillQrRetireAttemptId");
     expect(ui).toContain("disabled={actionBusy === `save_${order.id}`}");
   });
 

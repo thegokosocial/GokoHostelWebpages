@@ -24,10 +24,11 @@ describe("desk-release source contracts (money safety)", () => {
   const modal = readFileSync("src/components/admin/RecordPaymentModal.tsx", "utf8");
   const adminFood = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
 
-  it("exports releaseFoodQrForDeskPayment with finalize (reconcile → close → re-check → release)", () => {
+  it("exports releaseFoodQrForDeskPayment with finalize (reconcile → close → local capture check → release)", () => {
     expect(engine).toContain("export async function releaseFoodQrForDeskPayment");
     expect(engine).toContain("finalizeOpenFoodQrAttempt");
     expect(engine).toContain("assertFoodQrUnpaidForRelease");
+    expect(engine).toContain("assertLocalCaptureBlocksDesk");
     expect(engine).toContain("closeRazorpayFoodQr");
     expect(engine).toContain("releaseClaims(attemptId)");
     expect(engine).toContain('state: terminal');
@@ -35,6 +36,13 @@ describe("desk-release source contracts (money safety)", () => {
     expect(engine).toContain("hasUpiIntent: Boolean(upiIntent)");
     expect(engine).toContain("foodQrBlocksDeskPayment");
     expect(engine).toContain("OPEN_FOOD_QR_STATES");
+    // Post-close path must not call a second full reconcile (speed).
+    const finalizeBlock = engine.slice(
+      engine.indexOf("async function finalizeOpenFoodQrAttempt"),
+      engine.indexOf("export async function retireAllOpenFoodQrAttempts"),
+    );
+    expect(finalizeBlock).toContain("assertLocalCaptureBlocksDesk");
+    expect(finalizeBlock.match(/assertFoodQrUnpaidForRelease/g)?.length).toBe(1);
   });
 
   it("markOrderPaid and all mutators release open QR via releaseFoodQrOrConflict", () => {
