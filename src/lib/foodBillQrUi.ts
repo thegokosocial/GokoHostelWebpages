@@ -15,7 +15,14 @@ export const FOOD_RAZORPAY_RECEIPT_NICKNAME = "Razorpay a/c";
 export const ACTIVE_FOOD_QR_EDIT_BLOCKED =
   "These orders have an active Razorpay QR payment. Wait for it to complete or expire before changing totals or payment.";
 
-export type FoodQrAttemptOutcome = "Paid" | "Active" | "Expired" | "Closed" | "Creating" | "Unknown";
+export type FoodQrAttemptOutcome =
+  | "Paid"
+  | "Active"
+  | "Expired"
+  | "Closed"
+  | "Creating"
+  | "Needs review"
+  | "Unknown";
 
 /** Staff-facing outcome for Management → Razorpay payments → Food (Room-like). */
 export function foodQrAttemptOutcome(opts: {
@@ -23,7 +30,10 @@ export function foodQrAttemptOutcome(opts: {
   payments?: Array<{ captured?: number | boolean | null }>;
 }): FoodQrAttemptOutcome {
   const hasCapture = (opts.payments || []).some((p) => Number(p.captured) === 1);
-  if (opts.state === "paid" || hasCapture) return "Paid";
+  if (opts.state === "paid") return "Paid";
+  // Retired/expired QR with a capture that did not settle orders (or needs staff eyes).
+  if ((opts.state === "closed" || opts.state === "expired") && hasCapture) return "Needs review";
+  if (hasCapture) return "Paid";
   if (opts.state === "expired") return "Expired";
   if (opts.state === "closed") return "Closed";
   if (opts.state === "active") return "Active";
@@ -35,13 +45,16 @@ export function foodQrAttemptIsCloseable(state: string): boolean {
   return state === "active" || state === "creating" || state === "qr_unknown";
 }
 
-/** Ledger Reconcile: only while attempt can still change at Razorpay (open + gateway id). */
+/** Ledger Reconcile: open attempts, or closed/expired with a capture (late-settle / review). */
 export function foodQrAttemptCanReconcile(opts: {
   state: string;
   qrCodeId?: string | null;
+  payments?: Array<{ captured?: number | boolean | null }>;
 }): boolean {
   if (!opts.qrCodeId) return false;
-  return opts.state === "active" || opts.state === "creating" || opts.state === "qr_unknown";
+  if (opts.state === "active" || opts.state === "creating" || opts.state === "qr_unknown") return true;
+  const hasCapture = (opts.payments || []).some((p) => Number(p.captured) === 1);
+  return (opts.state === "closed" || opts.state === "expired") && hasCapture;
 }
 
 /** Collapse long order-id lists: first `limit` ids + hiddenCount. */

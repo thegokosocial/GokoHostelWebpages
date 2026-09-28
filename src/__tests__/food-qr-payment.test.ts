@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import {
   buildFingerprint,
   buildOrderSnapshot,
+  decideLateFoodQrCapture,
   snapshotTotalDuePaise,
   paymentMethodLabel,
   type OrderSnapshotEntry,
@@ -71,6 +72,35 @@ describe("paymentMethodLabel", () => {
   });
   it("returns razorpay_test for test", () => {
     expect(paymentMethodLabel("test")).toBe("razorpay_test");
+  });
+});
+
+describe("decideLateFoodQrCapture", () => {
+  it("applies only when capture matches snapshot due and current unpaid due", () => {
+    expect(decideLateFoodQrCapture({
+      captureAmountPaise: 10000, snapshotDuePaise: 10000, currentDuePaise: 10000,
+    })).toBe("apply");
+  });
+
+  it("ignores when the bill is already settled (desk pay / prior apply)", () => {
+    expect(decideLateFoodQrCapture({
+      captureAmountPaise: 10000, snapshotDuePaise: 10000, currentDuePaise: 0,
+    })).toBe("ignore");
+  });
+
+  it("reviews amount mismatch or invalid amounts (never auto-settle)", () => {
+    expect(decideLateFoodQrCapture({
+      captureAmountPaise: 10000, snapshotDuePaise: 10000, currentDuePaise: 8000,
+    })).toBe("review");
+    expect(decideLateFoodQrCapture({
+      captureAmountPaise: 9000, snapshotDuePaise: 10000, currentDuePaise: 10000,
+    })).toBe("review");
+    expect(decideLateFoodQrCapture({
+      captureAmountPaise: 0, snapshotDuePaise: 10000, currentDuePaise: 10000,
+    })).toBe("review");
+    expect(decideLateFoodQrCapture({
+      captureAmountPaise: 10000, snapshotDuePaise: 0, currentDuePaise: 10000,
+    })).toBe("review");
   });
 });
 
@@ -208,6 +238,9 @@ describe("claim helper + ensure remint contracts", () => {
     expect(src).toContain("isPiRuntime()) return false");
     expect(src).toContain("Due/order-set changed");
     expect(src).toContain("QR closed as paid but capture evidence is not ready yet");
+    expect(src).toContain("settleFoodQrCapture");
+    expect(src).toContain("decideLateFoodQrCapture");
+    expect(src).toContain("lateCapture");
     expect(src).toContain('order.status === "cancelled"');
   });
 

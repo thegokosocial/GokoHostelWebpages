@@ -72,6 +72,7 @@ import {
   hasActiveFoodQrClaim,
   reconcileFoodQrAttempt,
   releaseFoodQrForDeskPayment,
+  settleFoodQrCapture,
 } from "@/lib/foodQrPayment";
 
 const ATTEMPT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -121,14 +122,41 @@ function createFoodQrTables(sqlite: SQLite.Database) {
     CREATE TABLE food_orders (
       id INTEGER PRIMARY KEY,
       order_number TEXT NOT NULL,
+      idempotency_key TEXT,
+      guest_type TEXT NOT NULL DEFAULT 'walkin',
+      checkin_id INTEGER,
+      guest_name TEXT NOT NULL DEFAULT '',
+      guest_phone TEXT NOT NULL DEFAULT '',
+      room_info TEXT DEFAULT '',
+      table_number TEXT DEFAULT '',
+      special_instructions TEXT DEFAULT '',
+      subtotal INTEGER NOT NULL DEFAULT 0,
+      tax INTEGER NOT NULL DEFAULT 0,
+      total INTEGER NOT NULL DEFAULT 10000,
       status TEXT NOT NULL DEFAULT 'placed',
       payment_status TEXT NOT NULL DEFAULT 'pending',
       amount_paid INTEGER NOT NULL DEFAULT 0,
       amount_refunded INTEGER NOT NULL DEFAULT 0,
-      total INTEGER NOT NULL DEFAULT 10000,
+      refund_method TEXT NOT NULL DEFAULT '',
+      refund_cash INTEGER NOT NULL DEFAULT 0,
+      refunded_at TEXT NOT NULL DEFAULT '',
+      refunded_by TEXT NOT NULL DEFAULT '',
       payment_method TEXT DEFAULT '',
       paid_by TEXT DEFAULT '',
-      updated_at TEXT
+      cash_received INTEGER DEFAULT 0,
+      change_given INTEGER DEFAULT 0,
+      discount INTEGER NOT NULL DEFAULT 0,
+      discount_reason TEXT DEFAULT '',
+      discount_by TEXT DEFAULT '',
+      cancelled_reason TEXT DEFAULT '',
+      cancelled_at TEXT DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT 'guest',
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
+      sync_id TEXT,
+      sync_updated_at TEXT,
+      sync_source TEXT DEFAULT 'cloudflare',
+      deleted_at TEXT
     );
   `);
 }
@@ -728,5 +756,93 @@ describe("ensureActiveFoodQrForOrders remint (disposable SQLite)", () => {
       `).get() as { n: number };
       expect(openClaims.n).toBe(useB ? 2 : 1);
     }
+  });
+
+  it("late capture on closed QR applies when capture === snapshot === current due", async () => {
+    const now = new Date().toISOString();
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-late-apply" });
+    sqlite.prepare(`UPDATE food_qr_attempts SET state = 'closed', updated_at = ? WHERE id = ?`).run(now, ATTEMPT_A);
+    sqlite.prepare(`UPDATE food_qr_order_claims SET released_at = ? WHERE attempt_id = ?`).run(now, ATTEMPT_A);
+    const orderNow = new Date().toISOString();
+    sqlite.prepare(`
+      INSERT INTO food_orders (
+        id, order_number, guest_name, status, payment_status, amount_paid, amount_refunded, total, created_at, updated_at
+      ) VALUES (10, 'F-10', 'Guest', 'placed', 'pending', 0, 0, 10000, ?, ?)
+    `).run(orderNow, orderNow);
+    queries.getFoodOrdersByIds.mockResolvedValue([{
+      id: 10, status: "placed", paymentStatus: "pending", total: 10000, amountPaid: 0, amountRefunded: 0,
+    }]);
+    queries.updateFoodOrderPayment.mockClear();
+    const evidence = {
+      id: "pay_late_ok", amount: 10000, status: "captured", captured: true,
+      amount_refunded: 0, fee: 0, tax: 0, method: "upi",
+    };
+    razorpay.fetchRazorpayFoodQrPayments.mockResolvedValue([evidence]);
+    razorpay.fetchRazorpayFoodQr.mockResolvedValue({
+      id: "qr_test1", status: "closed", image_url: null, image_content: null,
+      close_by: null, close_reason: "paid",
+    });
+
+    const snap = await reconcileFoodQrAttempt(ATTEMPT_A);
+    expect(snap.state).toBe("paid");
+    expect(queries.updateFoodOrderPayment).toHaveBeenCalledWith(10, expect.objectContaining({
+      paymentStatus: "paid",
+      paymentMethod: "razorpay_test",
+      paidBy: "razorpay",
+    }));
+  });
+
+  it("late capture mismatch marks Needs-review metadata and does not settle", async () => {
+    const now = new Date().toISOString();
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-late-review" });
+    sqlite.prepare(`UPDATE food_qr_attempts SET state = 'closed', updated_at = ? WHERE id = ?`).run(now, ATTEMPT_A);
+    sqlite.prepare(`UPDATE food_qr_order_claims SET released_at = ? WHERE attempt_id = ?`).run(now, ATTEMPT_A);
+    queries.getFoodOrdersByIds.mockResolvedValue([{
+      id: 10, status: "placed", paymentStatus: "pending", total: 8000, amountPaid: 0, amountRefunded: 0,
+    }]);
+    queries.updateFoodOrderPayment.mockClear();
+    const attempt = (await getDb().select().from(schema.foodQrAttempts).limit(1))[0];
+    const result = await settleFoodQrCapture(attempt, {
+      id: "pay_late_mismatch", entity: "payment", currency: "INR",
+      amount: 10000, status: "captured", captured: true,
+      amount_refunded: 0, method: "upi",
+    });
+    expect(result).toBe("review");
+    expect(queries.updateFoodOrderPayment).not.toHaveBeenCalled();
+    const notes = JSON.parse(
+      (sqlite.prepare(`SELECT notes FROM food_qr_attempts WHERE id = ?`).get(ATTEMPT_A) as { notes: string }).notes,
+    );
+    expect(notes.lateCapture).toMatchObject({
+      reason: "amount_mismatch",
+      paymentId: "pay_late_mismatch",
+      capturedPaise: 10000,
+      currentDuePaise: 8000,
+      snapshotDuePaise: 10000,
+    });
+    expect(sqlite.prepare(`SELECT state FROM food_qr_attempts WHERE id = ?`).get(ATTEMPT_A)).toEqual({
+      state: "closed",
+    });
+  });
+
+  it("late capture after desk settle records already_settled and does not double-pay", async () => {
+    const now = new Date().toISOString();
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-late-ignore" });
+    sqlite.prepare(`UPDATE food_qr_attempts SET state = 'closed', updated_at = ? WHERE id = ?`).run(now, ATTEMPT_A);
+    queries.getFoodOrdersByIds.mockResolvedValue([{
+      id: 10, status: "placed", paymentStatus: "paid", total: 10000, amountPaid: 10000, amountRefunded: 0,
+    }]);
+    queries.updateFoodOrderPayment.mockClear();
+    const attempt = (await getDb().select().from(schema.foodQrAttempts).limit(1))[0];
+    const result = await settleFoodQrCapture(attempt, {
+      id: "pay_late_settled", entity: "payment", currency: "INR",
+      amount: 10000, status: "captured", captured: true,
+      amount_refunded: 0, method: "upi",
+    });
+    expect(result).toBe("ignored");
+    expect(queries.updateFoodOrderPayment).not.toHaveBeenCalled();
+    const notes = JSON.parse(
+      (sqlite.prepare(`SELECT notes FROM food_qr_attempts WHERE id = ?`).get(ATTEMPT_A) as { notes: string }).notes,
+    );
+    expect(notes.lateCapture.reason).toBe("already_settled");
   });
 });

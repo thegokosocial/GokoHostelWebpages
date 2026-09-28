@@ -99,13 +99,19 @@ describe("foodQrCreatedAtBounds", () => {
 });
 
 describe("foodQrAttemptCanReconcile / formatFoodQrOrderIdsPreview", () => {
-  it("Reconcile only for open attempts with a gateway qrCodeId", async () => {
+  it("Reconcile for open attempts, or closed/expired with a capture (late-settle)", async () => {
     const { foodQrAttemptCanReconcile } = await import("@/lib/foodBillQrUi");
     expect(foodQrAttemptCanReconcile({ state: "active", qrCodeId: "qr_x" })).toBe(true);
     expect(foodQrAttemptCanReconcile({ state: "creating", qrCodeId: "qr_x" })).toBe(true);
     expect(foodQrAttemptCanReconcile({ state: "creating", qrCodeId: null })).toBe(false);
     expect(foodQrAttemptCanReconcile({ state: "expired", qrCodeId: "qr_x" })).toBe(false);
     expect(foodQrAttemptCanReconcile({ state: "closed", qrCodeId: "qr_x" })).toBe(false);
+    expect(foodQrAttemptCanReconcile({
+      state: "closed", qrCodeId: "qr_x", payments: [{ captured: 1 }],
+    })).toBe(true);
+    expect(foodQrAttemptCanReconcile({
+      state: "expired", qrCodeId: "qr_x", payments: [{ captured: 1 }],
+    })).toBe(true);
     expect(foodQrAttemptCanReconcile({ state: "paid", qrCodeId: "qr_x" })).toBe(false);
   });
 

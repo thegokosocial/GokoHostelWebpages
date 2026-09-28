@@ -39,7 +39,32 @@ type AttemptNotes = {
   fingerprint?: string;
   upiIntent?: string;
   exceptions?: string[];
+  lateCapture?: {
+    reason: string;
+    paymentId: string;
+    capturedPaise: number;
+    currentDuePaise: number;
+    snapshotDuePaise: number;
+    at: string;
+  };
 };
+
+/** Pure gate for late capture after Retire/edit closed the QR (unit-tested). */
+export function decideLateFoodQrCapture(opts: {
+  captureAmountPaise: number;
+  snapshotDuePaise: number;
+  currentDuePaise: number;
+}): "apply" | "ignore" | "review" {
+  const capture = Math.trunc(opts.captureAmountPaise);
+  const snapshot = Math.trunc(opts.snapshotDuePaise);
+  const current = Math.trunc(opts.currentDuePaise);
+  if (!(capture > 0) || !(snapshot > 0)) return "review";
+  // Bill already settled (desk pay / prior apply) — do not double-settle.
+  if (current <= 0) return "ignore";
+  // Safe only when capture matches both the original QR due and today's unpaid due.
+  if (capture === snapshot && capture === current) return "apply";
+  return "review";
+}
 
 function parseAttemptNotes(raw: string | null | undefined): AttemptNotes {
   try {
@@ -294,24 +319,29 @@ export async function ensureActiveFoodQrForOrders(input: {
   return createFoodQrAttempt({ ...input, orderIds: unpaid.map((o) => o.id) });
 }
 
-/** Reconcile: fetch QR status + payments from Razorpay; apply captures; release if expired/closed. */
+/** Reconcile: fetch QR status + payments from Razorpay; apply captures; late-settle closed/expired. */
 export async function reconcileFoodQrAttempt(attemptId: string) {
   cloudOnly();
   z.string().uuid().parse(attemptId);
   const db = getDb();
   let [attempt] = await db.select().from(attempts).where(eq(attempts.id, attemptId)).limit(1);
   if (!attempt) throw new FoodQrError("Attempt not found", 404);
-  if (["paid", "closed", "expired"].includes(attempt.state)) return foodQrSnapshot(attemptId);
+  if (attempt.state === "paid") return foodQrSnapshot(attemptId);
 
   const rzpEnv = attempt.environment as RazorpayEnvironment;
-
   const qrCodeId = attempt.qrCodeId;
-  if (qrCodeId) {
-    // Fetch QR status
-    const qr = await fetchRazorpayFoodQr(qrCodeId, rzpEnv);
+  const terminalRetired = attempt.state === "closed" || attempt.state === "expired";
 
-    // Backfill UPI intent when create response lacked image_content
-    if (qr.image_content?.trim() && !upiIntentFromNotes(attempt.notes)) {
+  if (qrCodeId) {
+    // Fetch QR status (best-effort on retired attempts — still need payment list)
+    let qr: Awaited<ReturnType<typeof fetchRazorpayFoodQr>> | null = null;
+    try {
+      qr = await fetchRazorpayFoodQr(qrCodeId, rzpEnv);
+    } catch (error) {
+      if (!terminalRetired) throw error;
+    }
+
+    if (qr?.image_content?.trim() && !upiIntentFromNotes(attempt.notes)) {
       const notes = parseAttemptNotes(attempt.notes);
       notes.upiIntent = qr.image_content.trim();
       await db.update(attempts).set({ notes: JSON.stringify(notes), updatedAt: timestamp() })
@@ -319,22 +349,12 @@ export async function reconcileFoodQrAttempt(attemptId: string) {
       attempt = { ...attempt, notes: JSON.stringify(notes) };
     }
 
-    // Fetch and record payments
     const qrPayments = await fetchRazorpayFoodQrPayments(qrCodeId, rzpEnv);
-    for (const payment of qrPayments) {
-      await recordFoodQrPayment(attempt, payment);
-    }
-
-    // Check if we have a captured payment
-    const capturedRows = await db.select().from(payments)
-      .where(and(eq(payments.attemptId, attemptId), eq(payments.captured, 1)));
-
-    if (capturedRows.length) {
-      // Apply the first captured payment
-      await applyRazorpayCapture(attempt, qrPayments.find((p) => p.captured) || qrPayments[0]);
-    } else if (qr.status === "closed") {
+    const cap = qrPayments.find((p) => p.captured);
+    if (cap) {
+      await settleFoodQrCapture(attempt, cap);
+    } else if (!terminalRetired && qr?.status === "closed") {
       if (qr.close_reason === "paid") {
-        // Never mark paid without a captured payment row — leave for webhook/retry
         throw new FoodQrError("QR closed as paid but capture evidence is not ready yet", 503);
       }
       await releaseClaims(attemptId);
@@ -374,6 +394,83 @@ async function recordFoodQrPayment(attempt: Attempt, evidence: RazorpayQrPayment
     },
     setWhere: eq(payments.attemptId, attempt.id),
   });
+}
+
+async function markLateCaptureReview(
+  attempt: Attempt,
+  evidence: RazorpayQrPayment,
+  reason: string,
+  currentDuePaise: number,
+  snapshotDuePaise: number,
+) {
+  const notes = parseAttemptNotes(attempt.notes);
+  notes.lateCapture = {
+    reason,
+    paymentId: evidence.id,
+    capturedPaise: evidence.amount,
+    currentDuePaise,
+    snapshotDuePaise,
+    at: timestamp(),
+  };
+  await getDb().update(attempts).set({
+    notes: JSON.stringify(notes),
+    updatedAt: timestamp(),
+  }).where(eq(attempts.id, attempt.id));
+}
+
+/**
+ * Apply capture for open attempts, or safely late-apply when Retire/edit already closed the QR.
+ * Mismatch / already-settled → record review metadata; never double-settle.
+ */
+export async function settleFoodQrCapture(attempt: Attempt, evidence: RazorpayQrPayment): Promise<"applied" | "ignored" | "review"> {
+  if (!evidence.captured) throw new FoodQrError("Payment not captured", 400);
+  await recordFoodQrPayment(attempt, evidence);
+
+  if (attempt.state === "paid") return "ignored";
+
+  const notes = parseAttemptNotes(attempt.notes);
+  const snapshot = notes.orderSnapshot || [];
+  const snapshotDue = snapshotTotalDuePaise(snapshot);
+  let orderIds = snapshot.map((e) => e.orderId).filter((n) => Number.isInteger(n) && n > 0);
+  if (!orderIds.length) {
+    try {
+      orderIds = (JSON.parse(attempt.foodOrderIds || "[]") as unknown[])
+        .map(Number)
+        .filter((n) => Number.isInteger(n) && n > 0);
+    } catch {
+      orderIds = [];
+    }
+  }
+  const loaded = orderIds.length ? await getFoodOrdersByIds(orderIds) : [];
+  const currentDue = loaded
+    .filter((o) => o.status !== "cancelled")
+    .reduce((sum, o) => sum + foodDue(o), 0);
+
+  const open = OPEN_FOOD_QR_STATES.includes(attempt.state as typeof OPEN_FOOD_QR_STATES[number]);
+  if (open) {
+    await applyRazorpayCapture(attempt, evidence);
+    return "applied";
+  }
+
+  if (attempt.state !== "closed" && attempt.state !== "expired") {
+    return "ignored";
+  }
+
+  const decision = decideLateFoodQrCapture({
+    captureAmountPaise: evidence.amount,
+    snapshotDuePaise: snapshotDue,
+    currentDuePaise: currentDue,
+  });
+  if (decision === "apply") {
+    await applyRazorpayCapture(attempt, evidence);
+    return "applied";
+  }
+  if (decision === "ignore") {
+    await markLateCaptureReview(attempt, evidence, "already_settled", currentDue, snapshotDue);
+    return "ignored";
+  }
+  await markLateCaptureReview(attempt, evidence, "amount_mismatch", currentDue, snapshotDue);
+  return "review";
 }
 
 /**
@@ -719,28 +816,24 @@ export async function processFoodQrWebhook(eventId: string) {
     const rzpEnv = attempt.environment as RazorpayEnvironment;
 
     if (hook.eventType === "payment.captured" && hook.paymentId) {
-      // Fetch live payment evidence
       const qrPayments = attempt.qrCodeId
         ? await fetchRazorpayFoodQrPayments(attempt.qrCodeId, rzpEnv)
         : [];
       const captured = qrPayments.find((p) => p.id === hook.paymentId && p.captured);
       if (!captured) throw new FoodQrError("Capture evidence not yet visible; retry required", 503);
-      await recordFoodQrPayment(attempt, captured);
-      if (!["paid", "closed"].includes(attempt.state)) {
-        await applyRazorpayCapture(attempt, captured);
-      }
+      await settleFoodQrCapture(attempt, captured);
     } else if (hook.eventType === "qr_code.credited" && attempt.qrCodeId) {
       const qrPayments = await fetchRazorpayFoodQrPayments(attempt.qrCodeId, rzpEnv);
-      for (const p of qrPayments) await recordFoodQrPayment(attempt, p);
       const cap = qrPayments.find((p) => p.captured);
-      if (cap && !["paid", "closed"].includes(attempt.state)) {
-        await applyRazorpayCapture(attempt, cap);
-      } else if (!cap) {
-        throw new FoodQrError("Credit evidence not yet visible; retry required", 503);
-      }
+      if (!cap) throw new FoodQrError("Credit evidence not yet visible; retry required", 503);
+      await settleFoodQrCapture(attempt, cap);
     } else if (hook.eventType === "qr_code.closed" && attempt.qrCodeId) {
       const qr = await fetchRazorpayFoodQr(attempt.qrCodeId, rzpEnv);
-      if (qr.status === "closed" && !["paid"].includes(attempt.state)) {
+      const qrPayments = await fetchRazorpayFoodQrPayments(attempt.qrCodeId, rzpEnv);
+      const cap = qrPayments.find((p) => p.captured);
+      if (cap) {
+        await settleFoodQrCapture(attempt, cap);
+      } else if (qr.status === "closed" && attempt.state !== "paid" && attempt.state !== "closed") {
         await releaseClaims(attempt.id);
         await db.update(attempts).set({ state: "expired", updatedAt: timestamp() }).where(eq(attempts.id, attempt.id));
       }

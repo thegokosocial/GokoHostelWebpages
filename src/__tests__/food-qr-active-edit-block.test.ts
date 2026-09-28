@@ -142,6 +142,8 @@ describe("foodQrAttemptOutcome + search helpers", () => {
     [{ state: "active" }, "Active"],
     [{ state: "expired" }, "Expired"],
     [{ state: "closed" }, "Closed"],
+    [{ state: "closed", payments: [{ captured: 1 }] }, "Needs review"],
+    [{ state: "expired", payments: [{ captured: 1 }] }, "Needs review"],
     [{ state: "creating" }, "Creating"],
     [{ state: "qr_unknown" }, "Creating"],
     [{ state: "weird" }, "Unknown"],
