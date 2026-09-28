@@ -9,11 +9,12 @@ npm test              # vitest run — does **not** typecheck
 npm run test:watch
 npm run lint
 npx tsc --noEmit      # required before push; Vitest missed `mode` used-before-assigned
-npm run build         # Next CI build — NOT the Worker
+npm run ffmpeg:assets # copies unbundled @ffmpeg worker into public/ffmpeg/ (no wasm; gitignored)
+npm run build         # runs ffmpeg:assets then Next CI build — NOT the Worker
 npm run test:e2e      # Playwright browser regression suite (requires local loopback)
 ```
 
-CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lint → `next build` → `npm audit --audit-level=high || true`. **Does not deploy.** Node 20.
+`dev`, `build`, `cf:build`, `preview:cf`, and `deploy:cf` all run `ffmpeg:assets` first so hero encode can load same-origin `/ffmpeg/worker.js` (core stays on CDN; wasm exceeds Workers’ 25 MiB asset cap). CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lint → `next build` (via `npm run build`, which copies ffmpeg worker assets) → `npm audit --audit-level=high || true`. **Does not deploy.** Node 20.
 
 ## Regression coverage policy
 
@@ -51,7 +52,7 @@ Dependency security checks use `npm audit`. Next stays on the supported 15.5 pat
 | `stock-operations.test.ts` | Decrement / restore |
 | `data-cleanup.test.ts` | Daily-ledger uniqueness |
 | `audit-retention.test.ts` / `audit-presentation.test.ts` | Global retention/date bounds, friendly audit rendering, full table wrapping, and removal of destructive food-order cleanup |
-| `site-cms.test.ts` / `website-cms-api.test.ts` / `hero-videos.test.ts` / `hero-upload-scenarios.test.ts` | CMS + hero wiring; raw-body upload; encode 8/4MB caps; middleware upload exclusion; `clientUploadError` non-Error; phase toasts; origin 403 |
+| `site-cms.test.ts` / `website-cms-api.test.ts` / `hero-videos.test.ts` / `hero-upload-scenarios.test.ts` | CMS + hero wiring; raw-body upload; encode 8/4MB caps; same-origin `/ffmpeg/worker.js` + `classWorkerURL` (core via CDN/`toBlobURL`); middleware upload exclusion; `clientUploadError` non-Error; phase toasts; origin 403 |
 | `aiosell-webhook.test.ts` | Reservation parse (`book` / `modify` / `cancel`) |
 | `aiosell-operations.test.ts` | Webhook auth variants, book/modify/cancel combos, fetch reservation ingest, push-inventory modes (ranged / dirty / fullSync), push-rates + fetch + noshow + inv-restriction aggregation, Channel Manager CRUD (incl. `booking_tax_apply_website` / `booking_tax_apply_admin` getConfig/saveConfig). `pah` true/`false`/omitted → `pay_at_hotel`/`prepaid`/`unknown` |
 | `aiosell-inventory-sync.test.ts` | Real `getDateAwareAvailability` (incl. unassigned OTA + native website holds) / `heldBedsToUnits` / range snapshot second pass / `triggerInventoryPush` / `pushIfOtaChanged` (mocked D1 + Aiosell HTTP) |

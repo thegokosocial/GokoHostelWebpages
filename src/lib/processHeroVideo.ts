@@ -34,15 +34,22 @@ export function assertHeroEncodedSize(bytes: number, slot: HeroVideoSlot): void 
 
 type ProgressFn = (phase: "loading" | "encoding" | "poster", detail?: string) => void;
 
+/** CDN pin for @ffmpeg/core (wasm ~31MB — cannot ship as Workers static asset, 25 MiB cap). */
+const FFMPEG_CORE_CDN = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+
 async function loadFfmpeg(onProgress?: ProgressFn) {
   onProgress?.("loading", "Loading video encoder…");
   const { FFmpeg } = await import("@ffmpeg/ffmpeg");
   const { toBlobURL } = await import("@ffmpeg/util");
   const ffmpeg = new FFmpeg();
-  const base = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+  // Unbundled same-origin worker (npm run ffmpeg:assets). Absolute origin required:
+  // classWorkerURL is resolved against import.meta.url inside the Next bundle.
+  // With a non-webpack worker, import(blobURL) is native and succeeds.
+  const origin = globalThis.location.origin;
   await ffmpeg.load({
-    coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+    coreURL: await toBlobURL(`${FFMPEG_CORE_CDN}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${FFMPEG_CORE_CDN}/ffmpeg-core.wasm`, "application/wasm"),
+    classWorkerURL: `${origin}/ffmpeg/worker.js`,
   });
   return ffmpeg;
 }

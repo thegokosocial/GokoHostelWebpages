@@ -79,6 +79,28 @@ describe("hero encode size caps", () => {
     expect(src).toContain("assertHeroEncodedSize(outData.byteLength, slot)");
     expect(src).not.toContain("15 * 1024 * 1024");
   });
+
+  it("loadFfmpeg uses same-origin classWorkerURL and CDN core via toBlobURL", () => {
+    const src = readFileSync("src/lib/processHeroVideo.ts", "utf8");
+    expect(src).toContain("classWorkerURL");
+    expect(src).toContain("/ffmpeg/worker.js");
+    expect(src).toContain("location.origin");
+    expect(src).toContain("toBlobURL");
+    expect(src).toContain("unpkg.com/@ffmpeg/core@0.12.6");
+    expect(src).toContain("FFMPEG_CORE_CDN");
+    expect(src).not.toMatch(/\$\{origin\}.*ffmpeg-core/);
+  });
+});
+
+describe("ffmpeg:assets copy script", () => {
+  it("copies worker only and refuses to ship oversized wasm as a static asset", () => {
+    const src = readFileSync("scripts/copy-ffmpeg-assets.mjs", "utf8");
+    expect(src).toContain("webpackIgnore");
+    expect(src).toContain("worker.js");
+    expect(src).toContain("25 MiB");
+    expect(src).toContain("unlinkSync");
+    expect(src).toMatch(/ffmpeg-core\.wasm/);
+  });
 });
 
 describe("middleware excludes website upload from body clone path", () => {
