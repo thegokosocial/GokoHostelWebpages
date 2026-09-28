@@ -433,6 +433,14 @@ describe("Booking Calendar: sticky dates and row colour", () => {
     expect(grid).toMatch(/sticky left-0 z-20/);
   });
 
+  it("uses a narrower two-line label column on phones without changing row alignment or desktop width", () => {
+    expect(grid).toContain("w-[104px]");
+    expect(grid).toContain("sm:w-[140px]");
+    expect(grid.match(/line-clamp-2 leading-\[11px\] sm:line-clamp-1 sm:leading-normal/g)).toHaveLength(2);
+    expect(grid.match(/flex h-8/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(grid).toContain('className={cn("relative h-8 border-b border-border"');
+  });
+
   it("fills leftover viewport and skips y-transform on the bookings tab", () => {
     expect(dashboard).toMatch(/flex h-full min-h-0 flex-1 flex-col gap-4/);
     expect(adminPage).toMatch(/fillViewport = section === "inventory"/);

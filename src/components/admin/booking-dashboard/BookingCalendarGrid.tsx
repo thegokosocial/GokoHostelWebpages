@@ -95,7 +95,7 @@ export function BookingCalendarGrid({
     <div className="isolate overflow-x-auto overflow-y-visible overscroll-x-contain rounded-xl border border-border bg-white dark:bg-card">
       <div className="inline-flex min-w-full">
           {/* Sticky left column: dorm/bed labels */}
-          <div className="sticky left-0 z-20 w-[140px] shrink-0 border-r border-border bg-white dark:bg-card">
+          <div className="sticky left-0 z-20 w-[104px] shrink-0 border-r border-border bg-white dark:bg-card sm:w-[140px]">
             <div className="sticky top-0 left-0 z-30 flex h-[52px] items-end border-b border-border bg-brand-sand px-2 pb-1 shadow-[0_1px_4px_rgba(45,92,63,0.08)] dark:bg-zinc-800 dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
               <span className="text-[10px] font-medium text-muted-foreground">Dorms / Beds</span>
             </div>
@@ -114,7 +114,7 @@ export function BookingCalendarGrid({
                     )}
                   >
                     {dorm.collapsed ? <ChevronRightIcon className="size-3.5 shrink-0" /> : <ChevronDownIcon className="size-3.5 shrink-0" />}
-                    <span className="min-w-0 flex-1 truncate">{dorm.name}</span>
+                    <span className="min-w-0 flex-1 break-words line-clamp-2 leading-[11px] sm:line-clamp-1 sm:leading-normal">{dorm.name}</span>
                   </button>
                   {!dorm.collapsed && dorm.beds.map((bed, bedIdx) => {
                     const bedBg = bedIdx % 2 === 0
@@ -125,7 +125,7 @@ export function BookingCalendarGrid({
                       key={bed.id}
                       className={cn("flex h-8 items-center border-b border-border px-2 text-[11px]", bedBg)}
                     >
-                      <span className="truncate">{bed.bedId}</span>
+                      <span className="min-w-0 flex-1 break-words line-clamp-2 leading-[11px] sm:line-clamp-1 sm:leading-normal">{bed.bedId}</span>
                     </div>
                     );
                   })}

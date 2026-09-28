@@ -140,7 +140,7 @@ Booking Settings → Rooms & Rates is the administrator-only home for the book-d
 | File | Role |
 |------|------|
 | `index.tsx` | Calendar shell; Calendar, operational Table, and date-scoped All Bookings views |
-| `BookingCalendarGrid.tsx` | Bars by dorm/night |
+| `BookingCalendarGrid.tsx` | Bars by dorm/night; the sticky Dorms/Beds column narrows to 104px on phones and clamps wrapped labels to two lines while retaining the 140px single-line desktop layout |
 | `BookingDetailPanel.tsx` | Check-in/out (food-tab warn), Collect, OTA postpaid advance/refund/correction history, cancel/no-show with refund; website Razorpay IDs + orphan refund |
 | `CreateBookingModal.tsx` | Walk-in / engine; stay total for selected units is the calendar sum of nightly rates (`dormStayTotals` from `getAvailableBeds`); bed chips show `₹A/night` or `₹A–B/night` when nights differ. Walk-in bookings include an optional advance-payment section between Special Requests and Discount. It emphasizes **Booking total** and **Remaining after advance** (`text-base tabular-nums`), records cash or online advance, selects an active online receiving account, and previews the remaining balance; the bottom pricing summary Total is slightly larger (`text-sm`). |
 | `UnassignedBookings.tsx` | OTA leftover chips, Reject |
