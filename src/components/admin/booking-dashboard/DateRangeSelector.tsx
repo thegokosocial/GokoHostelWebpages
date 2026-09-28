@@ -9,9 +9,9 @@ import { getDateRange, getHostelToday } from "./utils";
 import type { DateRange } from "./types";
 
 const MODES = [
-  { value: "week" as const, label: "Week" },
-  { value: "10days" as const, label: "10 Days" },
+  { value: "15days" as const, label: "15 Days" },
   { value: "30days" as const, label: "30 Days" },
+  { value: "60days" as const, label: "60 Days" },
   { value: "custom" as const, label: "Custom" },
 ];
 
@@ -54,8 +54,8 @@ export function DateRangeSelector({
   };
 
   const handleToday = () => {
-    const { start, end } = getDateRange("10days");
-    onChange({ startDate: start, endDate: end, mode: "10days" });
+    const { start, end } = getDateRange("15days");
+    onChange({ startDate: start, endDate: end, mode: "15days" });
   };
 
   return (

@@ -78,7 +78,7 @@ Gmail sync (`POST /api/bookings/sync`, **env** admin/manager passwords only): la
 
 ## Inventory UI
 
-The Inventory grid offers 15d, 30d, 60d, and Custom ranges (default 15d). Custom Start/End dates are inclusive in the UI and are applied immediately; `getInventoryGrid` receives exactly those inclusive dates. Bookings and Timeline use the same immediate-Apply inclusive custom-range behavior.
+The Inventory and Bookings grids offer 15d, 30d, 60d, and Custom ranges (default 15d). Custom Start/End dates are inclusive in the UI and are applied immediately; `getInventoryGrid` receives exactly those inclusive dates. Timeline uses the same immediate-Apply inclusive custom-range behavior.
 
 `/api/admin/inventory` — grid, channel CRUD, bed type config, blocks, overrides, bulk availability/rates/restrictions. Permission `canManageInventory`.
 

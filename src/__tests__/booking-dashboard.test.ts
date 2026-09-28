@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { isWeekend, getNights, platformLogo, stayOverlapsVisible, rangeCoveringStay, computeTilePlacements, getDatesArray, collectionCopy, displayedStayPayment, formatCurrency } from "@/components/admin/booking-dashboard/utils";
+import { isWeekend, getNights, platformLogo, stayOverlapsVisible, rangeCoveringStay, computeTilePlacements, getDateRange, getDatesArray, collectionCopy, displayedStayPayment, formatCurrency } from "@/components/admin/booking-dashboard/utils";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { isRetryableAdminResponse } from "@/components/admin/useAdminApi";
 import { isTransientError } from "@/lib/dbRetry";
@@ -11,6 +11,17 @@ const ROOT = path.resolve(__dirname, "../..");
 function readFile(relativePath: string): string {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf-8");
 }
+
+describe("Booking calendar date presets", () => {
+  it.each([
+    ["15days", 15],
+    ["30days", 30],
+    ["60days", 60],
+  ] as const)("returns an inclusive %s range", (mode, expectedDays) => {
+    const range = getDateRange(mode);
+    expect(getDatesArray(range.start, range.end)).toHaveLength(expectedDays);
+  });
+});
 
 describe("Booking Dashboard: Query Logic Verification", () => {
   describe("checkBedAvailability", () => {

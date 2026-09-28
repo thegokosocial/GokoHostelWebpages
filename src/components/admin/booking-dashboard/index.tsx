@@ -70,8 +70,8 @@ export function BookingDashboard({
 
   const [view, setView] = useState<"calendar" | "table" | "all">("calendar");
   const [dateRange, setDateRange] = useState<DateRange>(() => {
-    const { start, end } = getDateRange("10days");
-    return { startDate: start, endDate: end, mode: "10days" };
+    const { start, end } = getDateRange("15days");
+    return { startDate: start, endDate: end, mode: "15days" };
   });
   const [bookings, setBookings] = useState<DashboardBooking[]>([]);
   const [allBookings, setAllBookings] = useState<DashboardBooking[]>([]);

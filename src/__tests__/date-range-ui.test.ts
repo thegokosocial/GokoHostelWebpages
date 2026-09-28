@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const bookings = readFileSync("src/components/admin/booking-dashboard/DateRangeSelector.tsx", "utf8");
+const bookingDashboard = readFileSync("src/components/admin/booking-dashboard/index.tsx", "utf8");
 const inventory = readFileSync("src/components/admin/InventoryRatePlan.tsx", "utf8");
 const timeline = readFileSync("src/components/admin/AdminTimeline.tsx", "utf8");
 
@@ -10,6 +11,17 @@ function inclusiveDays(start: string, end: string): number {
 }
 
 describe("admin custom date ranges", () => {
+  it("offers 15, 30, and 60 day Booking presets with 15 days as the default", () => {
+    expect(bookings).toContain('label: "15 Days"');
+    expect(bookings).toContain('label: "30 Days"');
+    expect(bookings).toContain('label: "60 Days"');
+    expect(bookings).not.toContain('label: "Week"');
+    expect(bookings).not.toContain('label: "10 Days"');
+    expect(bookings).toContain('getDateRange("15days")');
+    expect(bookingDashboard).toContain('getDateRange("15days")');
+    expect(bookingDashboard).toContain('mode: "15days"');
+  });
+
   it("applies Bookings custom dates directly and accepts ranges longer than 30 days", () => {
     expect(bookings).toContain("DateRangePicker");
     expect(bookings).toContain('applyMode="manual"');

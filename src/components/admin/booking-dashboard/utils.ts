@@ -102,15 +102,13 @@ export function getHostelToday(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
-export function getDateRange(mode: "week" | "10days" | "30days"): { start: string; end: string } {
+export function getDateRange(mode: "15days" | "30days" | "60days"): { start: string; end: string } {
   const today = new Date(getHostelToday() + "T12:00:00Z");
   const yesterday = new Date(today);
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const start = yesterday.toISOString().split("T")[0];
 
-  let days = 7;
-  if (mode === "10days") days = 10;
-  if (mode === "30days") days = 30;
+  const days = mode === "15days" ? 15 : mode === "30days" ? 30 : 60;
 
   const endDate = new Date(yesterday);
   endDate.setUTCDate(endDate.getUTCDate() + days - 1);
