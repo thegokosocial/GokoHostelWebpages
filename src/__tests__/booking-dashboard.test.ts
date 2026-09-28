@@ -390,6 +390,8 @@ describe("Booking dashboard: all-status table view", () => {
     expect(tableFn).toContain("checkoutDate} > ${startDate}");
     expect(tableFn).toContain("status} IN ('checked_out', 'no_show', 'cancelled')");
     expect(tableFn).toContain("checkoutDate} >= ${startDate}");
+    expect(tableFn).toContain("inArray(bookings.platform, options.platforms)");
+    expect(tableFn).toContain("platforms: platformRows.map");
     expect(tableFn).not.toContain("status} != 'cancelled'");
   });
 
@@ -408,6 +410,9 @@ describe("Booking dashboard: all-status table view", () => {
     expect(dashboard).toContain("Promise.all([loadData(true), loadAllBookings()])");
     expect(dashboard).toContain('id="all-booking-search"');
     expect(dashboard).toContain("allBookingStatusCounts");
+    expect(dashboard).toContain("All platforms");
+    expect(dashboard).toContain("allBookingPlatforms");
+    expect(dashboard).toContain("Clear filters");
     expect(searchBar).toContain("onRemoteSearch");
     expect(searchBar).toContain("window.clearTimeout(timer)");
   });

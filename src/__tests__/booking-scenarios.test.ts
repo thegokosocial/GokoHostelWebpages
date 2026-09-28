@@ -1272,11 +1272,12 @@ describe("calendar nights enrichment", () => {
       ],
       total: 2,
       statusCounts: { cancelled: 1, no_show: 1 },
+      platforms: ["booking.com", "walkin"],
       page: 0,
       pageSize: 50,
     });
     const res = await POST(req({
-      password: "x", action: "getAllBookings", startDate: "2026-09-01", endDate: "2026-09-10", status: "all",
+      password: "x", action: "getAllBookings", startDate: "2026-09-01", endDate: "2026-09-10", status: "all", platforms: ["booking.com", "walkin"],
     }));
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -1284,6 +1285,16 @@ describe("calendar nights enrichment", () => {
       expect.objectContaining({ id: 1, status: "cancelled", nights: 1, balance: 1000 }),
       expect.objectContaining({ id: 2, status: "no_show", nights: 1, balance: 1500 }),
     ]);
-    expect(q.getBookingTableData).toHaveBeenCalledWith("2026-09-01", "2026-09-10", expect.objectContaining({ status: undefined, page: 0, pageSize: 50 }));
+    expect(json.platforms).toEqual(["booking.com", "walkin"]);
+    expect(q.getBookingTableData).toHaveBeenCalledWith("2026-09-01", "2026-09-10", expect.objectContaining({ status: undefined, page: 0, pageSize: 50, platforms: ["booking.com", "walkin"] }));
+  });
+
+  it("rejects malformed platform filters before querying bookings", async () => {
+    const res = await POST(req({
+      password: "x", action: "getAllBookings", startDate: "2026-09-01", endDate: "2026-09-10", platforms: ["booking.com", ""],
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid booking platforms" });
+    expect(q.getBookingTableData).not.toHaveBeenCalled();
   });
 });

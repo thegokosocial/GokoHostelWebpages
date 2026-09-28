@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { PlusIcon, TableIcon, CalendarIcon, ListIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { PlusIcon, TableIcon, CalendarIcon, ListIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { BookingCalendarGrid } from "./BookingCalendarGrid";
 import { BookingTableView } from "./BookingTableView";
 import { BookingSearchBar } from "./BookingSearchBar";
@@ -11,7 +13,7 @@ import { BookingDetailPanel } from "./BookingDetailPanel";
 import { CreateBookingModal, type CheckinBookingPrefill } from "./CreateBookingModal";
 import { UnassignedBookings } from "./UnassignedBookings";
 import { DateRangeSelector } from "./DateRangeSelector";
-import { getDateRange, getHostelToday, rangeCoveringStay, STATUS_LABELS } from "./utils";
+import { getDateRange, getHostelToday, platformLogo, rangeCoveringStay, STATUS_LABELS } from "./utils";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "../AdminLoading";
 import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm, BookingContactMethod } from "./types";
@@ -79,6 +81,8 @@ export function BookingDashboard({
   const [allBookingStatusCounts, setAllBookingStatusCounts] = useState<Record<string, number>>({});
   const [allBookingStatus, setAllBookingStatus] = useState<BookingStatus | "all">("all");
   const [allBookingSearch, setAllBookingSearch] = useState("");
+  const [allBookingPlatforms, setAllBookingPlatforms] = useState<string[]>([]);
+  const [allBookingPlatformOptions, setAllBookingPlatformOptions] = useState<string[]>([]);
   const [allBookingsPage, setAllBookingsPage] = useState(0);
   const [allBookingsLoading, setAllBookingsLoading] = useState(false);
   const allBookingsRequest = useRef(0);
@@ -206,6 +210,7 @@ export function BookingDashboard({
         pageSize: ALL_BOOKINGS_PAGE_SIZE,
         status: allBookingStatus,
         query: allBookingSearch.trim() || undefined,
+        platforms: allBookingPlatforms.length ? allBookingPlatforms : undefined,
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Failed to load all bookings" }));
@@ -219,12 +224,13 @@ export function BookingDashboard({
       setAllBookings(data.bookings || []);
       setAllBookingsTotal(Number(data.total || 0));
       setAllBookingStatusCounts(data.statusCounts || {});
+      setAllBookingPlatformOptions(data.platforms || []);
     } catch {
       if (requestId === allBookingsRequest.current) showError("Network error loading all bookings");
     } finally {
       if (requestId === allBookingsRequest.current) setAllBookingsLoading(false);
     }
-  }, [allBookingSearch, allBookingStatus, allBookingsPage, apiCall, dateRange.endDate, dateRange.startDate, showApiError, showError]);
+  }, [allBookingPlatforms, allBookingSearch, allBookingStatus, allBookingsPage, apiCall, dateRange.endDate, dateRange.startDate, showApiError, showError]);
 
   const searchAllBookings = useCallback(async (query: string) => {
     try {
@@ -236,6 +242,7 @@ export function BookingDashboard({
         pageSize: 10,
         status: allBookingStatus,
         query,
+        platforms: allBookingPlatforms.length ? allBookingPlatforms : undefined,
       });
       if (!res.ok) return [];
       const data = await res.json();
@@ -243,7 +250,22 @@ export function BookingDashboard({
     } catch {
       return [];
     }
-  }, [allBookingStatus, apiCall, dateRange.endDate, dateRange.startDate]);
+  }, [allBookingPlatforms, allBookingStatus, apiCall, dateRange.endDate, dateRange.startDate]);
+
+  const allBookingPlatformGroups = useMemo(() => {
+    const groups = new Map<string, { label: string; values: string[] }>();
+    for (const value of allBookingPlatformOptions) {
+      const label = platformLogo(value)?.label || value;
+      const key = label.toLocaleLowerCase();
+      const group = groups.get(key) || { label, values: [] };
+      group.values.push(value);
+      groups.set(key, group);
+    }
+    return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [allBookingPlatformOptions]);
+
+  const selectedPlatformGroupCount = allBookingPlatformGroups.filter((group) => group.values.some((value) => allBookingPlatforms.includes(value))).length;
+  const hasAllBookingFilters = allBookingSearch.length > 0 || allBookingStatus !== "all" || allBookingPlatforms.length > 0;
 
   useEffect(() => {
     loadData();
@@ -495,6 +517,37 @@ export function BookingDashboard({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline" size="xs" className="min-w-32 justify-between">
+                    {selectedPlatformGroupCount === 0 ? "All platforms" : `${selectedPlatformGroupCount} platform${selectedPlatformGroupCount === 1 ? "" : "s"}`}
+                    <ChevronDownIcon className="size-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-2">
+                  <p className="px-2 pb-1 text-xs font-semibold text-foreground">Platforms</p>
+                  <div className="max-h-64 space-y-0.5 overflow-y-auto">
+                    {allBookingPlatformGroups.map((group) => {
+                      const checked = group.values.every((value) => allBookingPlatforms.includes(value));
+                      return (
+                        <label key={group.label} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => {
+                              setAllBookingsPage(0);
+                              setAllBookingPlatforms((current) => checked
+                                ? current.filter((value) => !group.values.includes(value))
+                                : [...new Set([...current, ...group.values])]);
+                            }}
+                          />
+                          <span>{group.label}</span>
+                        </label>
+                      );
+                    })}
+                    {allBookingPlatformGroups.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No platforms in this date range</p>}
+                  </div>
+                </PopoverContent>
+              </Popover>
               <label htmlFor="all-booking-search" className="sr-only">Search all bookings</label>
               <input
                 id="all-booking-search"
@@ -523,6 +576,21 @@ export function BookingDashboard({
                   </option>
                 ))}
               </select>
+              {hasAllBookingFilters && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    setAllBookingsPage(0);
+                    setAllBookingSearch("");
+                    setAllBookingStatus("all");
+                    setAllBookingPlatforms([]);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
             </div>
           </div>
 

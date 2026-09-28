@@ -2274,7 +2274,7 @@ export async function getBookingCalendarData(startDate: string, endDate: string)
 export async function getBookingTableData(
   startDate: string,
   endDate: string,
-  options: { page?: number; pageSize?: number; status?: string; query?: string } = {},
+  options: { page?: number; pageSize?: number; status?: string; query?: string; platforms?: string[] } = {},
 ) {
   return dbRead(async () => {
     const db = getDb();
@@ -2290,14 +2290,18 @@ export async function getBookingTableData(
           sql`(${bookings.checkoutDate} IS NULL OR ${bookings.checkoutDate} = '' OR ${bookings.checkoutDate} >= ${startDate})`,
         ),
       ),
+    ];
+    const rangeWhere = and(...overlap);
+    const baseWhere = and(
+      rangeWhere,
       query
         ? sql`(${bookings.guestName} LIKE ${`%${query}%`} OR ${bookings.bookingRef} LIKE ${`%${query}%`} OR ${bookings.gokoBookingId} LIKE ${`%${query}%`} OR ${bookings.contact} LIKE ${`%${query}%`})`
         : undefined,
-    ];
-    const baseWhere = and(...overlap);
+      options.platforms?.length ? inArray(bookings.platform, options.platforms) : undefined,
+    );
     const where = and(baseWhere, options.status ? eq(bookings.status, options.status) : undefined);
 
-    const [rows, totalRows, statusRows] = await Promise.all([
+    const [rows, totalRows, statusRows, platformRows] = await Promise.all([
       db.select().from(bookings)
         .where(where)
         .orderBy(desc(bookings.checkinDate), desc(bookings.id))
@@ -2308,12 +2312,18 @@ export async function getBookingTableData(
         .from(bookings)
         .where(baseWhere)
         .groupBy(bookings.status),
+      db.select({ platform: bookings.platform })
+        .from(bookings)
+        .where(rangeWhere)
+        .groupBy(bookings.platform)
+        .orderBy(bookings.platform),
     ]);
 
     return {
       bookings: rows,
       total: Number(totalRows[0]?.total ?? 0),
       statusCounts: Object.fromEntries(statusRows.map((row) => [row.status, Number(row.total ?? 0)])),
+      platforms: platformRows.map((row) => row.platform).filter(Boolean),
       page,
       pageSize,
     };

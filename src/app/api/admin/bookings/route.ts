@@ -378,13 +378,19 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "getAllBookings") {
-      const { startDate, endDate, page, pageSize, status, query } = body;
+      const { startDate, endDate, page, pageSize, status, query, platforms } = body;
       if (!startDate || !endDate) return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
       const validStatuses = new Set(["received", "checked_in", "checked_out", "hold", "guest_declined", "no_show", "cancelled", "modified"]);
       const requestedStatus = typeof status === "string" && status !== "all" ? status : undefined;
       if (requestedStatus && !validStatuses.has(requestedStatus)) {
         return NextResponse.json({ error: "Invalid booking status" }, { status: 400 });
       }
+      if (platforms !== undefined && (!Array.isArray(platforms) || platforms.length > 50 || platforms.some((platform) => typeof platform !== "string" || !platform.trim() || platform.length > 100))) {
+        return NextResponse.json({ error: "Invalid booking platforms" }, { status: 400 });
+      }
+      const requestedPlatforms = Array.isArray(platforms)
+        ? [...new Set(platforms.map((platform) => platform.trim()))]
+        : undefined;
 
       stage = "load all booking rows";
       const result = await getBookingTableData(startDate, endDate, {
@@ -392,6 +398,7 @@ export async function POST(req: NextRequest) {
         pageSize: Number.isFinite(Number(pageSize)) ? Number(pageSize) : 50,
         status: requestedStatus,
         query: typeof query === "string" ? query : undefined,
+        platforms: requestedPlatforms?.length ? requestedPlatforms : undefined,
       });
       const bookings = result.bookings.map((b) => {
         const checkout = stayCheckout(b.checkinDate, b.checkoutDate);
