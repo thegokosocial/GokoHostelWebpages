@@ -14,8 +14,10 @@ import {
   type HeroVideoSlot,
 } from "@/lib/heroVideos";
 import type { HeroVideosAdminPayload } from "@/lib/loadHeroVideos";
+import { buildHeroUploadRequest, formatHeroUploadPhaseError } from "@/lib/heroUploadRequest";
 
 type Props = { password: string; username?: string };
+type UploadPhase = "encode" | "upload-video" | "upload-poster" | "save";
 
 function findItem(id: string, items: HeroLibraryItem[]) {
   return items.find((v) => v.id === id);
@@ -75,18 +77,8 @@ export function AdminHeroVideos({ password, username }: Props) {
   );
 
   async function uploadBlob(blob: Blob, filename: string) {
-    // Raw body (not multipart FormData) — Workers/OpenNext buffer FormData poorly for multi-MB MP4s.
-    const type = blob.type || (filename.endsWith(".mp4") ? "video/mp4" : "image/jpeg");
-    const headers: Record<string, string> = {
-      "Content-Type": type,
-      "X-Goko-Password": password,
-    };
-    if (username) headers["X-Goko-Username"] = username;
-    const res = await fetch("/api/admin/website/upload?folder=hero-videos", {
-      method: "POST",
-      headers,
-      body: blob,
-    });
+    const { url: uploadUrl, init } = buildHeroUploadRequest(blob, filename, { password, username });
+    const res = await fetch(uploadUrl, init);
     const json = await res.json().catch(() => ({} as { error?: string }));
     if (!res.ok) throw new Error(json.error || `Upload failed (${res.status})`);
     return String(json.url || "");
@@ -96,13 +88,17 @@ export function AdminHeroVideos({ password, username }: Props) {
     if (!file) return;
     setBusy(true);
     setProgress("Starting…");
+    let phase: UploadPhase = "encode";
     try {
       const { processHeroVideo } = await import("@/lib/processHeroVideo");
       const processed = await processHeroVideo(file, slot, (_p, detail) => setProgress(detail || _p));
+      phase = "upload-video";
       setProgress("Uploading video…");
       const url = await uploadBlob(processed.video, `${slot}.mp4`);
+      phase = "upload-poster";
       setProgress("Uploading poster…");
       const posterUrl = await uploadBlob(processed.poster, `${slot}-poster.jpg`);
+      phase = "save";
       setProgress("Saving…");
       await api({
         action: "addHeroVideo",
@@ -117,7 +113,7 @@ export function AdminHeroVideos({ password, username }: Props) {
       showSuccess(slot === "desktop" ? "Desktop video added" : "Mobile video added");
       await load();
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Upload failed");
+      showError(formatHeroUploadPhaseError(phase, err));
     } finally {
       setBusy(false);
       setProgress("");

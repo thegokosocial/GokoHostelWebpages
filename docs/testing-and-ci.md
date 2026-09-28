@@ -51,7 +51,7 @@ Dependency security checks use `npm audit`. Next stays on the supported 15.5 pat
 | `stock-operations.test.ts` | Decrement / restore |
 | `data-cleanup.test.ts` | Daily-ledger uniqueness |
 | `audit-retention.test.ts` / `audit-presentation.test.ts` | Global retention/date bounds, friendly audit rendering, full table wrapping, and removal of destructive food-order cleanup |
-| `site-cms.test.ts` / `website-cms-api.test.ts` / `hero-videos.test.ts` | CMS + hero library/resolver/page wiring; hydrate remount; hero-videos FormData empty-MIME >5MB + **raw-body** header auth upload; multiline put errors; Blob parts |
+| `site-cms.test.ts` / `website-cms-api.test.ts` / `hero-videos.test.ts` / `hero-upload-scenarios.test.ts` | CMS + hero wiring; raw-body upload; encode 8/4MB caps; middleware upload exclusion; `clientUploadError` non-Error; phase toasts; origin 403 |
 | `aiosell-webhook.test.ts` | Reservation parse (`book` / `modify` / `cancel`) |
 | `aiosell-operations.test.ts` | Webhook auth variants, book/modify/cancel combos, fetch reservation ingest, push-inventory modes (ranged / dirty / fullSync), push-rates + fetch + noshow + inv-restriction aggregation, Channel Manager CRUD (incl. `booking_tax_apply_website` / `booking_tax_apply_admin` getConfig/saveConfig). `pah` true/`false`/omitted → `pay_at_hotel`/`prepaid`/`unknown` |
 | `aiosell-inventory-sync.test.ts` | Real `getDateAwareAvailability` (incl. unassigned OTA + native website holds) / `heldBedsToUnits` / range snapshot second pass / `triggerInventoryPush` / `pushIfOtaChanged` (mocked D1 + Aiosell HTTP) |

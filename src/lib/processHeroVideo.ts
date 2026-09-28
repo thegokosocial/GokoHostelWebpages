@@ -8,9 +8,29 @@ export type ProcessedHeroVideo = {
   bytes: number;
 };
 
-const DESKTOP = { width: 1024, height: 576, maxBytes: 8 * 1024 * 1024 };
-const MOBILE = { width: 324, height: 576, maxBytes: 4 * 1024 * 1024 };
+export const HERO_ENCODE_LIMITS = {
+  desktop: { width: 1024, height: 576, maxBytes: 8 * 1024 * 1024 },
+  mobile: { width: 324, height: 576, maxBytes: 4 * 1024 * 1024 },
+} as const;
+
 const SOURCE_MAX = 200 * 1024 * 1024;
+
+export function heroEncodeMaxBytes(slot: HeroVideoSlot): number {
+  return HERO_ENCODE_LIMITS[slot].maxBytes;
+}
+
+/** Reject oversized encodes before upload (desktop 8MB / mobile 4MB). */
+export function assertHeroEncodedSize(bytes: number, slot: HeroVideoSlot): void {
+  const max = heroEncodeMaxBytes(slot);
+  if (bytes > max) {
+    const mb = Math.round(max / (1024 * 1024));
+    throw new Error(
+      slot === "mobile"
+        ? `Encoded mobile video is over ${mb}MB. Use a shorter clip.`
+        : `Encoded desktop video is over ${mb}MB. Use a shorter clip.`,
+    );
+  }
+}
 
 type ProgressFn = (phase: "loading" | "encoding" | "poster", detail?: string) => void;
 
@@ -38,7 +58,7 @@ export async function processHeroVideo(
 ): Promise<ProcessedHeroVideo> {
   if (!file || file.size === 0) throw new Error("Choose a video file");
   if (file.size > SOURCE_MAX) throw new Error("Source video is too large (max 200MB). Trim or compress it first.");
-  const target = slot === "mobile" ? MOBILE : DESKTOP;
+  const target = HERO_ENCODE_LIMITS[slot];
   const { fetchFile } = await import("@ffmpeg/util");
   const ffmpeg = await loadFfmpeg(onProgress);
 
@@ -68,9 +88,7 @@ export async function processHeroVideo(
   if (!(outData instanceof Uint8Array) || outData.byteLength === 0) {
     throw new Error("Encoder produced an empty file");
   }
-  if (outData.byteLength > 15 * 1024 * 1024) {
-    throw new Error("Encoded video is still over 15MB. Use a shorter clip.");
-  }
+  assertHeroEncodedSize(outData.byteLength, slot);
 
   onProgress?.("poster", "Extracting poster…");
   const posterCode = await ffmpeg.exec([

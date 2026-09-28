@@ -798,7 +798,7 @@ describe("POST /api/admin/website/upload", () => {
     expect(putMediaObject).toHaveBeenCalled();
   });
 
-  it("surfaces putMediaObject errors instead of opaque Upload failed", async () => {
+  it("surfaces putMediaObject errors with UPLOAD_THROW code", async () => {
     vi.mocked(putMediaObject).mockRejectedValueOnce(new Error("R2 put rejected"));
     const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
     const fd = new FormData();
@@ -806,8 +806,10 @@ describe("POST /api/admin/website/upload", () => {
     fd.set("folder", "hero-videos");
     fd.set("file", new File([mp4], "clip.mp4", { type: "video/mp4" }));
     const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    const body = await res.json();
     expect(res.status).toBe(500);
-    expect((await res.json()).error).toBe("R2 put rejected");
+    expect(body.error).toBe("R2 put rejected");
+    expect(body.code).toBe("UPLOAD_THROW");
   });
 
   it("surfaces multiline throw messages as a single short line", async () => {
@@ -820,6 +822,37 @@ describe("POST /api/admin/website/upload", () => {
     const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
     expect(res.status).toBe(500);
     expect((await res.json()).error).toBe("Network connection lost.");
+  });
+
+  it("surfaces non-Error put rejects instead of opaque Upload failed", async () => {
+    vi.mocked(putMediaObject).mockRejectedValueOnce({ message: "" });
+    const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload?folder=hero-videos", {
+      method: "POST",
+      headers: { "Content-Type": "video/mp4", "X-Goko-Password": "x" },
+      body: mp4,
+    }));
+    const body = await res.json();
+    expect(res.status).toBe(500);
+    expect(body.code).toBe("UPLOAD_THROW");
+    expect(body.error).toMatch(/^UPLOAD_ERROR:/);
+    expect(body.error).not.toBe("Upload failed");
+  });
+
+  it("rejects cross-origin upload POSTs", async () => {
+    const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload?folder=hero-videos", {
+      method: "POST",
+      headers: {
+        "Content-Type": "video/mp4",
+        "X-Goko-Password": "x",
+        Origin: "https://evil.example",
+      },
+      body: mp4,
+    }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe("Invalid request origin");
+    expect(putMediaObject).not.toHaveBeenCalled();
   });
 
   it("accepts raw-body hero-videos MP4 with auth headers (no FormData)", async () => {

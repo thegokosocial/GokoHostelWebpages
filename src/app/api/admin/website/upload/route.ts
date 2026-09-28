@@ -4,6 +4,7 @@ import { actionAllowed } from "@/lib/actionPermissions";
 import { isPiRuntime } from "@/lib/runtime";
 import { getMediaBucket, putMediaObject } from "@/lib/mediaR2";
 import { isSafeMediaKey, keyToMediaUrl } from "@/lib/mediaKeys";
+import { uploadThrowResponse } from "@/lib/websiteUploadErrors";
 
 const FOLDERS = new Set(["events", "community", "heroes", "rooms", "menu", "quick-links", "bills", "hero-videos"]);
 const MULTI_IMAGE_FOLDERS = new Set(["quick-links", "bills"]);
@@ -21,12 +22,12 @@ function maxBytesFor(folder: string) {
   return folder === "hero-videos" ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
 }
 
-/** Prefer a short single-line message; never drop useful text because of a stack newline. */
-function clientUploadError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  const line = raw.trim().split(/\r?\n/)[0]?.trim() || "";
-  if (!line) return "Upload failed";
-  return line.length > 160 ? `${line.slice(0, 157)}...` : line;
+function assertSameOrigin(req: NextRequest): NextResponse | null {
+  const origin = req.headers.get("origin");
+  if (origin && origin !== req.nextUrl.origin) {
+    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  }
+  return null;
 }
 
 function isJpeg(head: Uint8Array) {
@@ -201,6 +202,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Website media uploads are only available on the live site" }, { status: 403 });
   }
 
+  const originDenied = assertSameOrigin(req);
+  if (originDenied) return originDenied;
+
   try {
     const ct = (req.headers.get("content-type") || "").toLowerCase();
     if (ct.startsWith("multipart/form-data")) {
@@ -210,6 +214,6 @@ export async function POST(req: NextRequest) {
     return await handleRawUpload(req);
   } catch (error: unknown) {
     console.error("Website upload error:", error);
-    return NextResponse.json({ error: clientUploadError(error) }, { status: 500 });
+    return NextResponse.json(uploadThrowResponse(error), { status: 500 });
   }
 }
