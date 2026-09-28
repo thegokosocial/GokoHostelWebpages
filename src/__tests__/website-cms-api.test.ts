@@ -940,13 +940,12 @@ describe("GET /api/media/[...key]", () => {
     expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
   });
 
-  it("synthesizes 206 for small bodies when R2 omits native range", async () => {
+  it("synthesizes 206 for Range on small bodies via full get + slice", async () => {
     const bytes = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80]);
     vi.mocked(getMediaObject).mockResolvedValue({
       body: new Blob([bytes]).stream(),
       httpMetadata: { contentType: "video/mp4" },
       size: bytes.byteLength,
-      // no object.range — forces synth path
     });
     const res = await mediaGET(
       new NextRequest("http://localhost/api/media/hero-videos/clip.mp4", {
@@ -954,6 +953,7 @@ describe("GET /api/media/[...key]", () => {
       }),
       { params: Promise.resolve({ key: ["hero-videos", "clip.mp4"] }) },
     );
+    expect(getMediaObject).toHaveBeenCalledWith("hero-videos/clip.mp4");
     expect(res.status).toBe(206);
     expect(res.headers.get("Content-Range")).toBe("bytes 2-5/8");
     expect(res.headers.get("Content-Length")).toBe("4");
@@ -962,7 +962,25 @@ describe("GET /api/media/[...key]", () => {
     expect([...out]).toEqual([30, 40, 50, 60]);
   });
 
-  it("keeps 200 full body for oversized Range without native R2 range", async () => {
+  it("synthesizes 206 even when R2 omits size (buffer measures length)", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6]);
+    vi.mocked(getMediaObject).mockResolvedValue({
+      body: new Blob([bytes]).stream(),
+      httpMetadata: { contentType: "video/mp4" },
+      // size omitted — production full GET often lacks Content-Length
+    });
+    const res = await mediaGET(
+      new NextRequest("http://localhost/api/media/hero-videos/nosize.mp4", {
+        headers: { Range: "bytes=0-2" },
+      }),
+      { params: Promise.resolve({ key: ["hero-videos", "nosize.mp4"] }) },
+    );
+    expect(res.status).toBe(206);
+    expect(res.headers.get("Content-Range")).toBe("bytes 0-2/6");
+    expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([1, 2, 3]);
+  });
+
+  it("keeps 200 full stream for oversized Range (no buffer)", async () => {
     const size = 16 * 1024 * 1024;
     vi.mocked(getMediaObject).mockResolvedValue({
       body: new ReadableStream({
