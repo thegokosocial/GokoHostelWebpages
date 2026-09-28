@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   serverExternalPackages: ["better-sqlite3"],
+  // Raise Server Action body cap (default 1MB). Hero MP4s use raw-body upload, not actions.
+  serverActions: { bodySizeLimit: "20mb" },
   ...(isPi ? { output: "standalone" } : {}),
   env: {
     BUILD_VERSION: process.env.BUILD_VERSION || "unknown",

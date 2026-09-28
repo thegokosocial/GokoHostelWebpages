@@ -94,8 +94,9 @@ export async function processHeroVideo(
     /* ignore cleanup */
   }
 
-  const video = new Blob([Uint8Array.from(outData)], { type: "video/mp4" });
-  const poster = new Blob([Uint8Array.from(posterData)], { type: "image/jpeg" });
+  // .slice() copies off any SharedArrayBuffer-backed view from ffmpeg.wasm
+  const video = new Blob([outData.slice()], { type: "video/mp4" });
+  const poster = new Blob([posterData.slice()], { type: "image/jpeg" });
   return {
     video,
     poster,

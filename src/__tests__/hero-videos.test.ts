@@ -167,8 +167,10 @@ describe("hero video page wiring", () => {
     expect(admin).toContain("Hero Videos");
 
     const heroUpload = readFileSync("src/components/admin/AdminHeroVideos.tsx", "utf8");
-    expect(heroUpload).toContain('new File([blob], filename, { type })');
-    expect(heroUpload).toContain('video/mp4');
+    expect(heroUpload).toContain("X-Goko-Password");
+    expect(heroUpload).toContain("folder=hero-videos");
+    expect(heroUpload).toContain("body: blob");
+    expect(heroUpload).toContain("not multipart FormData");
 
     // Marketing pages stay force-static; heroes hydrate client-side
     expect(readFileSync("src/app/(marketing)/book/page.tsx", "utf8")).toContain('force-static');

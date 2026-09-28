@@ -75,14 +75,18 @@ export function AdminHeroVideos({ password, username }: Props) {
   );
 
   async function uploadBlob(blob: Blob, filename: string) {
+    // Raw body (not multipart FormData) — Workers/OpenNext buffer FormData poorly for multi-MB MP4s.
     const type = blob.type || (filename.endsWith(".mp4") ? "video/mp4" : "image/jpeg");
-    const file = new File([blob], filename, { type });
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("password", password);
-    if (username) fd.append("username", username);
-    fd.append("folder", "hero-videos");
-    const res = await fetch("/api/admin/website/upload", { method: "POST", body: fd });
+    const headers: Record<string, string> = {
+      "Content-Type": type,
+      "X-Goko-Password": password,
+    };
+    if (username) headers["X-Goko-Username"] = username;
+    const res = await fetch("/api/admin/website/upload?folder=hero-videos", {
+      method: "POST",
+      headers,
+      body: blob,
+    });
     const json = await res.json().catch(() => ({} as { error?: string }));
     if (!res.ok) throw new Error(json.error || `Upload failed (${res.status})`);
     return String(json.url || "");

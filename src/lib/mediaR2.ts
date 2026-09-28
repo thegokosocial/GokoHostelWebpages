@@ -28,7 +28,7 @@ export function getMediaBucket(): R2Bucket | null {
   }
 }
 
-export async function putMediaObject(key: string, bytes: ArrayBuffer, contentType: string) {
+export async function putMediaObject(key: string, bytes: ArrayBuffer | Uint8Array, contentType: string) {
   if (!isSafeMediaKey(key)) throw new Error("Invalid media key");
   const bucket = getMediaBucket();
   if (!bucket) throw new Error("R2 bucket not bound");

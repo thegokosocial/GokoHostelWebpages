@@ -809,6 +809,64 @@ describe("POST /api/admin/website/upload", () => {
     expect(res.status).toBe(500);
     expect((await res.json()).error).toBe("R2 put rejected");
   });
+
+  it("surfaces multiline throw messages as a single short line", async () => {
+    vi.mocked(putMediaObject).mockRejectedValueOnce(new Error("Network connection lost.\n    at Object.put"));
+    const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
+    const fd = new FormData();
+    fd.set("password", "x");
+    fd.set("folder", "hero-videos");
+    fd.set("file", new File([mp4], "clip.mp4", { type: "video/mp4" }));
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload", { method: "POST", body: fd }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe("Network connection lost.");
+  });
+
+  it("accepts raw-body hero-videos MP4 with auth headers (no FormData)", async () => {
+    const mp4 = new Uint8Array(6 * 1024 * 1024);
+    mp4[0] = 0x00; mp4[1] = 0x00; mp4[2] = 0x00; mp4[3] = 0x18;
+    mp4[4] = 0x66; mp4[5] = 0x74; mp4[6] = 0x79; mp4[7] = 0x70;
+    mp4[8] = 0x69; mp4[9] = 0x73; mp4[10] = 0x6f; mp4[11] = 0x6d;
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload?folder=hero-videos", {
+      method: "POST",
+      headers: {
+        "Content-Type": "video/mp4",
+        "X-Goko-Password": "x",
+        "Content-Length": String(mp4.byteLength),
+      },
+      body: mp4,
+    }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).url).toMatch(/^\/api\/media\/hero-videos\/.+\.mp4$/i);
+    expect(putMediaObject).toHaveBeenCalledWith(
+      expect.stringMatching(/^hero-videos\/.+\.mp4$/),
+      expect.any(Uint8Array),
+      "video/mp4",
+    );
+  });
+
+  it("rejects raw upload for non-hero folders", async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0x00]);
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload?folder=events", {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg", "X-Goko-Password": "x" },
+      body: jpeg,
+    }));
+    expect(res.status).toBe(400);
+    expect(putMediaObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects raw hero upload without password", async () => {
+    vi.mocked(authenticateUser).mockResolvedValueOnce(null as never);
+    const mp4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00]);
+    const res = await uploadPOST(new NextRequest("http://localhost/api/admin/website/upload?folder=hero-videos", {
+      method: "POST",
+      headers: { "Content-Type": "video/mp4" },
+      body: mp4,
+    }));
+    expect(res.status).toBe(401);
+    expect(putMediaObject).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/media/[...key]", () => {
