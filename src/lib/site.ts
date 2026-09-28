@@ -1,6 +1,8 @@
 /** Looping hero video with responsive mobile sources. WebM optional (CMS uploads are MP4-only). */
 export type HeroLoopVideo = {
   poster: string;
+  /** Still shown on mobile portrait while the mobile clip buffers; falls back to `poster`. */
+  mobilePoster?: string;
   mp4: string;
   webm?: string;
   mobileMp4: string;

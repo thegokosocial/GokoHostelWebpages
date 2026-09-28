@@ -74,6 +74,9 @@ export function HeroBackdrop({
   const mobileWebm = video?.mobileWebm?.trim();
   const webmSrc = isMobile ? mobileWebm : desktopWebm;
   const mp4Src = isMobile ? video?.mobileMp4 : video?.mp4;
+  const posterSrc = isMobile
+    ? (video?.mobilePoster || video?.poster)
+    : video?.poster;
 
   return (
     <div className="relative h-full min-h-full w-full">
@@ -96,7 +99,7 @@ export function HeroBackdrop({
           key={heroVideoElementKey(isMobile, mp4Src, webmSrc)}
           ref={videoRef}
           className="absolute inset-0 z-0 h-full w-full object-cover"
-          poster={video!.poster}
+          poster={posterSrc}
           muted
           playsInline
           loop

@@ -69,6 +69,7 @@ describe("heroVideos resolver", () => {
     expect(loop.mp4).toBe(library[0].url);
     expect(loop.mobileMp4).toBe(library[1].url);
     expect(loop.poster).toBe(library[0].posterUrl);
+    expect(loop.mobilePoster).toBe(library[1].posterUrl);
     expect(loop.webm || "").toBe("");
     expect(loop.mobileWebm || "").toBe("");
   });
@@ -159,6 +160,7 @@ describe("hero video page wiring", () => {
     expect(backdrop).toContain("webmSrc ?");
     expect(backdrop).toContain("pageKey");
     expect(backdrop).toContain("setLiveVideo(null)");
+    expect(backdrop).toContain("mobilePoster");
     expect(backdrop).toContain("heroVideoElementKey(isMobile, mp4Src, webmSrc)");
     expect(backdrop).not.toContain('key={isMobile ? "mobile" : "desktop"}');
     expect(readFileSync("src/lib/fetchHeroVideos.ts", "utf8")).toContain('cache: "no-store"');

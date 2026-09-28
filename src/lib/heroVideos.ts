@@ -191,10 +191,12 @@ export function loopFromPair(
 ): HeroLoopVideo {
   const fallback = setToLoop(fallbackSet);
   const poster = desktop?.posterUrl || mobile?.posterUrl || fallback.poster;
+  const mobilePoster = mobile?.posterUrl || poster;
   const mp4 = desktop?.url || fallback.mp4;
   const mobileMp4 = mobile?.url || fallback.mobileMp4;
   return {
     poster,
+    mobilePoster,
     mp4,
     webm: gitWebmFor(mp4, "desktop") || undefined,
     mobileMp4,
