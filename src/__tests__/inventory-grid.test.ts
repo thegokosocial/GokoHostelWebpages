@@ -353,6 +353,15 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
     expect(queries).toContain("unassignedOta");
   });
 
+  it("compacts sticky Inventory labels only on mobile without changing desktop layout", () => {
+    expect(ui).toContain("w-[104px]");
+    expect(ui).toContain("sm:w-[160px]");
+    expect(ui).toContain("line-clamp-2 text-xs");
+    expect(ui).toContain("line-clamp-2 text-[11px]");
+    expect(ui).toContain("sm:line-clamp-1");
+    expect(ui).toContain("h-8 shrink-0 cursor-pointer");
+  });
+
   it("only offers beds free to block (not booked or already blocked)", () => {
     expect(ui).toContain("exclusiveEndFromInclusive");
     expect(ui).toContain("addCalendarDays");
