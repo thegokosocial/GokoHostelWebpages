@@ -79,7 +79,7 @@ Worker itself uses bindings `DB` and `EMAIL`, not these HTTP vars. Email flow: [
 | `RAZORPAY_TEST_PREVIEW_ENABLED` | Worker | Admin ₹1 preview panel new orders/claims |
 | `RAZORPAY_LIVE_KEY_ID` / `RAZORPAY_LIVE_KEY_SECRET` / `RAZORPAY_LIVE_WEBHOOK_SECRET` (+ optional `_PREVIOUS`) | Worker secrets | Live guest checkout when Booking Settings `gatewayEnvironment=live` |
 | `RAZORPAY_LIVE_ACCOUNT_ID` | optional | Reject webhooks from other Razorpay accounts in live |
-| `GUEST_BOOKING_LOOKUP_SECRET` | Worker (≥32 chars) | OTP hashing for My booking lookup |
+| `GUEST_BOOKING_LOOKUP_SECRET` | Worker (≥32 chars) | OTP hashing for My booking lookup; HMAC for emailed `{MANAGE_URL}` magic links |
 | `GOKO_BOOKING_UI_PREVIEW` | local | Enables `/book/preview` (404 when unset) |
 
 Aiosell **production** hotel/password/webhook sit in D1 `channel_config`, not env. Sandbox UI defaults are in `src/lib/aiosell.ts` (already in git).

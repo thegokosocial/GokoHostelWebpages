@@ -2,7 +2,7 @@
 
 ## Scope and rollout
 
-The homepage hero and `/book` share the **Find a stay / Find my booking** panel. The homepage hero no longer shows Book now / Explore rooms CTAs above the panel (header Book remains). When `nativeCheckoutReady` is true (migrations **0059–0062**, hold/guest env flags, destination `/book`, Razorpay credentials for the selected `gatewayEnvironment`), Review offers advance/full/pay-at-property and creates a provisional PMS booking via `POST /api/guest-booking/checkout`. Confirmation lives at `/booking/[reference]` with `guestAccessToken` in **sessionStorage** only. Flip Test ↔ Live in Booking Settings. Preview (`/book/preview`) still blocks payment writes.
+The homepage hero and `/book` share the **Find a stay / Find my booking** panel. The homepage hero no longer shows Book now / Explore rooms CTAs above the panel (header Book remains). When `nativeCheckoutReady` is true (migrations **0059–0062**, hold/guest env flags, destination `/book`, Razorpay credentials for the selected `gatewayEnvironment`), Review offers advance/full/pay-at-property and creates a provisional PMS booking via `POST /api/guest-booking/checkout`. Confirmation lives at `/booking/[reference]` with `guestAccessToken` in **sessionStorage** (from checkout, Find my booking, or an emailed signed `{MANAGE_URL}`). Flip Test ↔ Live in Booking Settings. Preview (`/book/preview`) still blocks payment writes.
 
 ## Search and selection workflow
 
@@ -44,7 +44,8 @@ Previous mobile validation: 103 files / 1,662 tests passed; browser checks cover
    - **Website booking** (checkout row): mint `guestAccessToken`, store hash, return `{ booking, guestAccessToken, manageUrl }`. **Find my booking** stores sessionStorage and redirects to `/booking/[reference]`.
    - **Non-website / no checkout:** minimized booking snapshot only — no token.
 5. `/booking/[reference]` renders `GuestBookingManage` (status, rooms, payment, due). Changes go through copy-details + in-card WhatsApp (site float hidden on this route); Cancel is a full button when `canCancel`. `canModify` is always false in the public snapshot.
-6. Cross-origin rejected; 4 KiB body limit; Pi 403.
+6. **Emailed `{MANAGE_URL}`** is `/booking/{ref}?m={exp}.{hmac}` (HMAC-SHA256 of `{REF}|{exp}` with `GUEST_BOOKING_LOOKUP_SECRET`; expiry = stay checkout date + 7 IST days). Opening it calls `POST /api/guest-booking/open-manage-link`, mints `guestAccessToken`, stores sessionStorage, strips `?m=` via `history.replaceState`, and shows details without Find my booking. Reference alone remains unauthorized. Expired/invalid magic → message pointing at Find my booking on `/book`.
+7. Cross-origin rejected; 4 KiB body limit; Pi 403.
 
 Activation requires migration **0061**, `GUEST_BOOKING_LOOKUP_SECRET` (≥32 chars), and EMAIL binding. Turning off OTP weakens proof to reference+email only — document for ops.
 

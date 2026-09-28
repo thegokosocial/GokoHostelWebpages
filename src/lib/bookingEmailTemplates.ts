@@ -27,7 +27,7 @@ export const BOOKING_EMAIL_PLACEHOLDERS = [
   { token: "{TOTAL}", label: "Total (₹)" },
   { token: "{PAID}", label: "Paid online (₹)" },
   { token: "{BALANCE}", label: "Due at property (₹)" },
-  { token: "{MANAGE_URL}", label: "Guest manage booking URL" },
+  { token: "{MANAGE_URL}", label: "Guest manage booking URL (opens details directly)" },
   { token: "{CANCELLATION_DEADLINE}", label: "Online cancel deadline (IST text)" },
   { token: "{PROPERTY_NAME}", label: "Property short name" },
   { token: "{PROPERTY_URL}", label: "Property website URL" },

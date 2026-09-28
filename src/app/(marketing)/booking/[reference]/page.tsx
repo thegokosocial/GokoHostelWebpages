@@ -7,6 +7,18 @@ import { PageRibbon } from "@/components/layout/PageRibbon";
 import { GuestBookingManage, type GuestBookingStatus } from "@/components/booking/GuestBookingManage";
 import { heroLoopVideo } from "@/lib/site";
 
+function storeAccess(reference: string, guestAccessToken: string) {
+  sessionStorage.setItem(`goko_booking_${reference}`, JSON.stringify({ guestAccessToken }));
+}
+
+function stripMagicFromUrl(reference: string) {
+  try {
+    window.history.replaceState({}, "", `/booking/${encodeURIComponent(reference)}`);
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function BookingConfirmationPage() {
   const params = useParams<{ reference: string }>();
   const reference = decodeURIComponent(params.reference || "");
@@ -18,11 +30,33 @@ export default function BookingConfirmationPage() {
     let active = true;
     async function load() {
       setBusy(true);
+      setMessage("");
       try {
+        const magic = typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("m")
+          : null;
+
+        if (magic) {
+          const res = await fetch("/api/guest-booking/open-manage-link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reference, magic }),
+            cache: "no-store",
+          });
+          const data = await res.json() as GuestBookingStatus & { guestAccessToken?: string; error?: string };
+          if (!res.ok) throw new Error(data.error || "Unable to open booking");
+          if (!data.guestAccessToken) throw new Error("Unable to open booking");
+          storeAccess(reference, data.guestAccessToken);
+          stripMagicFromUrl(reference);
+          const { guestAccessToken: _token, ...snapshot } = data;
+          if (active) setStatus(snapshot);
+          return;
+        }
+
         const stored = sessionStorage.getItem(`goko_booking_${reference}`);
         if (!stored) {
           if (active) {
-            setMessage("Open this page from the same browser after checkout, or use My booking on /book with your email.");
+            setMessage("Open this page from your confirmation email link, or use Find my booking on /book with your email.");
           }
           return;
         }

@@ -155,7 +155,8 @@ export async function sendBookingConfirmationEmail(input: {
     const from = bookingFrom();
     const nights = input.nights ?? (input.checkinDate && input.checkoutDate
       ? stayNights(input.checkinDate, input.checkoutDate).length : 0);
-    const manageUrl = `${site.url}/booking/${encodeURIComponent(input.reference)}`;
+    const { buildGuestManageUrl } = await import("@/lib/guestManageLink");
+    const manageUrl = await buildGuestManageUrl(input.reference, input.checkoutDate);
 
     // Modified / cancelled templates are stored for later; amend still uses the built-in body.
     if (input.amended) {
