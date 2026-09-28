@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2Icon, ExternalLinkIcon, ImageIcon, XIcon } from "lucide-react";
+import { Loader2Icon, ExternalLinkIcon, FileTextIcon, XIcon } from "lucide-react";
 import { AdminLoading } from "./AdminLoading";
 import type { Role } from "./types";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/accountCategories";
@@ -13,6 +13,10 @@ const MAIN_CATEGORIES = [
   { id: "stay_expense", label: "Stay Expense" },
   { id: "food_expense", label: "Food Expense" },
 ];
+
+const ALLOWED_BILL_MIME = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const MAX_BILL_FILES = 5;
+const MAX_BILL_FILE_BYTES = 10 * 1024 * 1024;
 
 type Account = { id: number; name: string; nickname: string };
 type Vendor = { id: number; name: string; category: string };
@@ -40,7 +44,7 @@ export function AdminAddExpense({
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [accountId, setAccountId] = useState("");
   const [billFiles, setBillFiles] = useState<File[]>([]);
-  const [billPreviews, setBillPreviews] = useState<string[]>([]);
+  const [billPreviews, setBillPreviews] = useState<(string | null)[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [success, setSuccess] = useState("");
@@ -97,16 +101,33 @@ export function AdminAddExpense({
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    setBillFiles((prev) => [...prev, ...files]);
-    for (const file of files) {
-      const reader = new FileReader();
-      reader.onload = () => setBillPreviews((prev) => [...prev, reader.result as string]);
-      reader.readAsDataURL(file);
-    }
     e.target.value = "";
+    if (files.length === 0) return;
+    if (files.some((file) => !ALLOWED_BILL_MIME.has(file.type))) {
+      setError("Only JPEG, PNG, WebP, and PDF files are supported");
+      return;
+    }
+    if (files.some((file) => file.size === 0 || file.size > MAX_BILL_FILE_BYTES)) {
+      setError("Each bill file must be between 1 byte and 10 MB");
+      return;
+    }
+    if (billFiles.length + files.length > MAX_BILL_FILES) {
+      setError(`You can attach up to ${MAX_BILL_FILES} bill files`);
+      return;
+    }
+    const previews = await Promise.all(files.map((file) => {
+      if (!file.type.startsWith("image/")) return Promise.resolve(null);
+      return new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+    }));
+    setBillFiles((prev) => [...prev, ...files]);
+    setBillPreviews((prev) => [...prev, ...previews]);
+    setError("");
   };
 
   const removeFile = (index: number) => {
@@ -145,21 +166,16 @@ export function AdminAddExpense({
       };
 
       if (billFiles.length > 0) {
-        const images: { data: string; mime: string }[] = [];
+        const attachments: { data: string; mime: string; name: string }[] = [];
         for (const file of billFiles) {
           const base64 = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onload = () => { resolve((reader.result as string).split(",")[1]); };
             reader.readAsDataURL(file);
           });
-          images.push({ data: base64, mime: file.type });
+          attachments.push({ data: base64, mime: file.type, name: file.name });
         }
-        if (images.length === 1) {
-          body.billImage = images[0].data;
-          body.billMimeType = images[0].mime;
-        } else {
-          body.billImages = images;
-        }
+        body.billFiles = attachments;
       }
 
       const res = await expenseApi(body);
@@ -315,24 +331,32 @@ export function AdminAddExpense({
             />
           </div>
 
-          {/* Bill Photos */}
+          {/* Bill attachments */}
           <div className="sm:col-span-2">
-            <Label className="text-xs">Bill Photos (optional)</Label>
+            <Label className="text-xs">Bill attachments (optional)</Label>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
-                <ImageIcon className="h-4 w-4 text-brand-green" />
-                {billFiles.length > 0 ? "Add more" : "Choose photo"}
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+                <FileTextIcon className="h-4 w-4 text-brand-green" />
+                {billFiles.length > 0 ? "Add files" : "Choose files"}
+                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple className="hidden" onChange={(event) => void handleFileChange(event)} />
               </label>
               {billFiles.length > 0 && (
-                <span className="text-xs text-brand-green-dark/60">{billFiles.length} photo{billFiles.length > 1 ? "s" : ""} selected</span>
+                <span className="text-xs text-brand-green-dark/60">{billFiles.length} of {MAX_BILL_FILES} files selected</span>
               )}
             </div>
+            <p className="mt-1 text-xs text-brand-green-dark/50">JPEG, PNG, WebP, or PDF · up to 10 MB each</p>
             {billPreviews.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {billPreviews.map((preview, i) => (
                   <div key={i} className="relative">
-                    <img src={preview} alt={`Bill ${i + 1}`} className="h-24 w-auto rounded-lg border border-brand-mist object-cover" />
+                    {preview ? (
+                      <img src={preview} alt={`Bill ${i + 1}`} className="h-24 w-auto rounded-lg border border-brand-mist object-cover" />
+                    ) : (
+                      <div className="flex h-24 w-32 flex-col items-center justify-center rounded-lg border border-brand-mist bg-brand-sand/50 px-2 text-center text-xs text-brand-green-dark/70">
+                        <FileTextIcon className="mb-1 h-5 w-5" />
+                        <span className="line-clamp-2 break-all">{billFiles[i]?.name}</span>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeFile(i)}

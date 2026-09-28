@@ -39,6 +39,45 @@ function extractDriveFileId(link: string): string | null {
   return match ? match[1] : null;
 }
 
+const EXPENSE_BILL_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const MAX_EXPENSE_BILL_FILES = 5;
+const MAX_EXPENSE_BILL_FILE_BYTES = 10 * 1024 * 1024;
+
+type ExpenseBillUpload = { data: string; mime: string; name?: string };
+
+function expenseBillUploads(rest: Record<string, unknown>): ExpenseBillUpload[] {
+  if (rest.billFiles !== undefined) {
+    if (!Array.isArray(rest.billFiles)) throw new Error("Bill files must be an array");
+    return rest.billFiles as ExpenseBillUpload[];
+  }
+  if (rest.billImages !== undefined) {
+    if (!Array.isArray(rest.billImages)) throw new Error("Bill files must be an array");
+    return rest.billImages as ExpenseBillUpload[];
+  }
+  if (typeof rest.billImage === "string") return [{ data: rest.billImage, mime: typeof rest.billMimeType === "string" ? rest.billMimeType : "image/jpeg" }];
+  return [];
+}
+
+function decodeExpenseBillUpload(upload: ExpenseBillUpload, index: number) {
+  if (!upload || typeof upload.data !== "string" || typeof upload.mime !== "string" || !EXPENSE_BILL_MIME_TYPES.has(upload.mime)) {
+    throw new Error("Only JPEG, PNG, WebP, and PDF bill files are supported");
+  }
+  let binary: string;
+  try {
+    binary = atob(upload.data);
+  } catch {
+    throw new Error("A bill file is not valid base64 data");
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let byte = 0; byte < binary.length; byte++) bytes[byte] = binary.charCodeAt(byte);
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_EXPENSE_BILL_FILE_BYTES) {
+    throw new Error("Each bill file must be between 1 byte and 10 MB");
+  }
+  const extension = upload.mime === "application/pdf" ? "pdf" : upload.mime.split("/")[1] || "jpg";
+  const safeName = typeof upload.name === "string" ? upload.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) : "";
+  return { bytes: bytes.buffer, mime: upload.mime, name: safeName || `bill_${index + 1}.${extension}` };
+}
+
 async function rejectIfSplitLinked(id: number) {
   try {
     if (await hostelExpenseIsLinked(id)) {
@@ -268,7 +307,7 @@ export async function POST(req: NextRequest) {
       case "getIncomeCategories":
         return NextResponse.json({ categories: parseIncomeCategories(await getSetting("income_categories")) });
       case "addExpense": {
-        const { amount, category, customCategory, purpose, billImage, billMimeType, billImages, vendorId, accountId, paymentMethod, mainCategory, subCategory, idempotencyKey: rawKey } = rest;
+        const { amount, category, customCategory, purpose, vendorId, accountId, paymentMethod, mainCategory, subCategory, idempotencyKey: rawKey } = rest;
         if (!amount || !category) {
           return NextResponse.json({ error: "amount and category are required" }, { status: 400 });
         }
@@ -304,43 +343,44 @@ export async function POST(req: NextRequest) {
           sql`${dailyLedger.date} >= ${expenseDate}`, effectiveAccountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, effectiveAccountId), eq(dailyLedger.isReconciled, 1),
         )).orderBy(dailyLedger.date).limit(1);
         if (reconciled.length) return NextResponse.json({ error: `Undo the ${reconciled[0].date} reconciliation before adding an expense to this account` }, { status: 409 });
+        let rawBillUploads: ExpenseBillUpload[];
+        let decodedBillUploads: ReturnType<typeof decodeExpenseBillUpload>[];
+        try {
+          rawBillUploads = expenseBillUploads(rest);
+          if (rawBillUploads.length > MAX_EXPENSE_BILL_FILES) {
+            return NextResponse.json({ error: `You can attach up to ${MAX_EXPENSE_BILL_FILES} bill files` }, { status: 400 });
+          }
+          decodedBillUploads = rawBillUploads.map(decodeExpenseBillUpload);
+        } catch (error: unknown) {
+          return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid bill attachment" }, { status: 400 });
+        }
         let billImageLink = "";
 
-        const uploadOneImage = async (base64Data: string, mimeType: string, folderId: string): Promise<string> => {
-          const binaryStr = atob(base64Data);
-          const bytes = new Uint8Array(binaryStr.length);
-          for (let i = 0; i < binaryStr.length; i++) {
-            bytes[i] = binaryStr.charCodeAt(i);
-          }
-          const ext = mimeType.includes("png") ? "png" : "jpg";
-          const fileName = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-          return driveUploadFile(fileName, mimeType, bytes.buffer, folderId);
-        };
-
         if (isOfflineMode()) {
-          if (billImage || (billImages && billImages.length > 0)) {
+          if (decodedBillUploads.length) {
             billImageLink = "offline-pending";
           }
-        } else {
+        } else if (decodedBillUploads.length) {
+          const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+          if (!rootFolderId) return NextResponse.json({ error: "Google Drive folder is not configured" }, { status: 503 });
+          const links: string[] = [];
           try {
-            const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-            if (rootFolderId && (billImage || (billImages && billImages.length > 0))) {
-              const billsFolderId = await driveGetOrCreateFolder(rootFolderId, "Goko Bills");
-              const monthFolderId = await driveGetOrCreateFolder(billsFolderId, month);
-
-              if (billImages && Array.isArray(billImages) && billImages.length > 0) {
-                const links: string[] = [];
-                for (const img of billImages as { data: string; mime: string }[]) {
-                  const link = await uploadOneImage(img.data, img.mime || "image/jpeg", monthFolderId);
-                  if (link) links.push(link);
-                }
-                billImageLink = links.join(",");
-              } else if (billImage) {
-                billImageLink = await uploadOneImage(billImage, billMimeType || "image/jpeg", monthFolderId);
-              }
+            const billsFolderId = await driveGetOrCreateFolder(rootFolderId, "Goko Bills");
+            const monthFolderId = await driveGetOrCreateFolder(billsFolderId, month);
+            for (const [index, upload] of decodedBillUploads.entries()) {
+              const fileName = `bill_${Date.now()}_${index + 1}_${upload.name}`;
+              const link = await driveUploadFile(fileName, upload.mime, upload.bytes, monthFolderId);
+              if (!link) throw new Error("Google Drive did not return a bill link");
+              links.push(link);
             }
-          } catch (err: any) {
-            await addSystemLog({ level: "error", source: "expenses", message: "Bill upload failed", details: err?.message || String(err) });
+            billImageLink = links.join(",");
+          } catch (err: unknown) {
+            await Promise.all(links.map(async (link) => {
+              const fileId = extractDriveFileId(link);
+              if (fileId) await Promise.resolve(driveDeleteFile(fileId)).catch(() => undefined);
+            }));
+            await addSystemLog({ level: "error", source: "expenses", message: "Bill upload failed", details: err instanceof Error ? err.message : String(err) });
+            return NextResponse.json({ error: "Bill upload failed; expense was not saved" }, { status: 503 });
           }
         }
 
@@ -502,7 +542,7 @@ export async function POST(req: NextRequest) {
       }
 
       case "deleteExpense": {
-        const { id, billImageLink } = rest;
+        const { id } = rest;
         if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
         const blocked = await rejectIfSplitLinked(Number(id));
         if (blocked) return blocked;
@@ -514,9 +554,9 @@ export async function POST(req: NextRequest) {
         )).limit(1);
         if (reconciled.length) return NextResponse.json({ error: `Undo the ${expense.expenseDate} reconciliation before deleting this expense` }, { status: 409 });
 
-        if (billImageLink) {
-          const fileId = extractDriveFileId(billImageLink);
-          if (fileId) {
+        if (expense.billImageLink) {
+          const fileIds = expense.billImageLink.split(",").map(extractDriveFileId).filter((fileId): fileId is string => Boolean(fileId));
+          for (const fileId of fileIds) {
             try {
               await driveDeleteFile(fileId);
             } catch (err: any) {
