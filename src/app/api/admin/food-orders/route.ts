@@ -55,7 +55,19 @@ import { auditDateBounds } from "@/lib/auditRetention";
 import { dbRead } from "@/lib/dbRetry";
 import { billShareExpiresAt, generateBillShareToken, publicBillShareUrl } from "@/lib/billShare";
 import { foodAmountPaid, foodDue, foodPaymentState, isFoodDiscountRemovable } from "@/lib/foodPaymentBalance";
-import { latestWalkinOrder, normalizeWalkinGuestName, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
+import {
+  buildOpenCafeTableOccupancy,
+  cafeTableDisplayLabel,
+  cafeTableNumber,
+  cafeTableSessionKey,
+  canonicalCafeTableRoomInfo,
+  isCafeTableRoomInfo,
+  isCafeTableSessionReleased,
+  latestWalkinOrder,
+  normalizeWalkinGuestName,
+  releasedCafeTableSessionPhone,
+  walkinOrderGroupKey,
+} from "@/lib/foodWalkinIdentity";
 import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import {
@@ -86,6 +98,7 @@ export async function POST(req: NextRequest) {
       getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
       createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
       placeOrderForGuest: "canPlaceOrders",
+      releaseCafeTable: "canPlaceOrders",
       cancelUnpaidOrder: "canVoidFoodOrders",
       voidItem: "canVoidFoodOrders",
       updateOrderStatus: ["canEditFoodOrders", "canPlaceOrders"],
@@ -315,7 +328,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: parsedKey.error }, { status: 400 });
         }
         const idempotencyKey = parsedKey.key;
-        const isTableOrder = roomInfo && /^Table \d+$/i.test(roomInfo);
+        const isTableOrder = isCafeTableRoomInfo(roomInfo);
         if (guestType === "walkin" && !guestPhone?.trim() && !isTableOrder) {
           return NextResponse.json({ error: "Phone number is required for walk-in orders" }, { status: 400 });
         }
@@ -345,6 +358,39 @@ export async function POST(req: NextRequest) {
         const tax = Math.round((subtotal * taxRate) / 100);
         const total = subtotal + tax;
 
+        let resolvedPhone: string;
+        let resolvedGuestName = guestName;
+        let resolvedRoomInfo = roomInfo || "";
+        if (isTableOrder) {
+          // Do not 10-digit-slice table sessions. Continue unreleased hold (paid or due);
+          // free table always mints a new session so it cannot merge with a released visit.
+          resolvedRoomInfo = canonicalCafeTableRoomInfo(roomInfo) || resolvedRoomInfo;
+          const db = getDb();
+          const tableOrders = await db
+            .select()
+            .from(foodOrders)
+            .where(and(
+              eq(foodOrders.guestType, "walkin"),
+              sql`${foodOrders.status} != 'cancelled'`,
+              sql`lower(${foodOrders.roomInfo}) = lower(${resolvedRoomInfo})`,
+            ))
+            .orderBy(desc(foodOrders.createdAt));
+          const tableNum = cafeTableNumber(resolvedRoomInfo);
+          const open = tableNum != null
+            ? buildOpenCafeTableOccupancy(tableOrders).get(tableNum)
+            : undefined;
+          if (open) {
+            resolvedPhone = open.sessionPhone;
+            if (!String(guestName || "").trim() || /^Table\s+\d+$/i.test(String(guestName).trim())) {
+              resolvedGuestName = open.guestName;
+            }
+          } else {
+            resolvedPhone = `${Date.now()}`;
+          }
+        } else {
+          resolvedPhone = normalizePhone(guestPhone || "");
+        }
+
         async function finalizePlacedOrder(orderRow: { id: number; orderNumber: string; total: number }, opts?: { healed?: boolean; duplicate?: boolean }) {
           for (const v of validatedItems) {
             await decrementStock(v.menuItemId, v.quantity);
@@ -356,12 +402,12 @@ export async function POST(req: NextRequest) {
             username: actorName,
             action: "food_order_placed",
             target: `order:${orderRow.id}`,
-            details: `Placed for ${guestName} (${guestType}), total ₹${(total / 100).toFixed(0)}${opts?.healed ? " (healed incomplete create)" : ""}`,
+            details: `Placed for ${resolvedGuestName} (${guestType}), total ₹${(total / 100).toFixed(0)}${opts?.healed ? " (healed incomplete create)" : ""}`,
           });
           await dispatchPush({
             notificationType: "food.new_order",
             title: "New Food Order",
-            body: notificationFoodBody(guestName, validatedItems, roomInfo, total),
+            body: notificationFoodBody(resolvedGuestName, validatedItems, resolvedRoomInfo, total),
             url: "/admin?section=foodOrders",
             eventId: `admin-food-order-${orderRow.id}`,
           });
@@ -414,19 +460,14 @@ export async function POST(req: NextRequest) {
         const existingOrder = await getFoodOrderByIdempotencyKey(idempotencyKey);
         if (existingOrder) return resolveExistingCreate(existingOrder);
 
-        let resolvedPhone = normalizePhone(guestPhone || "");
-        if (isTableOrder && !resolvedPhone) {
-          resolvedPhone = `${Date.now()}`;
-        }
-
         let orderNumber = await getNextOrderNumber();
         let order: any;
         const orderFields = {
           guestType: guestType || "walkin",
           checkinId: checkinId || undefined,
-          guestName,
+          guestName: resolvedGuestName,
           guestPhone: resolvedPhone,
-          roomInfo: roomInfo || "",
+          roomInfo: resolvedRoomInfo,
           specialInstructions: specialInstructions || "",
           subtotal,
           tax,
@@ -1473,7 +1514,8 @@ export async function POST(req: NextRequest) {
           const table = groupKey.startsWith("table_");
           const displayOrder = latestWalkinOrder(grouped);
           options.push({
-            key: `walkin_${groupKey}`, checkinId: null, guestType: "walkin", name: displayOrder.guestName,
+            key: `walkin_${groupKey}`, checkinId: null, guestType: "walkin",
+            name: table ? cafeTableDisplayLabel(displayOrder.roomInfo, displayOrder.guestName) : displayOrder.guestName,
             contact: table ? "" : displayOrder.guestPhone,
             bedInfo: table ? (displayOrder.roomInfo || "") : "", orderIds: grouped.map((o) => o.id),
             tabTotal: grouped.reduce((sum, o) => sum + foodDue(o), 0), orderCount: grouped.length,
@@ -1642,7 +1684,60 @@ export async function POST(req: NextRequest) {
           items: itemsMap.get(o.id) || [],
           hasModifications: (modCountMap.get(o.id) || 0) > 0,
         }));
-        return NextResponse.json({ role, orders: withItems });
+        // Unreleased cafe sessions (including paid-but-not-released) for Occupied map.
+        const heldCafeTables = [...buildOpenCafeTableOccupancy(orders).values()];
+        return NextResponse.json({ role, orders: withItems, heldCafeTables });
+      }
+
+      case "releaseCafeTable": {
+        const room = canonicalCafeTableRoomInfo(rest.roomInfo);
+        const session = cafeTableSessionKey(rest.guestPhone);
+        if (!room || !session) {
+          return NextResponse.json({ error: "Cafe table and session required" }, { status: 400 });
+        }
+        const db = getDb();
+        const tableOrders = await db
+          .select()
+          .from(foodOrders)
+          .where(and(
+            eq(foodOrders.guestType, "walkin"),
+            sql`${foodOrders.status} != 'cancelled'`,
+            sql`lower(${foodOrders.roomInfo}) = lower(${room})`,
+          ))
+          .orderBy(desc(foodOrders.createdAt));
+        const sessionOrders = tableOrders.filter(
+          (order) => cafeTableSessionKey(order.guestPhone) === session,
+        );
+        if (sessionOrders.length === 0) {
+          return NextResponse.json({ error: "No orders found for that table session" }, { status: 404 });
+        }
+        if (sessionOrders.some((order) => foodDue(order) > 0)) {
+          return NextResponse.json({ error: "Pay the table bill before releasing" }, { status: 409 });
+        }
+        const releasedPhone = releasedCafeTableSessionPhone(session);
+        for (const order of sessionOrders) {
+          if (isCafeTableSessionReleased(order.guestPhone)) continue;
+          await updateFoodOrder(order.id, { guestPhone: releasedPhone });
+        }
+        await addAuditEntry({
+          username: actorName,
+          action: "food_table_released",
+          target: `table:${room}`,
+          details: `Released ${room} session ${session} (${sessionOrders.length} order${sessionOrders.length === 1 ? "" : "s"})`,
+        });
+        return NextResponse.json({
+          success: true,
+          role,
+          roomInfo: room,
+          sessionPhone: session,
+          heldCafeTables: [...buildOpenCafeTableOccupancy(
+            tableOrders.map((order) =>
+              cafeTableSessionKey(order.guestPhone) === session
+                ? { ...order, guestPhone: releasedPhone }
+                : order,
+            ),
+          ).values()],
+        });
       }
 
       case "getOrderModifications": {

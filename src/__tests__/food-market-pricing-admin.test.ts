@@ -121,8 +121,12 @@ describe("admin market-pricing workflows", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ success: true, orderId: 99, orderNumber: "D266-11", total: 500 });
+    // Walk-in (non-table): normalizePhone only — no cafe session mint / table occupancy query.
     expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({
+      guestType: "walkin",
       guestName: "Pawan test",
+      guestPhone: "123454321",
+      roomInfo: "",
       total: 500,
       paymentStatus: "pending",
       createdBy: "Admin",
@@ -135,6 +139,32 @@ describe("admin market-pricing workflows", () => {
       lineTotal: 500,
     })]);
     expect(q.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "food_order_placed", target: "order:99" }));
+  });
+
+  it("placeOrderForGuest hostel path is unchanged (checkin tab, no cafe session logic)", async () => {
+    q.getMenuItemById.mockResolvedValue({
+      id: 41, name: "Soap", price: 500, priceOnRequest: 0, trackInventory: 0, stockQuantity: 0,
+    });
+    q.getSetting.mockResolvedValue("0");
+    q.getNextOrderNumber.mockResolvedValue("D266-h1");
+    q.createFoodOrder.mockResolvedValue([{ id: 88, orderNumber: "D266-h1", total: 500 }]);
+
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "hostel",
+      guestName: "Goko Guest",
+      checkinId: 42,
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "55555555-5555-4555-8555-555555555555",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({
+      guestType: "hostel",
+      checkinId: 42,
+      guestName: "Goko Guest",
+      guestPhone: "",
+      paymentStatus: "on_tab",
+    }));
   });
 
   it("finalizes a pending line using quantity and recalculates totals", async () => {
@@ -528,6 +558,150 @@ describe("admin market-pricing workflows", () => {
 
     expect(response.status).toBe(200);
     expect(q.decrementStock).toHaveBeenCalledWith(4, 2);
+  });
+
+  it("placeOrderForGuest mints a new cafe session on a free table (ignores client phone)", async () => {
+    q.getMenuItemById.mockResolvedValue({
+      id: 41, name: "Soap", price: 500, priceOnRequest: 0, trackInventory: 0, stockQuantity: 0,
+    });
+    q.getSetting.mockResolvedValue("0");
+    q.getNextOrderNumber.mockResolvedValue("D266-t1");
+    q.createFoodOrder.mockResolvedValue([{ id: 101, orderNumber: "D266-t1", total: 500 }]);
+    q.getDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }),
+    });
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1727001234567);
+
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Aditya",
+      guestPhone: "9999999999999",
+      roomInfo: "Table 2",
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "33333333-3333-4333-8333-333333333333",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({
+      guestPhone: "1727001234567",
+      roomInfo: "Table 2",
+      guestName: "Aditya",
+    }));
+    nowSpy.mockRestore();
+  });
+
+  it("placeOrderForGuest continues an unreleased paid table session (Order More after pay)", async () => {
+    const openSession = "1727009999999";
+    q.getMenuItemById.mockResolvedValue({
+      id: 41, name: "Soap", price: 500, priceOnRequest: 0, trackInventory: 0, stockQuantity: 0,
+    });
+    q.getSetting.mockResolvedValue("0");
+    q.getNextOrderNumber.mockResolvedValue("D266-t2");
+    q.createFoodOrder.mockResolvedValue([{ id: 102, orderNumber: "D266-t2", total: 500 }]);
+    q.getDb.mockReturnValue({
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: async () => [
+              {
+                id: 50,
+                guestName: "Shashwat",
+                guestPhone: openSession,
+                roomInfo: "Table 1",
+                total: 800,
+                amountPaid: 800,
+                amountRefunded: 0,
+                status: "served",
+                createdAt: "2026-09-28T12:00:00.000Z",
+              },
+              {
+                id: 40,
+                guestName: "Old Guest",
+                guestPhone: "r:111",
+                roomInfo: "Table 1",
+                total: 500,
+                amountPaid: 500,
+                amountRefunded: 0,
+                status: "served",
+                createdAt: "2026-09-26T12:00:00.000Z",
+              },
+            ],
+          }),
+        }),
+      }),
+    });
+
+    const response = await POST(actionReq("placeOrderForGuest", {
+      guestType: "walkin",
+      guestName: "Table 1",
+      guestPhone: "9999999999999",
+      roomInfo: "table 1",
+      items: [{ menuItemId: 41, quantity: 1 }],
+      idempotencyKey: "44444444-4444-4444-8444-444444444444",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(q.createFoodOrder).toHaveBeenCalledWith(expect.objectContaining({
+      guestPhone: openSession,
+      guestName: "Shashwat",
+      roomInfo: "Table 1",
+    }));
+  });
+
+  it("releaseCafeTable marks the paid session released and rejects unpaid tables", async () => {
+    const session = "1727008888888";
+    const unpaid = {
+      id: 70,
+      guestName: "Aaa",
+      guestPhone: session,
+      roomInfo: "Table 1",
+      total: 48000,
+      amountPaid: 0,
+      amountRefunded: 0,
+      status: "served",
+      createdAt: "2026-09-28T12:00:00.000Z",
+    };
+    q.getDb.mockReturnValue({
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: async () => [unpaid],
+          }),
+        }),
+      }),
+    });
+    const unpaidRes = await POST(actionReq("releaseCafeTable", {
+      roomInfo: "Table 1", guestPhone: session,
+    }));
+    expect(unpaidRes.status).toBe(409);
+    expect(q.updateFoodOrder).not.toHaveBeenCalled();
+
+    const paid = { ...unpaid, amountPaid: 48000 };
+    q.getDb.mockReturnValue({
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: async () => [paid],
+          }),
+        }),
+      }),
+    });
+    const paidRes = await POST(actionReq("releaseCafeTable", {
+      roomInfo: "Table 1", guestPhone: session,
+    }));
+    expect(paidRes.status).toBe(200);
+    expect(q.updateFoodOrder).toHaveBeenCalledWith(70, { guestPhone: `r:${session}` });
+    expect(q.addAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "food_table_released" }));
+  });
+
+  it("releaseCafeTable rejects non-table walk-ins and hostel-style rooms", async () => {
+    const res = await POST(actionReq("releaseCafeTable", {
+      roomInfo: "Dorm A - Bed 1",
+      guestPhone: "9876543210",
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "Cafe table and session required" });
+    expect(q.updateFoodOrder).not.toHaveBeenCalled();
   });
 
   it("rejects a quantity reduction that would make the order overpaid", async () => {

@@ -189,6 +189,12 @@ describe("mock workflows (source contracts)", () => {
 
     expect(adminRoute).toContain('if (order.guestType === "hostel" && order.checkinId)');
     expect(adminRoute).toContain('o.checkinId ? `hostel_${o.checkinId}` : `walkin_${walkinOrderGroupKey(o)}`');
+    expect(adminRoute).toContain("buildOpenCafeTableOccupancy");
+    expect(adminRoute).toContain("releaseCafeTable");
+    expect(adminRoute).toContain("releasedCafeTableSessionPhone");
+    expect(adminUi).toContain("releaseCafeTable");
+    expect(adminUi).toContain("isCafeTableSessionReleased");
+    expect(adminUi).toContain("heldCafeTables");
     expect(adminUi).toContain('if (order.guestType === "hostel" && order.checkinId)');
     expect(adminUi).toContain('`hostel_${o.checkinId}`');
     expect(expenses).toContain('order.checkinId\n            ? `checkin:${order.checkinId}`');

@@ -67,6 +67,7 @@ describe("food-orders mutation RBAC is not view-only", () => {
   it("route ACTION_PERMISSIONS require dedicated mutation keys", () => {
     const route = readFileSync("src/app/api/admin/food-orders/route.ts", "utf8");
     expect(route).toContain('placeOrderForGuest: "canPlaceOrders"');
+    expect(route).toContain('releaseCafeTable: "canPlaceOrders"');
     expect(route).toContain('cancelUnpaidOrder: "canVoidFoodOrders"');
     expect(route).toContain('voidItem: "canVoidFoodOrders"');
     expect(route).toContain('saveOrderEdits: "canEditFoodOrders"');

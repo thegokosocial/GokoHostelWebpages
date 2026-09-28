@@ -37,7 +37,34 @@ import {
   type OrderMorePrefillGuest,
 } from "@/lib/orderMorePrefill";
 import { INCOMPLETE_FOOD_ORDER_BANNER, isIncompleteFoodOrder } from "@/lib/foodOrderCreate";
-import { latestWalkinOrder, walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
+import {
+  buildOpenCafeTableOccupancy,
+  cafeTableDisplayLabel,
+  isCafeTableRoomInfo,
+  isCafeTableSessionReleased,
+  latestWalkinOrder,
+  type OpenCafeTableOccupancy,
+  walkinOrderGroupKey,
+} from "@/lib/foodWalkinIdentity";
+
+function occupiedMapFromWalkinPayload(data: {
+  heldCafeTables?: OpenCafeTableOccupancy[];
+  orders?: WalkinIdentityOrderLike[];
+}): Map<number, OpenCafeTableOccupancy> {
+  if (Array.isArray(data.heldCafeTables)) {
+    return new Map(data.heldCafeTables.map((row) => [row.tableNumber, row]));
+  }
+  // Fallback for older payloads: unpaid-only list (paid-unreleased will be missing).
+  return buildOpenCafeTableOccupancy(data.orders || []);
+}
+
+type WalkinIdentityOrderLike = {
+  id: number;
+  guestName?: string | null;
+  guestPhone?: string | null;
+  roomInfo?: string | null;
+  createdAt?: string | null;
+};
 import { effectiveFoodOrderQuantity, nextFoodOrderQuantity } from "@/lib/foodOrderEditing";
 import { formatTimeSince } from "@/lib/formatTimeSince";
 import { useActionProgress } from "@/components/ui/ActionProgressProvider";
@@ -328,7 +355,7 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
   const [menuSearch, setMenuSearch] = useState("");
   const [confirmWithGuest, setConfirmWithGuest] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [occupiedTables, setOccupiedTables] = useState<Map<number, string>>(new Map());
+  const [occupiedTables, setOccupiedTables] = useState<Map<number, OpenCafeTableOccupancy>>(new Map());
   const [taxRate, setTaxRate] = useState(5);
   const cartRef = useRef<HTMLDivElement>(null);
 
@@ -384,24 +411,19 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
       }
       setLoadingMenu(false);
     })();
+  }, [apiCall]);
+
+  useEffect(() => {
+    if (guestType !== "table") return;
+    let cancelled = false;
     (async () => {
       const res = await apiCall({ action: "getWalkinOrders" });
-      if (res.ok) {
-        const data = await res.json();
-        const tableMap = new Map<number, string>();
-        for (const order of (data.orders || [])) {
-          const match = order.roomInfo?.match(/^Table (\d+)$/i);
-          if (match) {
-            const tableNum = parseInt(match[1], 10);
-            if (!tableMap.has(tableNum)) {
-              tableMap.set(tableNum, order.guestName || `Table ${tableNum}`);
-            }
-          }
-        }
-        setOccupiedTables(tableMap);
-      }
+      if (!res.ok || cancelled) return;
+      const data = await res.json();
+      setOccupiedTables(occupiedMapFromWalkinPayload(data));
     })();
-  }, [apiCall]);
+    return () => { cancelled = true; };
+  }, [guestType, apiCall]);
 
   useEffect(() => {
     if (guestType !== "hostel") return;
@@ -503,7 +525,13 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
           setWalkinName("");
           setWalkinPhone("");
           setTableGuestName("");
+          setTableSessionId("");
           setSelectedTable(null);
+          // Refresh Occupied map so the new/continued session shows amber immediately.
+          const walkinRes = await apiCall({ action: "getWalkinOrders" });
+          if (walkinRes.ok) {
+            setOccupiedTables(occupiedMapFromWalkinPayload(await walkinRes.json()));
+          }
           if (onOrderPlaced) {
             onOrderPlaced();
           } else {
@@ -576,7 +604,16 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
                 <button
                   key={num}
                   type="button"
-                  onClick={() => { setSelectedTable(num); setTableGuestName(occupant || `Table ${num}`); if (occupant) { /* pre-fill session for existing table */ } }}
+                  onClick={() => {
+                    setSelectedTable(num);
+                    if (occupant) {
+                      setTableGuestName(occupant.guestName);
+                      setTableSessionId(occupant.sessionPhone);
+                    } else {
+                      setTableGuestName(`Table ${num}`);
+                      setTableSessionId("");
+                    }
+                  }}
                   className={cn(
                     "flex flex-col items-center justify-center rounded-lg text-sm font-bold transition-colors",
                     occupant ? "h-14 w-14" : "h-12 w-12",
@@ -586,11 +623,11 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
                         ? "border-2 border-amber-400 bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400"
                         : "border border-brand-mist text-brand-green-dark hover:bg-brand-green/[0.06]"
                   )}
-                  title={occupant ? `Occupied: ${occupant}` : `Table ${num}`}
+                  title={occupant ? `Continue open bill: ${occupant.guestName}` : `Table ${num}`}
                 >
                   <span>{num}</span>
                   {occupant && selectedTable !== num && (
-                    <span className="mt-0.5 max-w-[3rem] truncate text-[9px] font-medium leading-tight text-amber-600">{occupant.split(" ")[0]}</span>
+                    <span className="mt-0.5 max-w-[3rem] truncate text-[9px] font-medium leading-tight text-amber-600">{occupant.guestName.split(" ")[0]}</span>
                   )}
                 </button>
                 );
@@ -599,7 +636,7 @@ function PlaceOrder({ apiCall, prefillGuest, onPrefillConsumed, onOrderPlaced }:
             {occupiedTables.size > 0 && (
               <p className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600">
                 <span className="inline-block h-2.5 w-2.5 rounded border-2 border-amber-400 bg-amber-50 dark:bg-amber-950" />
-                Occupied (unpaid order)
+                Occupied — tap to continue that open bill (including paid until Release Table)
               </p>
             )}
             {selectedTable && (
@@ -1105,10 +1142,13 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       const displayOrder = latestWalkinOrder(groupOrders);
       result.push({
         key: `walkin_${groupKey}`,
-        guestName: displayOrder.guestName,
+        // Card title uses Table · Name; session stays in contactInfo for Order More.
+        guestName: isTableGroup
+          ? cafeTableDisplayLabel(displayOrder.roomInfo, displayOrder.guestName)
+          : displayOrder.guestName,
         guestType: "walkin",
-        contactInfo: isTableGroup ? "" : displayOrder.guestPhone,
-        roomInfo: isTableGroup ? displayOrder.roomInfo : "",
+        contactInfo: displayOrder.guestPhone || "",
+        roomInfo: isTableGroup ? (displayOrder.roomInfo || "") : "",
         orders: groupOrders,
         totalAmount: groupOrders.reduce((s, o) => s + o.total, 0),
         totalSubtotal: groupOrders.reduce((s, o) => s + o.subtotal, 0),
@@ -1152,7 +1192,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const canEditOrderItems = hasPermission(role || "staff", permissions || {}, "canEditFoodOrders");
   const canCancelFoodOrders = hasPermission(role || "staff", permissions || {}, "canVoidFoodOrders");
   // Mixed groups show only the unpaid orders in the bill. Fully paid groups still
-  // open their complete paid bill so Print/Bill/Order More remain available.
+  // open their complete paid bill. Cafe tables keep Order More until Release Table.
   const billOrders = useMemo(() => {
     const unpaid = selectedGroupOrders.filter((o) => foodDue(o) > 0);
     return unpaid.length > 0 ? unpaid : selectedGroupOrders;
@@ -1688,9 +1728,10 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                   <span className="flex-shrink-0 rounded-full bg-gray-200 dark:bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400">Walk-in</span>
                 )}
               </div>
-              {(group.roomInfo || group.contactInfo) && (
+              {/* Cafe table title already includes Table N; hide session digits. Walk-in shows phone. */}
+              {!isCafeTableRoomInfo(group.roomInfo) && group.contactInfo && (
                 <p className="mt-0.5 truncate text-xs text-brand-green-dark/50">
-                  {group.roomInfo || group.contactInfo}
+                  {group.contactInfo}
                 </p>
               )}
               <p className="mt-2 text-lg font-bold text-brand-green">₹{(group.totalAmount / 100).toFixed(0)}</p>
@@ -1746,9 +1787,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                     <span className="flex-shrink-0 rounded-full bg-gray-200 dark:bg-[#2a2a2a] px-2 py-0.5 text-xs text-gray-600 dark:text-gray-400">Walk-in</span>
                   )}
                 </div>
-                {(selectedGroup.roomInfo || selectedGroup.contactInfo) && (
+                {isCafeTableRoomInfo(selectedGroup.roomInfo) ? (
+                  <p className="text-xs text-brand-green-dark/50">Cafe table</p>
+                ) : (selectedGroup.roomInfo || selectedGroup.contactInfo) ? (
                   <p className="text-xs text-brand-green-dark/50">{[selectedGroup.roomInfo, selectedGroup.contactInfo].filter(Boolean).join(" · ")}</p>
-                )}
+                ) : null}
               </div>
               <button type="button" onClick={() => setSelectedGroupKey(null)} className="flex-shrink-0 rounded-lg p-1.5 hover:bg-brand-sand">
                 <XIcon className="h-5 w-5 text-brand-green-dark/60" />
@@ -2255,18 +2298,25 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                 >
                   <ReceiptIcon className="h-3.5 w-3.5" /> Bill
                 </button>
+                {!(isCafeTableRoomInfo(selectedGroup.roomInfo)
+                  && isCafeTableSessionReleased(selectedGroup.contactInfo || selectedGroupOrders[0]?.guestPhone)) && (
                 <button
                   type="button"
                   onClick={() => {
                     const checkinId = selectedGroup.guestType === "hostel"
                       ? parseInt(selectedGroup.key.replace("hostel_", ""), 10)
                       : undefined;
-                    const isTable = selectedGroup.roomInfo && /^Table \d+$/i.test(selectedGroup.roomInfo);
-                    const tablePhone = isTable && selectedGroupOrders.length > 0 ? selectedGroupOrders[0].guestPhone : undefined;
+                    const isTable = isCafeTableRoomInfo(selectedGroup.roomInfo);
+                    const tablePhone = isTable
+                      ? (selectedGroup.contactInfo || selectedGroupOrders[0]?.guestPhone)
+                      : undefined;
+                    const orderMoreName = isTable
+                      ? (selectedGroupOrders[0]?.guestName || selectedGroup.guestName)
+                      : selectedGroup.guestName;
                     onOrderMore({
                       guestType: isTable ? "table" : selectedGroup.guestType,
                       checkinId,
-                      guestName: selectedGroup.guestName,
+                      guestName: orderMoreName,
                       guestPhone: isTable ? tablePhone : (selectedGroup.contactInfo || undefined),
                       roomInfo: selectedGroup.roomInfo || undefined,
                     });
@@ -2275,6 +2325,35 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                 >
                   <PlusIcon className="h-3.5 w-3.5" /> Order More
                 </button>
+                )}
+                {isCafeTableRoomInfo(selectedGroup.roomInfo)
+                  && selectedGroup.pendingAmount <= 0
+                  && !isCafeTableSessionReleased(selectedGroup.contactInfo || selectedGroupOrders[0]?.guestPhone) && (
+                  <button
+                    type="button"
+                    disabled={!!actionBusy}
+                    onClick={async () => {
+                      if (!window.confirm("Release this table for the next guests? Order More will close for this bill.")) return;
+                      const sessionPhone = selectedGroup.contactInfo || selectedGroupOrders[0]?.guestPhone || "";
+                      await runAction("Releasing table…", async () => {
+                        const res = await apiCall({
+                          action: "releaseCafeTable",
+                          roomInfo: selectedGroup.roomInfo,
+                          guestPhone: sessionPhone,
+                        });
+                        if (!res.ok) {
+                          const data = await res.json().catch(() => ({}));
+                          throw new Error(data.error || "Failed to release table");
+                        }
+                        setSelectedGroupKey(null);
+                        await load();
+                      });
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-300 dark:border-amber-700 px-3 py-2 text-sm font-medium text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950 disabled:opacity-50"
+                  >
+                    Release Table
+                  </button>
+                )}
               </div>
             )}
             </>
@@ -3229,10 +3308,12 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
       const displayOrder = latestWalkinOrder(effectiveOrders);
       result.push({
         key: `walkin_${groupKey}`,
-        guestName: displayOrder.guestName,
+        guestName: isTableGroup
+          ? cafeTableDisplayLabel(displayOrder.roomInfo, displayOrder.guestName)
+          : displayOrder.guestName,
         guestType: "walkin",
-        contactInfo: isTableGroup ? "" : displayOrder.guestPhone,
-        roomInfo: isTableGroup ? displayOrder.roomInfo : "",
+        contactInfo: displayOrder.guestPhone || "",
+        roomInfo: isTableGroup ? (displayOrder.roomInfo || "") : "",
         orders: effectiveOrders,
         totalAmount: totalAmt,
         paidAmount: paidAmt,
@@ -3468,9 +3549,9 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
                   <span className="flex-shrink-0 rounded-full bg-gray-200 dark:bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:text-gray-400">Walk-in</span>
                 )}
               </div>
-              {(group.roomInfo || group.contactInfo) && (
+              {!isCafeTableRoomInfo(group.roomInfo) && group.contactInfo && (
                 <p className="mt-0.5 truncate text-xs text-brand-green-dark/50">
-                  {group.roomInfo || group.contactInfo}
+                  {group.contactInfo}
                 </p>
               )}
               <p className="mt-2 text-lg font-bold text-brand-green">{fmt(group.totalAmount)}</p>
@@ -3532,9 +3613,11 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
                     <span className="flex-shrink-0 rounded-full bg-gray-200 dark:bg-[#2a2a2a] px-2 py-0.5 text-xs text-gray-600 dark:text-gray-400">Walk-in</span>
                   )}
                 </div>
-                {(selectedGroup.roomInfo || selectedGroup.contactInfo) && (
+                {isCafeTableRoomInfo(selectedGroup.roomInfo) ? (
+                  <p className="text-xs text-brand-green-dark/50">Cafe table</p>
+                ) : (selectedGroup.roomInfo || selectedGroup.contactInfo) ? (
                   <p className="text-xs text-brand-green-dark/50">{[selectedGroup.roomInfo, selectedGroup.contactInfo].filter(Boolean).join(" · ")}</p>
-                )}
+                ) : null}
               </div>
               <button type="button" onClick={() => { setSelectedGroupKey(null); setPaymentEditOrder(null); setRevertConfirmOrder(null); }} className="flex-shrink-0 rounded-lg p-1.5 hover:bg-brand-sand">
                 <XIcon className="h-5 w-5 text-brand-green-dark/60" />

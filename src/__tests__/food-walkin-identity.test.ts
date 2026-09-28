@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildOpenCafeTableOccupancy,
+  cafeTableDisplayLabel,
+  cafeTableSessionKey,
+  canonicalCafeTableRoomInfo,
+  isCafeTableSessionReleased,
   latestWalkinOrder,
   normalizeWalkinGuestName,
   normalizeWalkinPhoneKey,
+  releasedCafeTableSessionPhone,
   walkinIdentityKey,
   walkinOrderGroupKey,
 } from "@/lib/foodWalkinIdentity";
@@ -55,9 +61,55 @@ describe("walk-in food identity", () => {
     expect(kavinA).not.toBe(shailendra);
   });
 
-  it("keeps cafe table sessions on their existing table key", () => {
-    expect(walkinOrderGroupKey({ id: 3, guestName: "Table 2", guestPhone: "123", roomInfo: "Table 2" })).toBe("table_Table 2");
-    expect(walkinOrderGroupKey({ id: 4, guestName: "Someone", guestPhone: "1", roomInfo: "table 2" })).toBe("table_table 2");
+  it("isolates cafe table visits by session id on the same table", () => {
+    const paid = walkinOrderGroupKey({ id: 3, guestName: "Old Guest", guestPhone: "111", roomInfo: "Table 1" });
+    const open = walkinOrderGroupKey({ id: 4, guestName: "Shashwat", guestPhone: "222", roomInfo: "Table 1" });
+    expect(paid).toBe("table_Table 1|111");
+    expect(open).toBe("table_Table 1|222");
+    expect(paid).not.toBe(open);
+    expect(walkinOrderGroupKey({ id: 5, guestName: "Someone", guestPhone: "1", roomInfo: "table 2" }))
+      .toBe("table_Table 2|1");
+  });
+
+  it("keeps phone+name grouping for walk-ins and ignores hostel bed roomInfo as a cafe table", () => {
+    expect(walkinOrderGroupKey({
+      id: 10, guestName: "Kavin", guestPhone: "9876543210", roomInfo: "Dorm A - Bed 2",
+    })).toBe("9876543210|kavin");
+    expect(walkinOrderGroupKey({
+      id: 11, guestName: "Kavin", guestPhone: "+91 98765 43210", roomInfo: "",
+    })).toBe("9876543210|kavin");
+    // Released marker is cafe-only; plain walk-in phones never get table session keys.
+    expect(isCafeTableSessionReleased("9876543210")).toBe(false);
+    expect(buildOpenCafeTableOccupancy([
+      { id: 12, guestName: "Kavin", guestPhone: "9876543210", roomInfo: "", createdAt: "2026-09-28T10:00:00Z" },
+    ]).size).toBe(0);
+  });
+
+  it("does not collapse legacy table orders with empty session onto table-only", () => {
+    expect(walkinOrderGroupKey({ id: 9, guestName: "Ghost", guestPhone: "", roomInfo: "Table 3" }))
+      .toBe("_no_identity_9");
+  });
+
+  it("canonicalizes table room labels and builds display names", () => {
+    expect(canonicalCafeTableRoomInfo("table 2")).toBe("Table 2");
+    expect(cafeTableSessionKey("  1729-abc  ")).toBe("1729");
+    expect(cafeTableDisplayLabel("Table 2", "Aditya")).toBe("Table 2 · Aditya");
+    expect(cafeTableDisplayLabel("Table 2", "Table 2")).toBe("Table 2");
+  });
+
+  it("maps newest unreleased session per table and skips released holds", () => {
+    expect(isCafeTableSessionReleased("r:222")).toBe(true);
+    expect(cafeTableSessionKey("r:1727001234567")).toBe("1727001234567");
+    expect(releasedCafeTableSessionPhone("1727")).toBe("r:1727");
+    const map = buildOpenCafeTableOccupancy([
+      { id: 2, guestName: "Released", guestPhone: "r:222", roomInfo: "Table 1", createdAt: "2026-09-28T10:00:00Z" },
+      { id: 1, guestName: "Old unpaid", guestPhone: "111", roomInfo: "Table 1", createdAt: "2026-09-26T10:00:00Z" },
+      { id: 3, guestName: "Aditya", guestPhone: "333", roomInfo: "Table 2", createdAt: "2026-09-28T11:00:00Z" },
+    ]);
+    // Newest Table 1 is released → fall through to older unreleased session.
+    expect(map.get(1)).toMatchObject({ guestName: "Old unpaid", sessionPhone: "111", roomInfo: "Table 1" });
+    expect(map.get(2)).toMatchObject({ guestName: "Aditya", sessionPhone: "333" });
+    expect(map.size).toBe(2);
   });
 
   it("uses the latest order's display spelling without changing identity", () => {
