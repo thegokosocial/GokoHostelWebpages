@@ -29,13 +29,21 @@ const kitchenMocks = vi.hoisted(() => ({
   areAllOrderItemsInventory: vi.fn(),
   getMenuItemCategoryExemptions: vi.fn(),
   getDb: vi.fn(),
-  hasActiveFoodQrClaim: vi.fn(async () => false),
+  releaseFoodQrForDeskPayment: vi.fn(async () => ({ releasedAttemptIds: [] as string[] })),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateKitchen: kitchenMocks.authenticateKitchen }));
 vi.mock("@/db", () => ({ getDb: kitchenMocks.getDb }));
 vi.mock("@/lib/foodQrPayment", () => ({
-  hasActiveFoodQrClaim: kitchenMocks.hasActiveFoodQrClaim,
+  releaseFoodQrForDeskPayment: kitchenMocks.releaseFoodQrForDeskPayment,
+  FoodQrError: class FoodQrError extends Error {
+    status: number;
+    constructor(message: string, status = 409) {
+      super(message);
+      this.name = "FoodQrError";
+      this.status = status;
+    }
+  },
 }));
 vi.mock("@/db/queries", () => ({
   getActiveFoodOrders: kitchenMocks.getActiveFoodOrders,
@@ -248,7 +256,7 @@ describe("Kitchen food-order quantity and add-item inventory workflows", () => {
     kitchenMocks.updateFoodOrderItemQuantity.mockResolvedValue(undefined);
     kitchenMocks.addOrderModification.mockResolvedValue(undefined);
     kitchenMocks.updateFoodOrder.mockResolvedValue(undefined);
-    kitchenMocks.hasActiveFoodQrClaim.mockResolvedValue(false);
+    kitchenMocks.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: [] });
     kitchenMocks.getDb.mockReturnValue({
       select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ discount: 0 }] }) }) }),
       insert: () => ({ values: async () => undefined }),
@@ -325,15 +333,28 @@ describe("Kitchen food-order quantity and add-item inventory workflows", () => {
     expect(kitchenMocks.updateFoodOrderItemQuantity).toHaveBeenCalled();
   });
 
-  it("blocks kitchen quantity edits while a food Razorpay QR claim is active", async () => {
-    const { ACTIVE_FOOD_QR_EDIT_BLOCKED } = await import("@/lib/foodBillQrUi");
-    kitchenMocks.hasActiveFoodQrClaim.mockResolvedValue(true);
+  it("releases open food QR then applies kitchen quantity edits", async () => {
+    kitchenMocks.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: ["att-1"] });
+    kitchenMocks.getFoodOrderItems.mockResolvedValue([{
+      id: 20, menuItemId: 5, itemName: "Shampoo", itemPrice: 2, quantity: 2, lineTotal: 4, status: "active",
+    }]);
+    kitchenMocks.getMenuItemById.mockResolvedValue({ id: 5, name: "Shampoo", trackInventory: 0 });
+
+    const res = await POST(req({ password: "ok", action: "updateItemQuantity", orderId: 10, orderItemId: 20, newQuantity: 3 }));
+
+    expect(res.status).toBe(200);
+    expect(kitchenMocks.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
+    expect(kitchenMocks.updateFoodOrderItemQuantity).toHaveBeenCalled();
+  });
+
+  it("aborts kitchen quantity edit when QR release hits capture race", async () => {
+    const { FoodQrError } = await import("@/lib/foodQrPayment");
+    kitchenMocks.releaseFoodQrForDeskPayment.mockRejectedValue(new FoodQrError("Already paid via Razorpay", 409));
 
     const res = await POST(req({ password: "ok", action: "updateItemQuantity", orderId: 10, orderItemId: 20, newQuantity: 3 }));
 
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: ACTIVE_FOOD_QR_EDIT_BLOCKED });
-    expect(kitchenMocks.hasActiveFoodQrClaim).toHaveBeenCalledWith([10]);
+    expect((await res.json()).error).toMatch(/Already paid via Razorpay/i);
     expect(kitchenMocks.updateFoodOrderItemQuantity).not.toHaveBeenCalled();
   });
 });

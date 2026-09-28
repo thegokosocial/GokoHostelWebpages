@@ -13,9 +13,7 @@ import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/li
 import { buildBillWhatsAppDraft } from "@/lib/billShare";
 import { useFoodBillDynamicQr } from "@/hooks/useFoodBillDynamicQr";
 import {
-  ACTIVE_FOOD_QR_EDIT_BLOCKED,
   foodBillQrRetireAttemptId,
-  foodBillQrUiLocksEdits,
   isFoodOrderAlreadySettledError,
   isRazorpayBillMode,
   isRazorpayFoodPaymentMethod,
@@ -1355,13 +1353,6 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           setRefundForEdit({ orderId: order.id, changes, amountPaise: Number(data.refundAmount), operationId });
           return false;
         }
-        if (res.status === 409 && (data.error === ACTIVE_FOOD_QR_EDIT_BLOCKED || /active Razorpay QR/i.test(String(data.error || "")))) {
-          showError(
-            "Save order edits",
-            `${data.error || ACTIVE_FOOD_QR_EDIT_BLOCKED} Use Retire QR on the bill or Management → Razorpay payments → Food.`,
-          );
-          return false;
-        }
         showError("Save order edits", data.error || "Could not save order edits");
         return false;
       } catch (error) {
@@ -1769,13 +1760,13 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                   <div className="flex justify-between"><span>{actualGroupPending > 0 ? "Unpaid bill" : "Paid bill"}</span><b>₹{(billTotal / 100).toFixed(0)}</b></div>
                   {actualGroupPending > 0 && <p className="mt-1 text-[11px] text-orange-700">Paid orders are excluded from the bill items below.</p>}
                 </div>
-                {foodBillQrUiLocksEdits(drawerQrState.status) && (
+                {foodBillQrRetireAttemptId(drawerQrState) && (
                   <div className="mb-3 rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-2.5 dark:bg-amber-950/40">
                     <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
-                      Active Razorpay QR locks order edits (qty / void / discount) until paid or retired.
+                      Open Razorpay bill QR
                     </p>
                     <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">
-                      Reconcile if the guest already paid. Retire QR cancels the unpaid QR so a new bill QR can mint and totals can be edited.
+                      Editing totals retires this unpaid QR automatically (same as Static). Reconcile if the guest already paid; Retire cancels without editing.
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {(() => {
@@ -1840,7 +1831,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                                     });
                                     const data = await res.json().catch(() => ({}));
                                     if (!res.ok) throw new Error(data.error || "Retire failed");
-                                    showSuccess("QR retired — you can edit totals again");
+                                    showSuccess("QR retired — a new bill QR remints when needed");
                                     await refreshAfterEdit(selectedGroup);
                                     await load();
                                   } catch (e: unknown) {
@@ -2010,11 +2001,6 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                       One or more items still need a final price. Use Set price on each special-price line, then open Bill again.
                     </p>
                   )}
-                </div>
-              )}
-              {isRazorpayBillMode(billQrMode) && actualGroupPending > 0 && (
-                <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
-                  An open bill Razorpay QR locks Save changes on claimed orders. Open Bill to Reconcile (if paid) or Retire QR before editing totals.
                 </div>
               )}
               {loadingOrders === selectedGroup.key ? (
@@ -2287,8 +2273,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                             <button
                               type="button"
                               onClick={() => void handleSaveOrderEdits(order)}
-                              disabled={actionBusy === `save_${order.id}` || foodBillQrUiLocksEdits(drawerQrState.status)}
-                              title={foodBillQrUiLocksEdits(drawerQrState.status) ? "Retire the active Razorpay QR on Bill before saving edits" : undefined}
+                              disabled={actionBusy === `save_${order.id}`}
                               className="rounded bg-brand-green px-3 py-1 text-[11px] font-semibold text-white hover:bg-brand-green/90 disabled:opacity-50"
                             >{actionBusy === `save_${order.id}` ? "Saving…" : "Save changes"}</button>
                           )}

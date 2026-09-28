@@ -44,6 +44,17 @@ vi.mock("@/lib/cashPaymentJournal", () => ({
   recordCashPaymentEvent: vi.fn(async () => ({ duplicate: false })),
   recordCashPaymentCorrection: vi.fn(async () => ({ duplicate: false })),
 }));
+vi.mock("@/lib/foodQrPayment", () => ({
+  releaseFoodQrForDeskPayment: vi.fn(async () => ({ releasedAttemptIds: [] })),
+  FoodQrError: class FoodQrError extends Error {
+    status: number;
+    constructor(message: string, status = 409) {
+      super(message);
+      this.name = "FoodQrError";
+      this.status = status;
+    }
+  },
+}));
 
 import { POST } from "@/app/api/admin/food-orders/route";
 

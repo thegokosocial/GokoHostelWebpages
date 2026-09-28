@@ -219,10 +219,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "newQuantity must be a non-negative whole number" }, { status: 400 });
       }
 
-      const { hasActiveFoodQrClaim } = await import("@/lib/foodQrPayment");
-      const { ACTIVE_FOOD_QR_EDIT_BLOCKED } = await import("@/lib/foodBillQrUi");
-      if (await hasActiveFoodQrClaim([Number(orderId)])) {
-        return NextResponse.json({ error: ACTIVE_FOOD_QR_EDIT_BLOCKED }, { status: 409 });
+      {
+        const { releaseFoodQrForDeskPayment, FoodQrError } = await import("@/lib/foodQrPayment");
+        try {
+          await releaseFoodQrForDeskPayment([Number(orderId)]);
+        } catch (error) {
+          if (error instanceof FoodQrError) {
+            return NextResponse.json({ error: error.message }, { status: error.status });
+          }
+          throw error;
+        }
       }
 
       const allItems = await getFoodOrderItems(orderId);

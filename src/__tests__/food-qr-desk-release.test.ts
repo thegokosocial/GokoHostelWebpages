@@ -37,17 +37,17 @@ describe("desk-release source contracts (money safety)", () => {
     expect(engine).toContain("OPEN_FOOD_QR_STATES");
   });
 
-  it("markOrderPaid supersedes QR; other mutators still reject active claims", () => {
+  it("markOrderPaid and all mutators release open QR via releaseFoodQrOrConflict", () => {
     const markPaidBlock = foodOrders.slice(
       foodOrders.indexOf('case "markOrderPaid"'),
       foodOrders.indexOf('case "saveOrderEdits"'),
     );
-    expect(markPaidBlock).toContain("releaseFoodQrForDeskPayment");
+    expect(markPaidBlock).toContain("releaseFoodQrOrConflict");
     expect(markPaidBlock).toContain("releasedFoodQrAttemptIds");
     expect(markPaidBlock).toContain("Select Received-in");
-    expect(markPaidBlock).not.toContain("rejectIfActiveFoodQr");
-    expect(foodOrders).toContain("rejectIfActiveFoodQr");
-    expect(foodOrders.match(/rejectIfActiveFoodQr/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(foodOrders).toContain("releaseFoodQrOrConflict");
+    expect(foodOrders).not.toContain("rejectIfActiveFoodQr");
+    expect(foodOrders.match(/releaseFoodQrOrConflict/g)?.length).toBeGreaterThanOrEqual(10);
   });
 
   it("Mark Paid never auto-assigns razorpay paymentMethod from desk path", () => {

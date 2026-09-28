@@ -245,10 +245,10 @@ describe("claim guards + guest QR contracts stay wired", () => {
   const myBills = readFileSync("src/app/my-bills/page.tsx", "utf8");
   const engine = readFileSync("src/lib/foodQrPayment.ts", "utf8");
 
-  it("active QR claims block total-changing mutators; Mark Paid supersedes via desk release", () => {
-    expect(foodOrders).toContain("rejectIfActiveFoodQr");
+  it("mutators release open QR before edits (dynamic = static); capture rewrite still blocked", () => {
+    expect(foodOrders).toContain("releaseFoodQrOrConflict");
     expect(foodOrders).toContain("releaseFoodQrForDeskPayment");
-    expect(foodOrders.match(/rejectIfActiveFoodQr/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(foodOrders).not.toContain("rejectIfActiveFoodQr");
     expect(foodOrders).toContain("cancelUnpaidOrder");
     expect(foodOrders).toContain("applyDiscount");
     expect(foodOrders).toContain("removeDiscount");

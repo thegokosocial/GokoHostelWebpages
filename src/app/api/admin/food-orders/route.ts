@@ -118,13 +118,21 @@ export async function POST(req: NextRequest) {
       return new Map(modCounts.map((r) => [r.orderId, r.count]));
     }
 
-    async function rejectIfActiveFoodQr(orderIds: number[]) {
-      const { hasActiveFoodQrClaim } = await import("@/lib/foodQrPayment");
-      const { ACTIVE_FOOD_QR_EDIT_BLOCKED } = await import("@/lib/foodBillQrUi");
-      if (await hasActiveFoodQrClaim(orderIds)) {
-        return NextResponse.json({ error: ACTIVE_FOOD_QR_EDIT_BLOCKED }, { status: 409 });
+    /** Dynamic QR = Static for ops: retire open unpaid QR before mutators; 409 only on capture race. */
+    async function releaseFoodQrOrConflict(orderIds: number[]): Promise<
+      | { ok: true; releasedAttemptIds: string[] }
+      | { ok: false; response: NextResponse }
+    > {
+      const { releaseFoodQrForDeskPayment, FoodQrError } = await import("@/lib/foodQrPayment");
+      try {
+        const { releasedAttemptIds } = await releaseFoodQrForDeskPayment(orderIds);
+        return { ok: true, releasedAttemptIds };
+      } catch (error) {
+        if (error instanceof FoodQrError) {
+          return { ok: false, response: NextResponse.json({ error: error.message }, { status: error.status }) };
+        }
+        throw error;
       }
-      return null;
     }
 
     function paymentForEditedTotal(order: Awaited<ReturnType<typeof getFoodOrderById>> | null, total: number) {
@@ -274,8 +282,8 @@ export async function POST(req: NextRequest) {
         if (currentOrder.status === "cancelled") return NextResponse.json({ error: "Order is already cancelled" }, { status: 409 });
         if (foodAmountPaid(currentOrder) > 0) return NextResponse.json({ error: "Paid or partially paid orders cannot be cancelled" }, { status: 409 });
         {
-          const blocked = await rejectIfActiveFoodQr([orderId]);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict([orderId]);
+          if (!qrRelease.ok) return qrRelease.response;
         }
 
         await updateFoodOrderStatus(orderId, "cancelled", cancelledReason || "Cancelled by admin");
@@ -491,18 +499,9 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Every selected order must have an outstanding balance" }, { status: 409 });
         }
         // Desk pay supersedes open Razorpay bill QRs (close + release). Abort if already captured.
-        let releasedFoodQrAttemptIds: string[] = [];
-        {
-          const { releaseFoodQrForDeskPayment, FoodQrError } = await import("@/lib/foodQrPayment");
-          try {
-            releasedFoodQrAttemptIds = (await releaseFoodQrForDeskPayment(orderIds)).releasedAttemptIds;
-          } catch (error) {
-            if (error instanceof FoodQrError) {
-              return NextResponse.json({ error: error.message }, { status: error.status });
-            }
-            throw error;
-          }
-        }
+        const deskQr = await releaseFoodQrOrConflict(orderIds);
+        if (!deskQr.ok) return deskQr.response;
+        const releasedFoodQrAttemptIds = deskQr.releasedAttemptIds;
         const itemsByOrder = await getFoodOrderItemsBatch(orderIds);
         if (existingOrders.some((order) => (itemsByOrder.get(order.id) || []).some((item) => item.status !== "voided" && item.pricingStatus === "pending"))) {
           return NextResponse.json({ error: "Set final prices before recording payment" }, { status: 400 });
@@ -640,8 +639,8 @@ export async function POST(req: NextRequest) {
         if (!initialOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
         if (initialOrder.status === "cancelled") return NextResponse.json({ error: "This order cannot be edited" }, { status: 400 });
         {
-          const blocked = await rejectIfActiveFoodQr([orderId]);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict([orderId]);
+          if (!qrRelease.ok) return qrRelease.response;
         }
 
         const refundAmount = refund ? Number(refund.amountPaise) : 0;
@@ -929,8 +928,8 @@ export async function POST(req: NextRequest) {
         const { orderId, orderItemId, reason } = rest;
         if (!orderId || !orderItemId) return NextResponse.json({ error: "orderId and orderItemId required" }, { status: 400 });
         {
-          const blocked = await rejectIfActiveFoodQr([orderId]);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict([orderId]);
+          if (!qrRelease.ok) return qrRelease.response;
         }
 
         const db = getDb();
@@ -981,8 +980,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "A positive final price is required" }, { status: 400 });
         }
         {
-          const blocked = await rejectIfActiveFoodQr([orderId]);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict([orderId]);
+          if (!qrRelease.ok) return qrRelease.response;
         }
         const order = await getFoodOrderById(orderId);
         const [item] = await getDb().select().from(foodOrderItems).where(and(eq(foodOrderItems.id, orderItemId), eq(foodOrderItems.orderId, orderId))).limit(1);
@@ -1038,8 +1037,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "newQuantity must be a non-negative whole number" }, { status: 400 });
         }
         {
-          const blocked = await rejectIfActiveFoodQr([orderId]);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict([orderId]);
+          if (!qrRelease.ok) return qrRelease.response;
         }
         const db = getDb();
 
@@ -1116,8 +1115,8 @@ export async function POST(req: NextRequest) {
         const existingOrders = await Promise.all(orderIds.map((orderId: number) => getFoodOrderById(orderId)));
         if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
         {
-          const blocked = await rejectIfActiveFoodQr(orderIds);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict(orderIds);
+          if (!qrRelease.ok) return qrRelease.response;
         }
 
         const discTaxRate = foodTaxPercent(await getSetting("food_tax_rate"));
@@ -1219,8 +1218,8 @@ export async function POST(req: NextRequest) {
         const existingOrders = await Promise.all(removeOrderIds.map((orderId: number) => getFoodOrderById(orderId)));
         if (existingOrders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
         {
-          const blocked = await rejectIfActiveFoodQr(removeOrderIds);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict(removeOrderIds);
+          if (!qrRelease.ok) return qrRelease.response;
         }
 
         // Only clear discounts with no real collection (unpaid + 100%-zeroed mistakes).
@@ -1303,8 +1302,8 @@ export async function POST(req: NextRequest) {
         const { orderId, checkinId, guestName, roomInfo } = rest;
         if (!orderId || !checkinId) return NextResponse.json({ error: "orderId and checkinId required" }, { status: 400 });
         {
-          const blocked = await rejectIfActiveFoodQr([orderId]);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict([orderId]);
+          if (!qrRelease.ok) return qrRelease.response;
         }
 
         await updateFoodOrder(orderId, {
@@ -1693,8 +1692,8 @@ export async function POST(req: NextRequest) {
         const order = await getFoodOrderById(orderId);
         if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
         {
-          const blocked = await rejectIfActiveFoodQr([orderId]);
-          if (blocked) return blocked;
+          const qrRelease = await releaseFoodQrOrConflict([orderId]);
+          if (!qrRelease.ok) return qrRelease.response;
         }
         const razorpayLocked = order.paymentMethod === "razorpay" || order.paymentMethod === "razorpay_test";
         if (razorpayLocked) {

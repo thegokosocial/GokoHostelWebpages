@@ -192,7 +192,7 @@ describe("foodQrAttemptOutcome + search helpers", () => {
   });
 });
 
-describe("active QR blocks mutating food-order actions", () => {
+describe("release before mutate (dynamic QR = static ops)", () => {
   beforeEach(() => {
     for (const fn of Object.values(q)) fn.mockReset();
     q.isPiRuntime.mockReturnValue(false);
@@ -202,89 +202,82 @@ describe("active QR blocks mutating food-order actions", () => {
     q.getMenuItemCategoryExemptions.mockResolvedValue(new Map());
     q.getSetting.mockResolvedValue("0");
     q.getMenuItemById.mockResolvedValue({ id: 4, trackInventory: 0 });
-    q.hasActiveFoodQrClaim.mockResolvedValue(true);
+    q.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: [ATTEMPT] });
+    q.getDb.mockReturnValue({
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+    });
   });
 
-  it("saveOrderEdits returns 409 with ACTIVE_FOOD_QR_EDIT_BLOCKED when claim exists", async () => {
+  it.each([
+    ["saveOrderEdits", {
+      orderId: 10,
+      operationId: "11111111-1111-4111-8111-111111111111",
+      changes: [{ itemId: 20, quantity: 2 }],
+    }, [10]],
+    ["updateItemQuantity", { orderId: 10, orderItemId: 20, newQuantity: 3 }, [10]],
+    ["setFoodOrderItemPrice", { orderId: 10, orderItemId: 20, price: 300 }, [10]],
+    ["voidItem", { orderId: 10, orderItemId: 20, reason: "oops" }, [10]],
+    ["cancelUnpaidOrder", { orderId: 10 }, [10]],
+    ["applyDiscount", { orderIds: [10], discountAmount: 1000, reason: "comp" }, [10]],
+    ["removeDiscount", { orderIds: [10] }, [10]],
+    ["reassignOrder", { orderId: 10, checkinId: 1 }, [10]],
+    ["updatePaymentDetails", { orderId: 10, paymentStatus: "paid", paymentMethod: "cash" }, [10]],
+  ] as const)("%s releases open QR then continues (not ACTIVE_FOOD_QR_EDIT_BLOCKED)", async (action, body, orderIds) => {
+    const res = await foodOrdersPost(ordersReq(action, { ...body }));
+    expect(q.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([...orderIds]);
+    const data = await res.json().catch(() => ({}));
+    expect(data.error).not.toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
+    expect(String(data.error || "")).not.toMatch(/active Razorpay QR payment/i);
+  });
+
+  it("updateItemQuantity succeeds after release (qty change applies)", async () => {
+    q.updateFoodOrderItemQuantity.mockResolvedValue(undefined);
+    q.updateFoodOrder.mockResolvedValue(undefined);
+    q.addOrderModification.mockResolvedValue(undefined);
+    const res = await foodOrdersPost(ordersReq("updateItemQuantity", {
+      orderId: 10,
+      orderItemId: 20,
+      newQuantity: 3,
+    }));
+    expect(res.status).toBe(200);
+    expect(q.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
+    expect(q.updateFoodOrderItemQuantity).toHaveBeenCalled();
+  });
+
+  it("capture race aborts mutator before domain work", async () => {
+    const { FoodQrError } = await import("@/lib/foodQrPayment");
+    q.releaseFoodQrForDeskPayment.mockRejectedValue(new FoodQrError("Already paid via Razorpay", 409));
     const res = await foodOrdersPost(ordersReq("saveOrderEdits", {
       orderId: 10,
       operationId: "11111111-1111-4111-8111-111111111111",
       changes: [{ itemId: 20, quantity: 2 }],
     }));
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: ACTIVE_FOOD_QR_EDIT_BLOCKED });
-    expect(q.hasActiveFoodQrClaim).toHaveBeenCalledWith([10]);
+    expect((await res.json()).error).toMatch(/Already paid via Razorpay/i);
     expect(q.updateFoodOrderItemQuantity).not.toHaveBeenCalled();
   });
 
-  it("updateItemQuantity returns 409 when claim exists", async () => {
-    const res = await foodOrdersPost(ordersReq("updateItemQuantity", {
-      orderId: 10,
-      orderItemId: 20,
-      newQuantity: 3,
-    }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
-  });
-
-  it("voidItem returns 409 when claim exists", async () => {
-    const res = await foodOrdersPost(ordersReq("voidItem", {
-      orderId: 10,
-      orderItemId: 20,
-      reason: "oops",
-    }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
-    expect(q.getDb).not.toHaveBeenCalled();
-  });
-
-  it("cancelUnpaidOrder returns 409 when claim exists", async () => {
-    const res = await foodOrdersPost(ordersReq("cancelUnpaidOrder", { orderId: 10 }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
-    expect(q.updateFoodOrderStatus).not.toHaveBeenCalled();
-  });
-
-  it("applyDiscount returns 409 when claim exists", async () => {
-    const res = await foodOrdersPost(ordersReq("applyDiscount", {
-      orderIds: [10],
-      discountAmount: 1000,
-      reason: "comp",
-    }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
-  });
-
-  it("updatePaymentDetails returns 409 when claim exists", async () => {
-    const res = await foodOrdersPost(ordersReq("updatePaymentDetails", {
-      orderId: 10,
-      paymentStatus: "paid",
-      paymentMethod: "cash",
-    }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error).toBe(ACTIVE_FOOD_QR_EDIT_BLOCKED);
-  });
-
-  it("scopes claim check to the edited order id; no claim ⇒ not 409", async () => {
+  it("scopes release to the edited order id", async () => {
     q.getFoodOrderById.mockResolvedValue({ ...order, id: 11 });
-    q.hasActiveFoodQrClaim.mockResolvedValue(true);
-    const blocked = await foodOrdersPost(ordersReq("saveOrderEdits", {
-      orderId: 11,
-      operationId: "22222222-2222-4222-8222-222222222222",
-      changes: [{ itemId: 20, quantity: 2 }],
-    }));
-    expect(blocked.status).toBe(409);
-    expect(q.hasActiveFoodQrClaim).toHaveBeenCalledWith([11]);
-
-    q.hasActiveFoodQrClaim.mockResolvedValue(false);
     q.getFoodOrderItems.mockResolvedValue([]);
-    const open = await foodOrdersPost(ordersReq("updateItemQuantity", {
+    await foodOrdersPost(ordersReq("updateItemQuantity", {
       orderId: 11,
       orderItemId: 20,
       newQuantity: 2,
     }));
-    expect(open.status).toBe(404);
-    expect(q.hasActiveFoodQrClaim).toHaveBeenLastCalledWith([11]);
+    expect(q.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([11]);
+  });
+
+  it("no open QR (empty release) still allows mutators", async () => {
+    q.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: [] });
+    q.getFoodOrderItems.mockResolvedValue([]);
+    const res = await foodOrdersPost(ordersReq("updateItemQuantity", {
+      orderId: 10,
+      orderItemId: 20,
+      newQuantity: 2,
+    }));
+    expect(q.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -362,7 +355,7 @@ describe("closeActiveFoodQr admin action", () => {
   });
 });
 
-describe("wiring: ledger columns + kitchen reject + admin banner", () => {
+describe("wiring: ledger + kitchen release + admin Static-parity UX", () => {
   it("FoodPaymentsLedger exposes Room-like columns, open-only Reconcile, and order collapse", () => {
     const ledger = readFileSync("src/components/admin/FoodPaymentsLedger.tsx", "utf8");
     expect(ledger).toContain("Outcome");
@@ -382,20 +375,33 @@ describe("wiring: ledger columns + kitchen reject + admin banner", () => {
     expect(ledger).toContain("canReconcile &&");
   });
 
-  it("kitchen updateItemQuantity rejects active QR claims", () => {
+  it("kitchen updateItemQuantity releases open QR before qty change", () => {
     const kitchen = readFileSync("src/app/api/food/kitchen/route.ts", "utf8");
-    expect(kitchen).toContain("hasActiveFoodQrClaim");
-    expect(kitchen).toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
+    expect(kitchen).toContain("releaseFoodQrForDeskPayment");
+    expect(kitchen).not.toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
+    expect(kitchen).not.toContain("hasActiveFoodQrClaim");
   });
 
-  it("AdminFoodOrders banners Retire QR and uses ACTIVE_FOOD_QR_EDIT_BLOCKED", () => {
+  it("AdminFoodOrders unlocks Save; Retire optional; no edit lock banner", () => {
     const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
-    expect(ui).toContain("Active Razorpay QR locks");
+    expect(ui).not.toContain("locks Save changes");
+    expect(ui).not.toContain("Active Razorpay QR locks");
+    expect(ui).not.toContain("foodBillQrUiLocksEdits");
+    expect(ui).not.toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
+    expect(ui).toContain("Editing totals retires this unpaid QR automatically");
     expect(ui).toContain("closeActiveFoodQr");
     expect(ui).toContain("reconcileFoodQrAttempt");
-    expect(ui).toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
     expect(ui).toContain("Retire QR");
     expect(ui).toContain("foodBillQrRetireAttemptId");
+    expect(ui).toContain("disabled={actionBusy === `save_${order.id}`}");
+  });
+
+  it("food-orders route uses releaseFoodQrOrConflict; no rejectIfActiveFoodQr", () => {
+    const route = readFileSync("src/app/api/admin/food-orders/route.ts", "utf8");
+    expect(route).toContain("releaseFoodQrOrConflict");
+    expect(route).toContain("releaseFoodQrForDeskPayment");
+    expect(route).not.toContain("rejectIfActiveFoodQr");
+    expect(route).not.toContain("ACTIVE_FOOD_QR_EDIT_BLOCKED");
   });
 
   it("foodQrPayment wires Retire via finalizeOpenFoodQrAttempt + desk release", () => {
