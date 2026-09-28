@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { ImageIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
+import { ImageIcon, Loader2Icon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AdminLoading } from "./AdminLoading";
@@ -180,15 +180,20 @@ export function AdminHeroVideos({ password, username }: Props) {
         <p className="mt-1 max-w-xl text-sm text-brand-green-dark/70">
           Upload desktop and mobile clips, then assign a pair to each marketing page.
         </p>
-        {progress ? <p className="mt-2 text-sm text-brand-green" role="status">{progress}</p> : null}
+        {progress ? (
+          <p className="mt-2 flex items-center gap-2 text-sm text-brand-green" role="status">
+            <Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
+            {progress}
+          </p>
+        ) : null}
       </div>
 
       <LibrarySection title="Desktop videos" hint="Landscape 1024×576" items={data.desktop}
-        builtins={data.builtins.filter((b) => b.slot === "desktop")} locked={locked}
+        builtins={data.builtins.filter((b) => b.slot === "desktop")} locked={locked} uploading={Boolean(progress)}
         fileRef={fileDesktop} onPick={() => fileDesktop.current?.click()}
         onFile={(f) => void onUpload("desktop", f)} onDelete={onDelete} />
       <LibrarySection title="Mobile videos" hint="Portrait 324×576" items={data.mobile}
-        builtins={data.builtins.filter((b) => b.slot === "mobile")} locked={locked}
+        builtins={data.builtins.filter((b) => b.slot === "mobile")} locked={locked} uploading={Boolean(progress)}
         fileRef={fileMobile} onPick={() => fileMobile.current?.click()}
         onFile={(f) => void onUpload("mobile", f)} onDelete={onDelete} />
 
@@ -249,14 +254,14 @@ export function AdminHeroVideos({ password, username }: Props) {
               </Button>
             </div>
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
-              <SelectPreview label="Desktop" value={draftDesktop} options={desktopOpts}
+              <SelectPreview label="Desktop" variant="desktop" value={draftDesktop} options={desktopOpts}
                 previewUrl={previewD?.url} poster={previewD?.posterUrl} disabled={locked} onChange={setDraftDesktop} />
-              <SelectPreview label="Mobile" value={draftMobile} options={mobileOpts}
+              <SelectPreview label="Mobile" variant="mobile" value={draftMobile} options={mobileOpts}
                 previewUrl={previewM?.url} poster={previewM?.posterUrl} disabled={locked} onChange={setDraftMobile} />
             </div>
             <div className="flex gap-2 border-t p-4">
               <Button type="button" className="flex-1" disabled={locked || !draftDesktop || !draftMobile} onClick={() => void savePage()}>
-                {busy ? "Saving…" : "Save"}
+                {busy ? <><Loader2Icon className="mr-1 size-4 animate-spin" aria-hidden /> Saving…</> : "Save"}
               </Button>
               <Button type="button" variant="outline" disabled={locked} onClick={() => setEditingPage(null)}>Cancel</Button>
             </div>
@@ -268,10 +273,10 @@ export function AdminHeroVideos({ password, username }: Props) {
 }
 
 function LibrarySection({
-  title, hint, items, builtins, locked, fileRef, onPick, onFile, onDelete,
+  title, hint, items, builtins, locked, uploading, fileRef, onPick, onFile, onDelete,
 }: {
   title: string; hint: string; items: HeroLibraryItem[]; builtins: HeroLibraryItem[];
-  locked: boolean; fileRef: RefObject<HTMLInputElement | null>;
+  locked: boolean; uploading: boolean; fileRef: RefObject<HTMLInputElement | null>;
   onPick: () => void; onFile: (f: File | null) => void; onDelete: (item: HeroLibraryItem) => void;
 }) {
   return (
@@ -282,7 +287,10 @@ function LibrarySection({
           <p className="text-xs text-brand-green-dark/55">{hint}</p>
         </div>
         <Button type="button" size="sm" disabled={locked} onClick={onPick}>
-          <PlusIcon className="mr-1 size-4" /> Upload
+          {uploading
+            ? <Loader2Icon className="mr-1 size-4 animate-spin" aria-hidden />
+            : <PlusIcon className="mr-1 size-4" />}
+          Upload
         </Button>
         <input ref={fileRef} type="file" accept="video/*" className="hidden" disabled={locked}
           onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ""; onFile(f); }} />
@@ -338,10 +346,31 @@ function VideoCard({ item, locked, onDelete, subtle }: {
   );
 }
 
-function SelectPreview({ label, value, options, previewUrl, poster, disabled, onChange }: {
-  label: string; value: string; options: HeroLibraryItem[]; previewUrl?: string; poster?: string;
-  disabled: boolean; onChange: (id: string) => void;
+function SelectPreview({ label, variant, value, options, previewUrl, poster, disabled, onChange }: {
+  label: string; variant: "desktop" | "mobile"; value: string; options: HeroLibraryItem[];
+  previewUrl?: string; poster?: string; disabled: boolean; onChange: (id: string) => void;
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    setLoadError(false);
+    const v = videoRef.current;
+    if (!v || !previewUrl) return;
+    v.muted = true;
+    const play = () => {
+      v.play().catch(() => {});
+    };
+    if (v.readyState >= 2) play();
+    else v.addEventListener("canplay", play, { once: true });
+    return () => v.removeEventListener("canplay", play);
+  }, [previewUrl]);
+
+  const frame =
+    variant === "mobile"
+      ? "mx-auto aspect-[9/16] max-h-80 w-full max-w-[12rem]"
+      : "aspect-[16/9]";
+
   return (
     <div className="flex flex-col gap-2">
       <Label>{label}</Label>
@@ -351,12 +380,25 @@ function SelectPreview({ label, value, options, previewUrl, poster, disabled, on
           <option key={o.id} value={o.id}>{o.label}{o.builtin ? " (built-in)" : ""}</option>
         ))}
       </select>
-      <div className="aspect-[16/9] overflow-hidden rounded-xl border border-brand-mist bg-black/90">
+      <div className={`${frame} overflow-hidden rounded-xl border border-brand-mist bg-black/90`}>
         {previewUrl ? (
-          <video key={previewUrl} src={previewUrl} poster={poster}
-            className="size-full object-contain" muted loop playsInline autoPlay />
+          <video
+            key={previewUrl}
+            ref={videoRef}
+            src={previewUrl}
+            poster={poster}
+            className="size-full object-cover"
+            muted
+            loop
+            playsInline
+            autoPlay
+            onError={() => setLoadError(true)}
+          />
         ) : null}
       </div>
+      {loadError ? (
+        <p className="text-xs text-red-700" role="alert">Preview failed to load</p>
+      ) : null}
     </div>
   );
 }

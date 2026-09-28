@@ -939,6 +939,51 @@ describe("GET /api/media/[...key]", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
   });
+
+  it("synthesizes 206 for small bodies when R2 omits native range", async () => {
+    const bytes = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80]);
+    vi.mocked(getMediaObject).mockResolvedValue({
+      body: new Blob([bytes]).stream(),
+      httpMetadata: { contentType: "video/mp4" },
+      size: bytes.byteLength,
+      // no object.range — forces synth path
+    });
+    const res = await mediaGET(
+      new NextRequest("http://localhost/api/media/hero-videos/clip.mp4", {
+        headers: { Range: "bytes=2-5" },
+      }),
+      { params: Promise.resolve({ key: ["hero-videos", "clip.mp4"] }) },
+    );
+    expect(res.status).toBe(206);
+    expect(res.headers.get("Content-Range")).toBe("bytes 2-5/8");
+    expect(res.headers.get("Content-Length")).toBe("4");
+    expect(res.headers.get("Content-Type")).toBe("video/mp4");
+    const out = new Uint8Array(await res.arrayBuffer());
+    expect([...out]).toEqual([30, 40, 50, 60]);
+  });
+
+  it("keeps 200 full body for oversized Range without native R2 range", async () => {
+    const size = 16 * 1024 * 1024;
+    vi.mocked(getMediaObject).mockResolvedValue({
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1]));
+          controller.close();
+        },
+      }),
+      httpMetadata: { contentType: "video/mp4" },
+      size,
+    });
+    const res = await mediaGET(
+      new NextRequest("http://localhost/api/media/hero-videos/big.mp4", {
+        headers: { Range: "bytes=0-1023" },
+      }),
+      { params: Promise.resolve({ key: ["hero-videos", "big.mp4"] }) },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Range")).toBeNull();
+    expect(res.headers.get("Content-Length")).toBe(String(size));
+  });
 });
 
 describe("GET /api/site", () => {
@@ -961,10 +1006,13 @@ describe("GET /api/site", () => {
     expect(body.past).toEqual([]);
   });
 
-  it("returns resolved hero video map for page=heroes", async () => {
+  it("returns resolved hero video map for page=heroes without long edge SWR", async () => {
     const res = await siteGET(new NextRequest("http://localhost/api/site?page=heroes"));
     expect(res.status).toBe(200);
-    expect(res.headers.get("Cache-Control")).toContain("s-maxage=60");
+    const cc = res.headers.get("Cache-Control") || "";
+    expect(cc).toContain("must-revalidate");
+    expect(cc).toContain("s-maxage=0");
+    expect(cc).not.toContain("stale-while-revalidate");
     const body = await res.json();
     expect(body.pages.home.mp4).toContain("/videos/hero/");
     expect(body.pages["booking-confirmation"].mobileMp4).toContain("mobile");

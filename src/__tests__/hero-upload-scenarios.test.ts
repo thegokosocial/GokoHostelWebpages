@@ -128,4 +128,16 @@ describe("AdminHeroVideos wiring", () => {
     expect(src).toContain('phase = "upload-video"');
     expect(src).toContain('phase = "upload-poster"');
   });
+
+  it("shows upload spinner and cover previews with play retry", () => {
+    const src = readFileSync("src/components/admin/AdminHeroVideos.tsx", "utf8");
+    expect(src).toContain("Loader2Icon");
+    expect(src).toContain("animate-spin");
+    expect(src).toContain('variant === "mobile"');
+    expect(src).toContain("aspect-[9/16]");
+    expect(src).toContain("object-cover");
+    expect(src).toContain("v.play()");
+    expect(src).toContain("Preview failed to load");
+    expect(src).not.toContain("object-contain");
+  });
 });

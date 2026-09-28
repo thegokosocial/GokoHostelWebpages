@@ -43,6 +43,9 @@ export function HeroBackdrop({
   useEffect(() => {
     if (!pageKey) return;
     let active = true;
+    // Drop prior page assignment so seed shows until this pageKey's hydrate lands
+    // (fetch is in-flight-only; without this, the previous CMS clip can linger).
+    setLiveVideo(null);
     fetchPublicHeroVideos().then((data) => {
       if (!active) return;
       setLiveVideo(peekHeroForPage(data, pageKey));

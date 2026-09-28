@@ -158,9 +158,10 @@ describe("hero video page wiring", () => {
     expect(backdrop).toContain("fetchPublicHeroVideos");
     expect(backdrop).toContain("webmSrc ?");
     expect(backdrop).toContain("pageKey");
+    expect(backdrop).toContain("setLiveVideo(null)");
     expect(backdrop).toContain("heroVideoElementKey(isMobile, mp4Src, webmSrc)");
     expect(backdrop).not.toContain('key={isMobile ? "mobile" : "desktop"}');
-    expect(readFileSync("src/lib/fetchHeroVideos.ts", "utf8")).toContain('cache: "default"');
+    expect(readFileSync("src/lib/fetchHeroVideos.ts", "utf8")).toContain('cache: "no-store"');
 
     const admin = readFileSync("src/components/admin/AdminWebsite.tsx", "utf8");
     expect(admin).toContain("AdminHeroVideos");
@@ -295,7 +296,7 @@ describe("fetchPublicHeroVideos client cache", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses cache:default once per module lifetime and shares the promise", async () => {
+  it("dedupes in-flight fetches with cache:no-store and refetches after settle", async () => {
     const payload = {
       pages: {
         "self-checkin": {
@@ -311,11 +312,13 @@ describe("fetchPublicHeroVideos client cache", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const a = await fetchPublicHeroVideos();
-    const b = await fetchPublicHeroVideos();
+    const [a, b] = await Promise.all([fetchPublicHeroVideos(), fetchPublicHeroVideos()]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[1]).toEqual({ cache: "default" });
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual({ cache: "no-store" });
     expect(a).toBe(b);
     expect(peekHeroForPage(a, "self-checkin")?.mp4).toBe(heroVideoB.mp4);
+
+    await fetchPublicHeroVideos();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

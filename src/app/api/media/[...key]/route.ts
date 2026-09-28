@@ -54,12 +54,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ key:
     return new NextResponse(object.body as BodyInit, { status: 206, headers });
   }
 
-  // Fallback: if R2 returned full body but client asked for Range, synthesize 206 when possible
+  // Fallback: if R2 returned full body but client asked for Range, synthesize 206 for small files
+  // (hero encodes ≤15MB). Larger objects stay 200 full-body to avoid buffering.
+  const SYNTH_RANGE_MAX = 15 * 1024 * 1024;
   if (wantRange && size != null) {
     const parsed = parseRange(rangeHeader, size);
     if (parsed && object.body) {
-      // Without native range from R2, stream full body with 200 (avoid buffering large files)
-      if (size) headers["Content-Length"] = String(size);
+      if (size <= SYNTH_RANGE_MAX) {
+        const buf = await new Response(object.body as BodyInit).arrayBuffer();
+        const slice = buf.slice(parsed.start, parsed.end + 1);
+        headers["Content-Range"] = `bytes ${parsed.start}-${parsed.end}/${size}`;
+        headers["Content-Length"] = String(slice.byteLength);
+        return new NextResponse(slice, { status: 206, headers });
+      }
+      headers["Content-Length"] = String(size);
       return new NextResponse(object.body as BodyInit, { status: 200, headers });
     }
   }

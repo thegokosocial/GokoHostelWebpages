@@ -5,6 +5,8 @@ import { loadPublicHeroVideos } from "@/lib/loadHeroVideos";
 
 /** Shared-cache hint only. Do not enable Worker-wide `cache.enabled` — it would cache other GET 200s. */
 const CACHE = "public, s-maxage=60, stale-while-revalidate=300";
+/** Heroes must refresh soon after admin save — no long edge SWR stale window. */
+const HEROES_CACHE = "public, max-age=0, s-maxage=0, must-revalidate";
 
 export async function GET(req: NextRequest) {
   const page = req.nextUrl.searchParams.get("page");
@@ -21,5 +23,6 @@ export async function GET(req: NextRequest) {
   if (!data) {
     return NextResponse.json({ error: "Unknown page" }, { status: 404 });
   }
-  return NextResponse.json(data, { headers: { "Cache-Control": CACHE } });
+  const cache = page === "heroes" ? HEROES_CACHE : CACHE;
+  return NextResponse.json(data, { headers: { "Cache-Control": cache } });
 }
