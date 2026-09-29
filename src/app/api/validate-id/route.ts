@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocument";
 import { incrementStat, addSystemLog } from "@/db/queries";
 import { isOfflineMode } from "@/lib/runtime";
+import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
 
 export async function POST(req: NextRequest) {
   if (isOfflineMode()) {
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
       }
       if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
         return NextResponse.json({ error: "File must be an image or PDF" }, { status: 400 });
+      }
+      if (file.type === "application/pdf" && isPasswordProtectedPdf(await file.arrayBuffer())) {
+        return NextResponse.json({ error: `File "${file.name}" is password-protected. Upload an unlocked PDF or a photo instead.` }, { status: 422 });
       }
     }
 

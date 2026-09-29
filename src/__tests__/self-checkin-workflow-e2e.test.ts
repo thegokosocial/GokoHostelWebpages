@@ -271,6 +271,19 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("pending");
     });
 
+    it("rejects a password-protected PDF before Vision or Drive upload", async () => {
+      const pdf = new File(["%PDF-1.7\ntrailer << /Encrypt 5 0 R >>"], "locked.pdf", { type: "application/pdf" });
+      const validateRes = await validateIdPOST(validateRequest({ file: pdf }));
+      expect(validateRes.status).toBe(422);
+      expect((await validateRes.json()).error).toMatch(/password-protected/i);
+      expect(q.visionAnalyze).not.toHaveBeenCalled();
+
+      const checkinRes = await checkinPOST(checkinRequest(baseFields(), [pdf]));
+      expect(checkinRes.status).toBe(422);
+      expect((await checkinRes.json()).error).toMatch(/unlocked PDF or a photo/i);
+      expect(q.driveUploadFile).not.toHaveBeenCalled();
+    });
+
     it("Vision throw with 1 DL file soft-allows check-in as pending", async () => {
       q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
       const checkinRes = await checkinPOST(checkinRequest(baseFields({

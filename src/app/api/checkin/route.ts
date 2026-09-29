@@ -9,6 +9,7 @@ import { isSameCheckinVisit } from "@/lib/checkinDuplicate";
 import { dobEqualsArrivalDate, getAgeFromDob } from "@/lib/parseDob";
 import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRateLimit";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
+import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -124,6 +125,9 @@ export async function POST(req: NextRequest) {
     for (const file of [...idImages, ...visaImages]) {
       if (file.size > 10 * 1024 * 1024) {
         return NextResponse.json({ error: `File "${file.name}" exceeds 10 MB limit` }, { status: 400 });
+      }
+      if (file.type === "application/pdf" && isPasswordProtectedPdf(await file.arrayBuffer())) {
+        return NextResponse.json({ error: `File "${file.name}" is password-protected. Upload an unlocked PDF or a photo instead.`, field: idImages.includes(file) ? "idImages" : "visaImages" }, { status: 422 });
       }
     }
 

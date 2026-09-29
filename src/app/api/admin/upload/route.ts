@@ -4,6 +4,7 @@ import { getMonthKey, incrementStat, addSystemLog } from "@/db/queries";
 import { isOfflineMode } from "@/lib/runtime";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed } from "@/lib/actionPermissions";
+import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
 
 export async function POST(req: NextRequest) {
   if (isOfflineMode()) {
@@ -28,6 +29,10 @@ export async function POST(req: NextRequest) {
     }
     if (file.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)) {
       return NextResponse.json({ error: "Unsupported or oversized document" }, { status: 400 });
+    }
+
+    if (file.type === "application/pdf" && isPasswordProtectedPdf(await file.arrayBuffer())) {
+      return NextResponse.json({ error: "This PDF is password-protected. Upload an unlocked PDF or a photo instead." }, { status: 422 });
     }
 
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;

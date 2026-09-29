@@ -109,4 +109,15 @@ describe("Admin Drive upload API", () => {
     const empty = await POST(uploadReq({ authUser: "adder", file: null }));
     expect(empty.status).toBe(400);
   });
+
+  it("rejects password-protected PDFs before upload", async () => {
+    q.authenticateUser.mockResolvedValue({ role: "staff", displayName: "Adder", permissions: { canAddCheckin: true } });
+    const res = await POST(uploadReq({
+      authUser: "adder",
+      file: new File(["%PDF-1.7\ntrailer << /Encrypt 5 0 R >>"], "locked.pdf", { type: "application/pdf" }),
+    }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatch(/password-protected/i);
+    expect(q.driveUploadFile).not.toHaveBeenCalled();
+  });
 });

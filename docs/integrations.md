@@ -23,7 +23,7 @@ flowchart LR
 | Cloudflare R2 | CMS JPEGs | Binding `MEDIA` / bucket `goko-media` |
 | Cloudflare Workers | Host | Wrangler OAuth on this Mac |
 | Google Vision | ID OCR | Service account JSON in env |
-| Google Drive | ID + bill photos | Desktop OAuth refresh token |
+| Google Drive | ID + bill photos; new uploads are shared as Anyone with the link | Desktop OAuth refresh token; uploads fail if Drive rejects the sharing grant |
 | Gmail | OTA emails | Same OAuth family / web client |
 | Aiosell | Channel manager | D1 `channel_config`. Webhook: header = `webhookSecret`. Sandbox UI defaults live in `src/lib/aiosell.ts` |
 | Guest booking engines (StayFlexi / Aiosell / other) | Book now | Admin-saved HTTPS guest link in Channel Manager; external provider owns checkout; no hard-coded provider fallback |

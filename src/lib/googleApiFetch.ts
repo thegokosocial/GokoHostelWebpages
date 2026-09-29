@@ -223,7 +223,7 @@ export async function driveUploadFile(
     `\r\n--${boundary}--`;
 
   const res = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
     {
       method: "POST",
       headers: {
@@ -238,13 +238,13 @@ export async function driveUploadFile(
   const data = await res.json();
   const fileId = data.id;
 
-  const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+  const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?supportsAllDrives=true`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ role: "reader", type: "anyone" }),
   });
   if (!permRes.ok) {
-    console.error(`Failed to set file permissions for ${fileId}: ${permRes.status}`);
+    throw new Error(`Drive sharing failed (${permRes.status})`);
   }
 
   return `https://drive.google.com/file/d/${fileId}/view`;
