@@ -123,7 +123,9 @@ test("mobile drawer closes from blank space, X, and navigation selection", async
   await page.getByRole("button", { name: "Open navigation" }).click();
   const drawer = page.locator("#admin-mobile-navigation");
   await expect(drawer).toBeVisible();
-  await drawer.getByRole("navigation", { name: "Admin sections" }).getByRole("button", { name: "Bookings" }).click();
+  const bookings = drawer.getByRole("navigation", { name: "Admin sections" }).getByRole("button", { name: "Bookings" });
+  await expect(bookings).toBeVisible();
+  await bookings.click();
   await expect(page).toHaveURL(/section=bookings/, { timeout: 10_000 });
   await expect(drawer).toBeHidden();
 
