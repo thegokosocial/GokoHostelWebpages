@@ -3,13 +3,14 @@
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import { PlusCircleIcon, FileTextIcon, IndianRupeeIcon, BedDoubleIcon, BookOpenIcon, ScaleIcon, HandCoinsIcon } from "lucide-react";
+import { PlusCircleIcon, FileTextIcon, IndianRupeeIcon, BedDoubleIcon, BookOpenIcon, ScaleIcon, HandCoinsIcon, Repeat2Icon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role } from "./types";
 
 const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 const AdminAddExpense = dynamic(() => import("./AdminAddExpense").then((m) => m.AdminAddExpense), { loading: tabLoader, ssr: false });
 const AdminAddIncome = dynamic(() => import("./AdminAddIncome").then((m) => m.AdminAddIncome), { loading: tabLoader, ssr: false });
+const AdminRecurringExpenses = dynamic(() => import("./AdminRecurringExpenses").then((m) => m.AdminRecurringExpenses), { loading: tabLoader, ssr: false });
 const AdminIncomeRecords = dynamic(() => import("./AdminIncomeRecords").then((m) => m.AdminIncomeRecords), { loading: tabLoader, ssr: false });
 const AdminBillRecords = dynamic(() => import("./AdminBillRecords").then((m) => m.AdminBillRecords), { loading: tabLoader, ssr: false });
 const AdminFoodBill = dynamic(() => import("./AdminFoodBill").then((m) => m.AdminFoodBill), { loading: tabLoader, ssr: false });
@@ -19,10 +20,11 @@ const DailyReconcile = dynamic(() => import("./DailyReconcile").then((m) => m.Da
 const PlatformReceivables = dynamic(() => import("./PlatformReceivables").then((m) => m.PlatformReceivables), { loading: tabLoader, ssr: false });
 const AccountActivity = dynamic(() => import("./AccountActivity").then((m) => m.AccountActivity), { loading: tabLoader, ssr: false });
 
-type AccountsTab = "addExpense" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile" | "platformReceivables" | "accountActivity";
+type AccountsTab = "addExpense" | "recurringExpenses" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile" | "platformReceivables" | "accountActivity";
 
 const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?: string | string[] }[] = [
   { id: "addExpense", label: "Add Expense", icon: <PlusCircleIcon className="h-3.5 w-3.5" />, permission: "canAddExpense" },
+  { id: "recurringExpenses", label: "Recurring Expenses", icon: <Repeat2Icon className="h-3.5 w-3.5" /> },
   { id: "addIncome", label: "Add Income", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canAddIncome" },
   { id: "dailyLedger", label: "Daily Ledger", icon: <BookOpenIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
   { id: "billRecords", label: "Expense Records", icon: <FileTextIcon className="h-3.5 w-3.5" />, permission: "canViewExpenses" },
@@ -45,7 +47,7 @@ export function AdminExpenditure({
   role: Role;
   permissions: Record<string, boolean>;
 }) {
-  const visibleTabs = TABS.filter((t) => t.id === "accountActivity"
+  const visibleTabs = TABS.filter((t) => t.id === "recurringExpenses" ? role === "admin" : t.id === "accountActivity"
     ? hasPermission(role, permissions, "canViewAccounts") && hasPermission(role, permissions, "canViewExpenses")
     : !t.permission || (Array.isArray(t.permission)
     ? t.permission.some((permission) => hasPermission(role, permissions, permission))
@@ -90,6 +92,7 @@ export function AdminExpenditure({
 
       <div className="mt-6">
         {tab === "addExpense" && <AdminAddExpense password={password} username={username} role={role} permissions={permissions} />}
+        {tab === "recurringExpenses" && <AdminRecurringExpenses password={password} username={username} />}
         {tab === "addIncome" && <AdminAddIncome password={password} username={username} />}
         {tab === "dailyLedger" && <DailyLedger password={password} username={username} role={role} permissions={permissions} />}
         {tab === "billRecords" && <AdminBillRecords password={password} username={username} role={role} permissions={permissions} />}

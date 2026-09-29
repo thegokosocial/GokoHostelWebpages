@@ -99,3 +99,7 @@ When sync merges real refunds from disconnected replicas that exceed the Goko co
 ## Bulk import
 
 XLSX template → validate → dedupe → batch 50. Duplicate expense: date + amount + category + notes. Income: date + amount + source + source detail + description. Online rows require an account; cash rows must not include one. Excel serial dates supported.
+
+## Recurring expenses
+
+Cloudflare web Admins can create weekly, monthly, or yearly recurring expense rules. Rules retain the normal expense category, vendor, payment, type, and notes fields. Review rules create non-financial due drafts; automatic rules require a fixed amount and post a normal expense. Pending drafts may be posted with an actual amount and bill files or skipped. A unique rule/date occurrence makes retries safe, and a draft never affects Accounts or reconciliation before posting.

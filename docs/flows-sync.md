@@ -63,3 +63,5 @@ git pull && npm run db:migrate:pi && npm run build:pi && pm2 restart goko
 ```
 
 `db:migrate:pi` skips 0035 CMS. `NEXT_PUBLIC_GOKO_RUNTIME` must be set at **build** time.
+
+Recurring expense rule and occurrence tables are Cloudflare-only: migration `0084_recurring_expenses.sql` is stamped but skipped on Pi. Posted `expenses` continue to use the existing sync path.

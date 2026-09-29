@@ -10,7 +10,8 @@ export default {
   async scheduled(controller: { cron: string }, env: WorkerEnv, ctx: WorkerContext) {
     const path = controller.cron === "*/5 * * * *" ? "aiosell-inventory"
       : controller.cron === "30 3 * * *" ? "aiosell-mappings"
-      : controller.cron === "30 4,6,8,10,12,14,16 * * *" ? "reconciliation-reminder" : null;
+      : controller.cron === "30 4,6,8,10,12,14,16 * * *" ? "reconciliation-reminder"
+      : controller.cron === "35 18 * * *" ? "recurring-expenses" : null;
     if (!path) return;
     if (!env.CRON_SECRET) {
       throw new Error("Scheduled job failed: CRON_SECRET is not configured");

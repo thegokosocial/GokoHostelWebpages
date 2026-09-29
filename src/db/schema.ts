@@ -1122,6 +1122,21 @@ export const syncLog = sqliteTable("sync_log", {
   details: text("details").default(""),
 });
 
+// Cloudflare-owned schedules. Occurrences are deliberately separate from expenses so
+// an amount-less reminder cannot alter Accounts until an admin posts it.
+export const recurringExpenseRules = sqliteTable("recurring_expense_rules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(), amount: integer("amount"), frequency: text("frequency").notNull(), startDate: text("start_date").notNull(), postingMode: text("posting_mode").notNull(), active: integer("active").notNull().default(1),
+  category: text("category").notNull(), customCategory: text("custom_category").notNull().default(""), purpose: text("purpose").notNull().default(""), vendorId: integer("vendor_id"), accountId: integer("account_id"), paymentMethod: text("payment_method").notNull().default("cash"), mainCategory: text("main_category").notNull().default("stay_expense"), subCategory: text("sub_category").notNull().default(""),
+  createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, table => [index("idx_recurring_expense_rules_active").on(table.active)]);
+
+export const recurringExpenseOccurrences = sqliteTable("recurring_expense_occurrences", {
+  id: integer("id").primaryKey({ autoIncrement: true }), ruleId: integer("rule_id").notNull().references(() => recurringExpenseRules.id), dueDate: text("due_date").notNull(), status: text("status").notNull().default("pending"), expenseId: integer("expense_id").references(() => expenses.id), idempotencyKey: text("idempotency_key").notNull().unique(), error: text("error").notNull().default(""), skippedReason: text("skipped_reason").notNull().default(""),
+  amount: integer("amount"), category: text("category").notNull(), customCategory: text("custom_category").notNull().default(""), purpose: text("purpose").notNull().default(""), vendorId: integer("vendor_id"), accountId: integer("account_id"), paymentMethod: text("payment_method").notNull(), mainCategory: text("main_category").notNull(), subCategory: text("sub_category").notNull(),
+  createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, table => [uniqueIndex("idx_recurring_expense_occurrence_rule_date").on(table.ruleId, table.dueDate), uniqueIndex("idx_recurring_expense_occurrence_expense").on(table.expenseId), index("idx_recurring_expense_occurrence_status_date").on(table.status, table.dueDate)]);
+
 export const syncConflicts = sqliteTable("sync_conflicts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tableName: text("table_name").notNull(),

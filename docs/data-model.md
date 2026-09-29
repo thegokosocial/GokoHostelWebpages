@@ -219,3 +219,5 @@ Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kan
 The existing settings row `website_booking_settings_v1` JSON now includes `maxSelectedBeds` (integer 1–100; absent field defaults to 4). No new table/migration is needed for the browsing limit. Existing revision-protected admin saves retain payment fields; availability exposes only the public limit, never the full settings JSON.
 
 Migration 0061 adds `guest_booking_lookup_challenges`: opaque ID, unique secret-bound booking/email request digest, booking FK, code hash, database-clock expiry, bounded attempts and single-use flag. It contains no plaintext code/contact and is not Pi-synced. This is ephemeral authentication, not a reservation/payment ledger. See [guest booking UI](guest-booking-ui.md).
+
+Migration 0084 adds Cloudflare-only `recurring_expense_rules` and `recurring_expense_occurrences`. Occurrences are unique per rule/date, can link to at most one `expenses` row, and retain drafts separately so missing amounts never enter the ledger.

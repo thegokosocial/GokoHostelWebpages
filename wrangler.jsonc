@@ -19,7 +19,7 @@
 	},
 	"triggers": {
 		// Inventory retry: every 5 minutes. Mapping check: 09:00 IST. Reconciliation: 10:00, 12:00, 14:00, 16:00, 18:00, 20:00 and 22:00 IST (UTC cron).
-		"crons": ["*/5 * * * *", "30 3 * * *", "30 4,6,8,10,12,14,16 * * *"]
+		"crons": ["*/5 * * * *", "30 3 * * *", "30 4,6,8,10,12,14,16 * * *", "35 18 * * *"]
 	},
 	"d1_databases": [
 		{

@@ -61,7 +61,7 @@ export const NOTIFICATION_CATEGORIES = [
     id: "reminder",
     label: "Reminders",
     permission: "canReceiveReminderNotifications",
-    events: [["reminder.reconciliation_pending", "Reconciliation pending"]],
+    events: [["reminder.reconciliation_pending", "Reconciliation pending"], ["reminder.recurring_expense_due", "Recurring expense due"]],
   },
 ] as const;
 
