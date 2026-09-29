@@ -16,6 +16,7 @@ const q = vi.hoisted(() => ({
   getFoodOrderItemsBatch: vi.fn(),
   getPendingPriceOrderIds: vi.fn(),
   getDb: vi.fn(),
+  releaseFoodQrForDeskPayment: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: q.authenticateUser }));
@@ -38,7 +39,7 @@ vi.mock("@/db/queries", () => ({
 vi.mock("@/db", () => ({ getDb: q.getDb }));
 vi.mock("@/lib/foodQrPayment", () => ({
   hasActiveFoodQrClaim: vi.fn(async () => false),
-  releaseFoodQrForDeskPayment: vi.fn(async () => ({ releasedAttemptIds: [] })),
+  releaseFoodQrForDeskPayment: q.releaseFoodQrForDeskPayment,
   FoodQrError: class FoodQrError extends Error {
     status: number;
     constructor(message: string, status = 409) {
@@ -98,6 +99,7 @@ beforeEach(() => {
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [pendingItem] }) }) }),
     update: () => ({ set: (data: Partial<typeof pendingItem>) => ({ where: async () => Object.assign(pendingItem, data) }) }),
   });
+  q.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: [] });
 });
 
 describe("admin market-pricing workflows", () => {
@@ -170,12 +172,37 @@ describe("admin market-pricing workflows", () => {
     }));
   });
 
-  it("finalizes a pending line using quantity and recalculates totals", async () => {
+  it("finalizes a pending line in static QR mode, persists it, and recalculates totals", async () => {
     const response = await POST(req({ orderId: 10, orderItemId: 20, price: 45000 }));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ subtotal: 90000, tax: 4500, total: 94500, notes: "" });
+    expect(q.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
+    expect(pendingItem).toMatchObject({ itemPrice: 45000, lineTotal: 90000, pricingStatus: "fixed" });
     expect(q.updateFoodOrder).toHaveBeenCalledWith(10, expect.objectContaining({ subtotal: 90000, tax: 4500, total: 94500, discount: 0, amountPaid: 0, paymentStatus: "pending" }));
     expect(q.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({ action: "price_finalized", oldValue: "0", newValue: "45000" }));
+  });
+
+  it.each(["razorpay_test", "razorpay_live"])("retires a %s dynamic QR before persisting the final price", async () => {
+    q.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: ["attempt-1"] });
+
+    const response = await POST(req({ orderId: 10, orderItemId: 20, price: 100 }));
+
+    expect(response.status).toBe(200);
+    expect(q.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
+    expect(pendingItem).toMatchObject({ itemPrice: 100, lineTotal: 200, pricingStatus: "fixed" });
+  });
+
+  it.each(["razorpay_test", "razorpay_live"])("does not change a pending price when the %s QR capture race wins", async () => {
+    const { FoodQrError } = await import("@/lib/foodQrPayment");
+    q.releaseFoodQrForDeskPayment.mockRejectedValue(new FoodQrError("Already paid via Razorpay", 409));
+
+    const response = await POST(req({ orderId: 10, orderItemId: 20, price: 100 }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "Already paid via Razorpay" });
+    expect(pendingItem).toMatchObject({ itemPrice: 0, lineTotal: 0, pricingStatus: "pending" });
+    expect(q.updateFoodOrder).not.toHaveBeenCalled();
+    expect(q.addOrderModification).not.toHaveBeenCalled();
   });
 
   it("stores an optional custom label on the line notes", async () => {

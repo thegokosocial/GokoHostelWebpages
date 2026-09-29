@@ -123,6 +123,93 @@ test("void line item stages cancel then saveOrderEdits", async ({ page }) => {
   expect(JSON.stringify(save?.changes || [])).toMatch(/quantity.:0|quantity":0/);
 });
 
+for (const qrMode of ["static", "razorpay_test", "razorpay_live"] as const) {
+  test(`Set price persists and opens Bill in ${qrMode} mode`, async ({ page }) => {
+    let finalized = false;
+    const pending = {
+      ...SAMPLE_ORDER,
+      total: 0,
+      subtotal: 0,
+      paymentStatus: "paid" as const,
+      items: [{ ...SAMPLE_ORDER.items[0], itemPrice: 0, lineTotal: 0, pricingStatus: "pending" }],
+    };
+    const priced = {
+      ...pending,
+      total: 500,
+      subtotal: 500,
+      paymentStatus: "pending" as const,
+      items: [{ ...pending.items[0], itemPrice: 500, lineTotal: 1000, pricingStatus: "fixed", notes: "Market" }],
+    };
+    const { foodRequests, foodPaymentRequests } = await mockAdminShell(page, {
+      permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canEditFoodOrders: true, canGenerateFoodBills: true },
+      onAdminFood: (body) => body.action === "getBillBranding"
+        ? { json: { settings: { food_bill_qr_mode: qrMode } } }
+        : null,
+      onFoodPayments: (body) => body.action === "ensureFoodQr"
+        ? { json: { attempt: { id: "attempt-e2e", state: "active", imageUrl: "https://example.com/qr.png", amountPaise: 500, paymentMethodLabel: "Pay exact amount via UPI" } } }
+        : { json: { success: true } },
+      onFoodOrders: (body) => {
+        if (body.action === "setFoodOrderItemPrice") {
+          expect(body).toMatchObject({ orderId: 10, orderItemId: 20, price: 500, label: "Market" });
+          finalized = true;
+          return { json: { success: true, total: 500 } };
+        }
+        return { json: defaultFoodOrdersResponse(body, finalized ? priced : pending) };
+      },
+    });
+
+    await loginAdmin(page);
+    const drawer = await openWalkinOrderDrawer(page);
+    await drawer.getByRole("button", { name: "Bill" }).click();
+    await expect(drawer.getByText(/set price before opening bill/i)).toBeVisible();
+    await drawer.getByRole("button", { name: "Set price" }).click();
+    await page.getByLabel("Price per unit (₹)").fill("5");
+    await page.getByRole("button", { name: "Market", exact: true }).click();
+    await page.getByRole("button", { name: "Save price" }).click();
+    await expect.poll(() => foodRequests.filter((request) => request.action === "setFoodOrderItemPrice")).toHaveLength(1);
+    await expect(drawer.getByText(/set price before opening bill/i)).toHaveCount(0);
+    await expect(drawer.getByRole("button", { name: "Set price" })).toHaveCount(0);
+    await drawer.getByRole("button", { name: "Bill" }).click();
+    await expect(drawer.getByText("Unpaid bill")).toBeVisible();
+    if (qrMode === "static") {
+      await expect.poll(() => foodPaymentRequests.filter((request) => request.action === "ensureFoodQr")).toHaveLength(0);
+    } else {
+      await expect.poll(() => foodPaymentRequests.filter((request) => request.action === "ensureFoodQr")).toHaveLength(1);
+      expect(foodPaymentRequests.find((request) => request.action === "ensureFoodQr")).toMatchObject({ orderIds: [10] });
+    }
+  });
+
+  test(`Set price failure keeps the pending-price block in ${qrMode} mode`, async ({ page }) => {
+    const pending = {
+      ...SAMPLE_ORDER,
+      total: 0,
+      subtotal: 0,
+      paymentStatus: "paid" as const,
+      items: [{ ...SAMPLE_ORDER.items[0], itemPrice: 0, lineTotal: 0, pricingStatus: "pending" }],
+    };
+    const { foodRequests, foodPaymentRequests } = await mockAdminShell(page, {
+      permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canEditFoodOrders: true, canGenerateFoodBills: true },
+      onAdminFood: (body) => body.action === "getBillBranding"
+        ? { json: { settings: { food_bill_qr_mode: qrMode } } }
+        : null,
+      onFoodOrders: (body) => body.action === "setFoodOrderItemPrice"
+        ? { status: 409, json: { error: "Already paid via Razorpay" } }
+        : { json: defaultFoodOrdersResponse(body, pending) },
+    });
+
+    await loginAdmin(page);
+    const drawer = await openWalkinOrderDrawer(page);
+    await drawer.getByRole("button", { name: "Set price" }).click();
+    await page.getByLabel("Price per unit (₹)").fill("5");
+    await page.getByRole("button", { name: "Save price" }).click();
+    await expect.poll(() => foodRequests.filter((request) => request.action === "setFoodOrderItemPrice")).toHaveLength(1);
+    await expect(page.getByRole("heading", { name: "Set final price" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Set price" })).toBeVisible();
+    await expect(drawer.getByText(/set price before opening bill/i)).toBeVisible();
+    await expect.poll(() => foodPaymentRequests.filter((request) => request.action === "ensureFoodQr")).toHaveLength(0);
+  });
+}
+
 test("incomplete order banner is shown when items are missing", async ({ page }) => {
   const incomplete = {
     ...SAMPLE_ORDER,

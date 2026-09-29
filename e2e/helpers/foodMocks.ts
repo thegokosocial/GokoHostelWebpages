@@ -80,6 +80,7 @@ export async function mockAdminShell(
     role?: string;
     permissions?: Record<string, boolean>;
     onFoodOrders?: (body: FoodRequest, requests: FoodRequest[]) => { status?: number; json: Record<string, unknown> } | null;
+    onFoodPayments?: (body: FoodRequest, requests: FoodRequest[]) => { status?: number; json: Record<string, unknown> } | null;
     onAdminFood?: (body: FoodRequest, requests: FoodRequest[]) => { status?: number; json: Record<string, unknown> } | null;
     onKitchen?: (body: FoodRequest, requests: FoodRequest[]) => { status?: number; json: Record<string, unknown> } | null;
   } = {},
@@ -87,6 +88,7 @@ export async function mockAdminShell(
   const role = opts.role ?? "admin";
   const permissions = opts.permissions ?? {};
   const foodRequests: FoodRequest[] = [];
+  const foodPaymentRequests: FoodRequest[] = [];
   const adminFoodRequests: FoodRequest[] = [];
   const kitchenRequests: FoodRequest[] = [];
 
@@ -206,6 +208,17 @@ export async function mockAdminShell(
       return;
     }
 
+    if (url.pathname === "/api/admin/food-payments") {
+      foodPaymentRequests.push(body);
+      const custom = opts.onFoodPayments?.(body, foodPaymentRequests);
+      if (custom) {
+        await route.fulfill({ status: custom.status ?? 200, json: custom.json });
+        return;
+      }
+      await route.fulfill({ json: { success: true } });
+      return;
+    }
+
     if (url.pathname === "/api/admin/food-orders") {
       foodRequests.push(body);
       const custom = opts.onFoodOrders?.(body, foodRequests);
@@ -220,7 +233,7 @@ export async function mockAdminShell(
     await route.fulfill({ json: {} });
   });
 
-  return { foodRequests, adminFoodRequests, kitchenRequests };
+  return { foodRequests, foodPaymentRequests, adminFoodRequests, kitchenRequests };
 }
 
 export function defaultFoodOrdersResponse(body: FoodRequest, order: typeof SAMPLE_ORDER = SAMPLE_ORDER) {

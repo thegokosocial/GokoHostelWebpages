@@ -105,7 +105,11 @@ describe("Payment History", () => {
     expect(summary).toContain("Pay · ₹{(actualGroupPending / 100).toFixed(0)}");
     expect(summary).toContain("actualGroupPending > 0 && (");
     expect(source).toContain('hasPermission(role, permissions, "canViewFoodOrders")');
+    expect(summary).toContain('!displayItems.some((item) => item.status !== "voided" && item.pricingStatus === "pending")');
     expect(summary).toContain('<OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />');
+    expect(summary).toContain('action: "setFoodOrderItemPrice", orderId, orderItemId: itemId');
+    expect(summary).toContain('await refreshAfterEdit(selectedGroup)');
+    expect(summary).not.toContain('Price staged — save the order to apply it');
     expect(summary).toContain("isRazorpayFoodPaymentMethod(order.paymentMethod)");
     expect(summary).toContain("food-order-razorpay-");
     expect(source).toContain('partial ? "Partial" : "Unpaid"');

@@ -1348,10 +1348,25 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
 
   const handleSetItemPrice = async (orderId: number, itemId: number, priceRupees: number, label: string) => {
     if (!Number.isFinite(priceRupees) || priceRupees <= 0) { showError("Enter a valid positive price"); return; }
-    stageOrderChange(orderId, itemId, { price: Math.round(priceRupees * 100), label: label.trim() });
-    setPriceModalItem(null);
-    setSpBillWarning(false);
-    showSuccess("Price staged — save the order to apply it");
+    await runAction("Saving final price…", async () => {
+      setActionBusy(`price_${itemId}`);
+      try {
+        const res = await apiCall({ action: "setFoodOrderItemPrice", orderId, orderItemId: itemId, price: Math.round(priceRupees * 100), label: label.trim() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showError("Set price", data.error || "Could not save the final price");
+          return;
+        }
+        setPriceModalItem(null);
+        setSpBillWarning(false);
+        if (selectedGroup) await refreshAfterEdit(selectedGroup);
+        showSuccess("Final price saved");
+      } catch (error) {
+        showError("Set price", error instanceof Error ? error.message : "Could not save the final price");
+      } finally {
+        setActionBusy(null);
+      }
+    });
   };
 
   const handleSaveOrderEdits = async (order: Order, refund?: RefundPaymentInput) => {
@@ -2033,7 +2048,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           <span className="font-mono text-xs font-bold text-brand-green">{order.orderNumber}</span>
                           {isEditing && <span className="rounded-full bg-brand-green px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Editing</span>}
                           <StatusBadge status={order.status} />
-                          <OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />
+                          {!displayItems.some((item) => item.status !== "voided" && item.pricingStatus === "pending") && (
+                            <OrderPaymentBadge paymentStatus={foodPaymentStatus(order)} />
+                          )}
                           {isRazorpayFoodPaymentMethod(order.paymentMethod) && (
                             <span
                               data-testid={`food-order-razorpay-${order.id}`}
