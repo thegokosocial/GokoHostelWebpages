@@ -749,7 +749,21 @@ export async function syncBookingContactSnapshot(
       }
       continue;
     }
-    const normalized = normalizeBookingContact(item.type, item.value);
+    let normalized: string;
+    try {
+      normalized = normalizeBookingContact(item.type, item.value);
+    } catch (error) {
+      // Channel/email imports are authoritative for the reservation but not
+      // for contact quality. Keep manual contact validation strict.
+      if (origin === "pms") {
+        if (existing) {
+          await db.update(bookingContactMethods).set(syncUpdate({ deletedAt: new Date().toISOString() })).where(eq(bookingContactMethods.id, existing.id));
+          await addBookingHistoryEntry({ bookingId, action: "Booking Contact Updated", details: `${item.type} PMS value cleared`, performedBy: actor });
+        }
+        continue;
+      }
+      throw error;
+    }
     if (!existing) {
       await db.insert(bookingContactMethods).values(syncInsert({ bookingId, type: item.type, value: item.value, normalizedValue: normalized, label: "", origin, isPrimary: 1, position: 0 }));
     } else if (origin === "pms" && (existing.value !== item.value || existing.normalizedValue !== normalized)) {

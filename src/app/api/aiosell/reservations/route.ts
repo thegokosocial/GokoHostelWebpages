@@ -219,7 +219,9 @@ function channelPaymentStatus(pah?: boolean): "pay_at_hotel" | "prepaid" | "unkn
 function extractBookingFields(payload: ReservationPayload) {
   const guest = payload.guest;
   const guestName = channelGuestName(guest);
-  const contact = guest?.phone || guest?.email || "";
+  // OTA phone and email are independent optional fields. In particular, never
+  // let an email reach the phone validator through the legacy contact column.
+  const contact = guest?.phone || "";
   const roomInfo = payload.rooms?.map((r) => r.roomCode).join(", ") || "";
 
   return {
@@ -385,6 +387,32 @@ async function handleNewBooking(payload: ReservationPayload) {
         eventId: `booking-rebooked-${existing.id}-${payload.bookingId}`,
       });
       return respondSuccess("Reservation Created Successfully");
+    }
+    // A prior webhook can have inserted the durable booking and then failed
+    // while saving optional metadata. Replays remain idempotent, but get a
+    // safe chance to finish the missing online assignment.
+    if (existing.status === "received" && Number.isInteger(existing.id)) {
+      const detail = await getBookingDetail(existing.id);
+      const hasAssignedBed = detail?.assignments?.some((assignment) => assignment.status === "assigned");
+      if (detail && !hasAssignedBed) {
+        const fields = extractBookingFields(payload);
+        // Repair only the legacy email-as-phone corruption from this bug. A
+        // duplicate is not a general profile update and must not clear a
+        // genuine stored phone just because this replay omitted one.
+        const repairLegacyEmailContact = !fields.contact && !!fields.email && existing.contact === fields.email;
+        if (repairLegacyEmailContact) {
+          await updateBookingFull(existing.id, { contact: "", email: fields.email });
+          await syncBookingContactSnapshot(existing.id, "channel_manager", "", fields.email, "channel_manager");
+        }
+        await addBookingHistoryEntry({
+          bookingId: existing.id,
+          action: "Channel Booking Recovered",
+          details: "Duplicate webhook replay retried online bed assignment",
+          performedBy: "channel_manager",
+        });
+        await tryAutoAssignChannelBeds(existing.id, payload, payload.checkin || existing.checkinDate, payload.checkout || existing.checkoutDate);
+        return respondSuccess("Reservation recovered from duplicate replay");
+      }
     }
     return respondSuccess("Reservation already exists (duplicate)");
   }

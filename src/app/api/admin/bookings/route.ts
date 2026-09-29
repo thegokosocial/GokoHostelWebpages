@@ -12,6 +12,7 @@ import {
   channelBedNeeds,
   channelNeedsAreMapped,
   enrichUnassignedBooking,
+  requestedNeedsByDorm,
   requestedDormsForCodes,
   roomCodesFromChannelBooking,
 } from "@/lib/channelAutoAssign";
@@ -967,34 +968,47 @@ export async function POST(req: NextRequest) {
         const allAssignmentBeds = (await getAllBeds()) || [];
         const allUnits = sellableUnits(allAssignmentBeds.length > 0 ? allAssignmentBeds : selected);
         const selectedUnits = allUnits.filter((u) => u.beds.some((b) => selectedIds.has(b.id)));
-        const doubleDormIds = new Set(selectedUnits.filter((unit) => unit.type === "Double").map((unit) => unit.dormId));
+        const doubleDormIds = new Set(allUnits.filter((unit) => unit.type === "Double").map((unit) => unit.dormId));
         const allowPartialDouble = detail.booking.persons === 1 && selected.length === 1 && selectedUnits.length === 1 && selectedUnits[0].type === "Double";
         if (!allowPartialDouble && selectedUnits.some((u) => !u.beds.every((b) => selectedIds.has(b.id)))) {
           return NextResponse.json({ error: "Select the complete double room, not one internal slot" }, { status: 400 });
-        }
-        if (selectedUnits.reduce((sum, u) => sum + u.capacity, 0) < detail.booking.persons) {
-          return NextResponse.json({ error: `Selected units do not hold ${detail.booking.persons} guest(s)` }, { status: 400 });
-        }
-        const selectedCapacity = selectedUnits.reduce((sum, u) => sum + u.capacity, 0);
-        if (selectedUnits.some((unit) => selectedCapacity - unit.capacity >= detail.booking.persons)) {
-          return NextResponse.json({ error: `Select only the units needed for ${detail.booking.persons} guest(s)` }, { status: 400 });
         }
         const needs = channelBedNeeds({
           roomType: detail.booking.roomType,
           rawData: detail.booking.rawData,
           persons: detail.booking.persons,
         });
+        const requestedUnits = requestedNeedsByDorm(needs, mappings).map((need) => ({
+          ...need,
+          units: doubleDormIds.has(need.dormId) ? need.units : need.count,
+        }));
         const overflow = enriched.requestedDormIds.length > 0
           && selected.some((bed) => !enriched.requestedDormIds.includes(bed.dormId));
-        const unitMismatch = (enriched.requestedNeeds || []).some((need) =>
-          selectedUnits.filter((u) => u.dormId === need.dormId).length
-            !== (doubleDormIds.has(need.dormId) ? (need.units ?? need.count) : need.count),
-        );
-        if (!overflow && channelNeedsAreMapped(needs, mappings) && unitMismatch) {
-          return NextResponse.json(
-            { error: `Assign the reserved room type: ${enriched.requestedNeedLabels}` },
-            { status: 400 },
+        if (channelSource(detail.booking.source) && requestedUnits.length > 0) {
+          const requestedTotal = requestedUnits.reduce((sum, need) => sum + need.units, 0);
+          const unitMismatch = requestedUnits.some((need) =>
+            selectedUnits.filter((unit) => unit.dormId === need.dormId).length !== need.units,
           );
+          if (selectedUnits.length !== requestedTotal) {
+            return NextResponse.json(
+              { error: `Select only the units needed for ${detail.booking.persons} guest(s)` },
+              { status: 400 },
+            );
+          }
+          if (!overflow && channelNeedsAreMapped(needs, mappings) && unitMismatch) {
+            return NextResponse.json(
+              { error: `Assign the reserved room type: ${enriched.requestedNeedLabels}` },
+              { status: 400 },
+            );
+          }
+        } else {
+          if (selectedUnits.reduce((sum, u) => sum + u.capacity, 0) < detail.booking.persons) {
+            return NextResponse.json({ error: `Selected units do not hold ${detail.booking.persons} guest(s)` }, { status: 400 });
+          }
+          const selectedCapacity = selectedUnits.reduce((sum, u) => sum + u.capacity, 0);
+          if (selectedUnits.some((unit) => selectedCapacity - unit.capacity >= detail.booking.persons)) {
+            return NextResponse.json({ error: `Select only the units needed for ${detail.booking.persons} guest(s)` }, { status: 400 });
+          }
         }
       } else if (currentAssigned > 0 && currentAssigned + bedIds.length > enriched.requestedBedCount) {
         return NextResponse.json({ error: `Booking already has ${currentAssigned} of ${enriched.requestedBedCount} beds; assign one per person` }, { status: 400 });

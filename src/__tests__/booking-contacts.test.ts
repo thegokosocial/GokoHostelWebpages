@@ -43,4 +43,11 @@ describe("booking contact methods", () => {
     expect(migration).toContain("sync_id");
     expect(migration).toContain("source IN ('channel_manager', 'email')");
   });
+
+  it("does not let malformed PMS contact metadata abort a durable reservation", () => {
+    const snapshot = queries.match(/export async function syncBookingContactSnapshot[\s\S]*?\n}\n\nexport async function saveBookingContactMethods/)?.[0] || "";
+    expect(snapshot).toContain('if (origin === "pms") {');
+    expect(snapshot).toContain("PMS value cleared");
+    expect(snapshot).toContain("throw error;");
+  });
 });

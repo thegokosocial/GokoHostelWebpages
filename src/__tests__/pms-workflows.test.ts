@@ -341,6 +341,7 @@ describe("PMS inbound webhook workflows", () => {
     vi.mocked(getBookingByRef).mockReset();
     vi.mocked(unassignBookingBeds).mockReset();
     vi.mocked(addBookingHistoryEntry).mockReset();
+    queryMocks.syncBookingContactSnapshot.mockReset();
     vi.mocked(getChannelConfig).mockResolvedValue(activeConfig as never);
     vi.mocked(getBookingByRef).mockResolvedValue(null as never);
     vi.mocked(addBooking).mockResolvedValue(undefined as never);
@@ -497,6 +498,43 @@ describe("PMS inbound webhook workflows", () => {
       inventoryPool: "online",
       assignedBy: "channel_manager",
     }));
+    expect(triggerInventoryPush).not.toHaveBeenCalled();
+  });
+
+  it("accepts a Booking.com reservation with email but no phone and still auto-assigns", async () => {
+    queryMocks.getAvailableBedsForRange.mockResolvedValue([
+      { id: 7, bedId: "EXE-1", dormId: 8, dormName: "Executive", pool: "online" },
+    ]);
+    const res = await reservationsPOST(req({
+      action: "book", hotelCode: "GOKO-001", channel: "booking.com", bookingId: "BK-EMAIL-ONLY",
+      checkin: "2026-09-05", checkout: "2026-09-06",
+      guest: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.com", phone: "" },
+      rooms: [{ roomCode: "executive", occupancy: { adults: 1, children: 0 } }],
+    }, { authorization: "whsec-test" }));
+    expect(res.status).toBe(200);
+    expect(addBooking).toHaveBeenCalledWith(expect.objectContaining({ contact: "", email: "ada@example.com" }));
+    expect(queryMocks.assignBedToBooking).toHaveBeenCalledTimes(1);
+    expect(triggerInventoryPush).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no contact values", {}, "", ""],
+    ["phone only", { phone: "+91 98336 24363" }, "+91 98336 24363", ""],
+    ["email plus malformed phone", { email: "ada@example.com", phone: "not-a-phone" }, "not-a-phone", "ada@example.com"],
+    ["malformed email with no phone", { email: "not-an-email" }, "", "not-an-email"],
+  ])("accepts Booking.com metadata with %s without changing it into another contact type", async (_name, guest, contact, email) => {
+    queryMocks.getAvailableBedsForRange.mockResolvedValue([
+      { id: 7, bedId: "EXE-1", dormId: 8, dormName: "Executive", pool: "online" },
+    ]);
+    const res = await reservationsPOST(req({
+      action: "book", hotelCode: "GOKO-001", channel: "booking.com", bookingId: `BK-CONTACT-${contact || email || "EMPTY"}`,
+      checkin: "2026-09-05", checkout: "2026-09-06",
+      guest: { firstName: "Ada", lastName: "Lovelace", ...guest },
+      rooms: [{ roomCode: "executive", occupancy: { adults: 1, children: 0 } }],
+    }, { authorization: "whsec-test" }));
+    expect(res.status).toBe(200);
+    expect(addBooking).toHaveBeenCalledWith(expect.objectContaining({ contact, email }));
+    expect(queryMocks.assignBedToBooking).toHaveBeenCalledTimes(1);
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
@@ -989,6 +1027,49 @@ describe("PMS inbound webhook workflows", () => {
     expect(addBooking).not.toHaveBeenCalled();
     expect(captured).toHaveLength(1);
     expect(JSON.parse(lastLog().responsePayload as string).message).toMatch(/duplicate/i);
+  });
+
+  it("duplicate replay heals an incomplete received booking without an outbound inventory echo", async () => {
+    vi.mocked(getBookingByRef).mockResolvedValue({
+      id: 42, status: "received", bookingRef: "BK-100", checkinDate: "2026-09-01", checkoutDate: "2026-09-03",
+      contact: "ada@example.com", email: "ada@example.com",
+    } as never);
+    queryMocks.getBookingDetail.mockResolvedValue({ assignments: [] } as never);
+    queryMocks.getAvailableBedsForRange.mockResolvedValue([
+      { id: 7, bedId: "DOR-1", dormId: 9, dormName: "Dorm 1", pool: "online" },
+    ]);
+
+    const res = await reservationsPOST(req({
+      ...bookPayload,
+      guest: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.com", phone: "" },
+    }, { authorization: "whsec-test" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ success: true, message: expect.stringMatching(/recovered/i) });
+    expect(updateBookingFull).toHaveBeenCalledWith(42, { contact: "", email: "ada@example.com" });
+    expect(queryMocks.syncBookingContactSnapshot).toHaveBeenCalledWith(42, "channel_manager", "", "ada@example.com", "channel_manager");
+    expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "Channel Booking Recovered" }));
+    expect(queryMocks.assignBedToBooking).toHaveBeenCalledTimes(1);
+    expect(triggerInventoryPush).not.toHaveBeenCalled();
+  });
+
+  it("duplicate recovery never clears an existing phone when the replay omits it", async () => {
+    vi.mocked(getBookingByRef).mockResolvedValue({
+      id: 42, status: "received", bookingRef: "BK-100", checkinDate: "2026-09-01", checkoutDate: "2026-09-03",
+      contact: "+91 98336 24363", email: "ada@example.com",
+    } as never);
+    queryMocks.getBookingDetail.mockResolvedValue({ assignments: [] } as never);
+    queryMocks.getAvailableBedsForRange.mockResolvedValue([
+      { id: 7, bedId: "DOR-1", dormId: 9, dormName: "Dorm 1", pool: "online" },
+    ]);
+
+    const res = await reservationsPOST(req({
+      ...bookPayload,
+      guest: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.com", phone: "" },
+    }, { authorization: "whsec-test" }));
+    expect(res.status).toBe(200);
+    expect(updateBookingFull).not.toHaveBeenCalled();
+    expect(queryMocks.syncBookingContactSnapshot).not.toHaveBeenCalled();
+    expect(queryMocks.assignBedToBooking).toHaveBeenCalledTimes(1);
   });
 
   it("book reuses a cancelled bookingRef instead of treating it as a live duplicate", async () => {

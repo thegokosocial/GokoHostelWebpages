@@ -160,6 +160,8 @@ Booking creation, OTA payment, and cancellation/refund flows expose `getRoomRece
 
 **Aiosell webhook payload.action:** `book` (no inventory push), `modify` (no push), `cancel` (unassign beds **then** `triggerInventoryPush`). Inbound OTA assignments use the `online` inventory pool; manual/walk-in leftover assignments use `offline` and remain internal. If Aiosell accepts a booking while the mapped local online pool has no sellable bed, the webhook records an `OTA Inventory Reconciliation Warning` and sends an Operations alert; staff must verify the mapping, online pool, and Aiosell availability before assigning an offline bed. Each webhook POST is a `channel_sync_log` row `direction=pull` `type=reservation` (Management → Logs → PMS). Outbound Aiosell HTTP is logged in the same table via `aiosellFetch`.
 
+OTA contact metadata is optional: blank or malformed phone/email values do not reject the reservation, and an email is never used as a phone. A duplicate replay may recover a received booking with no assigned beds by retrying its safe online assignment and only repairs the legacy email-as-phone value; an already assigned booking remains a no-op. `assignBeds` validates channel-manager selections by sellable units; a complete double is one room unit and writes two physical assignments.
+
 ---
 
 ## Example

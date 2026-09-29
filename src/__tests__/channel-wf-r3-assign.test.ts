@@ -178,6 +178,117 @@ describe("assignBeds: mixed quota vs overflow skip", () => {
     expect(pushIfOtaChanged).not.toHaveBeenCalled();
   });
 
+  it("assigns a one-single plus four-double OTA reservation by five sellable units, not five physical slots", async () => {
+    const singleDorm = 14;
+    const doubleDorm = 15;
+    q.getRoomTypeMappings.mockResolvedValue([
+      { dormId: singleDorm, channelRoomCode: "dorm-2---single-bed", isActive: 1, dormName: "Dorm 2 - single" },
+      { dormId: doubleDorm, channelRoomCode: "dorm-2-double-bed", isActive: 1, dormName: "Dorm 2 - double" },
+    ]);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        checkinDate: "2026-10-01", checkoutDate: "2026-10-02", status: "received", source: "channel_manager",
+        roomType: "dorm-2---single-bed, dorm-2-double-bed, dorm-2-double-bed, dorm-2-double-bed, dorm-2-double-bed",
+        persons: 5,
+        rawData: JSON.stringify({ rooms: [
+          { roomCode: "dorm-2---single-bed", occupancy: { adults: 1, children: 0 } },
+          ...Array.from({ length: 4 }, () => ({ roomCode: "dorm-2-double-bed", occupancy: { adults: 2, children: 0 } })),
+        ] }),
+      },
+      assignments: [],
+    });
+    const selected = [
+      { ...bedRow(1, singleDorm, "Dorm 2 - single"), type: "Single" },
+      ...Array.from({ length: 8 }, (_, i) => ({ ...bedRow(i + 2, doubleDorm, "Dorm 2 - double"), type: "Double" })),
+    ];
+    q.getBedById.mockImplementation(async (id: number) => selected.find((bed) => bed.id === id) ?? null);
+    q.getAvailableBedsForRange.mockResolvedValue(selected.map((bed) => ({ ...bed, pool: "online" })));
+
+    const res = await POST(req({ password: "x", action: "assignBeds", bookingId: 42, bedIds: selected.map((bed) => bed.id) }));
+    expect(res.status).toBe(200);
+    expect(q.assignBedToBooking).toHaveBeenCalledTimes(9);
+    expect(vi.mocked(pushIfOtaChanged)).not.toHaveBeenCalled();
+  });
+
+  function setupOneSingleFourDouble(selected: Array<ReturnType<typeof bedRow> & { type: string }>) {
+    const singleDorm = 14;
+    const doubleDorm = 15;
+    q.getRoomTypeMappings.mockResolvedValue([
+      { dormId: singleDorm, channelRoomCode: "dorm-2---single-bed", isActive: 1, dormName: "Dorm 2 - single" },
+      { dormId: doubleDorm, channelRoomCode: "dorm-2-double-bed", isActive: 1, dormName: "Dorm 2 - double" },
+    ]);
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        checkinDate: "2026-10-01", checkoutDate: "2026-10-02", status: "received", source: "channel_manager",
+        roomType: "dorm-2---single-bed, dorm-2-double-bed, dorm-2-double-bed, dorm-2-double-bed, dorm-2-double-bed",
+        persons: 5,
+        rawData: JSON.stringify({ rooms: [
+          { roomCode: "dorm-2---single-bed", occupancy: { adults: 1, children: 0 } },
+          ...Array.from({ length: 4 }, () => ({ roomCode: "dorm-2-double-bed", occupancy: { adults: 2, children: 0 } })),
+        ] }),
+      },
+      assignments: [],
+    });
+    q.getBedById.mockImplementation(async (id: number) => selected.find((bed) => bed.id === id) ?? null);
+    q.getAvailableBedsForRange.mockResolvedValue(selected.map((bed) => ({ ...bed, pool: "online" })));
+  }
+
+  it("rejects the same booking when one double is only half selected", async () => {
+    const selected = [
+      { ...bedRow(1, 14, "Dorm 2 - single"), type: "Single" },
+      ...Array.from({ length: 7 }, (_, i) => ({ ...bedRow(i + 2, 15, "Dorm 2 - double"), type: "Double" })),
+    ];
+    setupOneSingleFourDouble(selected);
+    q.getAllBeds.mockResolvedValue([
+      ...selected,
+      { ...bedRow(9, 15, "Dorm 2 - double"), type: "Double" },
+    ]);
+
+    const res = await POST(req({ password: "x", action: "assignBeds", bookingId: 42, bedIds: selected.map((bed) => bed.id) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/complete double/i);
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+  });
+
+  it("rejects the same booking when fewer than five sellable units are selected", async () => {
+    const selected = [
+      { ...bedRow(1, 14, "Dorm 2 - single"), type: "Single" },
+      ...Array.from({ length: 6 }, (_, i) => ({ ...bedRow(i + 2, 15, "Dorm 2 - double"), type: "Double" })),
+    ];
+    setupOneSingleFourDouble(selected);
+
+    const res = await POST(req({ password: "x", action: "assignBeds", bookingId: 42, bedIds: selected.map((bed) => bed.id) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/only the units needed/i);
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+  });
+
+  it("rejects the same booking when five units have the wrong reserved-room split", async () => {
+    const selected = [
+      ...Array.from({ length: 5 }, (_, i) => ({ ...bedRow(i + 1, 14, "Dorm 2 - single"), type: "Single" })),
+    ];
+    setupOneSingleFourDouble(selected);
+
+    const res = await POST(req({ password: "x", action: "assignBeds", bookingId: 42, bedIds: selected.map((bed) => bed.id) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/reserved room type/i);
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale exact selection before writing any of its nine physical assignments", async () => {
+    const selected = [
+      { ...bedRow(1, 14, "Dorm 2 - single"), type: "Single" },
+      ...Array.from({ length: 8 }, (_, i) => ({ ...bedRow(i + 2, 15, "Dorm 2 - double"), type: "Double" })),
+    ];
+    setupOneSingleFourDouble(selected);
+    q.validateBedsForRange.mockResolvedValue("B4 is no longer available");
+
+    const res = await POST(req({ password: "x", action: "assignBeds", bookingId: 42, bedIds: selected.map((bed) => bed.id) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/no longer available/i);
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+  });
+
   it("mixed 2+1 with 3 Executive beds → 400 and does not write", async () => {
     q.getBookingDetail.mockResolvedValue({
       booking: mixedBooking(),

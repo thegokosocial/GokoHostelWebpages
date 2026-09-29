@@ -119,6 +119,8 @@ Beds-tab `assignBed` / `checkoutBed` / `unassignBed` / `markClean` do **not** au
 
 Inbound webhook `POST /api/aiosell/reservations`:
 
+OTA webhook contacts are optional metadata: blank or malformed phone/email values are omitted from contact methods and never reject the reservation; an email is never used as a phone. A replay of a duplicate received booking that has no assigned bed safely retries online auto-assignment and repairs the specific legacy email-as-phone corruption without overwriting a valid stored phone; assigned bookings remain idempotent no-ops. Staff assignment validates sellable units: a full double is one requested room unit though it writes two physical-bed assignments; mapped picks must match the room-type unit split, while overflow retains the same total unit count.
+
 - 503 if config missing/inactive or `webhookSecret` empty.
 - 401 unless `Authorization` or `x-api-key` equals the secret (or `Bearer {secret}`).
 - `hotelCode` must match on the webhook **and** on fetch ingest (`ingestFetchedReservations` skips snapshots whose `hotelCode` ≠ config).
