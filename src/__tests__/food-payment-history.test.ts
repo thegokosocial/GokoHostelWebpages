@@ -89,8 +89,9 @@ describe("Payment History", () => {
     expect(summary).toContain("while (true)");
     expect(summary).toContain("paidOffset += page.length");
     expect(summary).toContain('const unpaidOrders = orders.filter((o) => foodDue(o) > 0)');
-    expect(summary).toContain('const unpaidGroups = filteredGroups.filter((group) => group.pendingAmount > 0)');
-    expect(summary).toContain('const paidGroups = filteredGroups.filter((group) => group.pendingAmount <= 0)');
+    expect(summary).toContain('const pricingGroups = filteredGroups.filter((group) => group.hasPendingPrice)');
+    expect(summary).toContain('const unpaidGroups = filteredGroups.filter((group) => !group.hasPendingPrice && group.pendingAmount > 0)');
+    expect(summary).toContain('const paidGroups = filteredGroups.filter((group) => !group.hasPendingPrice && group.pendingAmount <= 0)');
     expect(summary).toContain('const hasLoadedOrders = Object.prototype.hasOwnProperty.call(hostelOrdersMap, g.checkinId)');
     expect(summary).toContain('cachedOrders.reduce((s, o) => s + foodDue(o), 0)');
     expect(summary).toContain(': g.tabTotal');

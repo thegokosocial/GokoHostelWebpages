@@ -178,6 +178,7 @@ interface GuestWithTab {
   tabTotal: number;
   orderCount: number;
   latestOrderTime: string;
+  hasPendingPrice?: boolean;
   hasModifications?: boolean;
 }
 
@@ -924,6 +925,7 @@ interface SummaryGroup {
   latestOrderTime: string;
   earliestOrderTime: string;
   hasModifications: boolean;
+  hasPendingPrice: boolean;
   paidAmount: number;
   pendingAmount: number;
 }
@@ -1103,6 +1105,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         hasModifications: allOrders.length > 0
           ? allOrders.some((o) => o.hasModifications)
           : (g.hasModifications || false),
+        hasPendingPrice: hasLoadedOrders ? groupHasPendingSpecialPrice(cachedOrders) : !!g.hasPendingPrice,
         paidAmount,
         pendingAmount,
       });
@@ -1120,6 +1123,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         latestOrderTime: paidOrders.reduce((max, o) => o.createdAt > max ? o.createdAt : max, ""),
         earliestOrderTime: paidOrders.reduce((min, o) => !min || o.createdAt < min ? o.createdAt : min, ""),
         hasModifications: paidOrders.some((o) => o.hasModifications),
+        hasPendingPrice: false,
         paidAmount: paidOrders.reduce((s, o) => s + foodAmountPaid(o), 0), pendingAmount: paidOrders.reduce((s, o) => s + foodDue(o), 0),
       });
     }
@@ -1157,6 +1161,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         latestOrderTime: latest,
         earliestOrderTime: earliest,
         hasModifications: groupOrders.some((o) => o.hasModifications),
+        hasPendingPrice: groupHasPendingSpecialPrice(groupOrders),
         paidAmount: groupOrders.reduce((s, o) => s + foodAmountPaid(o), 0),
         pendingAmount: groupOrders.reduce((s, o) => s + foodDue(o), 0),
       });
@@ -1713,7 +1718,9 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
               onClick={() => selectGroup(group)}
               className={cn(
                 "rounded-xl border border-brand-mist bg-white dark:bg-card p-3 text-left transition-shadow hover:shadow-md dark:hover:shadow-none",
-                group.pendingAmount <= 0
+                group.hasPendingPrice
+                  ? "border-l-[3px] border-l-amber-400"
+                  : group.pendingAmount <= 0
                   ? "border-l-[3px] border-l-green-400"
                   : group.paidAmount > 0
                     ? "border-l-[3px] border-l-orange-400"
@@ -1737,6 +1744,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
               <p className="mt-2 text-lg font-bold text-brand-green">₹{(group.totalAmount / 100).toFixed(0)}</p>
               <div className="mt-0.5 flex gap-2 text-[11px] font-medium">
                 {group.paidAmount > 0 && <span className="text-green-600">₹{(group.paidAmount / 100).toFixed(0)} paid</span>}
+                {group.hasPendingPrice && <span className="text-amber-600">Price pending</span>}
                 {group.pendingAmount > 0 && <span className="text-orange-600">₹{(group.pendingAmount / 100).toFixed(0)} unpaid</span>}
               </div>
               <div className="mt-1 flex items-center justify-between text-xs text-brand-green-dark/50">
@@ -1751,10 +1759,17 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
             </button>
           );
         };
-        const unpaidGroups = filteredGroups.filter((group) => group.pendingAmount > 0);
-        const paidGroups = filteredGroups.filter((group) => group.pendingAmount <= 0);
+        const pricingGroups = filteredGroups.filter((group) => group.hasPendingPrice);
+        const unpaidGroups = filteredGroups.filter((group) => !group.hasPendingPrice && group.pendingAmount > 0);
+        const paidGroups = filteredGroups.filter((group) => !group.hasPendingPrice && group.pendingAmount <= 0);
         return (
           <div className="space-y-4">
+            {pricingGroups.length > 0 && (
+              <section>
+                <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-600">Needs pricing ({pricingGroups.length})</h4>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{pricingGroups.map(renderGroupCard)}</div>
+              </section>
+            )}
             {unpaidGroups.length > 0 && (
               <section>
                 <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-orange-600">Unpaid ({unpaidGroups.length})</h4>
@@ -2328,6 +2343,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                 )}
                 {isCafeTableRoomInfo(selectedGroup.roomInfo)
                   && selectedGroup.pendingAmount <= 0
+                  && !selectedGroup.hasPendingPrice
                   && !isCafeTableSessionReleased(selectedGroup.contactInfo || selectedGroupOrders[0]?.guestPhone) && (
                   <button
                     type="button"

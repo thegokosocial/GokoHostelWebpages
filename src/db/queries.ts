@@ -1416,6 +1416,21 @@ export async function getFoodOrderItemsBatch(orderIds: number[]) {
   return grouped;
 }
 
+export async function getPendingPriceOrderIds(orderIds: number[]): Promise<Set<number>> {
+  const pending = new Set<number>();
+  if (orderIds.length === 0) return pending;
+  const db = getDb();
+  for (const batch of uniqueInBatches(orderIds)) {
+    const rows = await db.select({ orderId: foodOrderItems.orderId }).from(foodOrderItems).where(and(
+      inArray(foodOrderItems.orderId, batch),
+      eq(foodOrderItems.pricingStatus, "pending"),
+      sql`${foodOrderItems.status} != 'voided'`,
+    ));
+    for (const row of rows) pending.add(row.orderId);
+  }
+  return pending;
+}
+
 export async function areAllOrderItemsInventory(orderId: number): Promise<boolean> {
   const db = getDb();
   const rows = await db
@@ -1463,7 +1478,8 @@ export async function getGuestFoodTab(checkinId: number) {
       sql`${foodOrders.status} != 'cancelled'`,
     ))
     .orderBy(foodOrders.createdAt);
-  return rows.filter((order) => foodDue(order) > 0);
+  const pendingPriceOrderIds = await getPendingPriceOrderIds(rows.map((order) => order.id));
+  return rows.filter((order) => foodDue(order) > 0 || pendingPriceOrderIds.has(order.id));
 }
 
 export async function getGuestAllFoodOrders(checkinId: number) {

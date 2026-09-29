@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SQLite from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { eq } from "drizzle-orm";
 import { readFileSync } from "fs";
 import { join } from "path";
 import * as schema from "@/db/schema";
 import { D1_IN_BATCH_SIZE } from "@/lib/dbBatch";
-import { getFoodOrdersByCheckinIds, getFoodOrdersByIds } from "@/db/queries";
+import { getFoodOrdersByCheckinIds, getFoodOrdersByIds, getGuestFoodTab, getPendingPriceOrderIds } from "@/db/queries";
 
 const dbState = vi.hoisted(() => ({ getDb: vi.fn() }));
 vi.mock("@/db", () => ({ getDb: dbState.getDb }));
@@ -51,6 +52,21 @@ function openFoodDb() {
       sync_updated_at TEXT,
       sync_source TEXT,
       deleted_at TEXT
+    );
+    CREATE TABLE food_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES food_orders(id),
+      menu_item_id INTEGER NOT NULL,
+      item_name TEXT NOT NULL,
+      item_price INTEGER NOT NULL DEFAULT 0,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      line_total INTEGER NOT NULL DEFAULT 0,
+      pricing_status TEXT NOT NULL DEFAULT 'fixed',
+      notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      sync_id TEXT,
+      sync_updated_at TEXT,
+      sync_source TEXT
     );
   `);
   return drizzle(sqlite, { schema });
@@ -148,6 +164,23 @@ describe("Combined Bill / food order IN bind safety", () => {
 
     const rows = await getFoodOrdersByCheckinIds([5]);
     expect(rows.map((r) => r.id).sort((a, b) => a - b)).toEqual([10, 11]);
+  });
+
+  it("keeps a zero-due hostel order visible while an active line still needs pricing", async () => {
+    const db = openFoodDb();
+    dbState.getDb.mockReturnValue(db);
+    await insertOrder(db, { id: 20, orderNumber: "H-PENDING", guestName: "Stay", checkinId: 5, total: 0 });
+    await db.insert(schema.foodOrderItems).values({
+      orderId: 20, menuItemId: 9, itemName: "Market fish", itemPrice: 0,
+      quantity: 1, lineTotal: 0, pricingStatus: "pending", status: "active",
+    });
+
+    expect(await getPendingPriceOrderIds([20])).toEqual(new Set([20]));
+    expect((await getGuestFoodTab(5)).map((order) => order.id)).toEqual([20]);
+
+    await db.update(schema.foodOrderItems).set({ status: "voided" }).where(eq(schema.foodOrderItems.orderId, 20));
+    expect(await getPendingPriceOrderIds([20])).toEqual(new Set());
+    expect(await getGuestFoodTab(5)).toEqual([]);
   });
 
   it("batched loaders stay under D1_IN_BATCH_SIZE for 26 and 51 ids", async () => {

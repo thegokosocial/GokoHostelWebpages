@@ -10,6 +10,8 @@ Collecting an outstanding balance after Order More preserves earlier tender tota
 
 Management → Menu → Menu Items includes a live search field. Typing filters the current category selection by English item name, Kannada item name, or category name; the same results appear in card and table views.
 
+Order Summary treats an active pending-price line as operationally open even while its monetary due is ₹0. Those hostel, walk-in, and cafe groups appear under **Needs pricing**, never Paid; cafe release stays blocked until all active lines have final prices. Voided pending lines do not keep the group open.
+
 ---
 
 ## Guest
@@ -74,6 +76,8 @@ Item: `active` → `voided` (stock restored).
 ## Kitchen `/kitchen` — POST `/api/food/kitchen`
 
 Actions: `listOrders`, `updateStatus`, `toggleItemAvailability`, `rejectItem`, `updateItemQuantity`, `addItemToOrder`, `toggleBusy`, `getMenuItems`, `getOrderModifications`.
+
+`addItemToOrder`, `rejectItem`, and `updateItemQuantity` retire an open dynamic bill QR before changing the order. This includes adding a pending-price line at ₹0 because the old QR no longer represents the final bill; a capture race returns 409 without item, inventory, total, or modification writes. Failed Add Item requests keep the picker open and surface the server error.
 
 Poll `listOrders` ~5s. Audio on new. Columns: New (`placed`) / Preparing / Ready. Active Orders includes every non-cancelled workflow order in `pending_approval`, `placed`, `preparing`, or `ready`, regardless of age; only an explicit kitchen transition to `served` removes it. The primary D1 reads for the board retry one transient failure and load order items/menu tags in bounded batches, so a short database blip or a large active set does not make the kitchen unavailable; optional modification metadata is queried in `D1_IN_BATCH_SIZE` (25) IN chunks and may fail without hiding orders. API/poll failures are surfaced to staff instead of being rendered as an empty kitchen. Approval section if `food_approval_in_kitchen`. Bluetooth ESC/POS (`thermalPrint.ts`); Kannada from `food_kannada_kitchen_print` / `food_kannada_kitchen_display` (default **on** unless setting is the string `"false"`).
 

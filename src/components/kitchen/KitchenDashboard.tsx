@@ -400,15 +400,18 @@ export function KitchenDashboard({ password, onLogout, authScope = "kitchen" }: 
     });
   };
 
-  const addItemToOrder = async (orderId: number, menuItemId: number, quantity: number) => {
-    await runAction("Adding item…", async () => {
+  const addItemToOrder = async (orderId: number, menuItemId: number, quantity: number): Promise<boolean> => {
+    return (await runAction("Adding item…", async () => {
       try {
         const data = await api("addItemToOrder", { orderId, menuItemId, quantity });
-        if (data.success) {
-          await fetchOrders();
-        }
-      } catch {}
-    });
+        if (!data.success) throw new Error(data.error || "Could not add item");
+        await fetchOrders();
+        return true;
+      } catch (error) {
+        showError("Could not add item", error instanceof Error ? error.message : "Please try again.");
+        return false;
+      }
+    })) ?? false;
   };
 
   const saveEditing = async () => {
@@ -1197,7 +1200,7 @@ function OrderColumn({
   onToggleModHistory: (orderId: number) => void;
   menuItems: MenuItem[];
   menuCategories: KitchenCategory[];
-  onAddItemToOrder: (orderId: number, menuItemId: number, quantity: number) => Promise<void>;
+  onAddItemToOrder: (orderId: number, menuItemId: number, quantity: number) => Promise<boolean>;
 }) {
   const borderColor =
     color === "amber"
@@ -1332,7 +1335,7 @@ function OrderCard({
   onToggleModHistory: () => void;
   menuItems: MenuItem[];
   menuCategories: KitchenCategory[];
-  onAddItemToOrder: (menuItemId: number, quantity: number) => Promise<void>;
+  onAddItemToOrder: (menuItemId: number, quantity: number) => Promise<boolean>;
 }) {
   const [loading, setLoading] = useState(false);
   const [printLoading, setPrintLoading] = useState(false);
@@ -1358,10 +1361,11 @@ function OrderCard({
   const handleAddItem = async (item: MenuItem) => {
     setAddingItem(true);
     try {
-      await onAddItemToOrder(item.id, 1);
-      setShowAddItem(false);
-      setAddItemSearch("");
-      setAddItemCategory(null);
+      if (await onAddItemToOrder(item.id, 1)) {
+        setShowAddItem(false);
+        setAddItemSearch("");
+        setAddItemCategory(null);
+      }
     } finally {
       setAddingItem(false);
     }

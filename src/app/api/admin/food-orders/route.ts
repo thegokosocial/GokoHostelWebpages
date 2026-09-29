@@ -5,6 +5,7 @@ import {
   getFoodOrderById,
   getFoodOrderItems,
   getFoodOrderItemsBatch,
+  getPendingPriceOrderIds,
   getOrderModifications,
   updateFoodOrderStatus,
   updateFoodOrder,
@@ -1406,15 +1407,18 @@ export async function POST(req: NextRequest) {
 
       case "getGuestsWithTabs": {
         const db = getDb();
-        const tabOrderRows = (await db.select().from(foodOrders)
+        const candidateOrders = (await db.select().from(foodOrders)
           .where(sql`${foodOrders.status} != 'cancelled'`))
-          .filter((order) => order.checkinId != null && foodDue(order) > 0);
-        const tabByCheckin = new Map<number, { tabTotal: number; orderCount: number; latestOrderTime: string }>();
+          .filter((order) => order.checkinId != null);
+        const pendingPriceOrderIds = await getPendingPriceOrderIds(candidateOrders.map((order) => order.id));
+        const tabOrderRows = candidateOrders.filter((order) => foodDue(order) > 0 || pendingPriceOrderIds.has(order.id));
+        const tabByCheckin = new Map<number, { tabTotal: number; orderCount: number; latestOrderTime: string; hasPendingPrice: boolean }>();
         for (const order of tabOrderRows) {
           const id = order.checkinId as number;
-          const current = tabByCheckin.get(id) || { tabTotal: 0, orderCount: 0, latestOrderTime: "" };
+          const current = tabByCheckin.get(id) || { tabTotal: 0, orderCount: 0, latestOrderTime: "", hasPendingPrice: false };
           current.tabTotal += foodDue(order);
           current.orderCount += 1;
+          current.hasPendingPrice ||= pendingPriceOrderIds.has(order.id);
           if (order.createdAt > current.latestOrderTime) current.latestOrderTime = order.createdAt;
           tabByCheckin.set(id, current);
         }
@@ -1469,6 +1473,7 @@ export async function POST(req: NextRequest) {
             tabTotal: row.tabTotal,
             orderCount: row.orderCount,
             latestOrderTime: row.latestOrderTime || "",
+            hasPendingPrice: row.hasPendingPrice,
             hasModifications: checkinHasMods.get(row.checkinId) || false,
           });
         }
@@ -1673,7 +1678,8 @@ export async function POST(req: NextRequest) {
           )
           .orderBy(desc(foodOrders.createdAt));
 
-        const payableOrders = orders.filter((order) => foodDue(order) > 0);
+        const pendingPriceOrderIds = await getPendingPriceOrderIds(orders.map((order) => order.id));
+        const payableOrders = orders.filter((order) => foodDue(order) > 0 || pendingPriceOrderIds.has(order.id));
         const orderIds = payableOrders.map((o) => o.id);
         const [itemsMap, modCountMap] = await Promise.all([
           getFoodOrderItemsBatch(orderIds),
@@ -1710,6 +1716,10 @@ export async function POST(req: NextRequest) {
         );
         if (sessionOrders.length === 0) {
           return NextResponse.json({ error: "No orders found for that table session" }, { status: 404 });
+        }
+        const pendingPriceOrderIds = await getPendingPriceOrderIds(sessionOrders.map((order) => order.id));
+        if (pendingPriceOrderIds.size > 0) {
+          return NextResponse.json({ error: "Set final prices before releasing this table" }, { status: 409 });
         }
         if (sessionOrders.some((order) => foodDue(order) > 0)) {
           return NextResponse.json({ error: "Pay the table bill before releasing" }, { status: 409 });

@@ -274,9 +274,43 @@ describe("Kitchen food-order quantity and add-item inventory workflows", () => {
     const res = await POST(req({ password: "ok", action: "addItemToOrder", orderId: 10, menuItemId: 5, quantity: 2 }));
 
     expect(res.status).toBe(200);
+    expect(kitchenMocks.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
     expect(kitchenMocks.decrementStockIfAvailable).toHaveBeenCalledWith(5, 2);
     expect(kitchenMocks.decrementStock).not.toHaveBeenCalled();
     expect(kitchenMocks.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({ action: "item_added", newValue: "2" }));
+  });
+
+  it("retires an active QR before adding a zero-value custom-rate item", async () => {
+    kitchenMocks.releaseFoodQrForDeskPayment.mockResolvedValue({ releasedAttemptIds: ["att-1"] });
+    kitchenMocks.getMenuItemById.mockResolvedValue({
+      id: 7, name: "Market fish", price: 0, priceOnRequest: 1, isAvailable: 1,
+      trackInventory: 0, stockQuantity: 0,
+    });
+    kitchenMocks.getFoodOrderItems.mockResolvedValue([{
+      id: 21, menuItemId: 7, itemName: "Market fish", itemPrice: 0,
+      quantity: 1, lineTotal: 0, pricingStatus: "pending", status: "active",
+    }]);
+
+    const res = await POST(req({ password: "ok", action: "addItemToOrder", orderId: 10, menuItemId: 7, quantity: 1 }));
+
+    expect(res.status).toBe(200);
+    expect(kitchenMocks.releaseFoodQrForDeskPayment).toHaveBeenCalledWith([10]);
+    expect(kitchenMocks.addOrderModification).toHaveBeenCalledWith(expect.objectContaining({ action: "item_added" }));
+  });
+
+  it("does not add or reserve stock when QR retirement finds a captured payment", async () => {
+    const { FoodQrError } = await import("@/lib/foodQrPayment");
+    kitchenMocks.releaseFoodQrForDeskPayment.mockRejectedValue(new FoodQrError("Already paid via Razorpay", 409));
+    kitchenMocks.getMenuItemById.mockResolvedValue({
+      id: 7, name: "Market fish", price: 0, priceOnRequest: 1, isAvailable: 1,
+      trackInventory: 1, stockQuantity: 2,
+    });
+
+    const res = await POST(req({ password: "ok", action: "addItemToOrder", orderId: 10, menuItemId: 7, quantity: 1 }));
+
+    expect(res.status).toBe(409);
+    expect(kitchenMocks.decrementStockIfAvailable).not.toHaveBeenCalled();
+    expect(kitchenMocks.addOrderModification).not.toHaveBeenCalled();
   });
 
   it("adds a tracked item when stock is already zero (staff oversell)", async () => {
@@ -356,6 +390,26 @@ describe("Kitchen food-order quantity and add-item inventory workflows", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/Already paid via Razorpay/i);
     expect(kitchenMocks.updateFoodOrderItemQuantity).not.toHaveBeenCalled();
+  });
+
+  it("aborts kitchen item rejection before mutation when QR release hits a capture race", async () => {
+    const { FoodQrError } = await import("@/lib/foodQrPayment");
+    kitchenMocks.getFoodOrderItems.mockResolvedValue([{
+      id: 20, menuItemId: 5, itemName: "Shampoo", itemPrice: 2, quantity: 2, lineTotal: 4, status: "active",
+    }]);
+    kitchenMocks.releaseFoodQrForDeskPayment.mockRejectedValue(new FoodQrError("Already paid via Razorpay", 409));
+
+    const res = await POST(req({ password: "ok", action: "rejectItem", orderId: 10, orderItemId: 20 }));
+
+    expect(res.status).toBe(409);
+    expect(kitchenMocks.addStock).not.toHaveBeenCalled();
+    expect(kitchenMocks.addOrderModification).not.toHaveBeenCalled();
+  });
+
+  it("keeps the add-item picker open on failure and reports the error", () => {
+    const source = readFile("src/components/kitchen/KitchenDashboard.tsx");
+    expect(source).toContain('showError("Could not add item"');
+    expect(source).toContain("if (await onAddItemToOrder(item.id, 1))");
   });
 });
 

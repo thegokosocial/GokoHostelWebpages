@@ -14,6 +14,7 @@ const q = vi.hoisted(() => ({
   dispatchPush: vi.fn(), notificationFoodBody: vi.fn(),
   latestReceiptAccount: vi.fn(), createGuestReceipt: vi.fn(), resolveReceiptAccount: vi.fn(),
   getFoodOrderItemsBatch: vi.fn(),
+  getPendingPriceOrderIds: vi.fn(),
   getDb: vi.fn(),
 }));
 
@@ -27,6 +28,7 @@ vi.mock("@/db/queries", () => ({
   updateFoodOrderItemQuantity: q.updateFoodOrderItemQuantity, deleteFoodOrderItem: q.deleteFoodOrderItem,
   addStock: q.addStock, decrementStock: q.decrementStock, decrementStockIfAvailable: q.decrementStockIfAvailable, restoreStock: q.restoreStock,
   getFoodOrderItemsBatch: q.getFoodOrderItemsBatch,
+  getPendingPriceOrderIds: q.getPendingPriceOrderIds,
   createFoodOrder: q.createFoodOrder, addFoodOrderItems: q.addFoodOrderItems,
   getNextOrderNumber: q.getNextOrderNumber, getMenuItemById: q.getMenuItemById,
   getFoodOrderByIdempotencyKey: q.getFoodOrderByIdempotencyKey,
@@ -86,6 +88,7 @@ beforeEach(() => {
   q.dispatchPush.mockResolvedValue(undefined);
   q.notificationFoodBody.mockReturnValue("New food order");
   q.getFoodOrderItemsBatch.mockResolvedValue(new Map());
+  q.getPendingPriceOrderIds.mockResolvedValue(new Set());
   q.getMenuItemById.mockResolvedValue({ id: 4, name: "Seasonal Fish", trackInventory: 0, stockQuantity: 0 });
   q.getFoodOrderByIdempotencyKey.mockResolvedValue(null);
   q.countFoodOrderItems.mockResolvedValue(1);
@@ -686,6 +689,13 @@ describe("admin market-pricing workflows", () => {
         }),
       }),
     });
+    q.getPendingPriceOrderIds.mockResolvedValueOnce(new Set([70]));
+    const pendingPriceRes = await POST(actionReq("releaseCafeTable", {
+      roomInfo: "Table 1", guestPhone: session,
+    }));
+    expect(pendingPriceRes.status).toBe(409);
+    expect(await pendingPriceRes.json()).toMatchObject({ error: "Set final prices before releasing this table" });
+
     const paidRes = await POST(actionReq("releaseCafeTable", {
       roomInfo: "Table 1", guestPhone: session,
     }));
@@ -965,5 +975,7 @@ describe("admin market-pricing workflows", () => {
     expect(source).toMatch(/idempotencyKey,/);
     expect(source).toMatch(/setIdempotencyKey\(crypto\.randomUUID\(\)\)/);
     expect(source).toContain("INCOMPLETE_FOOD_ORDER_BANNER");
+    expect(source).toContain("Needs pricing");
+    expect(source).toContain("!selectedGroup.hasPendingPrice");
   });
 });

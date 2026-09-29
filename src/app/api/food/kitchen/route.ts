@@ -43,6 +43,19 @@ export async function POST(req: NextRequest) {
     }
     const { role, displayName: actorName } = auth;
 
+    async function releaseFoodQrOrConflict(orderId: number) {
+      const { releaseFoodQrForDeskPayment, FoodQrError } = await import("@/lib/foodQrPayment");
+      try {
+        await releaseFoodQrForDeskPayment([orderId]);
+        return null;
+      } catch (error) {
+        if (error instanceof FoodQrError) {
+          return NextResponse.json({ error: error.message }, { status: error.status });
+        }
+        throw error;
+      }
+    }
+
     if (action === "listOrders") {
       // The board polls continuously. Retry each read once so a transient D1
       // blip does not turn into an empty/unavailable kitchen for every role.
@@ -171,15 +184,16 @@ export async function POST(req: NextRequest) {
 
       const allItemsBefore = await getFoodOrderItems(orderId);
       const voidedItem = allItemsBefore.find((i) => i.id === orderItemId);
+      if (!voidedItem) return NextResponse.json({ error: "Order item not found" }, { status: 404 });
+      const qrConflict = await releaseFoodQrOrConflict(Number(orderId));
+      if (qrConflict) return qrConflict;
 
       await db
         .update(foodOrderItems)
         .set({ status: "voided" })
         .where(eq(foodOrderItems.id, orderItemId));
 
-      if (voidedItem) {
-        await addStock(voidedItem.menuItemId, voidedItem.quantity);
-      }
+      await addStock(voidedItem.menuItemId, voidedItem.quantity);
 
       await addOrderModification({
         orderId,
@@ -219,17 +233,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "newQuantity must be a non-negative whole number" }, { status: 400 });
       }
 
-      {
-        const { releaseFoodQrForDeskPayment, FoodQrError } = await import("@/lib/foodQrPayment");
-        try {
-          await releaseFoodQrForDeskPayment([Number(orderId)]);
-        } catch (error) {
-          if (error instanceof FoodQrError) {
-            return NextResponse.json({ error: error.message }, { status: error.status });
-          }
-          throw error;
-        }
-      }
+      const qrConflict = await releaseFoodQrOrConflict(Number(orderId));
+      if (qrConflict) return qrConflict;
 
       const allItems = await getFoodOrderItems(orderId);
       const targetItem = allItems.find((i) => i.id === orderItemId);
@@ -311,6 +316,8 @@ export async function POST(req: NextRequest) {
       if (!menuItem.trackInventory && !menuItem.isAvailable) {
         return NextResponse.json({ error: "Menu item is not available" }, { status: 400 });
       }
+      const qrConflict = await releaseFoodQrOrConflict(Number(orderId));
+      if (qrConflict) return qrConflict;
       if (menuItem.trackInventory) {
         await decrementStockIfAvailable(menuItem.id, quantity);
       }
