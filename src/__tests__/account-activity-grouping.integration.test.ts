@@ -128,6 +128,18 @@ describe("Account Activity payment-level grouping", () => {
     expect(activity.balanceAsOf).toBe(43000);
   });
 
+  it("writes an internal transfer as one cash debit and one bank credit", async () => {
+    const create = await POST(request("cash", {
+      action: "createInternalTransfer", idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      amount: 5000, expenseDate: "2026-09-23", paymentMethod: "cash", sourceAccountId: "cash", targetAccountId: 1,
+    }));
+    expect(create.status).toBe(200);
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM expenses WHERE transfer_id IS NOT NULL").get()).toEqual({ count: 1 });
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM daily_income WHERE transfer_id IS NOT NULL").get()).toEqual({ count: 1 });
+    expect((await (await POST(request("cash"))).json()).balanceAsOf).toBe(38000);
+    expect((await (await POST(request(1))).json()).balanceAsOf).toBe(197500);
+  });
+
   it("counts payments before paginating and does not merge separate saves for the same guest", async () => {
     const insert = sqlite.prepare(`INSERT INTO guest_receipts
       (receipt_id, operation_id, source_type, source_id, kind, account_id, amount, business_date, created_by, created_at)

@@ -11,6 +11,7 @@ import { DEFAULT_INCOME_CATEGORIES, type IncomeCategory } from "@/lib/accountCat
 export type IncomeAccount = { id: number; name: string; nickname: string; isDefault?: number };
 
 export function incomeSourceLabel(source: string, sourceDetail?: string | null, categories: IncomeCategory[] = DEFAULT_INCOME_CATEGORIES) {
+  if (source === "internal_transfer") return "Internal Transfer";
   const label = categories.find((item) => item.id === source)?.name || DEFAULT_INCOME_CATEGORIES.find((item) => item.id === source)?.name || source;
   return source === "other" && sourceDetail ? `${label} · ${sourceDetail}` : label;
 }

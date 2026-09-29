@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
     const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
       listExpenses: "canViewExpenses", getMyExpenses: "canViewExpenses",
       addExpense: "canAddExpense", updateExpense: "canEditExpense", deleteExpense: "canDeleteExpense",
+      createInternalTransfer: ["canAddExpense", "canAddIncome"],
       getExpenseEditOptions: "canEditExpense",
       getFoodRevenue: "canViewFoodBills",
       getRoomRevenue: "canViewFoodBills",
@@ -118,6 +119,9 @@ export async function POST(req: NextRequest) {
     };
 
     const requiredPerm = ACTION_PERMISSIONS[action];
+    if (action === "createInternalTransfer" && actionAllowedAll(role, permissions, ["canAddExpense", "canAddIncome"]) !== "allowed") {
+      return NextResponse.json({ error: "You need both expense and income entry permissions to create an internal transfer" }, { status: 403 });
+    }
     const gate = actionAllowed(role, permissions, requiredPerm);
     if (gate === "admin_required") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
@@ -129,6 +133,44 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case "getExpenseCategories":
         return NextResponse.json({ categories: parseExpenseCategories(await getSetting("expense_categories")) });
+      case "createInternalTransfer": {
+        const amount = Number(rest.amount);
+        const date = String(rest.expenseDate || "");
+        const transferId = String(rest.idempotencyKey || "");
+        const method = rest.paymentMethod;
+        const sourceAccountId = rest.sourceAccountId === "cash" || rest.sourceAccountId == null || rest.sourceAccountId === "" ? null : Number(rest.sourceAccountId);
+        const targetAccountId = rest.targetAccountId === "cash" || rest.targetAccountId == null || rest.targetAccountId === "" ? null : Number(rest.targetAccountId);
+        if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(transferId) || !Number.isSafeInteger(amount) || amount <= 0 || !isValidReconciliationDate(date, todayIST())) return NextResponse.json({ error: "A UUID, positive paise amount, and valid non-future date are required" }, { status: 400 });
+        if (sourceAccountId === targetAccountId) return NextResponse.json({ error: "Source and destination must be different" }, { status: 400 });
+        if (method !== "cash" && method !== "online") return NextResponse.json({ error: "Payment method must be cash or online" }, { status: 400 });
+        if ((method === "cash") !== (sourceAccountId === null || targetAccountId === null)) return NextResponse.json({ error: method === "cash" ? "Cash transfers need Cash as one endpoint" : "Online transfers need two bank accounts" }, { status: 400 });
+        const db: any = getDb();
+        const existing = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.transferId, transferId)).limit(1);
+        if (existing.length) return NextResponse.json({ success: true, id: existing[0].id, duplicate: true });
+        for (const accountId of [sourceAccountId, targetAccountId]) if (accountId !== null) {
+          if (!Number.isSafeInteger(accountId) || accountId < 1) return NextResponse.json({ error: "Select valid accounts" }, { status: 400 });
+          const found = await db.select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, accountId), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1);
+          if (!found.length) return NextResponse.json({ error: "Select active real bank accounts" }, { status: 400 });
+        }
+        for (const accountId of [sourceAccountId, targetAccountId]) {
+          const locked = await db.select({ date: dailyLedger.date }).from(dailyLedger).where(and(sql`${dailyLedger.date} >= ${date}`, accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), eq(dailyLedger.isReconciled, 1))).limit(1);
+          if (locked.length) return NextResponse.json({ error: `Undo the ${locked[0].date} reconciliation before recording this transfer` }, { status: 409 });
+        }
+        const now = new Date().toISOString(); const notes = typeof rest.purpose === "string" ? rest.purpose.trim().slice(0, 500) : "";
+        const sourceLabel = sourceAccountId === null ? "Cash" : "bank account";
+        const targetLabel = targetAccountId === null ? "Cash" : "bank account";
+        const writes = [
+          db.insert(expenses).values(syncInsert({ amount, category: "Internal Transfer", customCategory: "", purpose: notes || `Transfer to ${targetLabel}`, vendorId: null, accountId: sourceAccountId, paymentMethod: sourceAccountId === null ? "cash" : "online", mainCategory: "internal_transfer", subCategory: "", createdBy: actorName, expenseDate: date, createdMonth: date.slice(0, 7), idempotencyKey: `${transferId}:debit`, transferId, transferMethod: method, reversesTransferId: null, createdAt: now })),
+          db.insert(dailyIncome).values(syncInsert({ date, accountId: targetAccountId, type: targetAccountId === null ? "cash" : "online", amount, source: "internal_transfer", sourceDetail: "", description: notes || `Transfer from ${sourceLabel}`, foodRevenueAuto: 0, createdBy: actorName, createdAt: now, idempotencyKey: `${transferId}:credit`, transferId, transferMethod: method, reversesTransferId: null })),
+        ];
+        if (typeof db.batch === "function") await db.batch(writes); else db.transaction((tx: any) => {
+          tx.insert(expenses).values(syncInsert({ amount, category: "Internal Transfer", purpose: notes || `Transfer to ${targetLabel}`, accountId: sourceAccountId, paymentMethod: sourceAccountId === null ? "cash" : "online", mainCategory: "internal_transfer", subCategory: "", createdBy: actorName, expenseDate: date, createdMonth: date.slice(0, 7), idempotencyKey: `${transferId}:debit`, transferId, transferMethod: method, createdAt: now })).run();
+          tx.insert(dailyIncome).values(syncInsert({ date, accountId: targetAccountId, type: targetAccountId === null ? "cash" : "online", amount, source: "internal_transfer", description: notes || `Transfer from ${sourceLabel}`, createdBy: actorName, createdAt: now, idempotencyKey: `${transferId}:credit`, transferId, transferMethod: method })).run();
+        });
+        const created = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.transferId, transferId)).limit(1);
+        await addAuditEntry({ username: actorName, action: "internal_transfer_created", target: transferId, details: `₹${(amount / 100).toFixed(2)} ${sourceLabel} to ${targetLabel}` });
+        return NextResponse.json({ success: true, id: created[0]?.id });
+      }
       case "getExpenseEditOptions": {
         const db = getDb();
         const [expenseAccounts, expenseVendors] = await Promise.all([
@@ -457,6 +499,7 @@ export async function POST(req: NextRequest) {
 
         const existingExpense = await getExpenseById(Number(id));
         if (!existingExpense) return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+        if ((existingExpense as any).transferId) return NextResponse.json({ error: "Internal transfers are immutable; record a reversing transfer instead" }, { status: 400 });
 
         const nextDate = rest.expenseDate === undefined ? existingExpense.expenseDate : rest.expenseDate;
         const nextAmount = amount === undefined ? existingExpense.amount : amount;
@@ -549,6 +592,7 @@ export async function POST(req: NextRequest) {
 
         const expense = await getExpenseById(Number(id));
         if (!expense) return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+        if ((expense as any).transferId) return NextResponse.json({ error: "Internal transfers are immutable; record a reversing transfer instead" }, { status: 400 });
         const reconciled = await getDb().select({ id: dailyLedger.id }).from(dailyLedger).where(and(
           sql`${dailyLedger.date} >= ${expense.expenseDate}`, expense.accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, expense.accountId), eq(dailyLedger.isReconciled, 1),
         )).limit(1);
@@ -1061,8 +1105,9 @@ export async function POST(req: NextRequest) {
         const { id } = rest;
         if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
         const db = getDb();
-        const entry = await db.select({ date: dailyIncome.date, accountId: dailyIncome.accountId }).from(dailyIncome).where(eq(dailyIncome.id, id)).limit(1);
+        const entry = await db.select({ date: dailyIncome.date, accountId: dailyIncome.accountId, transferId: dailyIncome.transferId }).from(dailyIncome).where(eq(dailyIncome.id, id)).limit(1);
         if (!entry.length) return NextResponse.json({ error: "Income entry not found" }, { status: 404 });
+        if (entry[0].transferId) return NextResponse.json({ error: "Internal transfers are immutable; record a reversing transfer instead" }, { status: 400 });
         const reconciled = await db.select({ date: dailyLedger.date }).from(dailyLedger).where(and(
           sql`${dailyLedger.date} >= ${entry[0].date}`,
           entry[0].accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, entry[0].accountId),

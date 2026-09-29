@@ -9,7 +9,7 @@ export async function ensureRecurringExpenseOccurrences(through: string) {
   const db = getDb();
   const rules = await db.select().from(recurringExpenseRules).where(eq(recurringExpenseRules.active, 1));
   let created = 0; let posted = 0; let failed = 0;
-  for (const rule of rules) for (const dueDate of recurrenceDatesThrough(rule.startDate, rule.frequency as RecurrenceFrequency, through)) {
+  for (const rule of rules) for (const dueDate of recurrenceDatesThrough(rule.startDate, rule.frequency as RecurrenceFrequency, rule.endDate && rule.endDate < through ? rule.endDate : through)) {
     const now = new Date().toISOString();
     try {
       await db.insert(recurringExpenseOccurrences).values({ ruleId: rule.id, dueDate, idempotencyKey: crypto.randomUUID(), amount: rule.amount, category: rule.category, customCategory: rule.customCategory, purpose: rule.purpose, vendorId: rule.vendorId, accountId: rule.accountId, paymentMethod: rule.paymentMethod, mainCategory: rule.mainCategory, subCategory: rule.subCategory, createdAt: now, updatedAt: now });

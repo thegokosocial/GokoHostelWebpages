@@ -214,6 +214,8 @@ View list/tabs: `canViewFoodOrders` / `canViewFoodTabs`; the Order Summary UI ac
 
 Recurring expense routes are Admin-only. No staff or manager permission key grants rule, draft, skip, or automatic-post access; pending drafts have no ledger effect until the existing expense API posts them.
 
+`createInternalTransfer` requires both `canAddExpense` and `canAddIncome`. It writes a linked source expense and target income in one operation; ordinary edit/delete actions cannot alter either transfer row.
+
 list/getMy: `canViewExpenses`. add: `canAddExpense`, including up to five optional JPEG, PNG, WebP, or PDF bill attachments (10 MB each). update/delete: edit/delete expense keys. food revenue **and** room revenue (`getRoomRevenue`): `canViewFoodBills`. ledger: `canViewAccounts`. income: `canAddIncome`. cash reconcile: `canReconcileCash`; configured-account reconcile: `canReconcileOnline`. The retired `canReconcileAccounts` and `canReconcile` keys grant both scopes during compatibility. Undo reconciliation is Admin-only. Opening balance: `canManageAccountSettings` (legacy alias `canManageAccounts`).
 
 `getAccountActivity` requires both `canViewAccounts` and `canViewExpenses`; this is an AND gate. Its online food rows are payment-level projections over per-order receipts, and Cash includes manual income/expenses plus journaled food and room cash movements. These projections do not grant payment or reconciliation permissions. `getExpenseEditOptions` requires `canEditExpense`.

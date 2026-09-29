@@ -981,6 +981,9 @@ export const dailyIncome = sqliteTable("daily_income", {
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),
   idempotencyKey: text("idempotency_key"),
+  transferId: text("transfer_id"),
+  transferMethod: text("transfer_method"),
+  reversesTransferId: text("reverses_transfer_id"),
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_daily_income_date").on(table.date),
@@ -1084,6 +1087,9 @@ export const expenses = sqliteTable("expenses", {
   expenseDate: text("expense_date").notNull().default(""),
   createdMonth: text("created_month").notNull(),
   idempotencyKey: text("idempotency_key"),
+  transferId: text("transfer_id"),
+  transferMethod: text("transfer_method"),
+  reversesTransferId: text("reverses_transfer_id"),
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_expenses_month").on(table.createdMonth),
@@ -1126,7 +1132,7 @@ export const syncLog = sqliteTable("sync_log", {
 // an amount-less reminder cannot alter Accounts until an admin posts it.
 export const recurringExpenseRules = sqliteTable("recurring_expense_rules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull(), amount: integer("amount"), frequency: text("frequency").notNull(), startDate: text("start_date").notNull(), postingMode: text("posting_mode").notNull(), active: integer("active").notNull().default(1),
+  name: text("name").notNull(), amount: integer("amount"), frequency: text("frequency").notNull(), startDate: text("start_date").notNull(), endDate: text("end_date"), postingMode: text("posting_mode").notNull(), active: integer("active").notNull().default(1),
   category: text("category").notNull(), customCategory: text("custom_category").notNull().default(""), purpose: text("purpose").notNull().default(""), vendorId: integer("vendor_id"), accountId: integer("account_id"), paymentMethod: text("payment_method").notNull().default("cash"), mainCategory: text("main_category").notNull().default("stay_expense"), subCategory: text("sub_category").notNull().default(""),
   createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
 }, table => [index("idx_recurring_expense_rules_active").on(table.active)]);

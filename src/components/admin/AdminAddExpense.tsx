@@ -12,6 +12,8 @@ import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/accountCategories";
 const MAIN_CATEGORIES = [
   { id: "stay_expense", label: "Stay Expense" },
   { id: "food_expense", label: "Food Expense" },
+  { id: "goko_expense", label: "Goko Expense" },
+  { id: "internal_transfer", label: "Internal Transfer" },
 ];
 
 const ALLOWED_BILL_MIME = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -43,6 +45,7 @@ export function AdminAddExpense({
   const [vendorId, setVendorId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [accountId, setAccountId] = useState("");
+  const [targetAccountId, setTargetAccountId] = useState("");
   const [billFiles, setBillFiles] = useState<File[]>([]);
   const [billPreviews, setBillPreviews] = useState<(string | null)[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -144,14 +147,17 @@ export function AdminAddExpense({
 
     const amountNum = parseFloat(amount);
     if (!amountNum || amountNum <= 0) { setError("Please enter a valid amount"); return; }
-    if (!subCategory) { setError("Please select a category"); return; }
+    const transfer = mainCategory === "internal_transfer";
+    if (!transfer && !subCategory) { setError("Please select a category"); return; }
     if (subCategory === "Others" && !customCategory.trim()) { setError("Please enter a description for Others"); return; }
-    if (paymentMethod === "online" && !accountId) { setError("Please select an account for online payment"); return; }
+    if (!transfer && paymentMethod === "online" && !accountId) { setError("Please select an account for online payment"); return; }
+    if (transfer && (!accountId || !targetAccountId || accountId === targetAccountId)) { setError("Select different source and destination accounts"); return; }
+    if (transfer && ((paymentMethod === "cash") !== (accountId === "cash" || targetAccountId === "cash"))) { setError(paymentMethod === "cash" ? "Cash transfers need Cash as one endpoint" : "Online transfers need two bank accounts"); return; }
 
     setSubmitting(true);
     try {
       const body: Record<string, any> = {
-        action: "addExpense",
+        action: transfer ? "createInternalTransfer" : "addExpense",
         idempotencyKey,
         amount: Math.round(amountNum * 100),
         category: subCategory === "Others" ? customCategory.trim() : subCategory,
@@ -162,6 +168,8 @@ export function AdminAddExpense({
         vendorId: vendorId ? parseInt(vendorId) : undefined,
         paymentMethod,
         accountId: paymentMethod === "online" && accountId ? parseInt(accountId) : undefined,
+        sourceAccountId: transfer ? accountId : undefined,
+        targetAccountId: transfer ? targetAccountId : undefined,
         expenseDate,
       };
 
@@ -188,6 +196,7 @@ export function AdminAddExpense({
         setCustomCategory("");
         setPurpose("");
         setVendorId("");
+        setTargetAccountId("");
         clearFiles();
         loadData();
       } else {
@@ -247,7 +256,7 @@ export function AdminAddExpense({
           </div>
 
           {/* Sub Category */}
-          <div>
+          {mainCategory !== "internal_transfer" && <div>
             <Label className="text-xs">Category *</Label>
             <select
               value={subCategory}
@@ -259,10 +268,10 @@ export function AdminAddExpense({
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-          </div>
+          </div>}
 
           {/* Vendor */}
-          <div>
+          {mainCategory !== "internal_transfer" && <div>
             <Label className="text-xs">Vendor (optional)</Label>
             <select
               value={vendorId}
@@ -274,7 +283,7 @@ export function AdminAddExpense({
                 <option key={v.id} value={v.id}>{v.name}{v.category ? ` (${v.category})` : ""}</option>
               ))}
             </select>
-          </div>
+          </div>}
 
           {/* Payment Method */}
           <div>
@@ -290,7 +299,7 @@ export function AdminAddExpense({
           </div>
 
           {/* Account (shown only for online) */}
-          {paymentMethod === "online" && (
+          {mainCategory !== "internal_transfer" && paymentMethod === "online" && (
             <div>
               <Label className="text-xs">Account</Label>
               <select
@@ -306,8 +315,13 @@ export function AdminAddExpense({
             </div>
           )}
 
+          {mainCategory === "internal_transfer" && <>
+            <div><Label className="text-xs">Source account *</Label><select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">Select source...</option><option value="cash">Cash</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nickname || a.name}</option>)}</select></div>
+            <div><Label className="text-xs">Destination account *</Label><select value={targetAccountId} onChange={(e) => setTargetAccountId(e.target.value)} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"><option value="">Select destination...</option><option value="cash">Cash</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nickname || a.name}</option>)}</select></div>
+          </>}
+
           {/* Custom category name for Others */}
-          {subCategory === "Others" && (
+          {mainCategory !== "internal_transfer" && subCategory === "Others" && (
             <div className="sm:col-span-2">
               <Label className="text-xs">Description / Reason *</Label>
               <Input
@@ -332,7 +346,7 @@ export function AdminAddExpense({
           </div>
 
           {/* Bill attachments */}
-          <div className="sm:col-span-2">
+          {mainCategory !== "internal_transfer" && <div className="sm:col-span-2">
             <Label className="text-xs">Bill attachments (optional)</Label>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-brand-sand/50">
@@ -368,7 +382,7 @@ export function AdminAddExpense({
                 ))}
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
         {error && <p className="mt-3 text-sm text-red-500">{error}</p>}

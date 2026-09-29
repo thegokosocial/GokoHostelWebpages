@@ -11,4 +11,7 @@ describe("recurring expense calendar", () => {
   it("moves weekly rules in seven-day increments", () => {
     expect(recurrenceDate("2026-12-29", "weekly", 1)).toBe("2027-01-05");
   });
+  it("creates daily dates without skipping calendar boundaries", () => {
+    expect(recurrenceDatesThrough("2026-02-27", "daily", "2026-03-01")).toEqual(["2026-02-27", "2026-02-28", "2026-03-01"]);
+  });
 });

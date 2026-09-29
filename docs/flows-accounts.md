@@ -102,4 +102,6 @@ XLSX template → validate → dedupe → batch 50. Duplicate expense: date + am
 
 ## Recurring expenses
 
-Cloudflare web Admins can create weekly, monthly, or yearly recurring expense rules. Rules retain the normal expense category, vendor, payment, type, and notes fields. Review rules create non-financial due drafts; automatic rules require a fixed amount and post a normal expense. Pending drafts may be posted with an actual amount and bill files or skipped. A unique rule/date occurrence makes retries safe, and a draft never affects Accounts or reconciliation before posting.
+Cloudflare web Admins can create daily, weekly, monthly, or yearly recurring expense rules with an optional inclusive end date. Rules retain normal expense category, vendor, payment, type, and notes fields; Internal Transfer is deliberately not recurring. Review rules create non-financial due drafts; automatic rules require a fixed amount and post a normal expense. Pending drafts may be posted with an actual amount and bill files or skipped. A unique rule/date occurrence makes retries safe, and a draft never affects Accounts or reconciliation before posting.
+
+Internal Transfer creates a linked debit expense on the source ledger and an income credit on the destination ledger. Cash is an account endpoint; cash transfers require Cash on one side and online transfers require two active real bank accounts. Transfers never contribute to Analytics, are immutable, and require both expense and income creation permissions.
