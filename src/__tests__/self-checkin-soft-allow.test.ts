@@ -24,6 +24,7 @@ describe("checkin submit error mapping", () => {
   it("flags soft-accept outcomes as staff review (not hard side failures)", () => {
     expect(isStaffReviewValidation({ valid: true, nameMatchQuality: "none", layers: ["name_mismatch"] })).toBe(true);
     expect(isStaffReviewValidation({ valid: true, needsDocReview: true, layers: ["doc_review"] })).toBe(true);
+    expect(isStaffReviewValidation({ valid: true, layers: ["validation_unavailable"] })).toBe(true);
     expect(isStaffReviewValidation({ valid: true, layers: ["name_verified"] })).toBe(false);
     expect(isStaffReviewValidation({ valid: false, layers: ["unsupported_pan"] })).toBe(false);
     expect(isStaffReviewValidation({ valid: false, layers: ["address_missing"] })).toBe(false);
@@ -54,6 +55,7 @@ describe("self-checkin contrast and error surfacing contracts", () => {
 
   it("skips re-Vision after verify and uses progressive other-side prompts", () => {
     expect(form).toContain('formData.append("clientIdValidation", "verified")');
+    expect(form).toContain("setIdServerError(staffReview)");
     expect(form).toContain("requiresBothIdSides");
     expect(form).toContain("idFrontFiles");
     expect(form).toContain("idBackFiles");

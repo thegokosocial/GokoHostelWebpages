@@ -686,6 +686,7 @@ export function SelfCheckinForm() {
         const staffReview = isStaffReviewValidation(result);
         setIdValidationMsg({ valid: true, staffReview, message: result.message });
         setIdValidated(true);
+        setIdServerError(staffReview);
         setDetectedIdType(null);
         setSidePrompt(null);
       } else if (keepForOtherSide) {
