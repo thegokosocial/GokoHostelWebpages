@@ -37,6 +37,12 @@ describe("booking contact methods", () => {
     expect(panel).toContain("Cancel");
   });
 
+  it("shows a missing channel phone as blank and never renders its email as a phone", () => {
+    expect(panel).toContain("const legacyEmailAsPhone");
+    expect(panel).toContain("method.value || \"—\"");
+    expect(panel).toContain("booking.source === \"channel_manager\" && !hasPhone");
+  });
+
   it("backfills both phone and email values and includes sync metadata", () => {
     expect(migration).toContain("INSERT INTO booking_contact_methods");
     expect(migration).toContain("FROM bookings");

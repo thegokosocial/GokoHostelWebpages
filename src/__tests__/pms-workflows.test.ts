@@ -712,6 +712,23 @@ describe("PMS inbound webhook workflows", () => {
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
+  it.each(["booking.com", "Hostelworld", "MakeMyTrip"])("stores 9 guests, not 5 sellable units, for repeated double rooms from %s", async (channel) => {
+    queryMocks.getAvailableBedsForRange.mockResolvedValue([]);
+    const res = await reservationsPOST(req({
+      action: "book", hotelCode: "GOKO-001", channel, bookingId: `BK-9-GUESTS-${channel}`,
+      checkin: "2026-09-05", checkout: "2026-09-06",
+      guest: { firstName: "Ada", lastName: "Lovelace" },
+      rooms: [
+        { roomCode: "executive", occupancy: { adults: 1, children: 0 } },
+        ...Array.from({ length: 4 }, () => ({ roomCode: "dorm-6", occupancy: { adults: 2, children: 0 } })),
+      ],
+    }, { authorization: "whsec-test" }));
+    expect(res.status).toBe(200);
+    expect(addBooking).toHaveBeenCalledWith(expect.objectContaining({ persons: 9 }));
+    expect(queryMocks.assignBedToBooking).not.toHaveBeenCalled();
+    expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "Unassigned" }));
+  });
+
   it("assigns zero beds when executive has stock but dorm does not", async () => {
     queryMocks.getAvailableBedsForRange.mockResolvedValue([
       { id: 7, bedId: "EXE-1", dormId: 8, dormName: "Executive", pool: "online" },
@@ -770,7 +787,7 @@ describe("PMS inbound webhook workflows", () => {
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
-  it("6 suite rooms with occupancy 3 auto-assign 6 beds, not 18", async () => {
+  it("6 suite rooms with occupancy 3 auto-assign 6 sellable units and store 18 guests", async () => {
     queryMocks.getAvailableBedsForRange.mockResolvedValue(
       Array.from({ length: 6 }, (_, i) => ({
         id: 101 + i,
@@ -800,7 +817,7 @@ describe("PMS inbound webhook workflows", () => {
     expect(res.status).toBe(200);
     expect(addBooking).toHaveBeenCalledWith(expect.objectContaining({
       guestName: "Pawan 123",
-      persons: 6,
+      persons: 18,
       bookingRef: "San5c72b7455549",
       roomType: "suite, suite, suite, suite, suite, suite",
       nightlyRate: 13800,
@@ -815,7 +832,7 @@ describe("PMS inbound webhook workflows", () => {
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
-  it("6 suite occupancy 3 stays Unassigned when only 5 online suite beds exist", async () => {
+  it("6 suite occupancy 3 stays Unassigned when only 5 online suite units exist", async () => {
     queryMocks.getAvailableBedsForRange.mockResolvedValue(
       Array.from({ length: 5 }, (_, i) => ({
         id: 101 + i,
@@ -840,7 +857,7 @@ describe("PMS inbound webhook workflows", () => {
     };
     const res = await reservationsPOST(req(payload, { authorization: "whsec-test" }));
     expect(res.status).toBe(200);
-    expect(addBooking).toHaveBeenCalledWith(expect.objectContaining({ persons: 6 }));
+    expect(addBooking).toHaveBeenCalledWith(expect.objectContaining({ persons: 18 }));
     expect(queryMocks.assignBedToBooking).not.toHaveBeenCalled();
     expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
       action: "Unassigned",

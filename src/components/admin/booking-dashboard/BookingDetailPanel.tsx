@@ -271,9 +271,16 @@ export function BookingDetailPanel({
     });
     if (ok) setEditingContacts(false);
   };
-  const visibleContacts = contactMethods.length > 0 ? contactMethods : [
-    ...(booking.contact ? [{ id: -1, bookingId: booking.id, type: "phone" as const, value: booking.contact, normalizedValue: "", label: "", origin: booking.source === "channel_manager" ? "pms" as const : "custom" as const, isPrimary: 1, position: 0 }] : []),
+  const legacyEmailAsPhone = booking.source === "channel_manager" && Boolean(booking.contact && booking.email && booking.contact.trim().toLowerCase() === booking.email.trim().toLowerCase());
+  const storedContacts = contactMethods.filter((method) => !(booking.source === "channel_manager" && method.type === "phone" && method.value.trim().toLowerCase() === booking.email?.trim().toLowerCase()));
+  const hasPhone = storedContacts.some((method) => method.type === "phone") || Boolean(booking.contact && !legacyEmailAsPhone);
+  const fallbackContacts = storedContacts.length > 0 ? storedContacts : [
+    ...(booking.contact && !legacyEmailAsPhone ? [{ id: -1, bookingId: booking.id, type: "phone" as const, value: booking.contact, normalizedValue: "", label: "", origin: booking.source === "channel_manager" ? "pms" as const : "custom" as const, isPrimary: 1, position: 0 }] : []),
     ...(booking.email ? [{ id: -2, bookingId: booking.id, type: "email" as const, value: booking.email, normalizedValue: "", label: "", origin: booking.source === "channel_manager" ? "pms" as const : "custom" as const, isPrimary: 1, position: 0 }] : []),
+  ];
+  const visibleContacts = [
+    ...(booking.source === "channel_manager" && !hasPhone ? [{ id: -3, bookingId: booking.id, type: "phone" as const, value: "", normalizedValue: "", label: "", origin: "pms" as const, isPrimary: 1, position: -1 }] : []),
+    ...fallbackContacts,
   ];
   const canManageContacts = hasPermission(role, permissions, "canManageBookingContacts");
   const hasAssignedBed = assignments.some((a) => a.status === "assigned");
@@ -549,7 +556,7 @@ export function BookingDetailPanel({
                     const whatsAppNumber = method.type === "phone" ? bookingWhatsAppNumber(method.value) : "";
                     return <div key={method.id} className="flex items-center gap-2 text-xs">
                       {method.type === "phone" ? <PhoneIcon className="size-3 text-muted-foreground" /> : <MailIcon className="size-3 text-muted-foreground" />}
-                      <span className="min-w-0 text-foreground">{method.value}</span>
+                      <span className="min-w-0 text-foreground">{method.value || "—"}</span>
                       {method.origin === "pms" && <span className="text-[10px] font-semibold text-muted-foreground">PMS</span>}
                       {method.label && <span className="truncate text-[10px] text-muted-foreground">({method.label})</span>}
                       {method.type === "email" && <a className="ml-auto text-emerald-700 hover:underline" href={`mailto:${encodeURIComponent(method.value)}`} title="Email guest"><SendIcon className="size-3.5" /><span className="sr-only">Email guest</span></a>}

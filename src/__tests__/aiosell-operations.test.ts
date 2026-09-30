@@ -742,7 +742,7 @@ describe("Webhook reservation combinations", () => {
     expect(q.assignBedToBooking).not.toHaveBeenCalled();
   });
 
-  it("6 identical suite rooms occupancy 3 store 6 persons and auto-assign 6 beds", async () => {
+  it("6 identical suite rooms occupancy 3 store 18 guests and auto-assign 6 sellable units", async () => {
     q.getRoomTypeMappings.mockResolvedValue([
       ...mappings,
       { id: 3, dormId: 11, channelRoomCode: "suite", isActive: 1, dormName: "Suite" },
@@ -773,7 +773,7 @@ describe("Webhook reservation combinations", () => {
     expect(res.status).toBe(200);
     expect(q.addBooking).toHaveBeenCalledWith(expect.objectContaining({
       guestName: "Pawan 123",
-      persons: 6,
+      persons: 18,
       nightlyRate: 13800,
       roomType: "suite, suite, suite, suite, suite, suite",
     }));

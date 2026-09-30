@@ -6,6 +6,7 @@ import {
   autoAssignOnlineChannelBeds,
   assignedBedsMatchNeeds,
   channelAssignmentNeedsReseat,
+  channelPersonCount,
 } from "@/lib/channelAutoAssign";
 
 const mappings = [
@@ -100,6 +101,19 @@ describe("channelBedNeeds occupancySpecified vs missing occupancy", () => {
     expect(channelBedNeeds({
       rooms: [{ roomCode: "executive", occupancy: { adults: 2, children: 0 } }],
     })).toEqual([{ roomCode: "executive", count: 2, units: 1 }]);
+  });
+
+  it("counts every repeated-room occupancy as guests without changing sellable-unit needs", () => {
+    const rooms = [
+      { roomCode: "single", occupancy: { adults: 1, children: 0 } },
+      ...Array.from({ length: 4 }, () => ({ roomCode: "double", occupancy: { adults: 2, children: 0 } })),
+    ];
+    expect(channelPersonCount({ rooms })).toBe(9);
+    expect(channelBedNeeds({ rooms })).toEqual([
+      { roomCode: "single", count: 1, units: 1 },
+      { roomCode: "double", count: 4, units: 4 },
+    ]);
+    expect(channelPersonCount({ rooms: Array.from({ length: 6 }, () => ({ roomCode: "suite", occupancy: { adults: 3, children: 0 } })) })).toBe(18);
   });
 
   it("missing occupancy on a single room uses all persons", () => {

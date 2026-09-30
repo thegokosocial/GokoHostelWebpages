@@ -137,15 +137,22 @@ export function channelBedNeeds(args: {
   return distributePersonBeds(codes, persons);
 }
 
-/** Same count as channelBedNeeds so stored persons and auto-assign never diverge. */
+/**
+ * Guest headcount is independent of the sellable-unit count used for assignment.
+ * A repeated double room is one sellable unit per row, but its occupancy still
+ * represents two guests per row.
+ */
 export function channelPersonCount(args: {
   rooms?: ChannelRoomRow[] | null;
   roomType?: string | null;
   rawData?: string | null;
   persons?: number | null;
 }): number {
-  const n = channelBedNeeds(args).reduce((s, x) => s + x.count, 0);
-  return n > 0 ? n : Math.max(1, Number(args.persons) || 1);
+  const rooms = args.rooms && args.rooms.length > 0 ? args.rooms : roomsFromRawData(args.rawData);
+  if (rooms.length > 0 && rooms.every((room) => occupancySpecified(room.occupancy))) {
+    return rooms.reduce((sum, room) => sum + occupancyBedCount(room.occupancy), 0);
+  }
+  return Math.max(1, Number(args.persons) || channelBedNeeds(args).reduce((s, x) => s + x.count, 0) || 1);
 }
 
 export function activeMappingsByCode(mappings: ChannelRoomMapping[]): Map<string, ChannelRoomMapping> {
@@ -209,7 +216,6 @@ export function enrichUnassignedBooking<T extends {
   const requestedUnitCount = requestedNeeds.reduce((sum, n) => sum + n.units, 0);
   return {
     ...booking,
-    persons: requestedBedCount || booking.persons,
     requestedRoomCodes: [...new Set(requestedRoomCodes)],
     requestedDormIds: dormIds,
     requestedDormNames: dormNames,

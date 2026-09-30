@@ -497,7 +497,7 @@ describe("enrichUnassignedBooking", () => {
     ]);
   });
 
-  it("6 suite rooms with occupancy 3 are 6 beds, not 18", () => {
+  it("keeps 18 stored guests separate from 6 requested suite units", () => {
     const row = enrichUnassignedBooking({
       roomType: "suite, suite, suite, suite, suite, suite",
       persons: 18,
@@ -509,7 +509,7 @@ describe("enrichUnassignedBooking", () => {
       }),
     }, [...mappings, { dormId: 11, channelRoomCode: "suite", dormName: "Suite", isActive: 1 }]);
     expect(row.requestedBedCount).toBe(6);
-    expect(row.persons).toBe(6);
+    expect(row.persons).toBe(18);
     expect(row.requestedNeedLabels).toBe("6 Suite");
     expect(row.requestedNeeds).toEqual([{ dormId: 11, count: 6, units: 6, name: "Suite" }]);
   });
