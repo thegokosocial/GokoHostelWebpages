@@ -231,6 +231,7 @@ export function AdminBillRecords({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold text-brand-green-dark">{exp.category || "Uncategorized"}</span>
+                        {exp.isRecurring && <span title="Created from a recurring expense rule" className="rounded-full bg-brand-gold/15 px-2 py-0.5 text-xs font-bold text-brand-green-dark">Recurring</span>}
                         <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-xs font-bold text-brand-green-dark">₹{((exp.amount || 0) / 100).toFixed(0)}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-green-dark/60">
@@ -330,7 +331,7 @@ export function AdminBillRecords({
                   <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90">
                     {exp.expenseDate || (exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "—")}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90">{exp.category || "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/90"><span className="inline-flex items-center gap-2">{exp.category || "—"}{exp.isRecurring && <span title="Created from a recurring expense rule" className="rounded-full bg-brand-gold/15 px-2 py-0.5 text-xs font-bold text-brand-green-dark">Recurring</span>}</span></td>
                   <td className="whitespace-nowrap px-3 py-3 text-brand-green-dark/70">{exp.accountName || "Cash"} · {exp.paymentMethod || "cash"}</td>
                   <td className="max-w-[200px] truncate px-3 py-3 text-brand-green-dark/70">{exp.purpose || "—"}</td>
                   <td className="whitespace-nowrap px-3 py-3 font-medium text-brand-green-dark">

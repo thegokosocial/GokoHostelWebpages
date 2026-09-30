@@ -13,7 +13,7 @@ import {
   getMonthKey,
 } from "@/db/queries";
 import { getDb } from "@/db";
-import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, cashPaymentEvents, bookingPaymentEvents, bookingCycleSnapshots, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations } from "@/db/schema";
+import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, cashPaymentEvents, bookingPaymentEvents, bookingCycleSnapshots, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations, recurringExpenseOccurrences } from "@/db/schema";
 import { eq, and, sql, desc, inArray, isNull, lt, gte, lte } from "drizzle-orm";
 import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
 import { isOfflineMode, isPiRuntime } from "@/lib/runtime";
@@ -470,7 +470,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "A valid date range is required" }, { status: 400 });
         }
         const db = getDb();
-        const rows = await db.select({
+        const expenseFields = {
           id: expenses.id, amount: expenses.amount, category: expenses.category, customCategory: expenses.customCategory,
           purpose: expenses.purpose, billImageLink: expenses.billImageLink, vendorId: expenses.vendorId, accountId: expenses.accountId,
           paymentMethod: expenses.paymentMethod, mainCategory: expenses.mainCategory, subCategory: expenses.subCategory,
@@ -478,12 +478,15 @@ export async function POST(req: NextRequest) {
           updatedAt: expenses.updatedAt, expenseDate: expenses.expenseDate, createdMonth: expenses.createdMonth,
           accountName: sql<string>`CASE WHEN ${expenses.accountId} IS NULL THEN 'Cash' ELSE COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name}, 'Account') END`,
           vendorName: sql<string>`COALESCE(${vendors.name}, '')`,
-        }).from(expenses)
-          .leftJoin(accounts, eq(expenses.accountId, accounts.id))
-          .leftJoin(vendors, eq(expenses.vendorId, vendors.id))
-          .where(and(sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt)))
-          .orderBy(desc(expenses.expenseDate), desc(expenses.id));
-        return NextResponse.json({ role, expenses: rows, fromDate, toDate, expenseCategories: parseExpenseCategories(await getSetting("expense_categories")) });
+        };
+        const rows = isPiRuntime()
+          ? await db.select({ ...expenseFields, isRecurring: sql<number>`0` }).from(expenses)
+            .leftJoin(accounts, eq(expenses.accountId, accounts.id)).leftJoin(vendors, eq(expenses.vendorId, vendors.id))
+            .where(and(sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))).orderBy(desc(expenses.expenseDate), desc(expenses.id))
+          : await db.select({ ...expenseFields, isRecurring: recurringExpenseOccurrences.id }).from(expenses)
+            .leftJoin(accounts, eq(expenses.accountId, accounts.id)).leftJoin(vendors, eq(expenses.vendorId, vendors.id)).leftJoin(recurringExpenseOccurrences, eq(recurringExpenseOccurrences.expenseId, expenses.id))
+            .where(and(sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))).orderBy(desc(expenses.expenseDate), desc(expenses.id));
+        return NextResponse.json({ role, expenses: rows.map(({ isRecurring, ...expense }) => ({ ...expense, isRecurring: Boolean(isRecurring) })), fromDate, toDate, expenseCategories: parseExpenseCategories(await getSetting("expense_categories")) });
       }
 
       case "getMyExpenses": {

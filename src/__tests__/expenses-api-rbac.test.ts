@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const auth = vi.hoisted(() => ({ authenticateUser: vi.fn() }));
+const runtime = vi.hoisted(() => ({ isPiRuntime: vi.fn(() => false) }));
 const q = vi.hoisted(() => ({
   getSetting: vi.fn(),
   getExpensesByUser: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock("@/lib/googleApiFetch", () => ({
   driveGetOrCreateFolder: vi.fn(),
   driveDeleteFile: vi.fn(),
 }));
-vi.mock("@/lib/runtime", () => ({ isOfflineMode: () => true, isPiRuntime: () => false }));
+vi.mock("@/lib/runtime", () => ({ isOfflineMode: () => true, isPiRuntime: runtime.isPiRuntime }));
 
 import { POST } from "@/app/api/admin/expenses/route";
 
@@ -42,22 +43,22 @@ function request(action: string, extra: Record<string, unknown> = {}) {
   });
 }
 
-function listDb() {
-  const rows: unknown[] = [];
+function listDb(rows: unknown[] = []) {
   const ordered = {
     orderBy: async () => rows,
     limit: async () => rows,
   };
-  const joined = {
-    leftJoin: () => joined,
+  const joined: { leftJoin: ReturnType<typeof vi.fn>; where: () => typeof ordered; orderBy: () => Promise<unknown[]> } = {
+    leftJoin: vi.fn(),
     where: () => ordered,
     orderBy: async () => rows,
   };
-  return {
+  joined.leftJoin.mockReturnValue(joined);
+  return { db: {
     select: () => ({
       from: () => joined,
     }),
-  };
+  }, leftJoin: joined.leftJoin };
 }
 
 beforeEach(() => {
@@ -65,7 +66,8 @@ beforeEach(() => {
   q.getSetting.mockResolvedValue("[]");
   q.getExpensesByUser.mockResolvedValue([]);
   q.hostelExpenseIsLinked.mockResolvedValue(false);
-  q.getDb.mockReturnValue(listDb());
+  runtime.isPiRuntime.mockReturnValue(false);
+  q.getDb.mockReturnValue(listDb().db);
 });
 
 describe("Expenses API RBAC (route)", () => {
@@ -79,6 +81,22 @@ describe("Expenses API RBAC (route)", () => {
     expect((await POST(request("getMyExpenses"))).status).toBe(200);
     expect((await POST(request("getExpenseCategories"))).status).toBe(403);
     expect((await POST(request("deleteExpense", { id: 1 }))).status).toBe(403);
+  });
+
+  it("marks only linked Cloudflare recurring expenses and skips the Cloudflare-only join on Pi", async () => {
+    auth.authenticateUser.mockResolvedValue({ role: "staff", displayName: "Viewer", permissions: { canViewExpenses: true } });
+    const cloud = listDb([{ id: 1, category: "Internet", isRecurring: 7 }, { id: 2, category: "Supplies", isRecurring: null }]);
+    q.getDb.mockReturnValue(cloud.db);
+    const cloudResponse = await POST(request("listExpenses", { fromDate: "2026-09-01", toDate: "2026-09-27" }));
+    expect((await cloudResponse.json()).expenses).toMatchObject([{ id: 1, isRecurring: true }, { id: 2, isRecurring: false }]);
+    expect(cloud.leftJoin).toHaveBeenCalledTimes(3);
+
+    runtime.isPiRuntime.mockReturnValue(true);
+    const pi = listDb([{ id: 3, category: "Supplies", isRecurring: 0 }]);
+    q.getDb.mockReturnValue(pi.db);
+    const piResponse = await POST(request("listExpenses", { fromDate: "2026-09-01", toDate: "2026-09-27" }));
+    expect((await piResponse.json()).expenses).toMatchObject([{ id: 3, isRecurring: false }]);
+    expect(pi.leftJoin).toHaveBeenCalledTimes(2);
   });
 
   it("canAddExpense reads categories but cannot list or delete", async () => {
