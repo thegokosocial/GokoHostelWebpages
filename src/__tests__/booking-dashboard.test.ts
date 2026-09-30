@@ -487,6 +487,10 @@ describe("Booking Calendar: sticky dates and row colour", () => {
     expect(isWeekend("2026-08-30")).toBe(false);
     expect(grid).toContain("calendarMarkers");
     expect(grid).toContain("Long weekend");
+    expect(grid).toContain("const headerStats = useMemo");
+    expect(grid).toContain("snapshot.assigned + snapshot.unassignedOta");
+    expect(grid).toContain('"Occupancy %", "Available", hasHeld ? "Booked / held" : "Booked"');
+    expect(grid).toContain('(["occupancy", "available", "booked"] as const)');
   });
 });
 

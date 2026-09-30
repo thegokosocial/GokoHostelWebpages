@@ -182,8 +182,12 @@ describe("Inventory grid: date helpers stay in sync with source", () => {
     expect(dateTint(true, true)).toContain("bg-brand-green");
     expect(dateTint(true, false)).toContain("bg-amber-50");
     expect(dateTint(false, false)).toBe("");
-    expect(ui).toContain("Long weekends to review");
+    expect(ui).toContain("longWeekendActions");
+    expect(ui).toContain("InfoIcon");
+    expect(ui).toContain("ratePlanIds: data?.ratePlans.map((plan) => plan.id)");
+    expect(ui).not.toContain("Long weekends to review");
     expect(ui).toContain("initialRatePreset={bulkRatePreset}");
+    expect(ui).toContain("useState<number[]>(initialRatePreset?.ratePlanIds ?? [])");
   });
 
   it("lets sold-out and stop-sell win over weekend/today tints via twMerge", () => {

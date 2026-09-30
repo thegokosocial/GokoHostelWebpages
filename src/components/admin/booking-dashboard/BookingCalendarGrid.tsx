@@ -68,6 +68,18 @@ export function BookingCalendarGrid({
     () => dorms.some((dorm) => dates.some((date) => (dorm.availability?.[date]?.unassignedOta || 0) > 0)),
     [dorms, dates],
   );
+  const headerStats = useMemo(() => new Map(dates.map((date) => {
+    let total = 0, blocked = 0, booked = 0;
+    for (const dorm of dorms) {
+      const snapshot = dorm.availability?.[date];
+      if (!snapshot) continue;
+      total += snapshot.total;
+      blocked += snapshot.blocked;
+      booked += snapshot.assigned + snapshot.unassignedOta;
+    }
+    const sellable = Math.max(0, total - blocked);
+    return [date, { occupancy: sellable > 0 ? Math.round((booked / sellable) * 100) : 0, available: Math.max(0, sellable - booked), booked }];
+  })), [dates, dorms]);
   const statusLabel = { online: "Online / OTA available", offline: "Walk-in available", block: "Blocked", occupied: "Occupied", held: "Capacity reserved for unassigned OTA bookings" };
   const statusColour = {
     online: "bg-sky-50/80 dark:bg-sky-950/30",
@@ -101,6 +113,7 @@ export function BookingCalendarGrid({
             <div className="sticky top-0 left-0 z-30 flex h-[76px] items-end border-b border-border bg-brand-sand px-2 pb-1 shadow-[0_1px_4px_rgba(45,92,63,0.08)] dark:bg-zinc-800 dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
               <span className="text-[10px] font-medium text-muted-foreground">Dorms / Beds</span>
             </div>
+            {(["Occupancy %", "Available", hasHeld ? "Booked / held" : "Booked"] as const).map((label) => <div key={label} className="sticky left-0 z-10 flex h-8 items-center border-b border-border bg-slate-50 px-2 text-[10px] font-medium text-muted-foreground dark:bg-zinc-800/60">{label}</div>)}
             {dorms.map((dorm, dormIdx) => {
               const dormBg = dormIdx % 2 === 0
                 ? "bg-emerald-50 dark:bg-emerald-950/30"
@@ -179,6 +192,17 @@ export function BookingCalendarGrid({
                 );
               })}
             </div>
+
+            {(["occupancy", "available", "booked"] as const).map((stat) => <div key={stat} className="flex h-8 border-b border-border bg-slate-50 dark:bg-zinc-800/60">
+              {dates.map((date) => {
+                const marker = calendarMarkers[date];
+                const todayCol = isToday(date);
+                const weekend = marker?.weekend ?? isWeekend(date);
+                const stats = headerStats.get(date) ?? { occupancy: 0, available: 0, booked: 0 };
+                const value = stat === "occupancy" ? `${stats.occupancy}%` : stat === "available" ? stats.available : stats.booked;
+                return <div key={date} className={cn("flex shrink-0 items-center justify-center border-r border-border text-[11px] font-medium tabular-nums", todayCol && "bg-brand-green/[0.09] dark:bg-brand-green/20", (weekend || marker?.holidays.length || marker?.longWeekend) && !todayCol && "bg-amber-50/90 dark:bg-amber-950/25", stat === "occupancy" && stats.occupancy >= 90 && "text-red-600", stat === "occupancy" && stats.occupancy >= 70 && stats.occupancy < 90 && "text-amber-600", stat === "available" && stats.available === 0 && "font-bold text-red-600")} style={{ width: colWidth }}>{value}</div>;
+              })}
+            </div>)}
 
             {/* Dorm/Bed rows with tiles */}
             {dorms.map((dorm, dormIdx) => {

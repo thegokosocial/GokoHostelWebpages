@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn, todayIST } from "@/lib/utils";
 import {
   RefreshCwIcon, Loader2Icon, ChevronLeftIcon, ChevronRightIcon,
-  PackageIcon, EditIcon,
+  PackageIcon, EditIcon, InfoIcon,
 } from "lucide-react";
 import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput, overridePreview, overrideCeilingToSave, exclusiveEndFromInclusive, addCalendarDays, inclusiveNights, stayNights, civilWeekday, unassignedOtaOnNight, type AvailabilitySummary, type NightAvailability } from "@/lib/inventoryAvailability";
 import type { Role } from "./types";
@@ -52,6 +52,8 @@ type BulkAvailabilityPreview = {
   capped: number;
   requestedOnline: number | null;
 };
+
+type RatePreset = { startDate: string; endDate: string; ratePlanIds?: number[] };
 
 function filteredDatesForRetry(startDate: string, endDate: string, days: number[]): string[] {
   return inclusiveNights(startDate, endDate).filter((date) => days.length === 0 || days.includes(civilWeekday(date)));
@@ -105,7 +107,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
   const [editingCell, setEditingCell] = useState<{ dormId: number; date: string } | null>(null);
   const [editingRate, setEditingRate] = useState<{ ratePlanId: number; date: string } | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkRatePreset, setBulkRatePreset] = useState<{ startDate: string; endDate: string } | null>(null);
+  const [bulkRatePreset, setBulkRatePreset] = useState<RatePreset | null>(null);
 
   const dates = useMemo(() => generateDates(rangeStart, rangeDays), [rangeStart, rangeDays]);
   const endDate = dates[dates.length - 1] || rangeStart;
@@ -113,17 +115,21 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
     () => data?.unassignedOta?.some((hold) => dates.includes(hold.date) && hold.rooms > 0) ?? false,
     [data, dates],
   );
-  const longWeekendRuns = useMemo(() => {
+  const longWeekendActions = useMemo(() => {
     const seen = new Set<string>();
-    return dates.flatMap((date) => {
+    const actions = new Map<string, RatePreset>();
+    for (const date of dates) {
       const marker = data?.calendarMarkers?.[date];
-      if (!marker?.longWeekend || !marker.longWeekendStart || !marker.longWeekendEnd) return [];
+      if (!marker?.longWeekend || !marker.longWeekendStart || !marker.longWeekendEnd) continue;
       const key = `${marker.longWeekendStart}:${marker.longWeekendEnd}`;
-      if (seen.has(key)) return [];
+      if (seen.has(key)) continue;
       seen.add(key);
-      return [{ startDate: marker.longWeekendStart, endDate: marker.longWeekendEnd }];
-    });
-  }, [data?.calendarMarkers, dates]);
+      const range = inclusiveNights(marker.longWeekendStart, marker.longWeekendEnd);
+      const midpoint = range[Math.floor((range.length - 1) / 2)];
+      if (midpoint) actions.set(midpoint, { startDate: marker.longWeekendStart, endDate: marker.longWeekendEnd, ratePlanIds: data?.ratePlans.map((plan) => plan.id) ?? [] });
+    }
+    return actions;
+  }, [data?.calendarMarkers, data?.ratePlans, dates]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -282,17 +288,6 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
         </span>
       </div>
 
-      {longWeekendRuns.length > 0 && <section className="shrink-0 rounded-xl border border-amber-300 bg-amber-50/70 p-3 dark:border-amber-800 dark:bg-amber-950/20">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div><h2 className="text-sm font-semibold text-amber-950 dark:text-amber-100">Long weekends to review</h2><p className="text-xs text-amber-900/70 dark:text-amber-200/70">Open Adjust Rates with the dates filled in. Nothing changes until you save.</p></div>
-          <div className="flex flex-wrap gap-2">
-            {longWeekendRuns.map((run) => <Button key={`${run.startDate}:${run.endDate}`} type="button" size="sm" variant="outline" className="border-amber-400 bg-white text-amber-950 hover:bg-amber-100 dark:bg-transparent dark:text-amber-100" onClick={() => { setBulkRatePreset(run); setBulkOpen(true); }}>
-              Review {run.startDate} – {run.endDate}
-            </Button>)}
-          </div>
-        </div>
-      </section>}
-
       {/* Grid — overflow-auto so sticky header/labels pin inside this scrollport (overflow-x-auto alone would cancel sticky top) */}
       <div className="isolate min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <div className="min-w-max">
@@ -303,6 +298,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
             </div>
             {dates.map((date) => {
               const marker = data?.calendarMarkers?.[date];
+              const longWeekendAction = longWeekendActions.get(date);
               const { day, weekday, isToday, isWeekend } = formatDateShort(date, Boolean(marker?.holidays.length || marker?.longWeekend));
               return (
                 <div
@@ -316,7 +312,9 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                   <div className={cn("text-[10px]", isWeekend && !isToday ? "text-amber-700/70 dark:text-amber-400/70" : "text-brand-green-dark/50 dark:text-zinc-500")}>{weekday}</div>
                   <div className={cn("text-xs font-semibold", isToday ? "text-brand-green" : isWeekend ? "text-amber-800 dark:text-amber-300" : "text-brand-green-dark dark:text-zinc-200")}>{day}</div>
                   {marker?.holidays.length ? <div title={marker.holidays.join(", ")} className="max-w-full truncate px-0.5 text-[8px] font-medium text-amber-800 dark:text-amber-200">{marker.holidays[0]}</div> : null}
-                  {marker?.longWeekend ? <div className="max-w-full truncate px-0.5 text-[8px] font-semibold text-amber-800 dark:text-amber-200">Long weekend</div> : null}
+                  {longWeekendAction && <button type="button" title={`Adjust all room rates for ${longWeekendAction.startDate} – ${longWeekendAction.endDate}`} aria-label={`Adjust all room rates for long weekend ${longWeekendAction.startDate} to ${longWeekendAction.endDate}`} onClick={() => { setBulkRatePreset(longWeekendAction); setBulkOpen(true); }} className="inline-flex size-5 items-center justify-center rounded-full border border-amber-500 bg-amber-100 text-amber-900 hover:bg-amber-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100">
+                    <InfoIcon aria-hidden="true" className="size-3" />
+                  </button>}
                 </div>
               );
             })}
@@ -871,7 +869,7 @@ function AvailabilityPreviewPanel({ preview, loading, mode, scopeReady }: { prev
 
 // --- Bulk Update Modal ---
 function BulkUpdateModal({ data, password, username, initialRatePreset, onClose, onSaved }: {
-  data: GridData | null; password: string; username?: string; initialRatePreset: { startDate: string; endDate: string } | null; onClose: () => void; onSaved: () => void;
+  data: GridData | null; password: string; username?: string; initialRatePreset: RatePreset | null; onClose: () => void; onSaved: () => void;
 }) {
   const { runAction } = useActionProgress();
   const [tab, setTab] = useState<"blockBeds" | "unblockBeds" | "availability" | "setRates" | "adjustRates" | "restrictions">(initialRatePreset ? "adjustRates" : "blockBeds");
@@ -912,7 +910,7 @@ function BulkUpdateModal({ data, password, username, initialRatePreset, onClose,
   const [rateDays, setRateDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
 
   // Adjust rates state
-  const [adjustRpIds, setAdjustRpIds] = useState<number[]>([]);
+  const [adjustRpIds, setAdjustRpIds] = useState<number[]>(initialRatePreset?.ratePlanIds ?? []);
   const [adjustStart, setAdjustStart] = useState(initialRatePreset?.startDate ?? "");
   const [adjustEnd, setAdjustEnd] = useState(initialRatePreset?.endDate ?? "");
   const [adjustDirection, setAdjustDirection] = useState<"increase" | "decrease">("increase");
