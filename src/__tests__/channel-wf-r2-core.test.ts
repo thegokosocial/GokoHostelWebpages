@@ -116,6 +116,18 @@ describe("channelBedNeeds occupancySpecified vs missing occupancy", () => {
     expect(channelPersonCount({ rooms: Array.from({ length: 6 }, () => ({ roomCode: "suite", occupancy: { adults: 3, children: 0 } })) })).toBe(18);
   });
 
+  it.each([
+    ["single, one guest", [{ roomCode: "single", occupancy: { adults: 1, children: 0 } }], 1, [{ roomCode: "single", count: 1, units: 1 }]],
+    ["double, one guest", [{ roomCode: "double", occupancy: { adults: 1, children: 0 } }], 1, [{ roomCode: "double", count: 1, units: 1 }]],
+    ["double, two guests", [{ roomCode: "double", occupancy: { adults: 2, children: 0 } }], 2, [{ roomCode: "double", count: 2, units: 1 }]],
+    ["double, adult plus child", [{ roomCode: "double", occupancy: { adults: 1, children: 1 } }], 2, [{ roomCode: "double", count: 2, units: 1 }]],
+    ["two doubles, one guest each", Array.from({ length: 2 }, () => ({ roomCode: "double", occupancy: { adults: 1, children: 0 } })), 2, [{ roomCode: "double", count: 2, units: 2 }]],
+    ["two doubles, two guests each", Array.from({ length: 2 }, () => ({ roomCode: "double", occupancy: { adults: 2, children: 0 } })), 4, [{ roomCode: "double", count: 2, units: 2 }]],
+  ])("keeps %s guest count separate from its sellable units", (_name, rooms, persons, needs) => {
+    expect(channelPersonCount({ rooms })).toBe(persons);
+    expect(channelBedNeeds({ rooms })).toEqual(needs);
+  });
+
   it("missing occupancy on a single room uses all persons", () => {
     expect(channelBedNeeds({
       rooms: [{ roomCode: "executive" }],

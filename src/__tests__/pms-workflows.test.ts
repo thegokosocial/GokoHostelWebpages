@@ -729,6 +729,19 @@ describe("PMS inbound webhook workflows", () => {
     expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "Unassigned" }));
   });
 
+  it.each(["booking.com", "Hostelworld", "MakeMyTrip"])("stores one guest for a one-person double booking from %s", async (channel) => {
+    queryMocks.getAvailableBedsForRange.mockResolvedValue([]);
+    const res = await reservationsPOST(req({
+      action: "book", hotelCode: "GOKO-001", channel, bookingId: `BK-DOUBLE-ONE-${channel}`,
+      checkin: "2026-09-05", checkout: "2026-09-06",
+      guest: { firstName: "Ada", lastName: "Lovelace" },
+      rooms: [{ roomCode: "executive", occupancy: { adults: 1, children: 0 } }],
+    }, { authorization: "whsec-test" }));
+    expect(res.status).toBe(200);
+    expect(addBooking).toHaveBeenCalledWith(expect.objectContaining({ persons: 1 }));
+    expect(queryMocks.assignBedToBooking).not.toHaveBeenCalled();
+  });
+
   it("assigns zero beds when executive has stock but dorm does not", async () => {
     queryMocks.getAvailableBedsForRange.mockResolvedValue([
       { id: 7, bedId: "EXE-1", dormId: 8, dormName: "Executive", pool: "online" },
