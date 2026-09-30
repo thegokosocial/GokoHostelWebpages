@@ -160,7 +160,7 @@ export function isToday(dateStr: string): boolean {
 
 export function isWeekend(dateStr: string): boolean {
   const day = new Date(dateStr + "T12:00:00Z").getUTCDay();
-  return day === 0 || day === 6;
+  return day === 5 || day === 6;
 }
 
 /** Stay nights [checkin, checkout) overlap the inclusive calendar window [start, end]. */

@@ -145,7 +145,11 @@ describe("Draft booking settings", () => {
     expect(mocks.compareAndSetWebsiteSettings).toHaveBeenCalledWith(null, expect.stringContaining('"maxSelectedBeds":12'));
   });
   it("has safe reviewed draft defaults", () => {
-    expect(websiteBookingSettingsSchema.parse({})).toMatchObject({ directBookingDiscountPercent: 0, advancePercent: 50, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30, cancellationDeadlineHours: 48, cancellationRefundPercent: 100, gatewayEnvironment: "test", requireLookupOtp: true });
+    expect(websiteBookingSettingsSchema.parse({})).toMatchObject({ directBookingDiscountPercent: 0, advancePercent: 50, holdMinutes: 15, unresolvedPaymentMaxMinutes: 30, cancellationDeadlineHours: 48, cancellationRefundPercent: 100, gatewayEnvironment: "test", requireLookupOtp: true, calendarHolidays: [] });
+  });
+  it("accepts bounded exact or annual calendar holidays and rejects invalid dates", () => {
+    expect(websiteBookingSettingsSchema.parse({ calendarHolidays: [{ name: " Diwali ", date: "2026-11-08", recurrence: "annual" }] }).calendarHolidays).toEqual([{ name: "Diwali", date: "2026-11-08", recurrence: "annual" }]);
+    expect(websiteBookingSettingsSchema.safeParse({ calendarHolidays: [{ name: "Bad", date: "2026-02-30", recurrence: "once" }] }).success).toBe(false);
   });
   it.each([
     { advancePercent: -1 }, { advancePercent: 101 }, { advancePercent: 50.5 }, { holdMinutes: 20 },

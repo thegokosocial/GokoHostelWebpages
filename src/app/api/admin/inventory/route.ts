@@ -11,8 +11,10 @@ import {
   upsertInventoryOverride, deleteInventoryOverride, bulkReplaceInventoryOverrides, markInventoryDirty, getBedsFreeToBlock, getAllDorms, getAvailabilitySnapshot, getUnassignedOtaHoldsForRange, getRoomTypeMappings, addAuditEntry,
   getChannelRatesForRange, upsertChannelRate,
   getDailyRates, upsertDailyRate,
-  getAllBeds,
+  getAllBeds, getSetting,
 } from "@/db/queries";
+import { calendarMarkersForRange } from "@/lib/calendarMarkers";
+import { WEBSITE_BOOKING_SETTINGS_KEY, readWebsiteBookingSettings } from "@/lib/websiteBookingSettings";
 
 const ACTION_PERMISSIONS: Record<string, string> = {
   getInventoryGrid: "canManageInventory",
@@ -38,6 +40,14 @@ const ACTION_PERMISSIONS: Record<string, string> = {
 
 function requireSyncResult(sync: InventorySyncResult | void): InventorySyncResult {
   return sync ?? { attempted: true, accepted: false, message: "PMS sync did not return a result" };
+}
+
+async function loadCalendarMarkers(startDate: string, endDate: string) {
+  try {
+    return calendarMarkersForRange(startDate, endDate, readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY)).calendarHolidays);
+  } catch {
+    return {};
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -84,7 +94,7 @@ export async function POST(req: NextRequest) {
       if (!startDate || !endDate) return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
       const data = await getInventoryGridData(startDate, endDate);
       const bedConfigs = await getBedTypeConfigs();
-      return NextResponse.json({ ...data, bedConfigs });
+      return NextResponse.json({ ...data, bedConfigs, calendarMarkers: await loadCalendarMarkers(startDate, endDate) });
     }
 
     if (action === "getChannels") {

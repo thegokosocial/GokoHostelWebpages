@@ -2,6 +2,21 @@ import { z } from "zod";
 
 export const WEBSITE_BOOKING_SETTINGS_KEY = "website_booking_settings_v1";
 export const MAX_WEBSITE_BOOKING_BEDS = 100;
+export const MAX_CALENDAR_HOLIDAYS = 100;
+
+function validCalendarDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export const calendarHolidaySchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  date: z.string().refine(validCalendarDate, "Holiday date must be a valid calendar date"),
+  recurrence: z.enum(["once", "annual"]),
+}).strict();
+export type CalendarHoliday = z.infer<typeof calendarHolidaySchema>;
+
 export const websiteBookingSettingsSchema = z.object({
   maxSelectedBeds: z.number().int().min(1).max(MAX_WEBSITE_BOOKING_BEDS).default(4),
   directBookingDiscountPercent: z.number().int().min(0).max(80).default(0),
@@ -15,6 +30,7 @@ export const websiteBookingSettingsSchema = z.object({
   cancellationDeadlineHours: z.number().int().min(0).max(720).default(48),
   cancellationRefundPercent: z.number().int().min(0).max(100).default(100),
   policyText: z.string().trim().max(4000).default(""),
+  calendarHolidays: z.array(calendarHolidaySchema).max(MAX_CALENDAR_HOLIDAYS).default([]),
   gatewayEnvironment: z.enum(["test", "live"]).default("test"),
 }).strict().refine((s) => s.unresolvedPaymentMaxMinutes >= s.holdMinutes, {
   message: "Payment review window cannot be shorter than the inventory hold",

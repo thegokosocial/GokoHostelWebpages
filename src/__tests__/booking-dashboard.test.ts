@@ -482,9 +482,11 @@ describe("Booking Calendar: sticky dates and row colour", () => {
     expect(grid).toContain("bg-orange-50");
     expect(grid).toContain("bed.availability?.[date]");
     expect(grid).not.toContain("bed.isBlocked");
+    expect(isWeekend("2026-08-28")).toBe(true);
     expect(isWeekend("2026-08-29")).toBe(true);
-    expect(isWeekend("2026-08-30")).toBe(true);
-    expect(isWeekend("2026-08-31")).toBe(false);
+    expect(isWeekend("2026-08-30")).toBe(false);
+    expect(grid).toContain("calendarMarkers");
+    expect(grid).toContain("Long weekend");
   });
 });
 
@@ -496,6 +498,7 @@ describe("Booking API: calendar enrich and rates batch", () => {
     expect(section).toContain("new Map(allBeds.map");
     expect(section).toContain("bedById.get(a.bedId)");
     expect(section).not.toContain("allBeds.find");
+    expect(section).toContain("calendarMarkers");
   });
 
   it("loads stay-span rates once via getAllDailyRates and adminStayRateForStay", () => {

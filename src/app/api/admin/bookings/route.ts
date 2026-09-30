@@ -70,6 +70,8 @@ import {
   validateBookingWhatsAppTemplates,
 } from "@/lib/bookingWhatsApp";
 import { isPiRuntime } from "@/lib/runtime";
+import { calendarMarkersForRange } from "@/lib/calendarMarkers";
+import { WEBSITE_BOOKING_SETTINGS_KEY, readWebsiteBookingSettings } from "@/lib/websiteBookingSettings";
 import { GuestCheckoutError, refundWebsiteOrphanCapture } from "@/lib/nativeGuestCheckout";
 import { RazorpayError } from "@/lib/razorpay";
 import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
@@ -105,6 +107,14 @@ async function loadBookingTaxPercent(): Promise<number> {
     await getSetting(BOOKING_TAX_SETTING),
     await getSetting(BOOKING_TAX_APPLY_ADMIN_SETTING),
   );
+}
+
+async function loadCalendarMarkers(startDate: string, endDate: string) {
+  try {
+    return calendarMarkersForRange(startDate, endDate, readWebsiteBookingSettings(await getSetting(WEBSITE_BOOKING_SETTINGS_KEY)).calendarHolidays);
+  } catch {
+    return {};
+  }
 }
 
 function stayAmounts(gross: number, rawData: string | null | undefined, taxPercent: number) {
@@ -436,6 +446,7 @@ export async function POST(req: NextRequest) {
       const allBeds = await getAllBeds();
       stage = "calculate nightly availability";
       const availability = await getCalendarAvailability(startDate, endDate);
+      const calendarMarkers = await loadCalendarMarkers(startDate, endDate);
       const units = sellableUnits(allBeds);
       const unitByBed = new Map(units.flatMap((u) => u.beds.map((b) => [b.id, u] as const)));
 
@@ -487,6 +498,7 @@ export async function POST(req: NextRequest) {
         bookings: enrichedBookings,
         assignments: enrichedAssignments,
         dorms: dormsWithBeds,
+        calendarMarkers,
         role,
         permissions,
       });

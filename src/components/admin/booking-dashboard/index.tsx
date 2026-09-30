@@ -16,7 +16,7 @@ import { DateRangeSelector } from "./DateRangeSelector";
 import { getDateRange, getHostelToday, platformLogo, rangeCoveringStay, STATUS_LABELS } from "./utils";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "../AdminLoading";
-import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm, BookingContactMethod } from "./types";
+import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm, BookingContactMethod, CalendarMarkers } from "./types";
 import type { Role } from "../types";
 import { hasPermission } from "../types";
 import { fetchWithRetry } from "@/components/admin/useAdminApi";
@@ -88,6 +88,7 @@ export function BookingDashboard({
   const allBookingsRequest = useRef(0);
   const [assignments, setAssignments] = useState<BedAssignment[]>([]);
   const [dorms, setDorms] = useState<CalendarDorm[]>([]);
+  const [calendarMarkers, setCalendarMarkers] = useState<CalendarMarkers>({});
   const [unassignedBookings, setUnassignedBookings] = useState<DashboardBooking[]>([]);
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
   const [externalDetail, setExternalDetail] = useState<{ booking: DashboardBooking; assignments: BedAssignment[]; contactMethods: BookingContactMethod[] } | null>(null);
@@ -166,6 +167,7 @@ export function BookingDashboard({
           const data = await calRes.json();
           setBookings(data.bookings || []);
           setAssignments(data.assignments || []);
+          setCalendarMarkers(data.calendarMarkers || {});
           setDorms(
             (data.dorms || []).map((d: CalendarDorm) => ({
               ...d,
@@ -492,6 +494,7 @@ export function BookingDashboard({
           bookings={bookings}
           assignments={assignments}
           dorms={dorms}
+          calendarMarkers={calendarMarkers}
           dateRange={dateRange}
           today={getHostelToday()}
           onSelectBooking={openBooking}

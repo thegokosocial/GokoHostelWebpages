@@ -29,7 +29,7 @@ function formatDateShort(dateStr: string) {
     day: d.getDate().toString(),
     weekday: d.toLocaleDateString("en-US", { weekday: "short" }),
     isToday: d.getTime() === today.getTime(),
-    isWeekend: weekdayNum === 0 || weekdayNum === 6,
+    isWeekend: weekdayNum === 5 || weekdayNum === 6,
   };
 }
 
@@ -167,20 +167,23 @@ describe("Inventory grid: sticky + colour structure", () => {
 });
 
 describe("Inventory grid: date helpers stay in sync with source", () => {
-  it("keeps weekend = Sat/Sun and today beating weekend in dateTint", () => {
-    expect(ui).toContain("isWeekend: weekdayNum === 0 || weekdayNum === 6");
+  it("keeps weekend = Fri/Sat and today beating weekend in dateTint", () => {
+    expect(ui).toContain("isWeekend: isHoliday || weekdayNum === 5 || weekdayNum === 6");
     expect(ui).toContain('if (isToday) return "bg-brand-green/[0.09]');
     expect(ui).toContain('if (isWeekend) return "bg-amber-50/90');
 
+    expect(formatDateShort("2026-08-28").isWeekend).toBe(true);
+    expect(formatDateShort("2026-08-28").weekday).toBe("Fri");
     expect(formatDateShort("2026-08-29").isWeekend).toBe(true);
-    expect(formatDateShort("2026-08-29").weekday).toBe("Sat");
-    expect(formatDateShort("2026-08-30").isWeekend).toBe(true);
+    expect(formatDateShort("2026-08-30").isWeekend).toBe(false);
     expect(formatDateShort("2026-08-31").isWeekend).toBe(false);
     expect(formatDateShort("2026-08-31").weekday).toBe("Mon");
 
     expect(dateTint(true, true)).toContain("bg-brand-green");
     expect(dateTint(true, false)).toContain("bg-amber-50");
     expect(dateTint(false, false)).toBe("");
+    expect(ui).toContain("Long weekends to review");
+    expect(ui).toContain("initialRatePreset={bulkRatePreset}");
   });
 
   it("lets sold-out and stop-sell win over weekend/today tints via twMerge", () => {
@@ -327,7 +330,7 @@ describe("Inventory grid: edit and bulk workflows still wired", () => {
   });
 
   it("keeps bulk update actions and range controls", () => {
-    expect(ui).toContain("onClick={() => setBulkOpen(true)}");
+    expect(ui).toContain("setBulkRatePreset(null); setBulkOpen(true)");
     expect(ui).toContain('action: "blockBeds"');
     expect(ui).toContain('action: "unblockBeds"');
     expect(ui).toContain('action: "bulkSetAvailability"');

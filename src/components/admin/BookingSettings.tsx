@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { NATIVE_BOOKING_URL } from "@/lib/bookingDestination";
-import { DEFAULT_WEBSITE_BOOKING_SETTINGS, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
+import { DEFAULT_WEBSITE_BOOKING_SETTINGS, MAX_CALENDAR_HOLIDAYS, type CalendarHoliday, type WebsiteBookingSettings, type gatewayConfiguration } from "@/lib/websiteBookingSettings";
 import { RazorpayTestPreview } from "@/components/admin/RazorpayTestPreview";
 import { AccommodationContentManager } from "@/components/admin/AccommodationContentManager";
 import { numericDraftValue } from "@/lib/numericInput";
@@ -34,7 +34,7 @@ import {
 } from "./managementSectionTabs";
 
 type Gateway = ReturnType<typeof gatewayConfiguration>;
-type Section = "policies" | "rooms" | "payments" | "emails" | "sms";
+type Section = "policies" | "calendar" | "rooms" | "payments" | "emails" | "sms";
 type NumericSettingKey = "maxSelectedBeds" | "directBookingDiscountPercent" | "advancePercent" | "holdMinutes" | "unresolvedPaymentMaxMinutes" | "cancellationDeadlineHours" | "cancellationRefundPercent";
 
 export function BookingSettings({ password, username }: { password: string; username?: string }) {
@@ -53,6 +53,7 @@ export function BookingSettings({ password, username }: { password: string; user
   const [revision, setRevision] = useState("");
   const [message, setMessage] = useState("");
   const [reload, setReload] = useState(0);
+  const [holidayDraft, setHolidayDraft] = useState<CalendarHoliday>({ name: "", date: "", recurrence: "once" });
 
   async function call(action: string, extra: Record<string, unknown> = {}) {
     const res = await fetch("/api/admin/booking-settings", {
@@ -147,6 +148,16 @@ export function BookingSettings({ password, username }: { password: string; user
   const activeSms = smsTemplates[smsKind];
   const smsLen = activeSms.body.length;
   const messageSection = section === "emails" || section === "sms";
+  const updateHoliday = (index: number, patch: Partial<CalendarHoliday>) => setSettings((current) => ({
+    ...current,
+    calendarHolidays: current.calendarHolidays.map((holiday, itemIndex) => itemIndex === index ? { ...holiday, ...patch } : holiday),
+  }));
+  const addHoliday = () => {
+    const name = holidayDraft.name.trim();
+    if (!name || !holidayDraft.date) return;
+    setSettings((current) => ({ ...current, calendarHolidays: [...current.calendarHolidays, { ...holidayDraft, name }] }));
+    setHolidayDraft({ name: "", date: "", recurrence: "once" });
+  };
 
   return <div className="space-y-5">
     <div className={`rounded-xl border p-4 text-sm ${settings.gatewayEnvironment === "live" ? "border-brand-red bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
@@ -161,11 +172,11 @@ export function BookingSettings({ password, username }: { password: string; user
     </div>
     <label className="grid gap-1 text-sm sm:hidden">Booking settings section
       <select className="min-h-12 rounded-xl border bg-white px-3" value={section} onChange={(event) => setSection(event.target.value as Section)}>
-        <option value="policies">Booking & Policies</option><option value="rooms">Rooms & Rates</option><option value="payments">Payments & Readiness</option><option value="emails">Email Templates</option><option value="sms">Text Templates</option>
+        <option value="policies">Booking & Policies</option><option value="calendar">Calendar & Holidays</option><option value="rooms">Rooms & Rates</option><option value="payments">Payments & Readiness</option><option value="emails">Email Templates</option><option value="sms">Text Templates</option>
       </select>
     </label>
     <nav aria-label="Booking settings sections" className={cn(managementSectionTabsClass, "hidden sm:flex")}>
-      {([["policies", "Booking & Policies"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"], ["emails", "Email Templates"], ["sms", "Text Templates"]] as const).map(([id, title]) =>
+      {([["policies", "Booking & Policies"], ["calendar", "Calendar & Holidays"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"], ["emails", "Email Templates"], ["sms", "Text Templates"]] as const).map(([id, title]) =>
         <button
           type="button"
           key={id}
@@ -199,6 +210,35 @@ export function BookingSettings({ password, username }: { password: string; user
           <textarea className="min-h-32 rounded-lg border bg-background p-3" maxLength={4000} value={settings.policyText} onChange={(e) => setSettings({ ...settings, policyText: e.target.value })} />
         </label>
       </>}
+      {section === "calendar" && <section className="space-y-4 rounded-2xl border bg-white p-4 shadow-sm dark:bg-card sm:p-5">
+        <div className="space-y-1">
+          <h3 className="font-semibold">Calendar & holidays</h3>
+          <p className="text-sm text-muted-foreground">Friday and Saturday are marked as weekends. Add festivals and holidays to mark them in Booking and Inventory calendars.</p>
+        </div>
+        <div className="grid gap-3 rounded-xl border border-brand-mist bg-brand-sand/40 p-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end dark:bg-zinc-800/50">
+          <label className="grid gap-1 text-sm font-medium">Holiday or festival name
+            <Input maxLength={80} placeholder="Diwali" value={holidayDraft.name} onChange={(event) => setHolidayDraft({ ...holidayDraft, name: event.target.value })} />
+          </label>
+          <label className="grid gap-1 text-sm font-medium">Date
+            <Input type="date" value={holidayDraft.date} onChange={(event) => setHolidayDraft({ ...holidayDraft, date: event.target.value })} />
+          </label>
+          <div className="grid gap-2">
+            <div className="flex rounded-lg border bg-background p-1" role="group" aria-label="Holiday recurrence">
+              <button type="button" aria-pressed={holidayDraft.recurrence === "once"} onClick={() => setHolidayDraft({ ...holidayDraft, recurrence: "once" })} className={cn("min-h-10 flex-1 rounded px-2 text-xs font-medium", holidayDraft.recurrence === "once" && "bg-brand-green text-white")}>One-time</button>
+              <button type="button" aria-pressed={holidayDraft.recurrence === "annual"} onClick={() => setHolidayDraft({ ...holidayDraft, recurrence: "annual" })} className={cn("min-h-10 flex-1 rounded px-2 text-xs font-medium", holidayDraft.recurrence === "annual" && "bg-brand-green text-white")}>Annual</button>
+            </div>
+            <Button type="button" onClick={addHoliday} disabled={!holidayDraft.name.trim() || !holidayDraft.date || settings.calendarHolidays.length >= MAX_CALENDAR_HOLIDAYS}>Add holiday</Button>
+          </div>
+        </div>
+        {settings.calendarHolidays.length === 0 ? <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No holidays added yet. Weekends remain highlighted every Friday and Saturday.</div> : <div className="grid gap-3 lg:grid-cols-2">
+          {settings.calendarHolidays.map((holiday, index) => <article key={`${holiday.name}-${holiday.date}-${index}`} className="grid gap-3 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end">
+            <label className="grid gap-1 text-sm font-medium">Name<Input maxLength={80} value={holiday.name} onChange={(event) => updateHoliday(index, { name: event.target.value })} /></label>
+            <label className="grid gap-1 text-sm font-medium">Date<Input type="date" value={holiday.date} onChange={(event) => updateHoliday(index, { date: event.target.value })} /></label>
+            <div className="flex gap-2"><button type="button" aria-pressed={holiday.recurrence === "annual"} onClick={() => updateHoliday(index, { recurrence: holiday.recurrence === "annual" ? "once" : "annual" })} className="min-h-10 flex-1 rounded-lg border px-2 text-xs font-medium hover:bg-brand-sand">{holiday.recurrence === "annual" ? "Annual" : "One-time"}</button><Button type="button" variant="outline" className="min-h-10" onClick={() => setSettings((current) => ({ ...current, calendarHolidays: current.calendarHolidays.filter((_, itemIndex) => itemIndex !== index) }))}>Remove</Button></div>
+          </article>)}
+        </div>}
+        <p className="text-xs text-muted-foreground">{settings.calendarHolidays.length} / {MAX_CALENDAR_HOLIDAYS} holidays · Save booking settings to publish these calendar markers. Holidays only help staff plan; they do not change prices, availability, or bookings.</p>
+      </section>}
       {section === "rooms" && <div className="space-y-5">
         <section className="rounded-2xl border bg-white p-4">
           <h3 className="font-semibold">Book-direct advantage</h3>

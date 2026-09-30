@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { ChevronDownIcon, ChevronRightIcon, BanIcon } from "lucide-react";
 import { BookingTile } from "./BookingTile";
 import { getDatesArray, formatDateShort, formatDateCompact, isToday, isWeekend, computeTilePlacements } from "./utils";
-import type { DashboardBooking, BedAssignment, CalendarDorm, DateRange } from "./types";
+import type { DashboardBooking, BedAssignment, CalendarDorm, DateRange, CalendarMarkers } from "./types";
 
 type TilePlacement = {
   booking: DashboardBooking;
@@ -18,6 +18,7 @@ export function BookingCalendarGrid({
   bookings,
   assignments,
   dorms,
+  calendarMarkers,
   dateRange,
   onSelectBooking,
   selectedBookingId,
@@ -26,6 +27,7 @@ export function BookingCalendarGrid({
   bookings: DashboardBooking[];
   assignments: BedAssignment[];
   dorms: CalendarDorm[];
+  calendarMarkers: CalendarMarkers;
   dateRange: DateRange;
   today: string;
   onSelectBooking: (id: number) => void;
@@ -96,7 +98,7 @@ export function BookingCalendarGrid({
       <div className="inline-flex min-w-full">
           {/* Sticky left column: dorm/bed labels */}
           <div className="sticky left-0 z-20 w-[104px] shrink-0 border-r border-border bg-white dark:bg-card sm:w-[140px]">
-            <div className="sticky top-0 left-0 z-30 flex h-[52px] items-end border-b border-border bg-brand-sand px-2 pb-1 shadow-[0_1px_4px_rgba(45,92,63,0.08)] dark:bg-zinc-800 dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
+            <div className="sticky top-0 left-0 z-30 flex h-[76px] items-end border-b border-border bg-brand-sand px-2 pb-1 shadow-[0_1px_4px_rgba(45,92,63,0.08)] dark:bg-zinc-800 dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
               <span className="text-[10px] font-medium text-muted-foreground">Dorms / Beds</span>
             </div>
             {dorms.map((dorm, dormIdx) => {
@@ -137,17 +139,25 @@ export function BookingCalendarGrid({
           {/* Right side: date grid with spanning tiles */}
           <div className="flex-1" style={{ minWidth: gridWidth }}>
             {/* Date header row */}
-            <div className="sticky top-0 z-20 flex h-[52px] border-b border-border bg-brand-sand shadow-[0_1px_4px_rgba(45,92,63,0.08)] dark:bg-zinc-800 dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
+            <div className="sticky top-0 z-20 flex h-[76px] border-b border-border bg-brand-sand shadow-[0_1px_4px_rgba(45,92,63,0.08)] dark:bg-zinc-800 dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
               {dates.map((date) => {
-                const weekend = isWeekend(date);
+                const marker = calendarMarkers[date] ?? { weekend: isWeekend(date), holidays: [], longWeekend: false };
+                const weekend = marker.weekend;
                 const todayCol = isToday(date);
+                const markerLabel = [
+                  weekend ? "Weekend" : "",
+                  marker.holidays.length ? `Holiday: ${marker.holidays.join(", ")}` : "",
+                  marker.longWeekend ? `Long weekend: ${marker.longWeekendStart} to ${marker.longWeekendEnd}` : "",
+                ].filter(Boolean).join(" · ");
                 return (
                 <div
                   key={date}
+                  title={markerLabel || undefined}
+                  aria-label={`${formatDateShort(date)}${markerLabel ? ` · ${markerLabel}` : ""}`}
                   className={cn(
-                    "flex shrink-0 flex-col items-center justify-end pb-1",
+                    "flex shrink-0 flex-col items-center justify-end gap-0.5 px-0.5 pb-1",
                     todayCol && "bg-brand-green/[0.09] dark:bg-brand-green/20",
-                    weekend && !todayCol && "bg-amber-50/90 dark:bg-amber-950/25",
+                    (weekend || marker.holidays.length > 0) && !todayCol && "bg-amber-50/90 dark:bg-amber-950/25",
                   )}
                   style={{ width: colWidth }}
                 >
@@ -163,6 +173,8 @@ export function BookingCalendarGrid({
                   )}>
                     {isCompact ? formatDateCompact(date) : formatDateShort(date)}
                   </span>
+                  {marker.holidays.length > 0 && <span className="max-w-full truncate rounded bg-amber-200/70 px-1 text-[8px] font-medium text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">{marker.holidays[0]}</span>}
+                  {marker.longWeekend && <span className="max-w-full truncate text-[8px] font-semibold text-amber-800 dark:text-amber-200">Long weekend</span>}
                 </div>
                 );
               })}

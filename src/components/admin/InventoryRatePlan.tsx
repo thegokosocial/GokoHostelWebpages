@@ -11,6 +11,7 @@ import { computeNightAvailability, pickInventoryOverride, overrideRemainingInput
 import type { Role } from "./types";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { useActionProgress } from "@/components/ui/ActionProgressProvider";
+import type { CalendarDayMarker } from "@/lib/calendarMarkers";
 
 type Props = { password: string; username?: string; role: Role; permissions: Record<string, boolean> };
 
@@ -35,6 +36,7 @@ type GridData = {
   overrides: OverrideData[];
   unassignedOta?: Array<{ dormId: number; date: string; rooms: number }>;
   bedConfigs: Array<{ id: number; dormId: number; bedType: string; maxOccupancy: number; extraPersonAllowed: number }>;
+  calendarMarkers?: Record<string, CalendarDayMarker>;
 };
 
 type BulkAvailabilityPreview = {
@@ -73,7 +75,7 @@ function generateDates(start: string, days: number): string[] {
   return dates;
 }
 
-function formatDateShort(dateStr: string): { day: string; weekday: string; isToday: boolean; isWeekend: boolean } {
+function formatDateShort(dateStr: string, isHoliday = false): { day: string; weekday: string; isToday: boolean; isWeekend: boolean } {
   const weekdayNum = civilWeekday(dateStr);
   const weekday = new Date(dateStr + "T12:00:00+05:30").toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Kolkata" });
   const day = dateStr.slice(8, 10).replace(/^0/, "") || dateStr.slice(8);
@@ -81,7 +83,7 @@ function formatDateShort(dateStr: string): { day: string; weekday: string; isTod
     day,
     weekday,
     isToday: dateStr === todayIST(),
-    isWeekend: weekdayNum === 0 || weekdayNum === 6,
+    isWeekend: isHoliday || weekdayNum === 5 || weekdayNum === 6,
   };
 }
 
@@ -103,6 +105,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
   const [editingCell, setEditingCell] = useState<{ dormId: number; date: string } | null>(null);
   const [editingRate, setEditingRate] = useState<{ ratePlanId: number; date: string } | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkRatePreset, setBulkRatePreset] = useState<{ startDate: string; endDate: string } | null>(null);
 
   const dates = useMemo(() => generateDates(rangeStart, rangeDays), [rangeStart, rangeDays]);
   const endDate = dates[dates.length - 1] || rangeStart;
@@ -110,6 +113,17 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
     () => data?.unassignedOta?.some((hold) => dates.includes(hold.date) && hold.rooms > 0) ?? false,
     [data, dates],
   );
+  const longWeekendRuns = useMemo(() => {
+    const seen = new Set<string>();
+    return dates.flatMap((date) => {
+      const marker = data?.calendarMarkers?.[date];
+      if (!marker?.longWeekend || !marker.longWeekendStart || !marker.longWeekendEnd) return [];
+      const key = `${marker.longWeekendStart}:${marker.longWeekendEnd}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ startDate: marker.longWeekendStart, endDate: marker.longWeekendEnd }];
+    });
+  }, [data?.calendarMarkers, dates]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -252,7 +266,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
             {customError && <span className="text-xs text-destructive">{customError}</span>}
           </div>
         )}
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setBulkOpen(true)}>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setBulkRatePreset(null); setBulkOpen(true); }}>
           <PackageIcon className="h-3.5 w-3.5" /> Bulk Update
         </Button>
         <Button variant="ghost" size="icon-sm" onClick={fetchData} disabled={loading}>
@@ -268,6 +282,17 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
         </span>
       </div>
 
+      {longWeekendRuns.length > 0 && <section className="shrink-0 rounded-xl border border-amber-300 bg-amber-50/70 p-3 dark:border-amber-800 dark:bg-amber-950/20">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 className="text-sm font-semibold text-amber-950 dark:text-amber-100">Long weekends to review</h2><p className="text-xs text-amber-900/70 dark:text-amber-200/70">Open Adjust Rates with the dates filled in. Nothing changes until you save.</p></div>
+          <div className="flex flex-wrap gap-2">
+            {longWeekendRuns.map((run) => <Button key={`${run.startDate}:${run.endDate}`} type="button" size="sm" variant="outline" className="border-amber-400 bg-white text-amber-950 hover:bg-amber-100 dark:bg-transparent dark:text-amber-100" onClick={() => { setBulkRatePreset(run); setBulkOpen(true); }}>
+              Review {run.startDate} – {run.endDate}
+            </Button>)}
+          </div>
+        </div>
+      </section>}
+
       {/* Grid — overflow-auto so sticky header/labels pin inside this scrollport (overflow-x-auto alone would cancel sticky top) */}
       <div className="isolate min-h-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-brand-mist bg-white dark:bg-card shadow-card dark:shadow-none">
         <div className="min-w-max">
@@ -277,7 +302,8 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
               Dorm / Rate Plan
             </div>
             {dates.map((date) => {
-              const { day, weekday, isToday, isWeekend } = formatDateShort(date);
+              const marker = data?.calendarMarkers?.[date];
+              const { day, weekday, isToday, isWeekend } = formatDateShort(date, Boolean(marker?.holidays.length));
               return (
                 <div
                   key={date}
@@ -289,6 +315,8 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                 >
                   <div className={cn("text-[10px]", isWeekend && !isToday ? "text-amber-700/70 dark:text-amber-400/70" : "text-brand-green-dark/50 dark:text-zinc-500")}>{weekday}</div>
                   <div className={cn("text-xs font-semibold", isToday ? "text-brand-green" : isWeekend ? "text-amber-800 dark:text-amber-300" : "text-brand-green-dark dark:text-zinc-200")}>{day}</div>
+                  {marker?.holidays.length ? <div title={marker.holidays.join(", ")} className="max-w-full truncate px-0.5 text-[8px] font-medium text-amber-800 dark:text-amber-200">{marker.holidays[0]}</div> : null}
+                  {marker?.longWeekend ? <div className="max-w-full truncate px-0.5 text-[8px] font-semibold text-amber-800 dark:text-amber-200">Long weekend</div> : null}
                 </div>
               );
             })}
@@ -301,7 +329,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                 {stat === "occupancy" ? "Occupancy %" : stat === "available" ? "Available" : hasHeld ? "Booked / held" : "Booked"}
               </div>
               {dates.map((date) => {
-                const { isToday, isWeekend } = formatDateShort(date);
+                const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
                 const stats = computeHeaderStats(date);
                 const val = stat === "occupancy" ? `${stats.occupancy}%` : stat === "available" ? stats.available : stats.sold;
                 return (
@@ -338,7 +366,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                   </div>
                   {dates.map((date) => {
                     const { available, blocked, overridden, online, offline, unassignedOta } = computeAvailability(dorm.id, date);
-                    const { isToday, isWeekend } = formatDateShort(date);
+                    const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
                     return (
                       <button
                         key={date}
@@ -382,7 +410,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                       const rateVal = getRateForCell(rp.id, date);
                       const rateRow = data?.rates.find((r) => r.ratePlanId === rp.id && r.date === date);
                       const isStopped = rateRow?.stopSell === 1;
-                      const { isToday, isWeekend } = formatDateShort(date);
+                      const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
                       return (
                         <button
                           key={date}
@@ -408,7 +436,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                       <span className="text-[10px] italic text-brand-green-dark/40 dark:text-zinc-600">No rate plans</span>
                     </div>
                     {dates.map((date) => {
-                      const { isToday, isWeekend } = formatDateShort(date);
+                      const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
                       return (
                         <div key={date} className={cn("flex h-8 shrink-0 items-center justify-center border-r border-brand-mist/30 px-1 text-center text-[10px] text-brand-green-dark/30 sm:h-auto sm:py-1.5", dateTint(isWeekend, isToday))} style={{ width: colWidth }}>—</div>
                       );
@@ -454,7 +482,8 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
           data={data}
           password={password}
           username={username}
-          onClose={() => setBulkOpen(false)}
+          initialRatePreset={bulkRatePreset}
+          onClose={() => { setBulkOpen(false); setBulkRatePreset(null); }}
           onSaved={fetchData}
         />
       )}
@@ -841,11 +870,11 @@ function AvailabilityPreviewPanel({ preview, loading, mode, scopeReady }: { prev
 }
 
 // --- Bulk Update Modal ---
-function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
-  data: GridData | null; password: string; username?: string; onClose: () => void; onSaved: () => void;
+function BulkUpdateModal({ data, password, username, initialRatePreset, onClose, onSaved }: {
+  data: GridData | null; password: string; username?: string; initialRatePreset: { startDate: string; endDate: string } | null; onClose: () => void; onSaved: () => void;
 }) {
   const { runAction } = useActionProgress();
-  const [tab, setTab] = useState<"blockBeds" | "unblockBeds" | "availability" | "setRates" | "adjustRates" | "restrictions">("blockBeds");
+  const [tab, setTab] = useState<"blockBeds" | "unblockBeds" | "availability" | "setRates" | "adjustRates" | "restrictions">(initialRatePreset ? "adjustRates" : "blockBeds");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string>("");
   const [resultIsError, setResultIsError] = useState(false);
@@ -884,8 +913,8 @@ function BulkUpdateModal({ data, password, username, onClose, onSaved }: {
 
   // Adjust rates state
   const [adjustRpIds, setAdjustRpIds] = useState<number[]>([]);
-  const [adjustStart, setAdjustStart] = useState("");
-  const [adjustEnd, setAdjustEnd] = useState("");
+  const [adjustStart, setAdjustStart] = useState(initialRatePreset?.startDate ?? "");
+  const [adjustEnd, setAdjustEnd] = useState(initialRatePreset?.endDate ?? "");
   const [adjustDirection, setAdjustDirection] = useState<"increase" | "decrease">("increase");
   const [adjustValue, setAdjustValue] = useState("");
   const [adjustType, setAdjustType] = useState<"percentage" | "flat">("percentage");
