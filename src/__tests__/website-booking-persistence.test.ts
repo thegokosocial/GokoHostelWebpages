@@ -104,6 +104,12 @@ describe("Real SQLite website booking foundation workflows", () => {
     await settingsApi(request("saveSettings", { advancePercent: 25 }));
     expect(JSON.parse((await getSetting(WEBSITE_BOOKING_SETTINGS_KEY))!)).toMatchObject({ advancePercent: 25, gatewayEnvironment: "live", policyText: "Custom policy", allowPayAtProperty: false });
   });
+  it("persists calendar holidays through a partial update without replacing other settings", async () => {
+    await settingsApi(request("saveSettings", { advancePercent: 75, policyText: "Keep this draft" }));
+    expect((await settingsApi(request("saveSettings", { calendarHolidays: [{ name: "Diwali", date: "2026-11-08", recurrence: "annual" }] }))).status).toBe(200);
+    const reloaded = await (await settingsApi(request("getSettings"))).json();
+    expect(reloaded.settings).toMatchObject({ advancePercent: 75, policyText: "Keep this draft", calendarHolidays: [{ name: "Diwali", date: "2026-11-08", recurrence: "annual" }] });
+  });
   it.each(["", "not-json", "null", "[]", '{"advancePercent":101}', '{"keySecret":"DUMMY_PRIVATE"}'])("fails closed on invalid persisted draft %s without overwriting it", async (raw) => {
     await setSetting(WEBSITE_BOOKING_SETTINGS_KEY, raw);
     for (const action of ["getSettings", "checkGatewayReadiness", "saveSettings"]) {

@@ -168,7 +168,7 @@ describe("Inventory grid: sticky + colour structure", () => {
 
 describe("Inventory grid: date helpers stay in sync with source", () => {
   it("keeps weekend = Fri/Sat and today beating weekend in dateTint", () => {
-    expect(ui).toContain("isWeekend: isHoliday || weekdayNum === 5 || weekdayNum === 6");
+    expect(ui).toContain("isWeekend: isHolidayOrLongWeekend || weekdayNum === 5 || weekdayNum === 6");
     expect(ui).toContain('if (isToday) return "bg-brand-green/[0.09]');
     expect(ui).toContain('if (isWeekend) return "bg-amber-50/90');
 

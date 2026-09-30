@@ -157,7 +157,7 @@ export function BookingCalendarGrid({
                   className={cn(
                     "flex shrink-0 flex-col items-center justify-end gap-0.5 px-0.5 pb-1",
                     todayCol && "bg-brand-green/[0.09] dark:bg-brand-green/20",
-                    (weekend || marker.holidays.length > 0) && !todayCol && "bg-amber-50/90 dark:bg-amber-950/25",
+                    (weekend || marker.holidays.length > 0 || marker.longWeekend) && !todayCol && "bg-amber-50/90 dark:bg-amber-950/25",
                   )}
                   style={{ width: colWidth }}
                 >

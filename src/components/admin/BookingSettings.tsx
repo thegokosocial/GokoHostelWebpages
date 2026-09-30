@@ -54,6 +54,7 @@ export function BookingSettings({ password, username }: { password: string; user
   const [message, setMessage] = useState("");
   const [reload, setReload] = useState(0);
   const [holidayDraft, setHolidayDraft] = useState<CalendarHoliday>({ name: "", date: "", recurrence: "once" });
+  const [calendarMessage, setCalendarMessage] = useState("");
 
   async function call(action: string, extra: Record<string, unknown> = {}) {
     const res = await fetch("/api/admin/booking-settings", {
@@ -90,9 +91,10 @@ export function BookingSettings({ password, username }: { password: string; user
   async function save() {
     setBusy(true); setMessage("");
     try {
-      const submittedSettings = Object.entries(numberDrafts).reduce((next, [key, value]) => ({ ...next, [key]: numericDraftValue(value) }), settings);
+      const { calendarHolidays: _calendarHolidays, ...nonCalendarSettings } = settings;
+      const submittedSettings = Object.entries(numberDrafts).reduce((next, [key, value]) => ({ ...next, [key]: numericDraftValue(value) }), nonCalendarSettings);
       const data = await call("saveSettings", { settings: submittedSettings, revision });
-      setSettings(data.settings);
+      setSettings((current) => ({ ...data.settings, calendarHolidays: current.calendarHolidays }));
       setNumberDrafts({});
       setRevision(data.revision);
       setGateway(data.gateway);
@@ -152,11 +154,23 @@ export function BookingSettings({ password, username }: { password: string; user
     ...current,
     calendarHolidays: current.calendarHolidays.map((holiday, itemIndex) => itemIndex === index ? { ...holiday, ...patch } : holiday),
   }));
-  const addHoliday = () => {
+  const saveCalendarHolidays = async (calendarHolidays: CalendarHoliday[], success: string) => {
+    setBusy(true); setCalendarMessage("");
+    try {
+      const data = await call("saveSettings", { settings: { calendarHolidays }, revision });
+      setSettings((current) => ({ ...current, calendarHolidays: data.settings.calendarHolidays }));
+      setRevision(data.revision);
+      setCalendarMessage(success);
+      return true;
+    } catch (error) {
+      setCalendarMessage(error instanceof Error ? error.message : "Unable to save calendar holidays");
+      return false;
+    } finally { setBusy(false); }
+  };
+  const addHoliday = async () => {
     const name = holidayDraft.name.trim();
     if (!name || !holidayDraft.date) return;
-    setSettings((current) => ({ ...current, calendarHolidays: [...current.calendarHolidays, { ...holidayDraft, name }] }));
-    setHolidayDraft({ name: "", date: "", recurrence: "once" });
+    if (await saveCalendarHolidays([...settings.calendarHolidays, { ...holidayDraft, name }], "Holiday saved.")) setHolidayDraft({ name: "", date: "", recurrence: "once" });
   };
 
   return <div className="space-y-5">
@@ -215,6 +229,7 @@ export function BookingSettings({ password, username }: { password: string; user
           <h3 className="font-semibold">Calendar & holidays</h3>
           <p className="text-sm text-muted-foreground">Friday and Saturday are marked as weekends. Add festivals and holidays to mark them in Booking and Inventory calendars.</p>
         </div>
+        {calendarMessage && <p role="status" className="rounded-lg border p-3 text-sm">{calendarMessage}</p>}
         <div className="grid gap-3 rounded-xl border border-brand-mist bg-brand-sand/40 p-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end dark:bg-zinc-800/50">
           <label className="grid gap-1 text-sm font-medium">Holiday or festival name
             <Input maxLength={80} placeholder="Diwali" value={holidayDraft.name} onChange={(event) => setHolidayDraft({ ...holidayDraft, name: event.target.value })} />
@@ -234,10 +249,10 @@ export function BookingSettings({ password, username }: { password: string; user
           {settings.calendarHolidays.map((holiday, index) => <article key={`${holiday.name}-${holiday.date}-${index}`} className="grid gap-3 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end">
             <label className="grid gap-1 text-sm font-medium">Name<Input maxLength={80} value={holiday.name} onChange={(event) => updateHoliday(index, { name: event.target.value })} /></label>
             <label className="grid gap-1 text-sm font-medium">Date<Input type="date" value={holiday.date} onChange={(event) => updateHoliday(index, { date: event.target.value })} /></label>
-            <div className="flex gap-2"><button type="button" aria-pressed={holiday.recurrence === "annual"} onClick={() => updateHoliday(index, { recurrence: holiday.recurrence === "annual" ? "once" : "annual" })} className="min-h-10 flex-1 rounded-lg border px-2 text-xs font-medium hover:bg-brand-sand">{holiday.recurrence === "annual" ? "Annual" : "One-time"}</button><Button type="button" variant="outline" className="min-h-10" onClick={() => setSettings((current) => ({ ...current, calendarHolidays: current.calendarHolidays.filter((_, itemIndex) => itemIndex !== index) }))}>Remove</Button></div>
+            <div className="grid gap-2"><button type="button" aria-pressed={holiday.recurrence === "annual"} onClick={() => updateHoliday(index, { recurrence: holiday.recurrence === "annual" ? "once" : "annual" })} className="min-h-10 rounded-lg border px-2 text-xs font-medium hover:bg-brand-sand">{holiday.recurrence === "annual" ? "Annual" : "One-time"}</button><div className="flex gap-2"><Button type="button" className="min-h-10 flex-1" onClick={() => saveCalendarHolidays(settings.calendarHolidays, "Holiday saved.")}>Save holiday</Button><Button type="button" variant="outline" className="min-h-10" onClick={() => saveCalendarHolidays(settings.calendarHolidays.filter((_, itemIndex) => itemIndex !== index), "Holiday removed.")}>Remove</Button></div></div>
           </article>)}
         </div>}
-        <p className="text-xs text-muted-foreground">{settings.calendarHolidays.length} / {MAX_CALENDAR_HOLIDAYS} holidays · Save booking settings to publish these calendar markers. Holidays only help staff plan; they do not change prices, availability, or bookings.</p>
+        <p className="text-xs text-muted-foreground">{settings.calendarHolidays.length} / {MAX_CALENDAR_HOLIDAYS} holidays · Add and Remove save immediately; use Save holiday after editing a card. Holidays only help staff plan; they do not change prices, availability, or bookings.</p>
       </section>}
       {section === "rooms" && <div className="space-y-5">
         <section className="rounded-2xl border bg-white p-4">

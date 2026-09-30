@@ -25,6 +25,18 @@ describe("calendar markers", () => {
     expect(markers["2026-10-03"].longWeekend).toBe(true);
   });
 
+  it("bridges Friday and Monday holidays across Sunday, then merges overlapping windows", () => {
+    const markers = calendarMarkersForRange("2026-08-28", "2026-08-31", [
+      { name: "Friday holiday", date: "2026-08-28", recurrence: "once" },
+      { name: "Monday holiday", date: "2026-08-31", recurrence: "once" },
+    ]);
+    for (const date of ["2026-08-28", "2026-08-29", "2026-08-30", "2026-08-31"]) expect(markers[date]).toMatchObject({ longWeekend: true, longWeekendStart: "2026-08-28", longWeekendEnd: "2026-08-31" });
+  });
+
+  it("does not bridge a holiday that is neither Friday nor Monday", () => {
+    expect(calendarMarkersForRange("2026-08-25", "2026-08-27", [{ name: "Tuesday holiday", date: "2026-08-25", recurrence: "once" }])["2026-08-26"].longWeekend).toBe(false);
+  });
+
   it("does not invent annual leap-day holidays in non-leap years", () => {
     expect(calendarMarkersForRange("2027-02-28", "2027-03-01", [{ name: "Leap day", date: "2024-02-29", recurrence: "annual" }])["2027-02-28"].holidays).toEqual([]);
   });

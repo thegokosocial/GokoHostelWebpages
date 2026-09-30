@@ -75,7 +75,7 @@ function generateDates(start: string, days: number): string[] {
   return dates;
 }
 
-function formatDateShort(dateStr: string, isHoliday = false): { day: string; weekday: string; isToday: boolean; isWeekend: boolean } {
+function formatDateShort(dateStr: string, isHolidayOrLongWeekend = false): { day: string; weekday: string; isToday: boolean; isWeekend: boolean } {
   const weekdayNum = civilWeekday(dateStr);
   const weekday = new Date(dateStr + "T12:00:00+05:30").toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Kolkata" });
   const day = dateStr.slice(8, 10).replace(/^0/, "") || dateStr.slice(8);
@@ -83,7 +83,7 @@ function formatDateShort(dateStr: string, isHoliday = false): { day: string; wee
     day,
     weekday,
     isToday: dateStr === todayIST(),
-    isWeekend: isHoliday || weekdayNum === 5 || weekdayNum === 6,
+    isWeekend: isHolidayOrLongWeekend || weekdayNum === 5 || weekdayNum === 6,
   };
 }
 
@@ -303,7 +303,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
             </div>
             {dates.map((date) => {
               const marker = data?.calendarMarkers?.[date];
-              const { day, weekday, isToday, isWeekend } = formatDateShort(date, Boolean(marker?.holidays.length));
+              const { day, weekday, isToday, isWeekend } = formatDateShort(date, Boolean(marker?.holidays.length || marker?.longWeekend));
               return (
                 <div
                   key={date}
@@ -329,7 +329,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                 {stat === "occupancy" ? "Occupancy %" : stat === "available" ? "Available" : hasHeld ? "Booked / held" : "Booked"}
               </div>
               {dates.map((date) => {
-                const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
+                const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length || data?.calendarMarkers?.[date]?.longWeekend));
                 const stats = computeHeaderStats(date);
                 const val = stat === "occupancy" ? `${stats.occupancy}%` : stat === "available" ? stats.available : stats.sold;
                 return (
@@ -366,7 +366,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                   </div>
                   {dates.map((date) => {
                     const { available, blocked, overridden, online, offline, unassignedOta } = computeAvailability(dorm.id, date);
-                    const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
+                    const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length || data?.calendarMarkers?.[date]?.longWeekend));
                     return (
                       <button
                         key={date}
@@ -410,7 +410,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                       const rateVal = getRateForCell(rp.id, date);
                       const rateRow = data?.rates.find((r) => r.ratePlanId === rp.id && r.date === date);
                       const isStopped = rateRow?.stopSell === 1;
-                      const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
+                      const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length || data?.calendarMarkers?.[date]?.longWeekend));
                       return (
                         <button
                           key={date}
@@ -436,7 +436,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
                       <span className="text-[10px] italic text-brand-green-dark/40 dark:text-zinc-600">No rate plans</span>
                     </div>
                     {dates.map((date) => {
-                      const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length));
+                      const { isToday, isWeekend } = formatDateShort(date, Boolean(data?.calendarMarkers?.[date]?.holidays.length || data?.calendarMarkers?.[date]?.longWeekend));
                       return (
                         <div key={date} className={cn("flex h-8 shrink-0 items-center justify-center border-r border-brand-mist/30 px-1 text-center text-[10px] text-brand-green-dark/30 sm:h-auto sm:py-1.5", dateTint(isWeekend, isToday))} style={{ width: colWidth }}>—</div>
                       );
