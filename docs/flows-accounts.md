@@ -17,6 +17,9 @@
 | Room Revenue | `canViewFoodBills` | `getRoomRevenue` |
 | Reconcile | `canReconcileCash` or `canReconcileOnline` | `getReconciliation`, `saveReconciliation`; Admin-only `undoReconciliation` |
 | OTA Receivables | `canViewAccounts`; mutations additionally require `canSettlePlatformPayments` / `canAdjustPlatformReceivables` | `/api/admin/platform-settlements`: list, createSettlement, allocate, adjust |
+| Account Activity | `canViewAccounts` **and** `canViewExpenses` | `getAccountActivity` |
+
+On phones and tablets, Accounts uses grouped navigation: **New Additions** (Add Expense, Recurring Expenses, Add Income), **Reports & Charts** (Daily Ledger, records, Food Revenue, Room Revenue), **Reconcile** (Reconcile, Platform Receivables), and **Account Activity**. Activity defaults to **All activity**, combining Cash, real accounts, and virtual accounts; every row identifies its account. The per-account balance/checkpoint card appears only after selecting Cash or one account.
 
 Account Settings (Management): accounts/vendors/employees/salary. Employee deactivation uses `canManageEmployees`; an inactive employee can be removed from the roster with a sync tombstone, retaining compensation, payroll, and attendance history. Bulk XLSX: `/api/admin/bulk-import-accounts`.
 

@@ -48,6 +48,14 @@ describe("manual income enhancements", () => {
     expect(readFileSync("src/components/admin/AdminAddIncome.tsx", "utf8")).toContain('action: "getIncomeAccounts"');
   });
 
+  it("groups the responsive Accounts picker without changing its tab permissions", () => {
+    expect(tabs).toContain('label: "New Additions"');
+    expect(tabs).toContain('label: "Reports & Charts"');
+    expect(tabs).toContain('label: "Reconcile"');
+    expect(tabs).toContain('label: "Account Activity"');
+    expect(tabs).toContain('aria-label="Accounts sections"');
+  });
+
   it("keeps bulk import rules consistent with manual entry", () => {
     expect(bulk).toContain('parseIncomeCategories(await getSetting("income_categories"))');
     expect(bulk).toContain('source_detail is required when source is other');

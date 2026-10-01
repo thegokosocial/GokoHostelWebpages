@@ -20,7 +20,7 @@ const skippedPiMigrations = new Set([
 
 let sqlite: SQLite.Database;
 
-function request(accountId: number | "cash", overrides: Record<string, unknown> = {}) {
+function request(accountId: number | "cash" | "all", overrides: Record<string, unknown> = {}) {
   return new NextRequest("http://localhost/api/admin/expenses", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -42,7 +42,8 @@ beforeEach(() => {
 
   sqlite.exec(`
     INSERT INTO accounts (id, name, account_type, is_active, opening_balance, is_virtual, created_at)
-      VALUES (1, 'HDFC', 'savings', 1, 0, 0, '2026-09-23T08:00:00Z');
+      VALUES (1, 'HDFC', 'savings', 1, 0, 0, '2026-09-23T08:00:00Z'),
+             (2, 'Razorpay Receivable', 'virtual', 1, 0, 1, '2026-09-23T08:00:00Z');
     INSERT INTO food_orders (id, order_number, guest_name, total, amount_paid, payment_status, created_at, updated_at)
       VALUES (11, 'D262-11', 'Viswambar Chowdary', 100000, 100000, 'paid', '2026-09-23T09:00:00Z', '2026-09-23T09:00:00Z'),
              (12, 'D262-12', 'Viswambar Chowdary', 92000, 92000, 'paid', '2026-09-23T09:05:00Z', '2026-09-23T09:05:00Z'),
@@ -75,7 +76,8 @@ beforeEach(() => {
               'Room Guest', 'OTA-21', 'booking.com', '2026-09-23', 'admin', '2026-09-23T14:05:00Z',
               'ota-cash-fix-sync', '2026-09-23T14:05:00Z', 'pi');
     INSERT INTO daily_income (date, account_id, type, amount, source, description, created_by, created_at)
-      VALUES ('2026-09-23', NULL, 'cash', 10000, 'other', 'Manual cash income', 'admin', '2026-09-23T15:00:00Z');
+      VALUES ('2026-09-23', NULL, 'cash', 10000, 'other', 'Manual cash income', 'admin', '2026-09-23T15:00:00Z'),
+             ('2026-09-23', 2, 'online', 700, 'other', 'Virtual adjustment', 'admin', '2026-09-23T15:00:00Z');
     INSERT INTO expenses (amount, category, purpose, account_id, payment_method, created_by, created_at, expense_date, created_month)
       VALUES (3000, 'supplies', 'Cash supplies', NULL, 'cash', 'admin', '2026-09-23T16:00:00Z', '2026-09-23', '2026-09');
   `);
@@ -110,6 +112,19 @@ describe("Account Activity payment-level grouping", () => {
       .toEqual([25000, 10000, 9000, 4000, -2000, -3000]);
     expect(body.activity.find((row: { amount: number }) => row.amount === 9000)).toMatchObject({ kind: "food", reference: "D262-11" });
     expect(body.activity.find((row: { amount: number }) => row.amount === -2000)).toMatchObject({ kind: "refund", description: "Food refund · Viswambar Chowdary" });
+  });
+
+  it("merges cash and account activity under All and labels each row", async () => {
+    const response = await POST(request("all"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.account).toBeNull();
+    expect(body.total).toBe(9);
+    expect(body.activity).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountName: "Cash", amount: 25000 }),
+      expect.objectContaining({ accountName: "HDFC", amount: 192000 }),
+      expect.objectContaining({ accountName: "Razorpay Receivable", amount: 700 }),
+    ]));
   });
 
   it("keeps reconciliation preview, saved closing, and account activity consistent", async () => {

@@ -20,6 +20,8 @@ describe("account activity provenance", () => {
 
   it("shows who added each entry on desktop and mobile and does not trust a client-supplied food payer name", () => {
     expect(activity).toContain('"Added by"');
+    expect(activity).toContain('>All activity</option>');
+    expect(activity).toContain('row.accountName');
     expect(activity).toContain("Added by {row.addedBy || \"System\"}");
     expect(foodPayments).toContain("paidBy: actorName");
     expect(foodPayments).toContain("createdBy: actorName");

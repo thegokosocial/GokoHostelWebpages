@@ -1,9 +1,10 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import { PlusCircleIcon, FileTextIcon, IndianRupeeIcon, BedDoubleIcon, BookOpenIcon, ScaleIcon, HandCoinsIcon, Repeat2Icon } from "lucide-react";
+import { PlusCircleIcon, FileTextIcon, IndianRupeeIcon, BedDoubleIcon, BookOpenIcon, ScaleIcon, HandCoinsIcon, Repeat2Icon, ChevronDownIcon } from "lucide-react";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role } from "./types";
 
@@ -36,6 +37,13 @@ const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?
   { id: "accountActivity", label: "Account Activity", icon: <BookOpenIcon className="h-3.5 w-3.5" /> },
 ];
 
+const TAB_GROUPS = [
+  { id: "newAdditions", label: "New Additions", tabIds: ["addExpense", "recurringExpenses", "addIncome"] },
+  { id: "reports", label: "Reports & Charts", tabIds: ["dailyLedger", "billRecords", "incomeRecords", "foodBill", "roomBill"] },
+  { id: "reconcile", label: "Reconcile", tabIds: ["reconcile", "platformReceivables"] },
+  { id: "activity", label: "Account Activity", tabIds: ["accountActivity"] },
+] as const;
+
 export function AdminExpenditure({
   password,
   username,
@@ -53,7 +61,13 @@ export function AdminExpenditure({
     ? t.permission.some((permission) => hasPermission(role, permissions, permission))
     : hasPermission(role, permissions, t.permission)));
   const defaultTab = visibleTabs[0]?.id || "addExpense";
-  const [tab, setTab] = useTabWithHistory<AccountsTab>("tab", defaultTab);
+  const [tab, setTab] = useTabWithHistory<AccountsTab>("tab", defaultTab, { validValues: visibleTabs.map((t) => t.id) });
+  const mobileGroups = useMemo(() => TAB_GROUPS.map((group) => ({
+    ...group,
+    tabs: group.tabIds.map((id) => visibleTabs.find((tab) => tab.id === id)).filter((tab): tab is typeof visibleTabs[number] => Boolean(tab)),
+  })).filter((group) => group.tabs.length), [visibleTabs]);
+  const [subMenuOpen, setSubMenuOpen] = useState(false);
+  const activeTab = visibleTabs.find((item) => item.id === tab);
 
   return (
     <div>
@@ -61,8 +75,7 @@ export function AdminExpenditure({
         <h2 className="font-display text-xl font-bold text-brand-green md:text-2xl">Accounts</h2>
       </div>
 
-      {/* Tab buttons */}
-      <div className="mt-4 flex flex-wrap gap-1.5 rounded-xl border border-brand-mist bg-white dark:bg-card p-1.5">
+      <div className="mt-4 hidden flex-wrap gap-1.5 rounded-xl border border-brand-mist bg-white p-1.5 dark:bg-card lg:flex">
         {visibleTabs.map((t) => (
           <button
             key={t.id}
@@ -88,6 +101,24 @@ export function AdminExpenditure({
             </span>
           </button>
         ))}
+      </div>
+
+      <div className={cn("relative mt-4 lg:hidden", subMenuOpen ? "z-[26]" : "z-10")}>
+        <button type="button" aria-expanded={subMenuOpen} aria-controls="accounts-mobile-nav" onClick={() => setSubMenuOpen(!subMenuOpen)} className="flex w-full items-center justify-between rounded-xl border border-brand-mist bg-white px-4 py-3 dark:bg-card">
+          <span className="flex items-center gap-2 text-sm font-medium text-brand-green">{activeTab?.icon}{activeTab?.label}</span>
+          <ChevronDownIcon className={cn("h-4 w-4 text-brand-green-dark/40 transition-transform", subMenuOpen && "rotate-180")} />
+        </button>
+        {subMenuOpen && <>
+          <div className="fixed inset-0 z-[25] bg-black/40" onClick={() => setSubMenuOpen(false)} aria-hidden />
+          <div id="accounts-mobile-nav" role="listbox" aria-label="Accounts sections" className="absolute left-0 right-0 top-full z-[26] mt-1 max-h-[min(70dvh,32rem)] overflow-y-auto overscroll-contain rounded-xl border border-brand-mist bg-white p-3 shadow-lg dark:bg-card dark:shadow-none">
+            <div className="space-y-3">{mobileGroups.map((group) => <div key={group.id}>
+              <p className="mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-green-dark/40">{group.label}</p>
+              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">{group.tabs.map((item) => <button key={item.id} type="button" role="option" aria-selected={tab === item.id} onClick={() => { setTab(item.id); setSubMenuOpen(false); }} className={cn("flex min-h-[4.25rem] flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-center text-[10px] font-medium leading-tight transition-colors", tab === item.id ? "bg-brand-green/10 text-brand-green" : "text-brand-green-dark/65 hover:bg-brand-sand/50")}>
+                <span className="[&>svg]:h-4 [&>svg]:w-4">{item.icon}</span><span className="line-clamp-2">{item.label}</span>
+              </button>)}</div>
+            </div>)}</div>
+          </div>
+        </>}
       </div>
 
       <div className="mt-6">

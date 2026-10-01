@@ -84,6 +84,8 @@ Expense and Income Records use inclusive start/end accounting-date filters (defa
 
 Accounts expense records, Food Revenue guest breakdowns, and Room Revenue stay breakdowns scroll horizontally within their tables on narrow screens. Their column headers stay with the table instead of covering rows during vertical page scrolling.
 
+On phones and tablets, Accounts navigation is a Management-style grouped picker: **New Additions**, **Reports & Charts**, **Reconcile**, and **Account Activity**. Empty groups remain hidden when their destinations are not authorized. Account Activity defaults to **All activity** across Cash, real, and virtual accounts; every row identifies its account, while the masked balance/checkpoint card appears only for Cash or a selected account.
+
 Menu deletion removes items/categories from active admin and guest-menu lists using existing soft-deletion fields. Category deletion archives its children too. Historical food-order references and menu photos are retained; no order history is deleted.
 
 ---

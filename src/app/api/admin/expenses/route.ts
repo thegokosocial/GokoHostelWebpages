@@ -182,26 +182,30 @@ export async function POST(req: NextRequest) {
       }
       case "getAccountActivity": {
         if (actionAllowedAll(role, permissions, ["canViewAccounts", "canViewExpenses"]) !== "allowed") return NextResponse.json({ error: "You need account and expense record access to view account activity" }, { status: 403 });
-        const accountKey = rest.accountId === "cash" ? "cash" : Number(rest.accountId);
-        if (accountKey !== "cash" && (!Number.isInteger(accountKey) || accountKey < 1)) return NextResponse.json({ error: "Select a valid account" }, { status: 400 });
+        const accountKey = rest.accountId === "cash" || rest.accountId === "all" ? rest.accountId : Number(rest.accountId);
+        if (accountKey !== "cash" && accountKey !== "all" && (!Number.isInteger(accountKey) || accountKey < 1)) return NextResponse.json({ error: "Select a valid account" }, { status: 400 });
         const today = todayIST();
         const toDate = typeof rest.toDate === "string" ? rest.toDate : today;
         const fromDate = typeof rest.fromDate === "string" && rest.fromDate ? rest.fromDate : "0001-01-01";
         if (!isValidAccountingDateRange(fromDate, toDate, today)) return NextResponse.json({ error: "A valid date range is required" }, { status: 400 });
         const page = Math.max(1, Math.min(100000, Number(rest.page) || 1));
         const pageSize = Math.max(10, Math.min(100, Number(rest.pageSize) || 50));
-        const accountId = accountKey === "cash" ? null : accountKey;
+        const isAllAccounts = accountKey === "all";
+        const accountId = accountKey === "cash" ? null : isAllAccounts ? undefined : accountKey;
         const db = getDb();
-        const accountCondition = accountId === null ? sql`account_id IS NULL` : sql`account_id = ${accountId}`;
-        const receiptCondition = accountId === null ? sql`0 = 1` : sql`gr.account_id = ${accountId}`;
+        const accountCondition = isAllAccounts ? sql`1 = 1` : accountId === null ? sql`account_id IS NULL` : sql`account_id = ${accountId}`;
+        const receiptCondition = isAllAccounts ? sql`1 = 1` : accountId === null ? sql`0 = 1` : sql`gr.account_id = ${accountId}`;
         const [allAccounts, accountRows, reconciliations, openingAdjustments] = await Promise.all([
           db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, bankName: accounts.bankName, accountType: accounts.accountType, accountNumber: accounts.accountNumber, openingBalance: accounts.openingBalance, isVirtual: accounts.isVirtual, isActive: accounts.isActive }).from(accounts).orderBy(accounts.name),
-          accountId === null ? Promise.resolve([]) : db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1),
-          db.select().from(dailyLedger).where(and(accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), sql`${dailyLedger.date} <= ${toDate}`, eq(dailyLedger.isReconciled, 1))).orderBy(desc(dailyLedger.date)),
-          db.select().from(dailyLedger).where(and(accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), sql`${dailyLedger.date} <= ${toDate}`, eq(dailyLedger.openingAdjusted, 1))).orderBy(desc(dailyLedger.date)).limit(1),
+          accountId == null ? Promise.resolve([]) : db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1),
+          isAllAccounts ? Promise.resolve([]) : db.select().from(dailyLedger).where(and(accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), sql`${dailyLedger.date} <= ${toDate}`, eq(dailyLedger.isReconciled, 1))).orderBy(desc(dailyLedger.date)),
+          isAllAccounts ? Promise.resolve([]) : db.select().from(dailyLedger).where(and(accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), sql`${dailyLedger.date} <= ${toDate}`, eq(dailyLedger.openingAdjusted, 1))).orderBy(desc(dailyLedger.date)).limit(1),
         ]);
-        if (accountId !== null && !accountRows[0]) return NextResponse.json({ error: "Account not found" }, { status: 404 });
-        const cashActivityCondition = accountId === null ? sql`1 = 1` : sql`0 = 1`;
+        if (accountId != null && !accountRows[0]) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+        const selectedAccount = accountId == null ? null : accountRows[0];
+        const virtualAccounts = isAllAccounts ? allAccounts.filter((item) => item.isVirtual) : selectedAccount?.isVirtual ? [selectedAccount] : [];
+        const mergeVirtualActivity = !isPiRuntime() && virtualAccounts.length > 0;
+        const cashActivityCondition = isAllAccounts || accountId === null ? sql`1 = 1` : sql`0 = 1`;
         const activity = await db.all(sql`
           WITH receipt_lines AS (
             SELECT gr.*,
@@ -229,7 +233,8 @@ export async function POST(req: NextRequest) {
                 CASE WHEN COUNT(*) > 1 THEN ' + ' || (COUNT(*) - 1) || ' more' ELSE '' END
                 WHEN MIN(source_type) = 'booking' THEN MIN(COALESCE(NULLIF(booking_ref_snapshot, ''), NULLIF(goko_booking_id, ''), NULLIF(booking_ref, ''), receipt_id))
                 ELSE MIN(receipt_id) END AS reference,
-              MIN(COALESCE(created_by, '')) AS addedBy
+              MIN(COALESCE(created_by, '')) AS addedBy,
+              MIN(COALESCE((SELECT COALESCE(NULLIF(nickname, ''), name) FROM accounts WHERE accounts.id = receipt_lines.account_id), 'Account')) AS accountName
             FROM receipt_lines GROUP BY payment_key
           ), cash_activity AS (
             SELECT 'cash-' || operation_id AS id, MIN(business_date) AS date,
@@ -238,7 +243,7 @@ export async function POST(req: NextRequest) {
               CASE WHEN SUM(CASE WHEN event_type = 'refund' THEN 1 ELSE 0 END) > 0
                 THEN CASE WHEN MIN(source_type) = 'food_order' THEN 'Food refund · ' ELSE 'Stay refund · ' END
                 ELSE CASE WHEN MIN(source_type) = 'food_order' THEN 'Food payment · ' ELSE 'Stay payment · ' END END || MIN(guest_name_snapshot) AS description,
-              SUM(amount_paise) AS amount, MIN(reference_snapshot) AS reference, MIN(actor) AS addedBy
+              SUM(amount_paise) AS amount, MIN(reference_snapshot) AS reference, MIN(actor) AS addedBy, 'Cash' AS accountName
             FROM cash_payment_events
             WHERE ${cashActivityCondition} AND business_date >= ${fromDate} AND business_date <= ${toDate}
             GROUP BY operation_id HAVING SUM(amount_paise) != 0
@@ -248,50 +253,49 @@ export async function POST(req: NextRequest) {
               CASE WHEN SUM(CASE WHEN event_type = 'refund' THEN 1 ELSE 0 END) > 0
                 THEN 'Stay refund · ' ELSE 'Stay payment · ' END || MIN(guest_name_snapshot) AS description, SUM(cash_paise) AS amount,
               MIN(COALESCE(NULLIF(booking_ref_snapshot, ''), 'Booking #' || booking_id)) AS reference,
-              MIN(actor) AS addedBy
+              MIN(actor) AS addedBy, 'Cash' AS accountName
             FROM booking_payment_events
             WHERE ${cashActivityCondition} AND business_date IS NOT NULL AND cash_paise != 0
               AND business_date >= ${fromDate} AND business_date <= ${toDate}
             GROUP BY COALESCE(corrects_event_id, event_id) HAVING SUM(cash_paise) != 0
           )
           SELECT * FROM (
-            SELECT 'income-' || id AS id, date, 'income' AS kind, COALESCE(description, source, '') AS description, amount, COALESCE(source_detail, '') AS reference, COALESCE(created_by, '') AS addedBy
+            SELECT 'income-' || id AS id, date, 'income' AS kind, COALESCE(description, source, '') AS description, amount, COALESCE(source_detail, '') AS reference, COALESCE(created_by, '') AS addedBy, CASE WHEN account_id IS NULL THEN 'Cash' ELSE COALESCE((SELECT COALESCE(NULLIF(nickname, ''), name) FROM accounts WHERE accounts.id = daily_income.account_id), 'Account') END AS accountName
             FROM daily_income WHERE ${accountCondition} AND date >= ${fromDate} AND date <= ${toDate}
             UNION ALL
             SELECT * FROM receipt_activity
             UNION ALL SELECT * FROM cash_activity
             UNION ALL SELECT * FROM ota_cash_activity
             UNION ALL
-            SELECT 'expense-' || id AS id, expense_date AS date, 'expense' AS kind, COALESCE(purpose, category, '') AS description, -amount AS amount, category AS reference, COALESCE(created_by, '') AS addedBy
+            SELECT 'expense-' || id AS id, expense_date AS date, 'expense' AS kind, COALESCE(purpose, category, '') AS description, -amount AS amount, category AS reference, COALESCE(created_by, '') AS addedBy, CASE WHEN account_id IS NULL THEN 'Cash' ELSE COALESCE((SELECT COALESCE(NULLIF(nickname, ''), name) FROM accounts WHERE accounts.id = expenses.account_id), 'Account') END AS accountName
             FROM expenses WHERE ${accountCondition} AND expense_date >= ${fromDate} AND expense_date <= ${toDate} AND deleted_at IS NULL
-          ) ORDER BY date DESC, id DESC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
-        `) as Array<{ id: string; date: string; kind: string; description: string; amount: number; reference: string; addedBy: string }>;
+          ) ORDER BY date DESC, id DESC LIMIT ${mergeVirtualActivity ? 1000000 : pageSize} OFFSET ${mergeVirtualActivity ? 0 : (page - 1) * pageSize}
+        `) as Array<{ id: string; date: string; kind: string; description: string; amount: number; reference: string; addedBy: string; accountName: string }>;
         const [incomeCount, receiptCountRows, cashCountRows, otaCashCountRows, expenseCount] = await Promise.all([
-          db.select({ count: sql<number>`COUNT(*)` }).from(dailyIncome).where(and(accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), sql`${dailyIncome.date} >= ${fromDate} AND ${dailyIncome.date} <= ${toDate}`)),
-          accountId === null ? Promise.resolve([{ count: 0 }]) : db.all(sql`SELECT COUNT(*) AS count FROM (SELECT CASE WHEN source_type = 'food_order' THEN COALESCE(NULLIF(operation_id, ''), CASE WHEN receipt_id LIKE '%:food:' || source_id THEN substr(receipt_id, 1, length(receipt_id) - length(':food:' || source_id)) END, receipt_id) ELSE receipt_id END payment_key FROM guest_receipts WHERE account_id = ${accountId} AND business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY payment_key)`),
-          accountId === null ? db.all(sql`SELECT COUNT(*) AS count FROM (SELECT operation_id FROM cash_payment_events WHERE business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY operation_id HAVING SUM(amount_paise) != 0)`) : Promise.resolve([{ count: 0 }]),
-          accountId === null ? db.all(sql`SELECT COUNT(*) AS count FROM (SELECT COALESCE(corrects_event_id, event_id) k FROM booking_payment_events WHERE business_date IS NOT NULL AND cash_paise != 0 AND business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY k HAVING SUM(cash_paise) != 0)`) : Promise.resolve([{ count: 0 }]),
-          db.select({ count: sql<number>`COUNT(*)` }).from(expenses).where(and(accountId === null ? isNull(expenses.accountId) : eq(expenses.accountId, accountId), sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))),
+          db.select({ count: sql<number>`COUNT(*)` }).from(dailyIncome).where(and(isAllAccounts ? sql`1 = 1` : accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), sql`${dailyIncome.date} >= ${fromDate} AND ${dailyIncome.date} <= ${toDate}`)),
+          accountId === null && !isAllAccounts ? Promise.resolve([{ count: 0 }]) : db.all(sql`SELECT COUNT(*) AS count FROM (SELECT CASE WHEN source_type = 'food_order' THEN COALESCE(NULLIF(operation_id, ''), CASE WHEN receipt_id LIKE '%:food:' || source_id THEN substr(receipt_id, 1, length(receipt_id) - length(':food:' || source_id)) END, receipt_id) ELSE receipt_id END payment_key FROM guest_receipts WHERE ${isAllAccounts ? sql`1 = 1` : sql`account_id = ${accountId}`} AND business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY payment_key)`),
+          isAllAccounts || accountId === null ? db.all(sql`SELECT COUNT(*) AS count FROM (SELECT operation_id FROM cash_payment_events WHERE business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY operation_id HAVING SUM(amount_paise) != 0)`) : Promise.resolve([{ count: 0 }]),
+          isAllAccounts || accountId === null ? db.all(sql`SELECT COUNT(*) AS count FROM (SELECT COALESCE(corrects_event_id, event_id) k FROM booking_payment_events WHERE business_date IS NOT NULL AND cash_paise != 0 AND business_date >= ${fromDate} AND business_date <= ${toDate} GROUP BY k HAVING SUM(cash_paise) != 0)`) : Promise.resolve([{ count: 0 }]),
+          db.select({ count: sql<number>`COUNT(*)` }).from(expenses).where(and(isAllAccounts ? sql`1 = 1` : accountId === null ? isNull(expenses.accountId) : eq(expenses.accountId, accountId), sql`${expenses.expenseDate} >= ${fromDate} AND ${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))),
         ]);
         const activityCount = Number(incomeCount[0].count) + Number((receiptCountRows as any)[0]?.count || 0) + Number((cashCountRows as any)[0]?.count || 0) + Number((otaCashCountRows as any)[0]?.count || 0) + Number(expenseCount[0].count);
         const actualClose = reconciliations[0];
         const openingAdjustment = openingAdjustments[0];
-        const seed = accountId === null ? 0 : accountRows[0]?.openingBalance || 0;
+        const seed = accountId == null ? 0 : accountRows[0]?.openingBalance || 0;
         const anchor = resolveActivityAnchor(seed, actualClose, openingAdjustment);
         const anchorDate = anchor.date;
-        const [throughIncome, throughReceipts, throughCashPayments, throughOtaCash, throughExpenses] = await Promise.all([
+        const [throughIncome, throughReceipts, throughCashPayments, throughOtaCash, throughExpenses] = await (isAllAccounts ? Promise.resolve(Array.from({ length: 5 }, () => [{ total: 0 }])) : Promise.all([
           db.select({ total: sql<number>`COALESCE(SUM(${dailyIncome.amount}), 0)` }).from(dailyIncome).where(and(accountId === null ? isNull(dailyIncome.accountId) : eq(dailyIncome.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${dailyIncome.date} >= ${anchorDate} AND ${dailyIncome.date} <= ${toDate}` : sql`${dailyIncome.date} > ${anchorDate} AND ${dailyIncome.date} <= ${toDate}`) : sql`${dailyIncome.date} <= ${toDate}`)),
           accountId === null ? Promise.resolve([{ total: 0 }]) : db.select({ total: sql<number>`COALESCE(SUM(${guestReceipts.amount}), 0)` }).from(guestReceipts).where(and(eq(guestReceipts.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${guestReceipts.businessDate} >= ${anchorDate} AND ${guestReceipts.businessDate} <= ${toDate}` : sql`${guestReceipts.businessDate} > ${anchorDate} AND ${guestReceipts.businessDate} <= ${toDate}`) : sql`${guestReceipts.businessDate} <= ${toDate}`)),
           accountId === null ? db.select({ total: sql<number>`COALESCE(SUM(${cashPaymentEvents.amountPaise}), 0)` }).from(cashPaymentEvents).where(anchorDate ? (anchor.includeAnchorDay ? sql`${cashPaymentEvents.businessDate} >= ${anchorDate} AND ${cashPaymentEvents.businessDate} <= ${toDate}` : sql`${cashPaymentEvents.businessDate} > ${anchorDate} AND ${cashPaymentEvents.businessDate} <= ${toDate}`) : sql`${cashPaymentEvents.businessDate} <= ${toDate}`) : Promise.resolve([{ total: 0 }]),
           accountId === null ? db.select({ total: sql<number>`COALESCE(SUM(${bookingPaymentEvents.cashPaise}), 0)` }).from(bookingPaymentEvents).where(and(sql`${bookingPaymentEvents.businessDate} IS NOT NULL`, anchorDate ? (anchor.includeAnchorDay ? sql`${bookingPaymentEvents.businessDate} >= ${anchorDate} AND ${bookingPaymentEvents.businessDate} <= ${toDate}` : sql`${bookingPaymentEvents.businessDate} > ${anchorDate} AND ${bookingPaymentEvents.businessDate} <= ${toDate}`) : sql`${bookingPaymentEvents.businessDate} <= ${toDate}`)) : Promise.resolve([{ total: 0 }]),
           db.select({ total: sql<number>`COALESCE(SUM(${expenses.amount}), 0)` }).from(expenses).where(and(accountId === null ? isNull(expenses.accountId) : eq(expenses.accountId, accountId), anchorDate ? (anchor.includeAnchorDay ? sql`${expenses.expenseDate} >= ${anchorDate} AND ${expenses.expenseDate} <= ${toDate}` : sql`${expenses.expenseDate} > ${anchorDate} AND ${expenses.expenseDate} <= ${toDate}`) : sql`${expenses.expenseDate} <= ${toDate}`, isNull(expenses.deletedAt))),
-        ]);
+        ]));
         let balanceAsOf = anchor.balance
           + throughIncome[0].total + throughReceipts[0].total + throughCashPayments[0].total + throughOtaCash[0].total - throughExpenses[0].total;
-        const selectedAccount = accountId === null ? null : accountRows[0];
-        const virtualActivity = selectedAccount?.isVirtual ? await (async () => {
+        const virtualActivity = mergeVirtualActivity ? (await Promise.all(virtualAccounts.map(async (virtualAccount) => {
           const [profiles, receivables] = await Promise.all([
-            db.select().from(platformPaymentProfiles).where(eq(platformPaymentProfiles.virtualAccountId, accountId!)),
+            db.select().from(platformPaymentProfiles).where(eq(platformPaymentProfiles.virtualAccountId, virtualAccount.id)),
             db.select().from(platformReceivableEntries).where(sql`${platformReceivableEntries.recognitionDate} <= ${toDate}`),
           ]);
           const keys = new Set(profiles.map((profile) => profile.platformKey));
@@ -300,8 +304,9 @@ export async function POST(req: NextRequest) {
           const settlementIds = matchingSettlements.map((row) => row.id);
           const allocations = settlementIds.length ? await collectInBatches(settlementIds, (batch) => db.select().from(platformSettlementAllocations).where(inArray(platformSettlementAllocations.settlementId, batch))) : [];
           const settlementDates = new Map(matchingSettlements.map((row) => [row.id, row.payoutDate]));
-          const events = platformRows.filter((row) => row.recognitionDate >= fromDate).map((row) => ({ id: `receivable-${row.id}`, date: row.recognitionDate, kind: "receivable", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: row.expectedNetPaise, reference: row.eventKey, addedBy: row.createdBy || "System" }))
-            .concat(allocations.map((row) => ({ id: `allocation-${row.id}`, date: settlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "payout allocation", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: -row.allocatedPaise, reference: String(row.settlementId), addedBy: row.createdBy || "System" })));
+          const accountName = virtualAccount.nickname || virtualAccount.name;
+          const events = platformRows.filter((row) => row.recognitionDate >= fromDate).map((row) => ({ id: `receivable-${row.id}`, date: row.recognitionDate, kind: "receivable", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: row.expectedNetPaise, reference: row.eventKey, addedBy: row.createdBy || "System", accountName }))
+            .concat(allocations.map((row) => ({ id: `allocation-${row.id}`, date: settlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "payout allocation", description: `Booking #${row.bookingId} · cycle ${row.bookingCycle}`, amount: -row.allocatedPaise, reference: String(row.settlementId), addedBy: row.createdBy || "System", accountName })));
           let websiteBalance = 0;
           if (!isPiRuntime() && keys.has("razorpay-website")) {
             const paymentRows = await db.select({
@@ -324,7 +329,7 @@ export async function POST(req: NextRequest) {
                 if (payment.verifiedAt.slice(0, 10) >= fromDate) events.push({
                   id: `website-payment-${payment.id}`, date: payment.verifiedAt.slice(0, 10), kind: "website payment · fee pending",
                   description: `${payment.guestName} · ${payment.gokoBookingId || payment.bookingRef || `Booking #${payment.bookingId || "pending"}`}`,
-                  amount: 0, reference: payment.id, addedBy: "Razorpay webhook",
+                  amount: 0, reference: payment.id, addedBy: "Razorpay webhook", accountName,
                 });
                 continue;
               }
@@ -333,18 +338,18 @@ export async function POST(req: NextRequest) {
               if (payment.verifiedAt.slice(0, 10) >= fromDate) events.push({
                 id: `website-payment-${payment.id}`, date: payment.verifiedAt.slice(0, 10), kind: "website payment receivable",
                 description: `${payment.guestName} · ${payment.gokoBookingId || payment.bookingRef || `Booking #${payment.bookingId || "pending"}`}`,
-                amount: net, reference: payment.id, addedBy: "Razorpay webhook",
+                  amount: net, reference: payment.id, addedBy: "Razorpay webhook", accountName,
               });
             }
-            events.push(...effectiveWebAllocations.filter((row) => (webSettlementDates.get(row.settlementId) || "") >= fromDate).map((row) => ({ id: `gateway-payout-${row.id}`, date: webSettlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "website payout allocation", description: `Razorpay settlement #${row.settlementId}`, amount: -row.allocatedPaise, reference: row.paymentId, addedBy: row.createdBy || "System" })));
+            events.push(...effectiveWebAllocations.filter((row) => (webSettlementDates.get(row.settlementId) || "") >= fromDate).map((row) => ({ id: `gateway-payout-${row.id}`, date: webSettlementDates.get(row.settlementId) || row.createdAt.slice(0, 10), kind: "website payout allocation", description: `Razorpay settlement #${row.settlementId}`, amount: -row.allocatedPaise, reference: row.paymentId, addedBy: row.createdBy || "System", accountName })));
           }
           balanceAsOf = platformRows.reduce((sum, row) => sum + row.expectedNetPaise, 0) - allocations.reduce((sum, row) => sum + row.allocatedPaise, 0) + websiteBalance;
           return events;
-        })() : [];
-        const fullActivity = virtualActivity.length ? [...activity, ...virtualActivity].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice((page - 1) * pageSize, page * pageSize) : activity;
-        const totalActivity = virtualActivity.length ? activityCount + virtualActivity.length : activityCount;
+        }))).flat() : [];
+        const fullActivity = mergeVirtualActivity ? [...activity, ...virtualActivity].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice((page - 1) * pageSize, page * pageSize) : activity;
+        const totalActivity = mergeVirtualActivity ? activityCount + virtualActivity.length : activityCount;
         const maskedNumber = selectedAccount?.accountNumber ? `•••• ${selectedAccount.accountNumber.slice(-4)}` : "";
-        return NextResponse.json({ accounts: allAccounts.map((row) => ({ ...row, accountNumber: row.accountNumber ? `•••• ${row.accountNumber.slice(-4)}` : "" })), account: accountId === null ? { name: "Cash", openingBalance: 0, isVirtual: 0 } : { ...selectedAccount, accountNumber: maskedNumber }, activity: fullActivity, total: totalActivity, page, pageSize, balanceAsOf, checkpointDate: anchor.date, checkpointType: anchor.type });
+        return NextResponse.json({ accounts: allAccounts.map((row) => ({ ...row, accountNumber: row.accountNumber ? `•••• ${row.accountNumber.slice(-4)}` : "" })), account: isAllAccounts ? null : accountId === null ? { name: "Cash", openingBalance: 0, isVirtual: 0 } : { ...selectedAccount, accountNumber: maskedNumber }, activity: fullActivity, total: totalActivity, page, pageSize, balanceAsOf, checkpointDate: anchor.date, checkpointType: anchor.type });
       }
       case "getIncomeCategories":
         return NextResponse.json({ categories: parseIncomeCategories(await getSetting("income_categories")) });
