@@ -45,4 +45,16 @@ describe("summarizeReconciliation", () => {
     expect(status.isReconciled).toBe(true);
     expect(status.requiredAccountCount).toBe(3);
   });
+
+  it("does not require an active account opted out of daily reconciliation", () => {
+    const status = summarizeReconciliation("2026-09-09", [
+      ...accounts,
+      { id: 3, name: "VD account", nickname: null, requiresDailyReconciliation: 0 },
+    ], [
+      { accountId: null, isReconciled: 1 },
+      { accountId: 1, isReconciled: 1 },
+      { accountId: 2, isReconciled: 1 },
+    ]);
+    expect(status).toMatchObject({ isReconciled: true, requiredAccountCount: 3, missingAccountNames: [] });
+  });
 });

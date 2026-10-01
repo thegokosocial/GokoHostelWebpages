@@ -56,7 +56,7 @@ export function isValidReconciliationDate(value: unknown, today: string): value 
 
 export function summarizeReconciliation(
   date: string,
-  activeAccounts: Array<{ id: number; name: string; nickname: string | null; isVirtual?: number }>,
+  activeAccounts: Array<{ id: number; name: string; nickname: string | null; isVirtual?: number; requiresDailyReconciliation?: number }>,
   ledgerEntries: Array<{ accountId: number | null; isReconciled: number }>,
 ): ReconciliationStatus {
   const reconciledIds = new Set(
@@ -64,7 +64,7 @@ export function summarizeReconciliation(
   );
   const required = [
     { id: null as number | null, name: "Cash" },
-    ...activeAccounts.filter((account) => account.isVirtual !== 1).map((account) => ({
+    ...activeAccounts.filter((account) => account.isVirtual !== 1 && account.requiresDailyReconciliation !== 0).map((account) => ({
       id: account.id as number | null,
       name: account.nickname || account.name,
     })),
@@ -86,7 +86,7 @@ export function summarizeReconciliation(
 export async function getReconciliationStatus(date: string): Promise<ReconciliationStatus> {
   const db = getDb();
   const [activeAccounts, ledgerEntries] = await Promise.all([
-    db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname })
+    db.select({ id: accounts.id, name: accounts.name, nickname: accounts.nickname, requiresDailyReconciliation: accounts.requiresDailyReconciliation })
       .from(accounts)
       .where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))),
     db.select({ accountId: dailyLedger.accountId, isReconciled: dailyLedger.isReconciled })

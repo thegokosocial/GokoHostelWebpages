@@ -33,7 +33,7 @@ import type { IncomeCategory } from "@/lib/accountCategories";
 type Account = {
   id: number; name: string; nickname: string; bankName: string;
   accountType: string; accountNumber: string; ifscCode: string;
-  isDefault: number; isActive: number; openingBalance: number; createdAt: string;
+  isDefault: number; isActive: number; openingBalance: number; requiresDailyReconciliation: number; createdAt: string;
 };
 
 type Vendor = {
@@ -137,7 +137,7 @@ export function AccountSettings({ password, username, role }: { password: string
 
   const resetForm = () => { setFormData({}); setEditing(null); setShowForm(false); };
 
-  const startAdd = () => { resetForm(); setShowForm(true); setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); };
+  const startAdd = () => { resetForm(); setFormData({ requiresDailyReconciliation: "1" }); setShowForm(true); setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); };
 
   const startEdit = (item: any) => {
     setEditing(item);
@@ -426,6 +426,10 @@ export function AccountSettings({ password, username, role }: { password: string
                 <input type="checkbox" checked={formData.isDefault === "1"} onChange={(e) => updateField("isDefault", e.target.checked ? "1" : "0")} className="accent-brand-green" />
                 <span className="text-xs text-brand-green-dark/70">Default account for online payments</span>
               </div>
+              {formData.isVirtual !== "1" && <div className="flex items-center gap-2 pt-5">
+                <input type="checkbox" checked={formData.requiresDailyReconciliation !== "0"} onChange={(e) => updateField("requiresDailyReconciliation", e.target.checked ? "1" : "0")} className="accent-brand-green" />
+                <span className="text-xs text-brand-green-dark/70">Require daily reconciliation</span>
+              </div>}
             </div>
           )}
 
@@ -513,6 +517,7 @@ export function AccountSettings({ password, username, role }: { password: string
               <p className="text-sm font-medium text-brand-green-dark">
                 {a.name} {a.nickname && <span className="text-brand-green-dark/50">({a.nickname})</span>}
                 {a.isDefault ? <span className="ml-2 rounded bg-brand-green/10 px-1.5 py-0.5 text-[10px] text-brand-green">Default</span> : null}
+                {!a.requiresDailyReconciliation ? <span className="ml-2 rounded bg-brand-sand px-1.5 py-0.5 text-[10px] text-brand-green-dark/70">No daily reconcile</span> : null}
               </p>
               <p className="text-[10px] text-brand-green-dark/50">
                 {a.bankName && `${a.bankName} · `}{a.accountType}{a.accountNumber && ` · ****${a.accountNumber.slice(-4)}`}

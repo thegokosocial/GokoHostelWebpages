@@ -220,7 +220,7 @@ list/getMy: `canViewExpenses`. add: `canAddExpense`, including up to five option
 
 `getAccountActivity` requires both `canViewAccounts` and `canViewExpenses`; this is an AND gate for Cash, an individual account, and the default `all` selection. Its online food rows are payment-level projections over per-order receipts, and Cash includes manual income/expenses plus journaled food and room cash movements. These projections do not grant payment or reconciliation permissions. `getExpenseEditOptions` requires `canEditExpense`.
 
-Accounts UI shows the Reconcile tab when either scoped reconciliation permission is available. Every account is saved separately; server authorization is selected from the submitted cash/online target.
+Accounts UI shows the Reconcile tab when either scoped reconciliation permission is available. Every account is saved separately; server authorization is selected from the submitted cash/online target. Account Settings (`canManageAccountSettings`) controls the default-on daily-reconciliation requirement; opted-out real accounts cannot be reconciled through the API and are omitted from completion status.
 
 ### `/api/admin/splits`
 

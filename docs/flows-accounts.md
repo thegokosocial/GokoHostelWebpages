@@ -21,7 +21,7 @@
 
 On phones and tablets, Accounts uses grouped navigation: **New Additions** (Add Expense, Recurring Expenses, Add Income), **Reports & Charts** (Daily Ledger, records, Food Revenue, Room Revenue), **Reconcile** (Reconcile, Platform Receivables), and **Account Activity**. Activity defaults to **All activity**, combining Cash, real accounts, and virtual accounts; every row identifies its account. The per-account balance/checkpoint card appears only after selecting Cash or one account.
 
-Account Settings (Management): accounts/vendors/employees/salary. Employee deactivation uses `canManageEmployees`; an inactive employee can be removed from the roster with a sync tombstone, retaining compensation, payroll, and attendance history. Bulk XLSX: `/api/admin/bulk-import-accounts`.
+Account Settings (Management): accounts/vendors/employees/salary. Real accounts have a default-on **Require daily reconciliation** setting. When disabled, the account is immediately excluded from Reconcile, daily completion, dashboard warnings, and reminders; Cash remains required, virtual accounts remain excluded, and existing reconciled ledger rows remain historical locks. Employee deactivation uses `canManageEmployees`; an inactive employee can be removed from the roster with a sync tombstone, retaining compensation, payroll, and attendance history. Bulk XLSX: `/api/admin/bulk-import-accounts`.
 
 ---
 

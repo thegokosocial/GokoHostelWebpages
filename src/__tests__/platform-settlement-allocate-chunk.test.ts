@@ -36,6 +36,7 @@ function openDb() {
       is_active INTEGER NOT NULL DEFAULT 1,
       opening_balance INTEGER NOT NULL DEFAULT 0,
       is_virtual INTEGER NOT NULL DEFAULT 0,
+      requires_daily_reconciliation INTEGER NOT NULL DEFAULT 1,
       platform_key TEXT DEFAULT '',
       created_at TEXT NOT NULL,
       sync_id TEXT,

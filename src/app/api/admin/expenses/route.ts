@@ -1134,7 +1134,7 @@ export async function POST(req: NextRequest) {
         }
 
         const db = getDb();
-        const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0)));
+        const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0), eq(accounts.requiresDailyReconciliation, 1)));
         const ledgerEntries = await db.select().from(dailyLedger).where(eq(dailyLedger.date, date));
 
         // Get income/expense totals for the day
@@ -1259,10 +1259,10 @@ export async function POST(req: NextRequest) {
         }
 
         const db = getDb();
-        const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0)));
+        const allAccounts = await db.select().from(accounts).where(and(eq(accounts.isActive, 1), eq(accounts.isVirtual, 0), eq(accounts.requiresDailyReconciliation, 1)));
         const account = target.accountId === null ? null : allAccounts.find((item) => item.id === target.accountId);
         if (target.type === "online" && !account) {
-          return NextResponse.json({ error: "The selected online account is not active" }, { status: 400 });
+          return NextResponse.json({ error: "The selected online account is not active or does not require reconciliation" }, { status: 400 });
         }
 
         const priorLedgerEntries = await db.select().from(dailyLedger)

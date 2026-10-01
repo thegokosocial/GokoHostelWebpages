@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true });
       }
       case "addAccount": {
-        const { name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault, isVirtual, platformKey } = rest;
+        const { name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault, isVirtual, platformKey, requiresDailyReconciliation } = rest;
         if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
         if (isDefault === "1" || isDefault === 1) {
           await db.update(accounts).set({ isDefault: 0 });
@@ -134,13 +134,14 @@ export async function POST(req: NextRequest) {
           isDefault: isDefault === "1" || isDefault === 1 ? 1 : 0,
           openingBalance: openingBalance || 0,
           isVirtual: isVirtual === "1" || isVirtual === 1 ? 1 : 0,
+          requiresDailyReconciliation: requiresDailyReconciliation === "0" || requiresDailyReconciliation === 0 ? 0 : 1,
           platformKey: platformKey || "",
           createdAt: new Date().toISOString(),
         }));
         return NextResponse.json({ success: true });
       }
       case "updateAccount": {
-        const { id, name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault, isVirtual, platformKey } = rest;
+        const { id, name, nickname, bankName, accountType, accountNumber, ifscCode, openingBalance, isDefault, isVirtual, platformKey, requiresDailyReconciliation } = rest;
         if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
         if (isVirtual != null) {
           const referenced = await Promise.all([
@@ -164,6 +165,7 @@ export async function POST(req: NextRequest) {
           isDefault: isDefault === "1" || isDefault === 1 ? 1 : 0,
           openingBalance: openingBalance ?? undefined,
           isVirtual: isVirtual == null ? undefined : (isVirtual === "1" || isVirtual === 1 ? 1 : 0),
+          requiresDailyReconciliation: requiresDailyReconciliation == null ? undefined : (requiresDailyReconciliation === "0" || requiresDailyReconciliation === 0 ? 0 : 1),
           platformKey: platformKey ?? undefined,
         }).where(eq(accounts.id, id));
         return NextResponse.json({ success: true });

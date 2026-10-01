@@ -119,4 +119,11 @@ describe("independent reconciliation workflow", () => {
     ]);
     expect(complete).toMatchObject({ isReconciled: true, reconciledAccountCount: 3, missingAccountNames: [] });
   });
+
+  it("omits opted-out accounts from the reconcile route and rejects direct saves", () => {
+    const getSection = route.match(/case "getReconciliation":[\s\S]*?case "saveReconciliation":/)?.[0];
+    const saveSection = route.match(/case "saveReconciliation":[\s\S]*?case "undoReconciliation":/)?.[0];
+    expect(getSection).toContain("accounts.requiresDailyReconciliation, 1");
+    expect(saveSection).toContain("accounts.requiresDailyReconciliation, 1");
+  });
 });

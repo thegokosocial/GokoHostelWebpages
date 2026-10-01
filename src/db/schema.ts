@@ -755,6 +755,7 @@ export const accounts = sqliteTable("accounts", {
   isActive: integer("is_active").notNull().default(1),
   openingBalance: integer("opening_balance").notNull().default(0),
   isVirtual: integer("is_virtual").notNull().default(0),
+  requiresDailyReconciliation: integer("requires_daily_reconciliation").notNull().default(1),
   platformKey: text("platform_key").default(""),
   createdAt: text("created_at").notNull(),
   ...syncColumnsWithDelete,
