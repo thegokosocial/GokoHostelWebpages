@@ -1,22 +1,7 @@
 import type { Metadata } from "next";
-import { Mohave, Roboto } from "next/font/google";
 import "./globals.css";
 import { site } from "@/lib/site";
 import { ActionProgressProvider } from "@/components/ui/ActionProgressProvider";
-
-const mohave = Mohave({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-mohave",
-  display: "swap",
-});
-
-const roboto = Roboto({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-roboto",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),
@@ -52,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${mohave.variable} ${roboto.variable} font-sans`}>
+    <html lang="en" className="font-sans">
       <body className="font-sans">
         <ActionProgressProvider>{children}</ActionProgressProvider>
       </body>

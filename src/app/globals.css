@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 :root {
+  /* System stacks keep Cloudflare builds independent of the Google Fonts network. */
+  --font-mohave: "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --font-roboto: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --goko-cta-from: #ea3639;
   --goko-cta-to: #d32f2f;
 }
