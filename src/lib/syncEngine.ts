@@ -10,7 +10,7 @@ import { collectInBatches } from "@/lib/dbBatch";
 
 const SYNCED_TABLES_WITH_DELETE = [
   "checkins", "dorms", "beds", "bookings", "menu_categories", "menu_items",
-  "food_orders", "accounts", "vendors", "employees", "users", "tasks", "expenses", "daily_income",
+  "food_orders", "accounts", "vendors", "employees", "users", "tasks", "payable_bills", "expenses", "daily_income",
   "employee_attendance", "employee_leave_policy", "employee_compensation_history", "booking_contact_methods",
   "platform_payment_profiles",
 ] as const;
@@ -19,7 +19,7 @@ const SYNCED_TABLES_APPEND = [
   "bed_history", "food_order_items", "order_modifications", "salary_payments",
   "daily_ledger", "qr_history", "booking_cycle_snapshots", "booking_payment_events", "guest_receipts",
   "cash_payment_events",
-  "employee_attendance_history",
+  "employee_attendance_history", "payable_bill_adjustments", "payable_bill_notes",
   "platform_receivable_entries", "platform_settlements", "platform_settlement_allocations",
 ] as const;
 
@@ -51,6 +51,9 @@ const TABLE_MAP: Record<string, any> = {
   employee_leave_policy: schema.employeeLeavePolicy,
   employee_compensation_history: schema.employeeCompensationHistory,
   expenses: schema.expenses,
+  payable_bills: schema.payableBills,
+  payable_bill_adjustments: schema.payableBillAdjustments,
+  payable_bill_notes: schema.payableBillNotes,
   tasks: schema.tasks,
   daily_income: schema.dailyIncome,
   users: schema.users,
@@ -85,7 +88,10 @@ const FK_REMAP: Record<string, Record<string, string>> = {
   employee_compensation_history: { employeeId: "employees" },
   daily_income: { accountId: "accounts" },
   daily_ledger: { accountId: "accounts" },
-  expenses: { vendorId: "vendors", accountId: "accounts", taskId: "tasks" },
+  expenses: { vendorId: "vendors", accountId: "accounts", taskId: "tasks", payableBillId: "payable_bills" },
+  payable_bills: { vendorId: "vendors" },
+  payable_bill_adjustments: { payableBillId: "payable_bills" },
+  payable_bill_notes: { payableBillId: "payable_bills" },
   tasks: { assigneeUserId: "users" },
   guest_receipts: { accountId: "accounts" },
   booking_cycle_snapshots: { bookingId: "bookings" },

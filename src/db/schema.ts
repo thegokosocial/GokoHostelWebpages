@@ -1081,6 +1081,7 @@ export const expenses = sqliteTable("expenses", {
   mainCategory: text("main_category").default("stay_expense"),
   subCategory: text("sub_category").default(""),
   taskId: integer("task_id").references(() => tasks.id),
+  payableBillId: integer("payable_bill_id").references(() => payableBills.id),
   createdBy: text("created_by").notNull(),
   updatedBy: text("updated_by").default(""),
   createdAt: text("created_at").notNull(),
@@ -1099,8 +1100,30 @@ export const expenses = sqliteTable("expenses", {
   index("idx_expenses_account_date").on(table.accountId, table.expenseDate),
   index("idx_expenses_created_by").on(table.createdBy),
   uniqueIndex("idx_expenses_task_unique").on(table.taskId),
+  index("idx_expenses_payable_bill").on(table.payableBillId),
   uniqueIndex("idx_expenses_idempotency").on(table.idempotencyKey),
 ]);
+
+// A payable bill is an obligation; only its linked expense payments move money.
+export const payableBills = sqliteTable("payable_bills", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(), description: text("description").notNull().default(""),
+  originalAmount: integer("original_amount").notNull(), category: text("category").notNull(), customCategory: text("custom_category").notNull().default(""),
+  mainCategory: text("main_category").notNull().default("stay_expense"), subCategory: text("sub_category").notNull().default(""),
+  vendorId: integer("vendor_id").references(() => vendors.id), billDate: text("bill_date").notNull(), dueDate: text("due_date").notNull().default(""),
+  billImageLink: text("bill_image_link").notNull().default(""), createdBy: text("created_by").notNull(), updatedBy: text("updated_by").notNull().default(""),
+  createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(), ...syncColumnsWithDelete,
+}, table => [index("idx_payable_bills_due").on(table.dueDate), index("idx_payable_bills_vendor").on(table.vendorId)]);
+
+export const payableBillAdjustments = sqliteTable("payable_bill_adjustments", {
+  id: integer("id").primaryKey({ autoIncrement: true }), payableBillId: integer("payable_bill_id").notNull().references(() => payableBills.id),
+  amount: integer("amount").notNull(), reason: text("reason").notNull(), createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(), ...syncColumns,
+}, table => [index("idx_payable_bill_adjustments_bill").on(table.payableBillId)]);
+
+export const payableBillNotes = sqliteTable("payable_bill_notes", {
+  id: integer("id").primaryKey({ autoIncrement: true }), payableBillId: integer("payable_bill_id").notNull().references(() => payableBills.id),
+  body: text("body").notNull(), authorUsername: text("author_username").notNull(), createdAt: text("created_at").notNull(), ...syncColumns,
+}, table => [index("idx_payable_bill_notes_bill").on(table.payableBillId)]);
 
 export const pushSubscriptions = sqliteTable("push_subscriptions", {
   id: integer("id").primaryKey({ autoIncrement: true }),

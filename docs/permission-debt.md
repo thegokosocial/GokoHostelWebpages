@@ -16,6 +16,8 @@ This file records permission keys that are retained for compatibility but are no
 
 Do not delete these keys from existing permission JSON until the review date. New users should receive only keys from `src/lib/permissionCatalog.ts`.
 
+Bills Payable reuses the active expense view/add/edit/delete keys and introduces no permission key or compatibility alias.
+
 ## Website booking foundation
 
 Booking Settings uses an administrator-role gate, not a new stored permission or compatibility alias. Payment view/reconcile/refund permissions in the reviewed plan are not yet active because the corresponding payment actions are not implemented. Existing permission keys and compatibility fallbacks remain unchanged.

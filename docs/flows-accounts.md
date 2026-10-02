@@ -9,6 +9,7 @@
 | Tab | Perm (non-admin) | API |
 |-----|------------------|-----|
 | Add Expense | `canAddExpense` | `addExpense` |
+| Bills Payable | view: `canViewExpenses`; create/pay/note: `canAddExpense`; edit/increase: `canEditExpense`; delete empty bill: `canDeleteExpense` | payable-bill actions on `expenses` API |
 | Add Income | `canAddIncome` | `getIncomeAccounts`, `addDailyIncome` |
 | Daily Ledger | `canViewAccounts` | `getDailyLedger` (quick add also needs `canAddIncome`) |
 | Expense Records | `canViewExpenses` | `listExpenses` |
@@ -20,6 +21,10 @@
 | Account Activity | `canViewAccounts` **and** `canViewExpenses` | `getAccountActivity` |
 
 On phones and tablets, Accounts uses grouped navigation: **New Additions** (Add Expense, Recurring Expenses, Add Income), **Reports & Charts** (Daily Ledger, records, Food Revenue, Room Revenue), **Reconcile** (Reconcile, Platform Receivables), and **Account Activity**. Activity defaults to **All activity**, combining Cash, real accounts, and virtual accounts; every row identifies its account. The per-account balance/checkpoint card appears only after selecting Cash or one account.
+
+## Bills Payable
+
+Bills Payable is in **New Additions**. It records an unpaid supplier obligation without changing Accounts. The original amount, invoice, description, category/type, vendor, bill/due dates, and append-only notes live on the payable bill. Each **Make payment** action creates one linked normal expense, so only the paid installment changes Cash/bank activity and reconciliation. Payments are capped at the calculated remaining balance; an exact final payment shows the bill as Paid. Payment correction uses Expense Records and retains the existing reconciliation locks. Bill totals only increase through an append-only, reasoned adjustment; bills with active payments cannot be deleted. Original invoice files and optional payment receipts are separate.
 
 Account Settings (Management): accounts/vendors/employees/salary. Real accounts have a default-on **Require daily reconciliation** setting. When disabled, the account is immediately excluded from Reconcile, daily completion, dashboard warnings, and reminders; Cash remains required, virtual accounts remain excluded, and existing reconciled ledger rows remain historical locks. Employee deactivation uses `canManageEmployees`; an inactive employee can be removed from the roster with a sync tombstone, retaining compensation, payroll, and attendance history. Bulk XLSX: `/api/admin/bulk-import-accounts`.
 

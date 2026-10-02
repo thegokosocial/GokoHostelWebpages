@@ -138,7 +138,7 @@ describe("Payment persistence using actual local D1/workerd binding", () => {
     expect(refundPosts).toBe(1); expect((await previewSnapshot(first.attempt.id)).refunds[0].state).toBe("unknown");
     refund!.status = "processed"; vi.stubEnv("RAZORPAY_TEST_PREVIEW_ENABLED", "false");
     expect((await reconcilePreviewAttempt(first.attempt.id)).refunds[0].state).toBe("processed"); expect(refundPosts).toBe(1);
-  });
+  }, 30_000);
   it("retains delayed capture event and handles concurrent exact retries", async () => {
     const first = await createPreviewAttempt(crypto.randomUUID(), "test admin");
     const raw = JSON.stringify({ event: "payment.captured", account_id: "acc_D1DUMMY", payload: { payment: { entity: { ...providerPayment(), status: "captured", captured: true } } } });

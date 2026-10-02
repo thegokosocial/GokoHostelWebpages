@@ -13,7 +13,7 @@ import {
   getMonthKey,
 } from "@/db/queries";
 import { getDb } from "@/db";
-import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, cashPaymentEvents, bookingPaymentEvents, bookingCycleSnapshots, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations, recurringExpenseOccurrences } from "@/db/schema";
+import { foodOrders, checkins, expenses, accounts, dailyIncome, dailyLedger, vendors, bookings, guestReceipts, cashPaymentEvents, bookingPaymentEvents, bookingCycleSnapshots, platformPaymentProfiles, platformReceivableEntries, platformSettlementAllocations, platformSettlements, nativeBookingPayments, nativeBookingCheckouts, gatewaySettlementAllocations, recurringExpenseOccurrences, payableBills, payableBillAdjustments, payableBillNotes } from "@/db/schema";
 import { eq, and, sql, desc, inArray, isNull, lt, gte, lte } from "drizzle-orm";
 import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
 import { isOfflineMode, isPiRuntime } from "@/lib/runtime";
@@ -32,7 +32,7 @@ import { bookingEventMethod, paiseToRupees } from "@/lib/bookingPaymentJournal";
 import { collectInBatches } from "@/lib/dbBatch";
 import { walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
-import { syncInsert } from "@/db/syncMeta";
+import { syncInsert, syncUpdate } from "@/db/syncMeta";
 
 function extractDriveFileId(link: string): string | null {
   const match = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -78,6 +78,42 @@ function decodeExpenseBillUpload(upload: ExpenseBillUpload, index: number) {
   return { bytes: bytes.buffer, mime: upload.mime, name: safeName || `bill_${index + 1}.${extension}` };
 }
 
+async function uploadPayableFiles(rest: Record<string, unknown>, month: string) {
+  const raw = expenseBillUploads(rest);
+  if (raw.length > MAX_EXPENSE_BILL_FILES) throw new Error(`You can attach up to ${MAX_EXPENSE_BILL_FILES} bill files`);
+  const decoded = raw.map(decodeExpenseBillUpload);
+  if (!decoded.length || isOfflineMode()) return decoded.length ? "offline-pending" : "";
+  const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (!rootFolderId) throw new Error("Google Drive folder is not configured");
+  const uploaded: string[] = [];
+  try {
+    const billsFolderId = await driveGetOrCreateFolder(rootFolderId, "Goko Bills");
+    const monthFolderId = await driveGetOrCreateFolder(billsFolderId, month);
+    for (const [index, upload] of decoded.entries()) {
+      const link = await driveUploadFile(`bill_${Date.now()}_${index + 1}_${upload.name}`, upload.mime, upload.bytes, monthFolderId);
+      if (!link) throw new Error("Google Drive did not return a bill link");
+      uploaded.push(link);
+    }
+    return uploaded.join(",");
+  } catch (error) {
+    await Promise.all(uploaded.map(async (link) => { const id = extractDriveFileId(link); if (id) await driveDeleteFile(id).catch(() => undefined); }));
+    throw error;
+  }
+}
+
+async function payableBillView(db: any, id: number) {
+  const bill = (await db.select().from(payableBills).where(and(eq(payableBills.id, id), isNull(payableBills.deletedAt))).limit(1))[0];
+  if (!bill) return null;
+  const [adjustments, payments, notes] = await Promise.all([
+    db.select().from(payableBillAdjustments).where(eq(payableBillAdjustments.payableBillId, id)).orderBy(payableBillAdjustments.id),
+    db.select({ id: expenses.id, amount: expenses.amount, expenseDate: expenses.expenseDate, paymentMethod: expenses.paymentMethod, accountId: expenses.accountId, accountName: sql<string>`CASE WHEN ${expenses.accountId} IS NULL THEN 'Cash' ELSE COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name}, 'Account') END`, billImageLink: expenses.billImageLink, purpose: expenses.purpose, deletedAt: expenses.deletedAt }).from(expenses).leftJoin(accounts, eq(expenses.accountId, accounts.id)).where(eq(expenses.payableBillId, id)).orderBy(desc(expenses.expenseDate), desc(expenses.id)),
+    db.select().from(payableBillNotes).where(eq(payableBillNotes.payableBillId, id)).orderBy(desc(payableBillNotes.id)),
+  ]);
+  const total = bill.originalAmount + adjustments.reduce((sum: number, row: any) => sum + row.amount, 0);
+  const paid = payments.filter((row: any) => !row.deletedAt).reduce((sum: number, row: any) => sum + row.amount, 0);
+  return { ...bill, adjustments, payments, notes, total, paid, remaining: total - paid, status: paid === total ? "paid" : "open" };
+}
+
 async function rejectIfSplitLinked(id: number) {
   try {
     if (await hostelExpenseIsLinked(id)) {
@@ -107,8 +143,11 @@ export async function POST(req: NextRequest) {
     const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
       listExpenses: "canViewExpenses", getMyExpenses: "canViewExpenses",
       addExpense: "canAddExpense", updateExpense: "canEditExpense", deleteExpense: "canDeleteExpense",
+      listPayableBills: "canViewExpenses", getPayableBill: "canViewExpenses",
+      createPayableBill: "canAddExpense", addPayableBillNote: "canAddExpense", recordPayableBillPayment: "canAddExpense",
+      updatePayableBill: "canEditExpense", increasePayableBillTotal: "canEditExpense", deletePayableBill: "canDeleteExpense",
       createInternalTransfer: ["canAddExpense", "canAddIncome"],
-      getExpenseEditOptions: "canEditExpense",
+      getExpenseEditOptions: ["canEditExpense", "canAddExpense"],
       getFoodRevenue: "canViewFoodBills",
       getRoomRevenue: "canViewFoodBills",
       getDailyLedger: "canViewAccounts", listIncomeRecords: "canViewAccounts", getReconciliation: "canViewAccounts",
@@ -133,6 +172,88 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case "getExpenseCategories":
         return NextResponse.json({ categories: parseExpenseCategories(await getSetting("expense_categories")) });
+      case "listPayableBills": {
+        const db: any = getDb();
+        const rows = await db.select({ id: payableBills.id }).from(payableBills).where(isNull(payableBills.deletedAt)).orderBy(desc(payableBills.createdAt));
+        const bills = (await Promise.all(rows.map((row: { id: number }) => payableBillView(db, row.id)))).filter(Boolean);
+        return NextResponse.json({ bills });
+      }
+      case "getPayableBill": {
+        const bill = await payableBillView(getDb(), Number(rest.id));
+        return bill ? NextResponse.json({ bill }) : NextResponse.json({ error: "Payable bill not found" }, { status: 404 });
+      }
+      case "createPayableBill": {
+        const title = typeof rest.title === "string" ? rest.title.trim() : "";
+        const amount = Number(rest.originalAmount);
+        const category = typeof rest.category === "string" ? rest.category.trim() : "";
+        const billDate = typeof rest.billDate === "string" ? rest.billDate : todayIST();
+        const dueDate = typeof rest.dueDate === "string" ? rest.dueDate : "";
+        if (!title || title.length > 200 || !category || !Number.isSafeInteger(amount) || amount <= 0 || !isValidReconciliationDate(billDate, todayIST()) || (dueDate && !isValidReconciliationDate(dueDate, "9999-12-31"))) return NextResponse.json({ error: "Title, positive total, category, and valid dates are required" }, { status: 400 });
+        const vendorId = rest.vendorId ? Number(rest.vendorId) : null;
+        if (vendorId !== null) { const vendor = await getDb().select({ id: vendors.id }).from(vendors).where(eq(vendors.id, vendorId)).limit(1); if (!vendor.length) return NextResponse.json({ error: "Vendor not found" }, { status: 400 }); }
+        let links = "";
+        try { links = await uploadPayableFiles(rest, billDate.slice(0, 7)); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Bill upload failed" }, { status: 503 }); }
+        const now = new Date().toISOString();
+        const result = await getDb().insert(payableBills).values(syncInsert({ title, description: typeof rest.description === "string" ? rest.description.trim().slice(0, 5000) : "", originalAmount: amount, category, customCategory: typeof rest.customCategory === "string" ? rest.customCategory.trim().slice(0, 100) : "", mainCategory: typeof rest.mainCategory === "string" ? rest.mainCategory : "stay_expense", subCategory: typeof rest.subCategory === "string" ? rest.subCategory : "", vendorId, billDate, dueDate, billImageLink: links, createdBy: actorName, updatedBy: actorName, createdAt: now, updatedAt: now })).returning({ id: payableBills.id });
+        const id = result[0]?.id;
+        await addAuditEntry({ username: actorName, action: "payable_bill_created", target: `payable_bill:${id}`, details: `₹${(amount / 100).toFixed(2)} ${title}` });
+        return NextResponse.json({ success: true, id });
+      }
+      case "addPayableBillNote": {
+        const id = Number(rest.id); const body = typeof rest.body === "string" ? rest.body.trim() : "";
+        if (!Number.isSafeInteger(id) || !body || body.length > 5000 || !await payableBillView(getDb(), id)) return NextResponse.json({ error: "A valid bill and note are required" }, { status: 400 });
+        await getDb().insert(payableBillNotes).values(syncInsert({ payableBillId: id, body, authorUsername: actorName, createdAt: new Date().toISOString() }));
+        return NextResponse.json({ success: true });
+      }
+      case "increasePayableBillTotal": {
+        const id = Number(rest.id); const amount = Number(rest.amount); const reason = typeof rest.reason === "string" ? rest.reason.trim() : "";
+        if (!Number.isSafeInteger(id) || !Number.isSafeInteger(amount) || amount <= 0 || !reason || reason.length > 500) return NextResponse.json({ error: "A positive increase and reason are required" }, { status: 400 });
+        if (!await payableBillView(getDb(), id)) return NextResponse.json({ error: "Payable bill not found" }, { status: 404 });
+        await getDb().insert(payableBillAdjustments).values(syncInsert({ payableBillId: id, amount, reason, createdBy: actorName, createdAt: new Date().toISOString() }));
+        await addAuditEntry({ username: actorName, action: "payable_bill_increased", target: `payable_bill:${id}`, details: `₹${(amount / 100).toFixed(2)} ${reason}` });
+        return NextResponse.json({ success: true });
+      }
+      case "recordPayableBillPayment": {
+        const id = Number(rest.id); const amount = Number(rest.amount); const expenseDate = typeof rest.expenseDate === "string" ? rest.expenseDate : todayIST();
+        const paymentMethod = rest.paymentMethod || "cash"; const accountId = rest.accountId == null || rest.accountId === "" ? null : Number(rest.accountId);
+        const parsed = parseCreateIdempotencyKey(rest.idempotencyKey); if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+        const prior = await getExpenseByIdempotencyKey(parsed.key); if (prior) return prior.payableBillId === id ? NextResponse.json({ success: true, id: prior.id, duplicate: true }) : NextResponse.json({ error: "Payment request key was already used" }, { status: 409 });
+        const bill = await payableBillView(getDb(), id);
+        if (!bill || !Number.isSafeInteger(amount) || amount <= 0 || amount > bill.remaining || !isValidReconciliationDate(expenseDate, todayIST()) || !["cash", "online"].includes(paymentMethod) || ((paymentMethod === "cash") !== (accountId === null))) return NextResponse.json({ error: "Payment details are invalid or exceed the remaining balance" }, { status: 400 });
+        if (accountId !== null) { const active = await getDb().select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, accountId), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1); if (!active.length) return NextResponse.json({ error: "Select an active real bank account" }, { status: 400 }); }
+        const locked = await getDb().select({ id: dailyLedger.id }).from(dailyLedger).where(and(sql`${dailyLedger.date} >= ${expenseDate}`, accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), eq(dailyLedger.isReconciled, 1))).limit(1);
+        if (locked.length) return NextResponse.json({ error: "Undo reconciliation before recording this payment" }, { status: 409 });
+        let links = ""; try { links = await uploadPayableFiles(rest, expenseDate.slice(0, 7)); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Receipt upload failed" }, { status: 503 }); }
+        try {
+          const inserted = await getDb().insert(expenses).values(syncInsert({ amount, category: bill.category, customCategory: bill.customCategory, purpose: bill.title, billImageLink: links, vendorId: bill.vendorId, accountId, paymentMethod, mainCategory: bill.mainCategory, subCategory: bill.subCategory, payableBillId: id, createdBy: actorName, expenseDate, createdMonth: expenseDate.slice(0, 7), idempotencyKey: parsed.key, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })).returning({ id: expenses.id });
+          await addAuditEntry({ username: actorName, action: "payable_bill_payment", target: `payable_bill:${id}`, details: `₹${(amount / 100).toFixed(2)}` });
+          return NextResponse.json({ success: true, id: inserted[0]?.id });
+        } catch (error) {
+          for (const link of links.split(",")) { const fileId = extractDriveFileId(link); if (fileId) await driveDeleteFile(fileId).catch(() => undefined); }
+          if (isUniqueConstraintError(error)) { const existing = await getExpenseByIdempotencyKey(parsed.key); if (existing?.payableBillId === id) return NextResponse.json({ success: true, id: existing.id, duplicate: true }); }
+          return NextResponse.json({ error: error instanceof Error ? error.message : "Payment could not be recorded" }, { status: 409 });
+        }
+      }
+      case "updatePayableBill": {
+        const id = Number(rest.id); const existing = await payableBillView(getDb(), id);
+        if (!existing) return NextResponse.json({ error: "Payable bill not found" }, { status: 404 });
+        const title = typeof rest.title === "string" ? rest.title.trim() : existing.title;
+        const category = typeof rest.category === "string" ? rest.category.trim() : existing.category;
+        const billDate = rest.billDate === undefined ? existing.billDate : String(rest.billDate);
+        const dueDate = rest.dueDate === undefined ? existing.dueDate : String(rest.dueDate);
+        if (!title || !category || !isValidReconciliationDate(billDate, todayIST()) || (dueDate && !isValidReconciliationDate(dueDate, "9999-12-31"))) return NextResponse.json({ error: "Title, category, and dates are invalid" }, { status: 400 });
+        if (rest.vendorId) { const vendor = await getDb().select({ id: vendors.id }).from(vendors).where(eq(vendors.id, Number(rest.vendorId))).limit(1); if (!vendor.length) return NextResponse.json({ error: "Vendor not found" }, { status: 400 }); }
+        await getDb().update(payableBills).set(syncUpdate({ title, category, description: typeof rest.description === "string" ? rest.description.trim().slice(0, 5000) : existing.description, customCategory: typeof rest.customCategory === "string" ? rest.customCategory.trim().slice(0, 100) : existing.customCategory, mainCategory: typeof rest.mainCategory === "string" ? rest.mainCategory : existing.mainCategory, subCategory: typeof rest.subCategory === "string" ? rest.subCategory : existing.subCategory, vendorId: rest.vendorId === undefined ? existing.vendorId : (rest.vendorId ? Number(rest.vendorId) : null), billDate, dueDate, updatedBy: actorName, updatedAt: new Date().toISOString() })).where(eq(payableBills.id, id));
+        return NextResponse.json({ success: true });
+      }
+      case "deletePayableBill": {
+        const id = Number(rest.id); const bill = await payableBillView(getDb(), id);
+        if (!bill) return NextResponse.json({ error: "Payable bill not found" }, { status: 404 });
+        if (bill.payments.some((payment: any) => !payment.deletedAt)) return NextResponse.json({ error: "Delete linked payment records before deleting this bill" }, { status: 409 });
+        await getDb().update(payableBills).set(syncUpdate({ deletedAt: new Date().toISOString(), updatedBy: actorName, updatedAt: new Date().toISOString() })).where(eq(payableBills.id, id));
+        await addAuditEntry({ username: actorName, action: "payable_bill_deleted", target: `payable_bill:${id}`, details: bill.title });
+        return NextResponse.json({ success: true });
+      }
       case "createInternalTransfer": {
         const amount = Number(rest.amount);
         const date = String(rest.expenseDate || "");
@@ -479,7 +600,7 @@ export async function POST(req: NextRequest) {
           id: expenses.id, amount: expenses.amount, category: expenses.category, customCategory: expenses.customCategory,
           purpose: expenses.purpose, billImageLink: expenses.billImageLink, vendorId: expenses.vendorId, accountId: expenses.accountId,
           paymentMethod: expenses.paymentMethod, mainCategory: expenses.mainCategory, subCategory: expenses.subCategory,
-          taskId: expenses.taskId, createdBy: expenses.createdBy, updatedBy: expenses.updatedBy, createdAt: expenses.createdAt,
+          taskId: expenses.taskId, payableBillId: expenses.payableBillId, createdBy: expenses.createdBy, updatedBy: expenses.updatedBy, createdAt: expenses.createdAt,
           updatedAt: expenses.updatedAt, expenseDate: expenses.expenseDate, createdMonth: expenses.createdMonth,
           accountName: sql<string>`CASE WHEN ${expenses.accountId} IS NULL THEN 'Cash' ELSE COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name}, 'Account') END`,
           vendorName: sql<string>`COALESCE(${vendors.name}, '')`,
@@ -605,6 +726,12 @@ export async function POST(req: NextRequest) {
           sql`${dailyLedger.date} >= ${expense.expenseDate}`, expense.accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, expense.accountId), eq(dailyLedger.isReconciled, 1),
         )).limit(1);
         if (reconciled.length) return NextResponse.json({ error: `Undo the ${expense.expenseDate} reconciliation before deleting this expense` }, { status: 409 });
+
+        if (expense.payableBillId) {
+          await getDb().update(expenses).set(syncUpdate({ deletedAt: new Date().toISOString(), updatedBy: actorName, updatedAt: new Date().toISOString() })).where(eq(expenses.id, Number(id)));
+          await addAuditEntry({ username: actorName, action: "payable_bill_payment_deleted", target: `expense:${id}`, details: `Payable bill ${expense.payableBillId}` });
+          return NextResponse.json({ success: true, role });
+        }
 
         if (expense.billImageLink) {
           const fileIds = expense.billImageLink.split(",").map(extractDriveFileId).filter((fileId): fileId is string => Boolean(fileId));

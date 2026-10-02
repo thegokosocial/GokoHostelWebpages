@@ -1159,3 +1159,7 @@ One unreleased claim per `order_id` (partial unique index) → `attempt_id`. Blo
 ### `food_qr_payments` / `food_qr_webhooks`
 
 Provider `pay_*` evidence + event inbox (`event_id` uniqueness). Capture path does **not** write `guest_receipts` in v1.
+
+## Payable bills (migration 0087)
+
+`payable_bills` holds the non-financial invoice header and synced soft-delete metadata. `payable_bill_adjustments` and `payable_bill_notes` are append-only synced children. `expenses.payable_bill_id` links each actual installment; the total is derived from the immutable original plus adjustments, minus no records, while only active linked expenses count as paid. Migration triggers reject a payment above the remaining balance.

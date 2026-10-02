@@ -106,6 +106,7 @@ describe("Expenses API RBAC (route)", () => {
       permissions: { canAddExpense: true },
     });
     expect((await POST(request("getExpenseCategories"))).status).toBe(200);
+    expect((await POST(request("getExpenseEditOptions"))).status).toBe(200);
     expect((await POST(request("listExpenses", { fromDate: "2026-09-01", toDate: "2026-09-27" }))).status).toBe(403);
     expect((await POST(request("deleteExpense", { id: 1 }))).status).toBe(403);
   });

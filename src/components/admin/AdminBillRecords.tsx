@@ -232,6 +232,7 @@ export function AdminBillRecords({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold text-brand-green-dark">{exp.category || "Uncategorized"}</span>
                         {exp.isRecurring && <span title="Created from a recurring expense rule" className="rounded-full bg-brand-gold/15 px-2 py-0.5 text-xs font-bold text-brand-green-dark">Recurring</span>}
+                        {exp.payableBillId && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700">Bill payment</span>}
                         <span className="rounded-full bg-brand-green/10 px-2 py-0.5 text-xs font-bold text-brand-green-dark">₹{((exp.amount || 0) / 100).toFixed(0)}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-green-dark/60">
@@ -254,6 +255,7 @@ export function AdminBillRecords({
                         <div><span className="text-brand-green-dark/50">Vendor:</span> <span className="text-brand-green-dark">{exp.vendorName || "—"}</span></div>
                         <div><span className="text-brand-green-dark/50">Type:</span> <span className="text-brand-green-dark">{exp.mainCategory || "—"}{exp.subCategory ? ` / ${exp.subCategory}` : ""}</span></div>
                         <div><span className="text-brand-green-dark/50">By:</span> <span className="text-brand-green-dark">{exp.createdBy || "—"}</span></div>
+                        {exp.payableBillId && <div><span className="text-brand-green-dark/50">Payable bill:</span> <span className="text-brand-green-dark">#{exp.payableBillId}</span></div>}
                       </div>
 
                       {exp.billImageLink && (
