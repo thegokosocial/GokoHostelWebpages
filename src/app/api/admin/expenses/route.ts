@@ -104,6 +104,7 @@ async function uploadPayableFiles(rest: Record<string, unknown>, month: string) 
 async function payableBillView(db: any, id: number) {
   const bill = (await db.select().from(payableBills).where(and(eq(payableBills.id, id), isNull(payableBills.deletedAt))).limit(1))[0];
   if (!bill) return null;
+  const vendor = bill.vendorId ? (await db.select({ name: vendors.name }).from(vendors).where(eq(vendors.id, bill.vendorId)).limit(1))[0] : null;
   const [adjustments, payments, notes] = await Promise.all([
     db.select().from(payableBillAdjustments).where(eq(payableBillAdjustments.payableBillId, id)).orderBy(payableBillAdjustments.id),
     db.select({ id: expenses.id, amount: expenses.amount, expenseDate: expenses.expenseDate, paymentMethod: expenses.paymentMethod, accountId: expenses.accountId, accountName: sql<string>`CASE WHEN ${expenses.accountId} IS NULL THEN 'Cash' ELSE COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name}, 'Account') END`, billImageLink: expenses.billImageLink, purpose: expenses.purpose, createdBy: expenses.createdBy, createdAt: expenses.createdAt, deletedAt: expenses.deletedAt }).from(expenses).leftJoin(accounts, eq(expenses.accountId, accounts.id)).where(eq(expenses.payableBillId, id)).orderBy(desc(expenses.expenseDate), desc(expenses.id)),
@@ -111,7 +112,7 @@ async function payableBillView(db: any, id: number) {
   ]);
   const total = bill.originalAmount + adjustments.reduce((sum: number, row: any) => sum + row.amount, 0);
   const paid = payments.filter((row: any) => !row.deletedAt).reduce((sum: number, row: any) => sum + row.amount, 0);
-  return { ...bill, adjustments, payments, notes, total, paid, remaining: total - paid, status: paid === total ? "paid" : "open" };
+  return { ...bill, vendorName: vendor?.name || "", adjustments, payments, notes, total, paid, remaining: total - paid, status: paid === total ? "paid" : "open" };
 }
 
 async function rejectIfSplitLinked(id: number) {

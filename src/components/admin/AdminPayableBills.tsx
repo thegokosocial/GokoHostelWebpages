@@ -7,18 +7,27 @@ import { useAdminToast } from "./AdminToast";
 import { DEFAULT_EXPENSE_CATEGORIES } from "@/lib/accountCategories";
 import type { Role } from "./types";
 import { hasPermission } from "./types";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { PayableBillHistory, BillInvoiceLinks, billMoney } from "./PayableBillHistory";
+import { payableBillActivity } from "@/lib/payableBillActivity";
 
 const todayIST = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 type Bill = any;
 
 async function filesPayload(files: FileList | null) {
+  if ((files?.length || 0) > 5) throw new Error("Choose up to five invoice files");
+  for (const file of Array.from(files || [])) {
+    if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type) || file.size <= 0 || file.size > 10 * 1024 * 1024) throw new Error("Choose JPEG, PNG, WebP or PDF files up to 10 MB each");
+  }
   return Promise.all(
     Array.from(files || []).map(async (file) => ({
       name: file.name,
       mime: file.type,
-      data: await new Promise<string>((resolve) => {
+      data: await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+        reader.onabort = () => reject(new Error(`Reading ${file.name} was cancelled`));
         reader.onload = () =>
           resolve(String(reader.result).split(",")[1] || "");
         reader.readAsDataURL(file);
@@ -32,11 +41,15 @@ export function AdminPayableBills({
   username,
   role,
   permissions = {},
+  mode = "create",
+  onViewRecords,
 }: {
   password: string;
   username?: string;
   role: Role;
   permissions?: Record<string, boolean>;
+  mode?: "create" | "records";
+  onViewRecords?: () => void;
 }) {
   const { showError, showSuccess } = useAdminToast();
   const canView = hasPermission(role, permissions, "canViewExpenses");
@@ -45,6 +58,11 @@ export function AdminPayableBills({
   const canDelete = hasPermission(role, permissions, "canDeleteExpense");
   const [bills, setBills] = useState<Bill[]>([]);
   const [showPaid, setShowPaid] = useState(false);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [created, setCreated] = useState(false);
+  const [fileReset, setFileReset] = useState(0);
   const [selected, setSelected] = useState<Bill | null>(null);
   const [form, setForm] = useState<any>({
     title: "",
@@ -69,11 +87,10 @@ export function AdminPayableBills({
   const [busy, setBusy] = useState(false);
   const [formFiles, setFormFiles] = useState<FileList | null>(null);
   const [paymentFiles, setPaymentFiles] = useState<FileList | null>(null);
-  const [editFiles, setEditFiles] = useState<FileList | null>(null);
   const [noteText, setNoteText] = useState("");
   const [newTotal, setNewTotal] = useState("");
   const [increaseReason, setIncreaseReason] = useState("");
-  const [dialog, setDialog] = useState<"" | "note" | "total">("");
+  const [dialog, setDialog] = useState<"" | "note" | "total" | "payment">("");
   const api = useCallback(
     (body: Record<string, unknown>) =>
       fetch("/api/admin/expenses", {
@@ -84,10 +101,15 @@ export function AdminPayableBills({
     [password, username],
   );
   const load = useCallback(async () => {
-    if (!canView) return;
-    const res = await api({ action: "listPayableBills" });
-    if (res.ok) setBills((await res.json()).bills || []);
-  }, [api, canView]);
+    if (!canView || mode !== "records") return;
+    setLoading(true); setLoadError("");
+    try {
+      const res = await api({ action: "listPayableBills" });
+      if (!res.ok) throw new Error("Could not load unpaid bills");
+      setBills((await res.json()).bills || []);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Could not load unpaid bills"); }
+    finally { setLoading(false); }
+  }, [api, canView, mode]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -110,7 +132,8 @@ export function AdminPayableBills({
   };
   const create = async () => {
     const amount = Math.round(Number(form.originalAmount) * 100);
-    if (!form.title.trim() || !amount || !form.category)
+    if (busy) return;
+    if (!form.title.trim() || !Number.isSafeInteger(amount) || amount <= 0 || !form.category)
       return showError("Title, total, and category are required");
     setBusy(true);
     try {
@@ -124,6 +147,7 @@ export function AdminPayableBills({
       if (!res.ok)
         return showError("Could not create bill", (await res.json()).error);
       showSuccess("Payable bill created");
+      setCreated(true);
       setForm({
         title: "",
         originalAmount: "",
@@ -135,16 +159,18 @@ export function AdminPayableBills({
         dueDate: "",
       });
       setFormFiles(null);
+      setFileReset(value => value + 1);
       await refresh();
+    } catch (error) { showError("Could not create bill", error instanceof Error ? error.message : "Check your connection and try again");
     } finally {
       setBusy(false);
     }
   };
   const pay = async () => {
-    if (!selected) return;
+    if (!selected || busy) return;
     const amount = Math.round(Number(payment.amount) * 100);
     if (
-      !amount ||
+      !Number.isSafeInteger(amount) || amount <= 0 ||
       amount > selected.remaining ||
       !payment.note.trim() ||
       (payment.paymentMethod === "online" && !payment.accountId)
@@ -176,26 +202,16 @@ export function AdminPayableBills({
         key: crypto.randomUUID(),
       });
       setPaymentFiles(null);
+      setFileReset(value => value + 1);
+      setDialog("");
       await refresh(selected.id);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const appendInvoices = async () => {
-    if (!selected || !editFiles?.length) return;
-    setBusy(true);
-    try {
-      const res = await api({ action: "updatePayableBill", id: selected.id, billFiles: await filesPayload(editFiles) });
-      if (!res.ok) return showError("Could not add invoices", (await res.json()).error);
-      setEditFiles(null);
-      showSuccess("Invoice files added");
-      await refresh(selected.id);
+    } catch (error) { showError("Could not record payment", error instanceof Error ? error.message : "Check your connection and try again");
     } finally {
       setBusy(false);
     }
   };
   const addNote = async () => {
-    if (!selected) return;
+    if (!selected || busy) return;
     const body = noteText.trim();
     if (!body) return;
     setBusy(true);
@@ -213,11 +229,11 @@ export function AdminPayableBills({
     finally { setBusy(false); }
   };
   const increase = async () => {
-    if (!selected) return;
+    if (!selected || busy) return;
     const total = Math.round(Number(newTotal) * 100);
     const amount = total - selected.total;
     const reason = increaseReason.trim();
-    if (!amount || amount < 0 || !reason) return showError("Enter a higher new total and a reason");
+    if (!Number.isSafeInteger(total) || amount <= 0 || !reason) return showError("Enter a higher new total and a reason");
     setBusy(true);
     try {
     const res = await api({
@@ -234,10 +250,15 @@ export function AdminPayableBills({
     finally { setBusy(false); }
   };
   if (!canView && !canAdd) return null;
-  const visible = bills.filter((bill) => showPaid || bill.status !== "paid");
+  const openBill = (bill: Bill, action: "" | "note" | "total" | "payment" = "") => {
+    setPayment({ amount: "", expenseDate: todayIST(), paymentMethod: "cash", accountId: "", note: "", key: crypto.randomUUID() });
+    setPaymentFiles(null); setNoteText(""); setNewTotal(""); setIncreaseReason(""); setFileReset(value => value + 1);
+    setDialog(action); setSelected(bill);
+  };
+  const visible = bills.filter(bill => (showPaid || bill.status !== "paid") && [bill.title, bill.description, bill.category, bill.vendorName].join(" ").toLowerCase().includes(search.trim().toLowerCase()));
   return (
     <div>
-      {canAdd && (
+      {mode === "create" && canAdd && (
         <section className="rounded-2xl border border-brand-mist bg-white p-4 shadow-card dark:bg-card dark:shadow-none">
           <h3 className="font-display text-lg font-bold text-brand-green-dark">
             Add unpaid bill
@@ -267,6 +288,7 @@ export function AdminPayableBills({
               <select
                 className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"
                 value={form.category}
+                aria-label="Category *"
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
               >
                 <option value="">Select category</option>
@@ -326,6 +348,7 @@ export function AdminPayableBills({
             <label className="text-xs">
               Original invoice (optional)
               <Input
+                key={`original-${fileReset}`}
                 type="file"
                 multiple
                 accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -351,13 +374,14 @@ export function AdminPayableBills({
           >
             {busy ? "Creating bill…" : "Create unpaid bill"}
           </Button>
+          {created && <p className="mt-3 text-sm" role="status">Bill created.{canView && <Button className="ml-2" variant="outline" onClick={onViewRecords}>View unpaid bills</Button>}</p>}
         </section>
       )}
-      {canView && (
+      {mode === "records" && canView && (
         <section className="mt-6">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-display text-lg font-bold text-brand-green-dark">
-              Bills Payable
+              Unpaid Bills
             </h3>
             <label className="text-xs">
               <input
@@ -368,17 +392,20 @@ export function AdminPayableBills({
               Show paid
             </label>
           </div>
+          <Input className="mt-3" aria-label="Search unpaid bills" placeholder="Search name, vendor, category or description" value={search} onChange={event => setSearch(event.target.value)} />
+          {loading && <p className="mt-3 text-sm" role="status">Loading bills…</p>}
+          {loadError && <div className="mt-3 text-sm text-red-600" role="alert">{loadError}<Button variant="outline" className="ml-2" onClick={() => void load()}>Retry</Button></div>}
           <div className="mt-3 space-y-3">
-            {visible.map((bill) => (
-              <button
-                type="button"
+            {visible.map((bill) => {
+              const latest = payableBillActivity(bill)[0];
+              return (
+              <article
                 key={bill.id}
-                onClick={() => setSelected(bill)}
                 className="w-full rounded-xl border border-brand-mist bg-white p-4 text-left shadow-sm dark:bg-card"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-brand-green-dark">
+                    <p className="break-words font-semibold text-brand-green-dark">
                       {bill.title}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -395,7 +422,7 @@ export function AdminPayableBills({
                   >
                     {bill.status === "paid"
                       ? "Paid"
-                      : `₹${(bill.remaining / 100).toFixed(0)} left`}
+                      : `${billMoney(bill.remaining)} left`}
                   </span>
                 </div>
                 <div className="mt-3 h-2 overflow-hidden rounded bg-brand-sand">
@@ -407,66 +434,57 @@ export function AdminPayableBills({
                   />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  ₹{(bill.paid / 100).toFixed(0)} paid of ₹
-                  {(bill.total / 100).toFixed(0)}
+                  {billMoney(bill.paid)} paid of {billMoney(bill.total)} · {billMoney(bill.remaining)} remaining
                 </p>
-              </button>
-            ))}
-            {!visible.length && (
+                <p className="mt-3 whitespace-pre-wrap break-words text-sm">{bill.description}</p>
+                <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                  <p>Type: {(bill.mainCategory || "").replaceAll("_", " ")}</p><p>Vendor: {bill.vendorName || "No vendor"}</p>
+                  <p>Bill date: {bill.billDate}</p><p>Due: {bill.dueDate || "Not set"}{bill.status !== "paid" && bill.dueDate && bill.dueDate < todayIST() ? " · Overdue" : ""}</p>
+                  <p>Created by {bill.createdBy} · {new Date(bill.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
+                </div>
+                <BillInvoiceLinks links={bill.billImageLink} />
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={() => openBill(bill)}>View bill</Button>
+                  {canAdd && <Button variant="outline" size="sm" onClick={() => openBill(bill, "note")}>Add note</Button>}
+                  {canAdd && bill.status !== "paid" && <Button size="sm" onClick={() => openBill(bill, "payment")}>Make payment</Button>}
+                  {canEdit && <Button variant="outline" size="sm" onClick={() => openBill(bill, "total")}>Increase total</Button>}
+                </div>
+                {latest && <p className="mt-3 line-clamp-2 break-words text-xs text-muted-foreground">Latest activity: {latest.text}</p>}
+                <PayableBillHistory bill={bill} />
+              </article>
+              );
+            })}
+            {!visible.length && !loading && !loadError && (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                No payable bills.
+                {search ? "No bills match your search." : "No unpaid bills."}
               </p>
             )}
           </div>
         </section>
       )}
       {selected && (
-        <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4 sm:flex sm:items-center sm:justify-center"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            className="mx-auto w-full max-w-lg rounded-2xl bg-white p-5 dark:bg-card"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Dialog open onOpenChange={open => { if (!open && !busy) setSelected(null); }}>
+          <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl" showCloseButton={!busy}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h4 className="font-display text-lg font-bold">
+                <DialogTitle className="font-display text-lg font-bold">
                   {selected.title}
-                </h4>
-                <p className="text-xs text-muted-foreground">
+                </DialogTitle>
+                <DialogDescription className="mt-2 text-xs text-muted-foreground">
                   Total ₹{(selected.total / 100).toFixed(2)} · paid ₹{(selected.paid / 100).toFixed(2)} · remaining ₹{(selected.remaining / 100).toFixed(2)}
-                </p>
+                </DialogDescription>
               </div>
-              <button onClick={() => setSelected(null)}>×</button>
             </div>
             <p className="mt-3 whitespace-pre-wrap text-sm">
               {selected.description}
             </p>
-            <div className="mt-4 space-y-2 text-xs">
-              {selected.adjustments?.map((adjustment: any) => (
-                <div key={`adjustment-${adjustment.id}`} className="rounded border border-brand-mist p-2">
-                  <strong>{adjustment.createdBy}</strong> · {new Date(adjustment.createdAt).toLocaleString()}
-                  <p className="mt-1">Total increased by ₹{(adjustment.amount / 100).toFixed(2)}</p>
-                  <p className="mt-1 whitespace-pre-wrap">{adjustment.reason}</p>
-                </div>
-              ))}
-              {selected.notes?.map((note: any) => (
-                <div
-                  key={note.id}
-                  className="rounded border border-brand-mist p-2"
-                >
-                  <strong>{note.authorUsername}</strong> ·{" "}
-                  {new Date(note.createdAt).toLocaleString()}
-                  <p className="mt-1 whitespace-pre-wrap">{note.body}</p>
-                </div>
-              ))}
-            </div>
+            <BillInvoiceLinks links={selected.billImageLink} />
             <div className="mt-4 flex flex-wrap gap-2">
               {canAdd && (
                 <>
                   <Button
                     size="sm"
+                    disabled={busy}
                     variant="outline"
                     onClick={() => setDialog("note")}
                   >
@@ -475,11 +493,8 @@ export function AdminPayableBills({
                   {selected.status !== "paid" && (
                     <Button
                       size="sm"
-                      onClick={() =>
-                        document
-                          .getElementById("payable-payment")
-                          ?.scrollIntoView({ behavior: "smooth" })
-                      }
+                      disabled={busy}
+                      onClick={() => setDialog("payment")}
                     >
                       Make payment
                     </Button>
@@ -490,6 +505,7 @@ export function AdminPayableBills({
                 <Button
                   size="sm"
                   variant="outline"
+                  disabled={busy}
                   onClick={() => setDialog("total")}
                 >
                   Increase total
@@ -517,21 +533,10 @@ export function AdminPayableBills({
                   </Button>
                 )}
             </div>
-            {dialog === "note" && <div className="mt-4 rounded-lg border p-3"><label className="text-xs">Note<textarea className="mt-1 min-h-20 w-full rounded border p-2" value={noteText} onChange={(e) => setNoteText(e.target.value)} /></label><Button className="mt-2" onClick={() => void addNote()} disabled={busy || !noteText.trim()}>{busy ? "Saving…" : "Save note"}</Button></div>}
-            {dialog === "total" && <div className="mt-4 rounded-lg border p-3"><p className="text-xs">Current total {`₹${(selected.total / 100).toFixed(2)}`} · remaining {`₹${(selected.remaining / 100).toFixed(2)}`}</p><label className="mt-2 block text-xs">New total (₹)<Input type="number" min={(selected.total / 100).toFixed(2)} step="0.01" value={newTotal} onChange={(e) => setNewTotal(e.target.value)} /></label><label className="mt-2 block text-xs">Reason<textarea className="mt-1 min-h-16 w-full rounded border p-2" value={increaseReason} onChange={(e) => setIncreaseReason(e.target.value)} /></label><Button className="mt-2" onClick={() => void increase()} disabled={busy || !newTotal || !increaseReason.trim()}>{busy ? "Updating…" : "Update total"}</Button></div>}
-            {canEdit && <div className="mt-4 rounded-lg border p-3"><label className="text-xs">Add invoice files<Input className="mt-1" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => setEditFiles(e.target.files)} /><span className={editFiles?.length ? "text-muted-foreground" : "text-red-600"}>{editFiles?.length ? `${editFiles.length} file(s) selected` : "No files selected"} · Images or PDF</span></label><Button className="mt-2" size="sm" variant="outline" onClick={() => void appendInvoices()} disabled={busy || !editFiles?.length}>{busy ? "Uploading…" : "Add invoice files"}</Button></div>}
+            {canAdd && dialog === "note" && <div className="mt-4 rounded-lg border p-3"><label className="text-xs">Note<textarea maxLength={5000} className="mt-1 min-h-20 w-full rounded border p-2" value={noteText} onChange={(e) => setNoteText(e.target.value)} /></label><Button className="mt-2" onClick={() => void addNote()} disabled={busy || !noteText.trim()}>{busy ? "Saving…" : "Save note"}</Button></div>}
+            {canEdit && dialog === "total" && <div className="mt-4 rounded-lg border p-3"><p className="text-xs">Current total {`₹${(selected.total / 100).toFixed(2)}`} · remaining {`₹${(selected.remaining / 100).toFixed(2)}`}</p><label className="mt-2 block text-xs">New total (₹)<Input type="number" min={(selected.total / 100).toFixed(2)} step="0.01" value={newTotal} onChange={(e) => setNewTotal(e.target.value)} /></label><label className="mt-2 block text-xs">Reason<textarea maxLength={500} className="mt-1 min-h-16 w-full rounded border p-2" value={increaseReason} onChange={(e) => setIncreaseReason(e.target.value)} /></label><Button className="mt-2" onClick={() => void increase()} disabled={busy || !newTotal || !increaseReason.trim()}>{busy ? "Updating…" : "Update total"}</Button></div>}
             <div id="payable-payment" className="mt-5 border-t pt-4">
-              <h5 className="font-semibold">Payments</h5>
-              {selected.payments
-                ?.filter((p: any) => !p.deletedAt)
-                .map((p: any) => (
-                  <div key={p.id} className="mt-2 rounded border border-brand-mist p-2 text-xs">
-                    <p>{p.expenseDate} · ₹{(p.amount / 100).toFixed(2)} · {p.paymentMethod} · {p.accountName}</p>
-                    <p className="mt-1 text-muted-foreground">{p.createdBy} · {new Date(p.createdAt).toLocaleString()}</p>
-                    <p className="mt-1 whitespace-pre-wrap">{p.purpose}</p>
-                  </div>
-                ))}
-              {canAdd && selected.status !== "paid" && (
+              {canAdd && dialog === "payment" && selected.status !== "paid" && (
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="text-xs">
                     Amount (₹)
@@ -562,6 +567,7 @@ export function AdminPayableBills({
                     <select
                       className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"
                       value={payment.paymentMethod}
+                      aria-label="Method"
                       onChange={(e) =>
                         setPayment({
                           ...payment,
@@ -580,6 +586,7 @@ export function AdminPayableBills({
                       <select
                         className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2"
                         value={payment.accountId}
+                        aria-label="Account"
                         onChange={(e) =>
                           setPayment({ ...payment, accountId: e.target.value })
                         }
@@ -595,11 +602,12 @@ export function AdminPayableBills({
                   )}
                   <label className="text-xs sm:col-span-2">
                     Payment note *
-                    <textarea className="mt-1 min-h-16 w-full rounded-md border border-input bg-background p-2" value={payment.note || ""} onChange={(e) => setPayment({ ...payment, note: e.target.value })} placeholder="What was this payment for?" />
+                    <textarea maxLength={500} className="mt-1 min-h-16 w-full rounded-md border border-input bg-background p-2" value={payment.note || ""} onChange={(e) => setPayment({ ...payment, note: e.target.value })} placeholder="What was this payment for?" />
                   </label>
                   <label className="text-xs sm:col-span-2">
-                    Payment receipt (optional)
+                    Add invoice files (optional)
                     <Input
+                      key={`payment-${fileReset}`}
                       type="file"
                       multiple
                       accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -617,8 +625,9 @@ export function AdminPayableBills({
                 </div>
               )}
             </div>
-          </div>
-        </div>
+            <PayableBillHistory bill={selected} expanded />
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

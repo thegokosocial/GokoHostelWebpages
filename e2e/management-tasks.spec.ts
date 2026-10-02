@@ -481,7 +481,7 @@ test("purchase task: create → edit → note → done → expense pending → r
   await expect(expenseModal.locator("label").filter({ hasText: "Category" }).locator("select option", { hasText: "Supplies" })).toHaveCount(1, { timeout: 10_000 });
   await expenseModal.locator("label").filter({ hasText: "Category" }).locator("select").selectOption("Supplies");
   await expenseModal.getByRole("button", { name: /^Record expense$/i }).click();
-  await expect(page.getByText("Expense recorded")).toBeVisible();
+  await expect(page.getByText("Expense recorded", { exact: true })).toBeVisible();
   expect(api.last("createTaskExpense")?.body).toMatchObject({ amount: 45000, category: "Supplies" });
   await expect(page.getByText(/Expense recorded · ₹450/)).toBeVisible();
 });

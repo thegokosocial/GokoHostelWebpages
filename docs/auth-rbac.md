@@ -212,6 +212,8 @@ View list/tabs: `canViewFoodOrders` / `canViewFoodTabs`; the Order Summary UI ac
 
 ### `/api/admin/expenses`
 
+Accounts navigation: Bills Payable creation is gated by `canAddExpense`; the separate Unpaid Bills records tab is gated by `canViewExpenses`. Both retain the Accounts page-entry gate `canViewAccounts`. Records visibility does not authorize note, payment, increase or deletion; those retain the action map below. Read responses include vendor labels and the full activity history, including reversed payments. No new key or compatibility alias is added.
+
 `listPayableBills` and `getPayableBill` require `canViewExpenses`; creating a payable bill, appending its notes, and recording an installment require `canAddExpense`; editing bill details or appending invoice files and adding a reasoned total increase requires `canEditExpense`; deleting an empty bill requires `canDeleteExpense`. An installment requires a bounded payment note and is stored as an ordinary linked expense with its actor/timestamp, so normal account/date reconciliation checks still apply. No new permission keys are added.
 
 Recurring expense routes are Admin-only. No staff or manager permission key grants rule, draft, skip, or automatic-post access; pending drafts have no ledger effect until the existing expense API posts them.

@@ -1,5 +1,9 @@
 # Tests and CI
 
+Unpaid Bills: `npx playwright test e2e/payable-bills.spec.ts` covers mobile combined history, text-only notes, payment uploads and retry keys, draft isolation, separate desktop creation/records navigation, search, and view-only access. API integration tests cover linked expenses and bill settlement/correction; `payable-bill-activity.test.ts` covers newest-first merged history, reversed payments, legacy timestamps and deterministic ordering.
+
+Browser tests use an exact Expense recorded toast locator to distinguish it from the task-card badge. The recurring-expense edit workflow updates its historical fixture to a valid current IST start date before saving, respecting the form's existing date constraint.
+
 Numeric-input regression coverage verifies that editable `type="number"` controls store `event.target.value` as a string. Conversion with `Number`, parsing, clamping, or zero fallbacks belongs at calculation and submission boundaries so clearing a controlled input does not immediately render `0`.
 
 **Git-safe.**

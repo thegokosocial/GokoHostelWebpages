@@ -17,7 +17,8 @@ describe("payable bills sync and mobile wiring", () => {
   it("keeps the mobile payment workflow available with conditional online account input and receipt upload", () => {
     expect(ui).toContain('Make payment');
     expect(ui).toContain('payment.paymentMethod === "online"');
-    expect(ui).toContain('Payment receipt (optional)');
+    expect(ui).toContain('Add invoice files (optional)');
+    expect(ui).not.toContain('appendInvoices');
     expect(ui).toContain('overflow-y-auto');
     expect(ui).toContain('Payment note *');
     expect(ui).toContain('Total ₹{(selected.total / 100).toFixed(2)}');

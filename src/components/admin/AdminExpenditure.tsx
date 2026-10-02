@@ -22,15 +22,16 @@ const DailyReconcile = dynamic(() => import("./DailyReconcile").then((m) => m.Da
 const PlatformReceivables = dynamic(() => import("./PlatformReceivables").then((m) => m.PlatformReceivables), { loading: tabLoader, ssr: false });
 const AccountActivity = dynamic(() => import("./AccountActivity").then((m) => m.AccountActivity), { loading: tabLoader, ssr: false });
 
-type AccountsTab = "addExpense" | "payableBills" | "recurringExpenses" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile" | "platformReceivables" | "accountActivity";
+type AccountsTab = "addExpense" | "payableBills" | "unpaidBills" | "recurringExpenses" | "addIncome" | "dailyLedger" | "billRecords" | "incomeRecords" | "foodBill" | "roomBill" | "reconcile" | "platformReceivables" | "accountActivity";
 
 const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?: string | string[] }[] = [
   { id: "addExpense", label: "Add Expense", icon: <PlusCircleIcon className="h-3.5 w-3.5" />, permission: "canAddExpense" },
-  { id: "payableBills", label: "Bills Payable", icon: <WalletCardsIcon className="h-3.5 w-3.5" />, permission: ["canViewExpenses", "canAddExpense"] },
+  { id: "payableBills", label: "Bills Payable", icon: <WalletCardsIcon className="h-3.5 w-3.5" />, permission: "canAddExpense" },
   { id: "recurringExpenses", label: "Recurring Expenses", icon: <Repeat2Icon className="h-3.5 w-3.5" /> },
   { id: "addIncome", label: "Add Income", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canAddIncome" },
   { id: "dailyLedger", label: "Daily Ledger", icon: <BookOpenIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
   { id: "billRecords", label: "Expense Records", icon: <FileTextIcon className="h-3.5 w-3.5" />, permission: "canViewExpenses" },
+  { id: "unpaidBills", label: "Unpaid Bills", icon: <WalletCardsIcon className="h-3.5 w-3.5" />, permission: "canViewExpenses" },
   { id: "incomeRecords", label: "Income Records", icon: <HandCoinsIcon className="h-3.5 w-3.5" />, permission: "canViewAccounts" },
   { id: "foodBill", label: "Food Revenue", icon: <IndianRupeeIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
   { id: "roomBill", label: "Room Revenue", icon: <BedDoubleIcon className="h-3.5 w-3.5" />, permission: "canViewFoodBills" },
@@ -41,7 +42,7 @@ const TABS: { id: AccountsTab; label: string; icon: React.ReactNode; permission?
 
 const TAB_GROUPS = [
   { id: "newAdditions", label: "New Additions", tabIds: ["addExpense", "payableBills", "recurringExpenses", "addIncome"] },
-  { id: "reports", label: "Reports & Charts", tabIds: ["dailyLedger", "billRecords", "incomeRecords", "foodBill", "roomBill"] },
+  { id: "reports", label: "Reports & Charts", tabIds: ["dailyLedger", "billRecords", "unpaidBills", "incomeRecords", "foodBill", "roomBill"] },
   { id: "reconcile", label: "Reconcile", tabIds: ["reconcile", "platformReceivables"] },
   { id: "activity", label: "Account Activity", tabIds: ["accountActivity"] },
 ] as const;
@@ -125,7 +126,8 @@ export function AdminExpenditure({
 
       <div className="mt-6">
         {tab === "addExpense" && <AdminAddExpense password={password} username={username} role={role} permissions={permissions} />}
-        {tab === "payableBills" && <AdminPayableBills password={password} username={username} role={role} permissions={permissions} />}
+        {tab === "payableBills" && <AdminPayableBills key="create" mode="create" onViewRecords={() => setTab("unpaidBills")} password={password} username={username} role={role} permissions={permissions} />}
+        {tab === "unpaidBills" && <AdminPayableBills key="records" mode="records" password={password} username={username} role={role} permissions={permissions} />}
         {tab === "recurringExpenses" && <AdminRecurringExpenses password={password} username={username} />}
         {tab === "addIncome" && <AdminAddIncome password={password} username={username} />}
         {tab === "dailyLedger" && <DailyLedger password={password} username={username} role={role} permissions={permissions} />}

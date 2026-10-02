@@ -5,9 +5,9 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
 import { readFileSync } from "node:fs";
 
-const state = vi.hoisted(() => ({ db: null as any, sqlite: null as any }));
+const state = vi.hoisted(() => ({ db: null as any, sqlite: null as any, role: "admin", permissions: {} as Record<string, boolean> }));
 vi.mock("@/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/auth", () => ({ authenticateUser: vi.fn(async () => ({ role: "admin", displayName: "Admin", permissions: {} })) }));
+vi.mock("@/lib/auth", () => ({ authenticateUser: vi.fn(async () => ({ role: state.role, displayName: "Admin", permissions: state.permissions })) }));
 vi.mock("@/db/queries", () => ({
   addExpense: vi.fn(), getExpensesByUser: vi.fn(), getExpenseById: vi.fn(async (id: number) => state.db.select().from(schema.expenses).where(require("drizzle-orm").eq(schema.expenses.id, id)).limit(1).then((rows: any[]) => rows[0] || null)),
   getExpenseByIdempotencyKey: vi.fn(async (key: string) => state.db.select().from(schema.expenses).where(require("drizzle-orm").eq(schema.expenses.idempotencyKey, key)).limit(1).then((rows: any[]) => rows[0] || null)),
@@ -26,6 +26,7 @@ function req(action: string, body: Record<string, unknown> = {}) {
 describe("payable bill API workflow", () => {
   let sqlite: InstanceType<typeof Database>;
   beforeEach(() => {
+    state.role = "admin"; state.permissions = {};
     sqlite = new Database(":memory:"); sqlite.pragma("foreign_keys = ON");
     sqlite.exec(`CREATE TABLE vendors (id INTEGER PRIMARY KEY, name TEXT, is_active INTEGER DEFAULT 1);
       CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT, nickname TEXT, is_active INTEGER DEFAULT 1, is_virtual INTEGER DEFAULT 0);
@@ -33,11 +34,12 @@ describe("payable bill API workflow", () => {
       CREATE TABLE expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER NOT NULL, category TEXT NOT NULL, custom_category TEXT DEFAULT '', purpose TEXT DEFAULT '', bill_image_link TEXT DEFAULT '', vendor_id INTEGER, account_id INTEGER, payment_method TEXT DEFAULT 'cash', main_category TEXT DEFAULT '', sub_category TEXT DEFAULT '', task_id INTEGER, created_by TEXT NOT NULL DEFAULT '', updated_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT DEFAULT '', expense_date TEXT NOT NULL DEFAULT '', created_month TEXT NOT NULL DEFAULT '', idempotency_key TEXT UNIQUE, transfer_id TEXT, transfer_method TEXT, reverses_transfer_id TEXT, sync_id TEXT, sync_updated_at TEXT, sync_source TEXT, deleted_at TEXT);`);
     sqlite.exec(readFileSync("migrations/0087_payable_bills.sql", "utf8"));
     sqlite.prepare("INSERT INTO accounts VALUES (1, 'HDFC', 'HDFC', 1, 0)").run(); state.sqlite = sqlite; state.db = drizzle(sqlite, { schema });
+    sqlite.prepare("INSERT INTO vendors VALUES (1, 'Builder', 1)").run();
   });
   afterEach(() => sqlite.close());
 
   it("creates a non-financial bill, posts partial and final linked expenses, then reopens after correction", async () => {
-    const created = await POST(req("createPayableBill", { title: "Construction", originalAmount: 5500000, category: "Maintenance", billDate: "2026-10-02" }));
+    const created = await POST(req("createPayableBill", { title: "Construction", originalAmount: 5500000, category: "Maintenance", vendorId: 1, billDate: "2026-10-02" }));
     expect(created.status).toBe(200); const billId = (await created.json()).id;
     expect(sqlite.prepare("SELECT COUNT(*) count FROM expenses").get()).toMatchObject({ count: 0 });
     const invoiceAppend = await POST(req("updatePayableBill", { id: billId, billFiles: [{ name: "invoice.jpg", mime: "image/jpeg", data: "YQ==" }, { name: "quote.pdf", mime: "application/pdf", data: "Yg==" }] }));
@@ -58,6 +60,17 @@ describe("payable bill API workflow", () => {
     expect((await POST(req("recordPayableBillPayment", { id: billId, amount: 1, expenseDate: "2026-10-02", paymentMethod: "cash", paymentNote: "Overpayment", idempotencyKey: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }))).status).toBe(400);
     const secondExpense = sqlite.prepare("SELECT id FROM expenses WHERE amount = 5000000").get() as { id: number };
     expect((await POST(req("deleteExpense", { id: secondExpense.id }))).status).toBe(200);
-    expect((await (await POST(req("getPayableBill", { id: billId }))).json()).bill).toMatchObject({ paid: 1000000, remaining: 5000000, status: "open" });
+    const corrected = (await (await POST(req("getPayableBill", { id: billId }))).json()).bill;
+    expect(corrected).toMatchObject({ vendorName: "Builder", paid: 1000000, remaining: 5000000, status: "open" });
+    expect(corrected.payments.find((payment: any) => payment.id === secondExpense.id).deletedAt).toBeTruthy();
+  });
+  it("allows records-only users to read but denies every bill mutation", async () => {
+    const created = await POST(req("createPayableBill", { title: "Invoice", originalAmount: 100, category: "Maintenance", billDate: "2026-10-02" }));
+    const id = (await created.json()).id;
+    state.role = "staff"; state.permissions = { canViewExpenses: true };
+    expect((await POST(req("listPayableBills"))).status).toBe(200);
+    expect((await POST(req("getPayableBill", { id }))).status).toBe(200);
+    for (const action of ["createPayableBill", "addPayableBillNote", "recordPayableBillPayment", "increasePayableBillTotal", "updatePayableBill", "deletePayableBill"]) expect((await POST(req(action, { id }))).status).toBe(403);
+    expect(sqlite.prepare("SELECT COUNT(*) count FROM expenses").get()).toMatchObject({ count: 0 });
   });
 });
