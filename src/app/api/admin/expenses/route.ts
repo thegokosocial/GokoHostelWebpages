@@ -106,7 +106,7 @@ async function payableBillView(db: any, id: number) {
   if (!bill) return null;
   const [adjustments, payments, notes] = await Promise.all([
     db.select().from(payableBillAdjustments).where(eq(payableBillAdjustments.payableBillId, id)).orderBy(payableBillAdjustments.id),
-    db.select({ id: expenses.id, amount: expenses.amount, expenseDate: expenses.expenseDate, paymentMethod: expenses.paymentMethod, accountId: expenses.accountId, accountName: sql<string>`CASE WHEN ${expenses.accountId} IS NULL THEN 'Cash' ELSE COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name}, 'Account') END`, billImageLink: expenses.billImageLink, purpose: expenses.purpose, deletedAt: expenses.deletedAt }).from(expenses).leftJoin(accounts, eq(expenses.accountId, accounts.id)).where(eq(expenses.payableBillId, id)).orderBy(desc(expenses.expenseDate), desc(expenses.id)),
+    db.select({ id: expenses.id, amount: expenses.amount, expenseDate: expenses.expenseDate, paymentMethod: expenses.paymentMethod, accountId: expenses.accountId, accountName: sql<string>`CASE WHEN ${expenses.accountId} IS NULL THEN 'Cash' ELSE COALESCE(NULLIF(${accounts.nickname}, ''), ${accounts.name}, 'Account') END`, billImageLink: expenses.billImageLink, purpose: expenses.purpose, createdBy: expenses.createdBy, createdAt: expenses.createdAt, deletedAt: expenses.deletedAt }).from(expenses).leftJoin(accounts, eq(expenses.accountId, accounts.id)).where(eq(expenses.payableBillId, id)).orderBy(desc(expenses.expenseDate), desc(expenses.id)),
     db.select().from(payableBillNotes).where(eq(payableBillNotes.payableBillId, id)).orderBy(desc(payableBillNotes.id)),
   ]);
   const total = bill.originalAmount + adjustments.reduce((sum: number, row: any) => sum + row.amount, 0);
@@ -206,9 +206,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true });
       }
       case "increasePayableBillTotal": {
-        const id = Number(rest.id); const amount = Number(rest.amount); const reason = typeof rest.reason === "string" ? rest.reason.trim() : "";
-        if (!Number.isSafeInteger(id) || !Number.isSafeInteger(amount) || amount <= 0 || !reason || reason.length > 500) return NextResponse.json({ error: "A positive increase and reason are required" }, { status: 400 });
-        if (!await payableBillView(getDb(), id)) return NextResponse.json({ error: "Payable bill not found" }, { status: 404 });
+        const id = Number(rest.id); const newTotal = Number(rest.newTotal); const reason = typeof rest.reason === "string" ? rest.reason.trim() : "";
+        const bill = await payableBillView(getDb(), id); const amount = bill ? newTotal - bill.total : 0;
+        if (!Number.isSafeInteger(id) || !Number.isSafeInteger(newTotal) || !Number.isSafeInteger(amount) || amount <= 0 || !reason || reason.length > 500) return NextResponse.json({ error: "Enter a higher new total and a reason" }, { status: 400 });
+        if (!bill) return NextResponse.json({ error: "Payable bill not found" }, { status: 404 });
         await getDb().insert(payableBillAdjustments).values(syncInsert({ payableBillId: id, amount, reason, createdBy: actorName, createdAt: new Date().toISOString() }));
         await addAuditEntry({ username: actorName, action: "payable_bill_increased", target: `payable_bill:${id}`, details: `₹${(amount / 100).toFixed(2)} ${reason}` });
         return NextResponse.json({ success: true });
@@ -216,16 +217,17 @@ export async function POST(req: NextRequest) {
       case "recordPayableBillPayment": {
         const id = Number(rest.id); const amount = Number(rest.amount); const expenseDate = typeof rest.expenseDate === "string" ? rest.expenseDate : todayIST();
         const paymentMethod = rest.paymentMethod || "cash"; const accountId = rest.accountId == null || rest.accountId === "" ? null : Number(rest.accountId);
+        const paymentNote = typeof rest.paymentNote === "string" ? rest.paymentNote.trim() : "";
         const parsed = parseCreateIdempotencyKey(rest.idempotencyKey); if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
         const prior = await getExpenseByIdempotencyKey(parsed.key); if (prior) return prior.payableBillId === id ? NextResponse.json({ success: true, id: prior.id, duplicate: true }) : NextResponse.json({ error: "Payment request key was already used" }, { status: 409 });
         const bill = await payableBillView(getDb(), id);
-        if (!bill || !Number.isSafeInteger(amount) || amount <= 0 || amount > bill.remaining || !isValidReconciliationDate(expenseDate, todayIST()) || !["cash", "online"].includes(paymentMethod) || ((paymentMethod === "cash") !== (accountId === null))) return NextResponse.json({ error: "Payment details are invalid or exceed the remaining balance" }, { status: 400 });
+        if (!bill || !Number.isSafeInteger(amount) || amount <= 0 || amount > bill.remaining || !paymentNote || paymentNote.length > 500 || !isValidReconciliationDate(expenseDate, todayIST()) || !["cash", "online"].includes(paymentMethod) || ((paymentMethod === "cash") !== (accountId === null))) return NextResponse.json({ error: "Payment details, including a note, are invalid or exceed the remaining balance" }, { status: 400 });
         if (accountId !== null) { const active = await getDb().select({ id: accounts.id }).from(accounts).where(and(eq(accounts.id, accountId), eq(accounts.isActive, 1), eq(accounts.isVirtual, 0))).limit(1); if (!active.length) return NextResponse.json({ error: "Select an active real bank account" }, { status: 400 }); }
         const locked = await getDb().select({ id: dailyLedger.id }).from(dailyLedger).where(and(sql`${dailyLedger.date} >= ${expenseDate}`, accountId === null ? isNull(dailyLedger.accountId) : eq(dailyLedger.accountId, accountId), eq(dailyLedger.isReconciled, 1))).limit(1);
         if (locked.length) return NextResponse.json({ error: "Undo reconciliation before recording this payment" }, { status: 409 });
         let links = ""; try { links = await uploadPayableFiles(rest, expenseDate.slice(0, 7)); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Receipt upload failed" }, { status: 503 }); }
         try {
-          const inserted = await getDb().insert(expenses).values(syncInsert({ amount, category: bill.category, customCategory: bill.customCategory, purpose: bill.title, billImageLink: links, vendorId: bill.vendorId, accountId, paymentMethod, mainCategory: bill.mainCategory, subCategory: bill.subCategory, payableBillId: id, createdBy: actorName, expenseDate, createdMonth: expenseDate.slice(0, 7), idempotencyKey: parsed.key, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })).returning({ id: expenses.id });
+          const inserted = await getDb().insert(expenses).values(syncInsert({ amount, category: bill.category, customCategory: bill.customCategory, purpose: `${bill.title} — ${paymentNote}`, billImageLink: links, vendorId: bill.vendorId, accountId, paymentMethod, mainCategory: bill.mainCategory, subCategory: bill.subCategory, payableBillId: id, createdBy: actorName, expenseDate, createdMonth: expenseDate.slice(0, 7), idempotencyKey: parsed.key, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })).returning({ id: expenses.id });
           await addAuditEntry({ username: actorName, action: "payable_bill_payment", target: `payable_bill:${id}`, details: `₹${(amount / 100).toFixed(2)}` });
           return NextResponse.json({ success: true, id: inserted[0]?.id });
         } catch (error) {
@@ -243,7 +245,10 @@ export async function POST(req: NextRequest) {
         const dueDate = rest.dueDate === undefined ? existing.dueDate : String(rest.dueDate);
         if (!title || !category || !isValidReconciliationDate(billDate, todayIST()) || (dueDate && !isValidReconciliationDate(dueDate, "9999-12-31"))) return NextResponse.json({ error: "Title, category, and dates are invalid" }, { status: 400 });
         if (rest.vendorId) { const vendor = await getDb().select({ id: vendors.id }).from(vendors).where(eq(vendors.id, Number(rest.vendorId))).limit(1); if (!vendor.length) return NextResponse.json({ error: "Vendor not found" }, { status: 400 }); }
-        await getDb().update(payableBills).set(syncUpdate({ title, category, description: typeof rest.description === "string" ? rest.description.trim().slice(0, 5000) : existing.description, customCategory: typeof rest.customCategory === "string" ? rest.customCategory.trim().slice(0, 100) : existing.customCategory, mainCategory: typeof rest.mainCategory === "string" ? rest.mainCategory : existing.mainCategory, subCategory: typeof rest.subCategory === "string" ? rest.subCategory : existing.subCategory, vendorId: rest.vendorId === undefined ? existing.vendorId : (rest.vendorId ? Number(rest.vendorId) : null), billDate, dueDate, updatedBy: actorName, updatedAt: new Date().toISOString() })).where(eq(payableBills.id, id));
+        let uploadedLinks = "";
+        try { uploadedLinks = await uploadPayableFiles(rest, billDate.slice(0, 7)); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invoice upload failed" }, { status: 503 }); }
+        const billImageLink = [existing.billImageLink, uploadedLinks].filter(Boolean).join(",");
+        await getDb().update(payableBills).set(syncUpdate({ title, category, description: typeof rest.description === "string" ? rest.description.trim().slice(0, 5000) : existing.description, customCategory: typeof rest.customCategory === "string" ? rest.customCategory.trim().slice(0, 100) : existing.customCategory, mainCategory: typeof rest.mainCategory === "string" ? rest.mainCategory : existing.mainCategory, subCategory: typeof rest.subCategory === "string" ? rest.subCategory : existing.subCategory, vendorId: rest.vendorId === undefined ? existing.vendorId : (rest.vendorId ? Number(rest.vendorId) : null), billDate, dueDate, billImageLink, updatedBy: actorName, updatedAt: new Date().toISOString() })).where(eq(payableBills.id, id));
         return NextResponse.json({ success: true });
       }
       case "deletePayableBill": {

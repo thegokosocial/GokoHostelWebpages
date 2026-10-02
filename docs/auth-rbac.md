@@ -212,7 +212,7 @@ View list/tabs: `canViewFoodOrders` / `canViewFoodTabs`; the Order Summary UI ac
 
 ### `/api/admin/expenses`
 
-`listPayableBills` and `getPayableBill` require `canViewExpenses`; creating a payable bill, appending its notes, and recording an installment require `canAddExpense`; editing bill details or adding a reasoned total increase requires `canEditExpense`; deleting an empty bill requires `canDeleteExpense`. A linked installment is an ordinary expense and therefore retains normal account/date reconciliation checks. No new permission keys are added.
+`listPayableBills` and `getPayableBill` require `canViewExpenses`; creating a payable bill, appending its notes, and recording an installment require `canAddExpense`; editing bill details or appending invoice files and adding a reasoned total increase requires `canEditExpense`; deleting an empty bill requires `canDeleteExpense`. An installment requires a bounded payment note and is stored as an ordinary linked expense with its actor/timestamp, so normal account/date reconciliation checks still apply. No new permission keys are added.
 
 Recurring expense routes are Admin-only. No staff or manager permission key grants rule, draft, skip, or automatic-post access; pending drafts have no ledger effect until the existing expense API posts them.
 

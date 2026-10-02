@@ -19,5 +19,11 @@ describe("payable bills sync and mobile wiring", () => {
     expect(ui).toContain('payment.paymentMethod === "online"');
     expect(ui).toContain('Payment receipt (optional)');
     expect(ui).toContain('overflow-y-auto');
+    expect(ui).toContain('Payment note *');
+    expect(ui).toContain('Total ₹{(selected.total / 100).toFixed(2)}');
+    expect(ui).toContain('New total (₹)');
+    expect(ui).toContain('No files selected');
+    expect(ui).toContain('Add invoice files');
+    expect(ui).not.toContain('prompt("Add a note")');
   });
 });
