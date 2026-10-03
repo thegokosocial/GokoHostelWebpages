@@ -2,6 +2,10 @@
 
 This rule applies to every agent/chat working in this repository.
 
+## End-to-end regression gate
+
+For every non-trivial behavior, payment, authentication, API, or UI change, read and follow [skills/e2e-regression-gate/SKILL.md](skills/e2e-regression-gate/SKILL.md). The affected workflow must have a risk-based path matrix and durable unit, route/integration, and browser coverage where applicable before commit.
+
 ## Keep code, permissions, tests, and docs synchronized
 
 For every behavior, page, API action, schema, authentication, authorization, or workflow change, update the matching documentation in the same turn. Do not leave documentation work for later.

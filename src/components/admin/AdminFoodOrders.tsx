@@ -2683,7 +2683,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   const [guests, setGuests] = useState<CombinedGuestOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [preview, setPreview] = useState<{ guests: any[]; grandTotal: number } | null>(null);
+  const [preview, setPreview] = useState<{ guests: any[]; grandTotal: number; qrMode?: "static" | "razorpay_test" | "razorpay_live" } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [btSupported, setBtSupported] = useState(false);
   const [printingCombined, setPrintingCombined] = useState(false);
@@ -2725,12 +2725,12 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   };
 
   const ensureBillBranding = async () => {
-    if (billBrandingReady) return billBranding;
+    if (billBrandingReady) return { branding: billBranding, qrMode: billQrMode };
     const { branding, qrMode } = await withBillBranding(password, username, showError, { embedQr: false });
     setBillBranding(branding);
     setBillQrMode(qrMode || "static");
     setBillBrandingReady(true);
-    return branding;
+    return { branding, qrMode: qrMode || "static" };
   };
 
   const loadPreview = async () => {
@@ -2738,7 +2738,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
     setLoadingPreview(true);
     try {
       const selected = guests.filter((guest) => selectedIds.includes(String(guest.key ?? guest.checkinId)));
-      const [res] = await Promise.all([
+      const [res, branding] = await Promise.all([
         apiCall({
           action: "getCombinedBill",
           checkinIds: selected.filter((guest) => guest.checkinId).map((guest) => guest.checkinId),
@@ -2748,7 +2748,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       ]);
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setPreview(data);
+        setPreview({ ...data, qrMode: branding.qrMode });
         setCombinedShareUrl("");
       } else {
         setPreview(null);
@@ -2862,7 +2862,8 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
     else { setPreview(null); showError("Combined Bill", data.error || "Could not reload combined bill"); }
   };
 
-  const combinedQrEnabled = Boolean(preview && isRazorpayBillMode(billQrMode) && combinedOrderIds.length > 0);
+  const combinedQrMode = preview?.qrMode || billQrMode;
+  const combinedQrEnabled = Boolean(preview && isRazorpayBillMode(combinedQrMode) && combinedOrderIds.length > 0);
   const combinedQrRemintKey = combinedApplyOrders.map((o: any) => `${o.id}:${foodDue(o)}`).sort().join("|");
   const { state: combinedQrState } = useFoodBillDynamicQr({
     enabled: combinedQrEnabled,
@@ -2916,7 +2917,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
     accent: billBranding.accent,
     upiId: billBranding.upiId,
     qrUrl: billBranding.paymentQrUrl,
-    qrMode: billQrMode,
+    qrMode: combinedQrMode,
     footer: billBranding.footer,
     taxRate: foodTaxRateFromAmounts(
       orders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0),

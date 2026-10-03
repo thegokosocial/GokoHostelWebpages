@@ -257,7 +257,7 @@ test("Combined Bill preview and cash pay", async ({ page }) => {
   await loginAdmin(page);
   await page.getByRole("button", { name: "Combined Bill", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Combined Bill" })).toBeVisible();
-  await page.getByText("Pawan test").click();
+  await page.getByRole("checkbox", { name: /Pawan test/ }).check();
   await page.getByRole("button", { name: /Preview Combined Bill/ }).click();
   await expect(page.getByRole("heading", { name: "Bill Preview" })).toBeVisible({ timeout: 10_000 });
   await expect.poll(() => foodRequests.some((r) => r.action === "getCombinedBill")).toBe(true);
@@ -267,6 +267,74 @@ test("Combined Bill preview and cash pay", async ({ page }) => {
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect.poll(() => foodRequests.filter((r) => r.action === "markOrderPaid")).toHaveLength(1);
 });
+
+for (const scenario of [
+  {
+    name: "static mode keeps the configured static QR without minting Razorpay",
+    mode: "static" as const,
+    expectEnsure: false,
+    caption: "PhonePe static QR",
+  },
+  {
+    name: "Razorpay mode mints an exact-total QR for the combined orders",
+    mode: "razorpay_live" as const,
+    expectEnsure: true,
+    caption: "Razorpay UPI · exact amount",
+  },
+  {
+    name: "Razorpay failure visibly falls back to the configured static QR",
+    mode: "razorpay_live" as const,
+    expectEnsure: true,
+    caption: "Razorpay unavailable · PhonePe static QR",
+    ensureError: true,
+  },
+] as const) {
+  test(`Combined Bill QR: ${scenario.name}`, async ({ page }) => {
+    const { foodPaymentRequests } = await mockAdminShell(page, {
+      permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canGenerateFoodBills: true },
+      onAdminFood: (body) => body.action === "getBillBranding"
+        ? {
+          json: {
+            settings: {
+              food_bill_qr_mode: scenario.mode,
+              food_bill_payment_qr_url: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+              food_bill_upi_id: "goko@ybl",
+            },
+          },
+        }
+        : null,
+      onFoodPayments: (body) => body.action === "ensureFoodQr"
+        ? scenario.ensureError
+          ? { status: 503, json: { error: "Razorpay is unavailable" } }
+          : {
+            json: {
+              attempt: {
+                attemptId: "11111111-2222-3333-4444-555555555555",
+                state: "active",
+                upiIntent: "upi://pay?pa=goko.razorpay@hdfcbank&am=400.00&cu=INR",
+                amountPaise: 40000,
+                closeBy: "2099-01-01T00:00:00.000Z",
+              },
+            },
+          }
+        : null,
+    });
+    await loginAdmin(page);
+    await page.getByRole("button", { name: "Combined Bill", exact: true }).click();
+    await page.getByRole("checkbox", { name: /Pawan test/ }).check();
+    await page.getByRole("button", { name: /Preview Combined Bill/ }).click();
+
+    await expect(page.getByRole("heading", { name: "Bill Preview" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(scenario.caption)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Pay ₹400\.00 via UPI/)).toBeVisible();
+    if (scenario.expectEnsure) {
+      await expect.poll(() => foodPaymentRequests.filter((r) => r.action === "ensureFoodQr").length).toBe(1);
+      expect(foodPaymentRequests.find((r) => r.action === "ensureFoodQr")).toMatchObject({ orderIds: [10] });
+    } else {
+      expect(foodPaymentRequests.filter((r) => r.action === "ensureFoodQr")).toHaveLength(0);
+    }
+  });
+}
 
 test("RBAC hides pay, cancel, combined, and place when keys missing", async ({ page }) => {
   await mockAdminShell(page, {

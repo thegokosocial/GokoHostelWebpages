@@ -172,6 +172,8 @@ export function GuestFoodBillCard({
     razorpayMode: isRazorpayBillMode(branding.qrMode),
     fallbackToStaticOnDynamicError,
   });
+  const showQrDetails = dynamicQr?.status !== "paid" && dynamicQr?.status !== "loading"
+    && (dynamicQr?.status !== "error" || payQr.kind === "static");
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
   const latest = orders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b), orders[0]);
@@ -280,10 +282,10 @@ export function GuestFoodBillCard({
               decoding="async"
             />
           )}
-          {dynamicQr?.status !== "paid" && dynamicQr?.status !== "error" && dynamicQr?.status !== "loading" && (
+          {showQrDetails && (
             <>
               {staffQrCaption && (
-                <p className="mt-2 text-[11px] text-zinc-400">{staffQrCaption.text}</p>
+                <p className="mt-2 text-[11px] font-medium text-zinc-500">{staffQrCaption.text}</p>
               )}
               <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                 Pay{" "}
