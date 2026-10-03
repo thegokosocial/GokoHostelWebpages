@@ -288,6 +288,7 @@ export function mapFoodQrAttemptToUi(attempt: FoodQrAttemptPayload | null | unde
 export function mapFoodQrEnsureResponse(opts: {
   ok: boolean;
   status: number;
+  admin?: boolean;
   body: { paid?: boolean; mode?: string; error?: string; attempt?: FoodQrAttemptPayload };
 }): FoodBillQrUiState {
   if (opts.status === 409 && opts.body.paid) {
@@ -296,6 +297,14 @@ export function mapFoodQrEnsureResponse(opts: {
   if (!opts.ok) {
     if (opts.body.mode === "static" || /not enabled/i.test(String(opts.body.error || ""))) {
       return { status: "static" };
+    }
+    if (opts.status === 401) {
+      return { status: "error", message: "Your admin session expired. Sign in again to create a Razorpay QR." };
+    }
+    if (opts.status === 403) {
+      return { status: "error", message: opts.admin
+        ? "You do not have permission to create a Razorpay QR."
+        : opts.body.error || "This bill link cannot create a payment QR." };
     }
     return { status: "error", message: opts.body.error || "Could not prepare payment QR" };
   }

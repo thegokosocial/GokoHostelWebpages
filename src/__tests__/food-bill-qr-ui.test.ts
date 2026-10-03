@@ -209,10 +209,19 @@ describe("mapFoodQrEnsureResponse", () => {
     }).status).toBe("static");
   });
 
-  it("other errors surface message", () => {
+  it("maps authentication and permission errors to actionable messages", () => {
     expect(mapFoodQrEnsureResponse({
-      ok: false, status: 403, body: { error: "Orders do not match this bill" },
-    })).toEqual({ status: "error", message: "Orders do not match this bill" });
+      ok: false, status: 401, body: { error: "Unauthorized" },
+    })).toEqual({ status: "error", message: "Your admin session expired. Sign in again to create a Razorpay QR." });
+    expect(mapFoodQrEnsureResponse({
+      ok: false, status: 403, admin: true, body: { error: "Missing permission" },
+    })).toEqual({ status: "error", message: "You do not have permission to create a Razorpay QR." });
+  });
+
+  it("keeps safe provider and configuration errors visible", () => {
+    expect(mapFoodQrEnsureResponse({
+      ok: false, status: 503, body: { error: "Razorpay integration is not configured" },
+    })).toEqual({ status: "error", message: "Razorpay integration is not configured" });
   });
 
   it("ok with attempt maps through", () => {

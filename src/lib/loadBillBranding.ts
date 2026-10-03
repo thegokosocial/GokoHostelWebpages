@@ -20,7 +20,7 @@ export type LoadBillBrandingOptions = {
   embedQr?: boolean;
 };
 
-async function qrUrlToDataUrl(url: string): Promise<string | undefined> {
+export async function billQrUrlToDataUrl(url: string): Promise<string | undefined> {
   if (!url) return undefined;
   try {
     const res = await fetch(url);
@@ -64,7 +64,7 @@ export async function loadBillBranding(
     const branding = brandingFromSettings(settings);
     const qrMode = parseBillQrMode(settings[BILL_QR_MODE_KEY]);
     const paymentQrDataUrl = embedQr && branding.paymentQrUrl
-      ? await qrUrlToDataUrl(branding.paymentQrUrl)
+      ? await billQrUrlToDataUrl(branding.paymentQrUrl)
       : undefined;
     return { ok: true, branding, paymentQrDataUrl, qrMode };
   } catch {

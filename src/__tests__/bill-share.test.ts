@@ -159,7 +159,8 @@ describe("mock workflows (source contracts)", () => {
     expect(branding).toMatch(/embedQr !== false/);
     const ui = readFileSync("src/components/admin/AdminFoodOrders.tsx", "utf8");
     expect(ui).toMatch(/openBillView[\s\S]*embedQr:\s*false/);
-    expect(ui).toMatch(/embedQr:\s*true/);
+    expect(ui).toContain("billQrUrlToDataUrl");
+    expect(ui).toContain("preview.branding");
   });
 
   it("bill-share migrations + schema + Pi skips are Cloudflare-only", () => {

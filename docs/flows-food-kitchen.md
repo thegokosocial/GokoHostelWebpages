@@ -1,6 +1,6 @@
 # Food and kitchen
 
-> **Combined bill:** one merged shared bill, one total and QR, and one WhatsApp action per selected guest. Every action sends the same full opaque link restricted to its selected order IDs. Static mode renders directly; Razorpay mode creates the exact-total QR and falls back to static only after Razorpay fails. The QR caption always states whether it is the Razorpay exact-amount QR or the PhonePe static fallback. Download PDF follows the merged UI.
+> **Combined bill:** one merged shared bill, one total and QR, and one WhatsApp action per selected guest. Every action sends the same full opaque link restricted to its selected order IDs. Static mode renders directly; Razorpay mode creates the exact-total QR and falls back to static only after Razorpay fails. The QR caption always states whether it is the Razorpay exact-amount QR or the PhonePe static fallback. Dynamic errors remain visible beside a static fallback (expired admin session and missing permission are actionable), and staff can retry the dynamic QR. Print and Download PDF reuse the loaded preview branding rather than making a second authenticated branding request; a static QR image that cannot be embedded fails PDF download with an upload-specific error. Download PDF follows the merged UI.
 
 **Git-safe.** Kitchen login: `ADMIN_PASSWORD` or `MANAGER_PASSWORD` or **any DB user password** (`authenticateKitchen`, no username). Stored in `sessionStorage.kitchen_pw`. Values: [secrets-and-access.md](secrets-and-access.md).
 

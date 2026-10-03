@@ -7,7 +7,7 @@ import { cn, localDateStr } from "@/lib/utils";
 import { Loader2Icon, RefreshCwIcon, XIcon, PlusIcon, MinusIcon, SearchIcon, ChevronDownIcon, ChevronRightIcon, BanknoteIcon, SmartphoneIcon, PrinterIcon, DownloadIcon, HistoryIcon, PencilIcon, UtensilsIcon, TagIcon, AlertTriangleIcon, ReceiptIcon, MessageCircleIcon } from "lucide-react";
 import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicket, type BillItem } from "@/lib/thermalPrint";
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
-import { loadBillBranding } from "@/lib/loadBillBranding";
+import { billQrUrlToDataUrl, loadBillBranding } from "@/lib/loadBillBranding";
 import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/food/GuestFoodBillCard";
 import { foodBillQrDataUrl } from "@/components/sections/AutoQrCode";
 import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/lib/foodBillFormat";
@@ -2683,7 +2683,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   const [guests, setGuests] = useState<CombinedGuestOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [preview, setPreview] = useState<{ guests: any[]; grandTotal: number; qrMode?: "static" | "razorpay_test" | "razorpay_live" } | null>(null);
+  const [preview, setPreview] = useState<{ guests: any[]; grandTotal: number; qrMode?: "static" | "razorpay_test" | "razorpay_live"; branding: BillBranding } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [btSupported, setBtSupported] = useState(false);
   const [printingCombined, setPrintingCombined] = useState(false);
@@ -2748,7 +2748,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       ]);
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setPreview({ ...data, qrMode: branding.qrMode });
+        setPreview({ ...data, qrMode: branding.qrMode, branding: branding.branding });
         setCombinedShareUrl("");
       } else {
         setPreview(null);
@@ -2821,8 +2821,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
         ),
       }));
       const cpTax = Math.max(0, preview.grandTotal - cpSubtotal);
-      const { branding } = await withBillBranding(password, username, showError, { embedQr: true });
-      await printCombinedBill(guestData, preview.grandTotal, foodTaxRateFromAmounts(cpSubtotal, cpTax), undefined, cpSubtotal - cpExempt, cpExempt, branding, cpTax);
+      await printCombinedBill(guestData, preview.grandTotal, foodTaxRateFromAmounts(cpSubtotal, cpTax), undefined, cpSubtotal - cpExempt, cpExempt, preview.branding, cpTax);
       showSuccess("Combined bill printed successfully!");
     } catch (err: any) {
       showError("Print failed", err.message || "Unknown error");
@@ -2858,14 +2857,14 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       orderIds: selected.flatMap((guest) => guest.checkinId ? [] : (guest.orderIds || [])),
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) { setPreview(data); setCombinedShareUrl(""); }
+    if (res.ok) { setPreview({ ...data, qrMode: preview?.qrMode, branding: preview?.branding || billBranding }); setCombinedShareUrl(""); }
     else { setPreview(null); showError("Combined Bill", data.error || "Could not reload combined bill"); }
   };
 
   const combinedQrMode = preview?.qrMode || billQrMode;
   const combinedQrEnabled = Boolean(preview && isRazorpayBillMode(combinedQrMode) && combinedOrderIds.length > 0);
   const combinedQrRemintKey = combinedApplyOrders.map((o: any) => `${o.id}:${foodDue(o)}`).sort().join("|");
-  const { state: combinedQrState } = useFoodBillDynamicQr({
+  const { state: combinedQrState, refresh: refreshCombinedQr } = useFoodBillDynamicQr({
     enabled: combinedQrEnabled,
     orderIds: combinedOrderIds,
     remintKey: combinedQrRemintKey,
@@ -2912,13 +2911,13 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   };
 
   const cardBranding = (orders: any[]) => ({
-    hostelName: billBranding.hostelName,
-    location: billBranding.location,
-    accent: billBranding.accent,
-    upiId: billBranding.upiId,
-    qrUrl: billBranding.paymentQrUrl,
+    hostelName: preview?.branding.hostelName || billBranding.hostelName,
+    location: preview?.branding.location || billBranding.location,
+    accent: preview?.branding.accent || billBranding.accent,
+    upiId: preview?.branding.upiId || billBranding.upiId,
+    qrUrl: preview?.branding.paymentQrUrl || billBranding.paymentQrUrl,
     qrMode: combinedQrMode,
-    footer: billBranding.footer,
+    footer: preview?.branding.footer || billBranding.footer,
     taxRate: foodTaxRateFromAmounts(
       orders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0),
       orders.reduce((s: number, o: any) => s + (o.tax || 0), 0),
@@ -2984,6 +2983,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
             participantNames={preview.guests.map((g: any) => g.guestName)}
             dynamicQr={combinedDynamicQr}
             fallbackToStaticOnDynamicError
+            onRetryDynamicQr={() => void refreshCombinedQr()}
             alwaysExpanded
             footerActions={preview.guests.map((g: any) => {
               const key = String(g.key ?? g.checkinId);
@@ -3041,12 +3041,19 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
                     }
                   }
                   const combTax = Math.max(0, preview.grandTotal - combSub);
-                  const { branding, paymentQrDataUrl: staticQrDataUrl } = await withBillBranding(password, username, showError, { embedQr: true });
+                  const branding = preview.branding;
+                  const staticQrDataUrl = branding.paymentQrUrl
+                    ? await billQrUrlToDataUrl(branding.paymentQrUrl)
+                    : undefined;
                   const paymentQrDataUrl = combinedQrState.status === "active"
                     ? (combinedQrState.upiIntent ? await foodBillQrDataUrl(combinedQrState.upiIntent) : "")
                     : staticQrDataUrl;
                   if (combinedQrState.status === "active" && !paymentQrDataUrl) {
                     showError("Download PDF", "The active Razorpay QR image cannot be embedded safely");
+                    return;
+                  }
+                  if (combinedQrState.status !== "active" && branding.paymentQrUrl && !paymentQrDataUrl) {
+                    showError("Download PDF", "The configured PhonePe QR image could not be embedded. Check the Bill Settings upload.");
                     return;
                   }
                   const combinedData: CombinedBillData = {

@@ -132,7 +132,7 @@ export function useFoodBillDynamicQr(opts: {
         commitState({ status: "loading" });
         return;
       }
-      const next = mapFoodQrEnsureResponse({ ok: res.ok, status: res.status, body: data });
+      const next = mapFoodQrEnsureResponse({ ok: res.ok, status: res.status, admin: opts.admin, body: data });
       if (next.status === "active") attemptIdRef.current = next.attemptId;
       else if (next.status === "loading" && next.attemptId) attemptIdRef.current = next.attemptId;
       commitState(next);

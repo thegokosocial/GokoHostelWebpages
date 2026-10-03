@@ -336,6 +336,61 @@ for (const scenario of [
   });
 }
 
+test("Combined Bill QR keeps an actionable session error beside the labelled static fallback and retries", async ({ page }) => {
+  const { foodPaymentRequests } = await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canGenerateFoodBills: true },
+    onAdminFood: (body) => body.action === "getBillBranding" ? {
+      json: { settings: {
+        food_bill_qr_mode: "razorpay_live",
+        food_bill_payment_qr_url: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+        food_bill_upi_id: "goko@ybl",
+      } },
+    } : null,
+    onFoodPayments: (body, requests) => body.action === "ensureFoodQr"
+      ? requests.filter((request) => request.action === "ensureFoodQr").length === 1
+        ? { status: 401, json: { error: "Unauthorized" } }
+        : { json: { attempt: {
+          attemptId: "11111111-2222-3333-4444-555555555555", state: "active",
+          upiIntent: "upi://pay?pa=goko.razorpay@hdfcbank&am=400.00&cu=INR", amountPaise: 40000,
+          closeBy: "2099-01-01T00:00:00.000Z",
+        } } }
+      : null,
+  });
+  await loginAdmin(page);
+  await page.getByRole("button", { name: "Combined Bill", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Pawan test/ }).check();
+  await page.getByRole("button", { name: /Preview Combined Bill/ }).click();
+  await expect(page.getByText("PhonePe static QR")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Your admin session expired. Sign in again to create a Razorpay QR.")).toBeVisible();
+  await page.getByRole("button", { name: "Retry Razorpay QR" }).click();
+  await expect.poll(() => foodPaymentRequests.filter((request) => request.action === "ensureFoodQr")).toHaveLength(2);
+  await expect(page.getByText("Razorpay UPI · exact amount")).toBeVisible();
+});
+
+test("Combined Bill PDF reuses the preview branding without a second authenticated branding request", async ({ page }) => {
+  const { adminFoodRequests } = await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canGenerateFoodBills: true },
+    onAdminFood: (body) => body.action === "getBillBranding" ? {
+      json: { settings: {
+        food_bill_qr_mode: "static",
+        food_bill_hostel_name: "Goko Hostel",
+        food_bill_payment_qr_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mNk+M/wHwAF/gL+VDbf9QAAAABJRU5ErkJggg==",
+        food_bill_upi_id: "goko@ybl",
+      } },
+    } : null,
+  });
+  await loginAdmin(page);
+  await page.getByRole("button", { name: "Combined Bill", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Pawan test/ }).check();
+  await page.getByRole("button", { name: /Preview Combined Bill/ }).click();
+  await expect(page.getByRole("heading", { name: "Bill Preview" })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => adminFoodRequests.filter((request) => request.action === "getBillBranding")).toHaveLength(1);
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PDF" }).click();
+  await download;
+  expect(adminFoodRequests.filter((request) => request.action === "getBillBranding")).toHaveLength(1);
+});
+
 test("RBAC hides pay, cancel, combined, and place when keys missing", async ({ page }) => {
   await mockAdminShell(page, {
     role: "staff",

@@ -100,6 +100,7 @@ export function GuestFoodBillCard({
   billTitle,
   participantNames,
   fallbackToStaticOnDynamicError = false,
+  onRetryDynamicQr,
   paymentDue,
   dynamicQr,
   hidePayment = false,
@@ -116,6 +117,7 @@ export function GuestFoodBillCard({
   billTitle?: string;
   participantNames?: string[];
   fallbackToStaticOnDynamicError?: boolean;
+  onRetryDynamicQr?: () => void;
   paymentDue?: number;
   dynamicQr?: GuestFoodBillDynamicQr | null;
   /** Menu My Bills: items only — never show UPI/QR pay block */
@@ -259,8 +261,15 @@ export function GuestFoodBillCard({
           {dynamicQr?.status === "loading" && (
             <p className="text-sm text-zinc-500">{staffQrCaption?.text || "Preparing Razorpay QR…"}</p>
           )}
-          {dynamicQr?.status === "error" && !qrSrc && (
-            <p className="text-sm text-red-600">{dynamicQr.message || "Payment QR unavailable"}</p>
+          {dynamicQr?.status === "error" && (
+            <div className="mb-2 text-sm text-red-600">
+              <p>{dynamicQr.message || "Payment QR unavailable"}</p>
+              {onRetryDynamicQr && (
+                <button type="button" onClick={onRetryDynamicQr} className="mt-1 text-xs font-medium underline underline-offset-2">
+                  Retry Razorpay QR
+                </button>
+              )}
+            </div>
           )}
           {dynamicQr?.status === "paid" && (
             <p className="text-sm font-semibold text-green-700 dark:text-green-400">
