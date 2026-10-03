@@ -1,5 +1,7 @@
 # Permission Debt Ledger
 
+No new permission key was introduced for combined bill sharing; it deliberately uses the existing food-bill action gate.
+
 This file records permission keys that are retained for compatibility but are no longer assigned or used by the active product.
 
 ## Deferred cleanup

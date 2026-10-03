@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isPiRuntime } from "@/lib/runtime";
 import { normalizePhone } from "@/lib/phoneUtils";
-import { getValidFoodBillShareToken, getSetting, getFoodOrdersByIds } from "@/db/queries";
+import { getFoodCombinedBillShareTokenIds, getValidFoodBillShareToken, getSetting, getFoodOrdersByIds } from "@/db/queries";
 import { foodDue } from "@/lib/foodPaymentBalance";
 import { BILL_QR_MODE_KEY, parseBillQrMode, effectiveMode, environmentFromMode } from "@/lib/foodBillQrMode";
 import { workerEnv } from "@/lib/razorpay";
@@ -18,7 +18,7 @@ const headers = { "Cache-Control": "no-store" };
 
 const bodySchema = z.object({
   requestKey: z.string().uuid(),
-  orderIds: z.array(z.number().int().positive()).min(1).max(50),
+  orderIds: z.array(z.number().int().positive()).min(1).max(200),
   /** Guest ensure/status requires the WhatsApp share token — phone-only mint is not allowed. */
   token: z.string().min(8).max(40),
   attemptId: z.string().uuid().optional(),
@@ -44,7 +44,12 @@ export async function POST(req: NextRequest) {
 
     const row = await getValidFoodBillShareToken(raw.data.token.trim());
     if (!row) return NextResponse.json({ error: "Invalid or expired bill link" }, { status: 404, headers });
-    if (!row.checkinId && !row.walkinNameKey) {
+    let combinedIds: number[] = [];
+    try {
+      combinedIds = [...new Set((JSON.parse((await getFoodCombinedBillShareTokenIds(row.token)) || "[]") as unknown[]).map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0))].sort((a, b) => a - b);
+    } catch { /* invalid legacy data is not a combined token */ }
+    if (!combinedIds.length && !row.checkinId && !row.walkinNameKey) {
       return NextResponse.json({ error: "This bill link is no longer valid" }, { status: 404, headers });
     }
     const authorizedPhone = row.phone;
@@ -52,12 +57,24 @@ export async function POST(req: NextRequest) {
     const orders = await getFoodOrdersByIds(raw.data.orderIds);
     if (!orders.length) return NextResponse.json({ error: "Orders not found" }, { status: 404, headers });
 
-    const inScope = orders.every((o) => {
+    const inScope = combinedIds.length
+      ? orders.every((o) => combinedIds.includes(o.id))
+      : orders.every((o) => {
       if (normalizePhone(o.guestPhone || "") !== authorizedPhone) return false;
       if (row.checkinId) return o.checkinId === row.checkinId;
       return normalizeWalkinGuestName(o.guestName) === row.walkinNameKey;
-    });
+      });
     if (!inScope) return NextResponse.json({ error: "Orders do not match this bill" }, { status: 403, headers });
+
+    if (combinedIds.length && raw.data.action !== "status") {
+      const scoped = await getFoodOrdersByIds(combinedIds);
+      const currentUnpaid = scoped.filter((o) => o.status !== "cancelled" && foodDue(o) > 0)
+        .map((o) => o.id).sort((a, b) => a - b);
+      const requested = [...new Set(raw.data.orderIds)].sort((a, b) => a - b);
+      if (currentUnpaid.join(",") !== requested.join(",")) {
+        return NextResponse.json({ error: "Orders do not match the current combined bill" }, { status: 403, headers });
+      }
+    }
 
     if (raw.data.action === "status" && raw.data.attemptId) {
       const snapshot = await getFoodQrAttempt(raw.data.attemptId);
@@ -70,7 +87,7 @@ export async function POST(req: NextRequest) {
       if (!attemptOrderIds.length || !attemptOrderIds.every((id) => ownedIds.has(id))) {
         return NextResponse.json({ error: "Payment attempt does not match this bill" }, { status: 403, headers });
       }
-      if (normalizePhone(snapshot.guestPhone || "") !== authorizedPhone) {
+      if (!combinedIds.length && normalizePhone(snapshot.guestPhone || "") !== authorizedPhone) {
         return NextResponse.json({ error: "Payment attempt does not match this bill" }, { status: 403, headers });
       }
       const attempt = await reconcileFoodQrAttempt(raw.data.attemptId);

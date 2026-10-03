@@ -478,36 +478,15 @@ export async function generateCombinedBill(data: CombinedBillData): Promise<void
   y += 9;
   doc.setTextColor(0, 0, 0);
 
-  for (const guest of data.guests) {
-    y = checkPageBreak(doc, y, 18);
-    doc.setDrawColor(220, 220, 220);
-    doc.setLineWidth(0.3);
-    doc.line(MARGIN_LEFT, y - 2, PAGE_WIDTH - MARGIN_RIGHT, y - 2);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text(guest.guestName, MARGIN_LEFT, y + 3);
-    if (guest.roomInfo) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(120, 120, 120);
-      doc.text(guest.roomInfo, COL_AMOUNT, y + 3, { align: "right" });
-      doc.setTextColor(0, 0, 0);
-    }
-    y += 9;
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text(data.guests.map((guest) => guest.guestName).join(" · "), MARGIN_LEFT, y);
+  doc.setTextColor(0, 0, 0);
+  y += 7;
 
-    const flatItems = mergeBillLineItems(guest.orders.flatMap((o) => o.items));
-    y = drawTableHeader(doc, y);
-    for (const item of flatItems) {
-      y = drawItemRow(doc, y, item);
-    }
-
-    y = checkPageBreak(doc, y, 8);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text("Guest total", COL_AMOUNT - 40, y, { align: "right" });
-    doc.text(formatPaise(guest.guestTotal), COL_AMOUNT, y, { align: "right" });
-    y += 6;
-  }
+  const flatItems = mergeBillLineItems(data.guests.flatMap((guest) => guest.orders.flatMap((order) => order.items)));
+  y = drawTableHeader(doc, y);
+  for (const item of flatItems) y = drawItemRow(doc, y, item);
 
   const combinedDiscount = data.guests.reduce(
     (sum, g) => sum + g.orders.reduce((s, o) => s + (o.discount || 0), 0),

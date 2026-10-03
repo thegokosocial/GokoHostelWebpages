@@ -1,5 +1,7 @@
 # Pages and admin UI
 
+Combined Bill is one merged shared card with a single total/QR and a WhatsApp action for every selected guest; Download PDF uses the same layout.
+
 Numeric form controls keep an empty string while staff or guests are editing, so Backspace can fully clear the current value. Components convert the draft to the field's existing zero/default behavior only for calculations or save requests; positive-minimum fields remain invalid while empty.
 
 Accounts separates Bills Payable creation (`tab=payableBills`, New Additions, `canAddExpense`) from Unpaid Bills records (`tab=unpaidBills`, Reports & Charts beside Expense Records, `canViewExpenses`). Records use searchable detailed cards, Show paid, overdue indicators, and newest-first combined notes/payments/total-adjustment history at the end of each card/dialog. Notes are text-only; creation keeps original invoices, and editing exposes invoice uploads only within Make payment. Payment/note/total/delete actions retain their existing action permissions.

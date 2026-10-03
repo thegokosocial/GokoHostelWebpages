@@ -1,5 +1,7 @@
 # API map
 
+`POST /api/admin/food-orders` supports `createCombinedBillShareLink` under the existing food-bill OR gate: it accepts 1–200 current unpaid order IDs and returns one opaque combined-bill link. `GET /api/food/bills?t=` and guest QR requests honor a combined token's exact stored order allowlist.
+
 Payable reads (`listPayableBills`, `getPayableBill`) additionally return `vendorName`, retaining all existing fields and historical payments. The UI merges notes/payments/adjustments by recorded timestamp, newest first; payment business dates remain separate. No new endpoint, permission key or migration is introduced for Unpaid Bills records. `updatePayableBill` keeps upload compatibility, although standalone uploading is removed from the editor; the payment form sends invoice files via `recordPayableBillPayment`.
 
 Reviews `sendWhatsApp` retains its action/response contract but rejects invalid guest phone numbers (400) before creating/counting a request. It prepares a review link and increments preparation attempts, not confirmed sends. Native app launch/retry/copy is client-only; see [WhatsApp messaging](whatsapp-messaging.md).

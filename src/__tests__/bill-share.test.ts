@@ -55,6 +55,25 @@ describe("billShare helpers", () => {
   });
 });
 
+describe("combined bill share schema", () => {
+  it("keeps the combined order allowlist in its Cloudflare-only companion table", () => {
+    const sql = readFileSync("migrations/0088_combined_food_bill_share_tokens.sql", "utf8");
+    const schema = readFileSync("src/db/schema.ts", "utf8");
+    const pi = readFileSync("scripts/migrate-pi.ts", "utf8");
+    expect(sql).toMatch(/CREATE TABLE food_combined_bill_share_tokens/);
+    expect(sql).toMatch(/selected_order_ids/);
+    expect(schema).toMatch(/foodCombinedBillShareTokens/);
+    expect(pi).toMatch(/0088_combined_food_bill_share_tokens\.sql/);
+  });
+
+  it("renders combined PDF items as one merged bill", () => {
+    const pdf = readFileSync("src/components/admin/FoodBillGenerator.tsx", "utf8");
+    const combined = pdf.match(/export async function generateCombinedBill[\s\S]*/)?.[0] || "";
+    expect(combined).toContain("data.guests.flatMap");
+    expect(combined).not.toContain("Guest total");
+  });
+});
+
 describe("createBillShareLink RBAC", () => {
   const gate: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"] = [
     "canGenerateFoodBills",

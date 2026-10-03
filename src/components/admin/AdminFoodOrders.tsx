@@ -9,6 +9,7 @@ import { isBluetoothSupported, printFoodBill, printCombinedBill, printOrderTicke
 import { generateGuestBill, generateCombinedBill, type CombinedBillData, type BillOrder } from "@/components/admin/FoodBillGenerator";
 import { loadBillBranding } from "@/lib/loadBillBranding";
 import { GuestFoodBillCard, groupHasPendingSpecialPrice } from "@/components/food/GuestFoodBillCard";
+import { foodBillQrDataUrl } from "@/components/sections/AutoQrCode";
 import { DEFAULT_BILL_BRANDING, payableBillItems, type BillBranding } from "@/lib/foodBillFormat";
 import { buildBillWhatsAppDraft } from "@/lib/billShare";
 import { useFoodBillDynamicQr } from "@/hooks/useFoodBillDynamicQr";
@@ -2689,11 +2690,13 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [billBranding, setBillBranding] = useState<BillBranding>(DEFAULT_BILL_BRANDING);
+  const [billQrMode, setBillQrMode] = useState<"static" | "razorpay_test" | "razorpay_live">("static");
   const [billBrandingReady, setBillBrandingReady] = useState(false);
   const [whatsAppBusyKey, setWhatsAppBusyKey] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [combinedShareUrl, setCombinedShareUrl] = useState("");
 
   useEffect(() => { setBtSupported(isBluetoothSupported()); }, []);
 
@@ -2723,8 +2726,9 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
 
   const ensureBillBranding = async () => {
     if (billBrandingReady) return billBranding;
-    const { branding } = await withBillBranding(password, username, showError, { embedQr: false });
+    const { branding, qrMode } = await withBillBranding(password, username, showError, { embedQr: false });
     setBillBranding(branding);
+    setBillQrMode(qrMode || "static");
     setBillBrandingReady(true);
     return branding;
   };
@@ -2745,6 +2749,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setPreview(data);
+        setCombinedShareUrl("");
       } else {
         setPreview(null);
         showError("Combined Bill", data.error || "Could not load combined bill");
@@ -2853,8 +2858,35 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       orderIds: selected.flatMap((guest) => guest.checkinId ? [] : (guest.orderIds || [])),
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) setPreview(data);
+    if (res.ok) { setPreview(data); setCombinedShareUrl(""); }
     else { setPreview(null); showError("Combined Bill", data.error || "Could not reload combined bill"); }
+  };
+
+  const combinedQrEnabled = Boolean(preview && isRazorpayBillMode(billQrMode) && combinedOrderIds.length > 0);
+  const combinedQrRemintKey = combinedApplyOrders.map((o: any) => `${o.id}:${foodDue(o)}`).sort().join("|");
+  const { state: combinedQrState } = useFoodBillDynamicQr({
+    enabled: combinedQrEnabled,
+    orderIds: combinedOrderIds,
+    remintKey: combinedQrRemintKey,
+    password,
+    username,
+    admin: true,
+    onPaid: () => { void reloadCombinedPreview(); },
+  });
+  const combinedDynamicQr = !combinedQrEnabled || combinedQrState.status === "idle" || combinedQrState.status === "static"
+    ? null
+    : combinedQrState.status === "loading" ? { status: "loading" as const }
+      : combinedQrState.status === "active" ? { status: "active" as const, imageUrl: combinedQrState.imageUrl, upiIntent: combinedQrState.upiIntent, closeBy: combinedQrState.closeBy, label: combinedQrState.label }
+        : combinedQrState.status === "paid" ? { status: "paid" as const, label: combinedQrState.label }
+          : { status: "error" as const, message: combinedQrState.message };
+
+  const ensureCombinedShareUrl = async () => {
+    if (combinedShareUrl) return combinedShareUrl;
+    const res = await apiCall({ action: "createCombinedBillShareLink", orderIds: combinedOrderIds });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.url) throw new Error(data.error || "Could not create combined bill link");
+    setCombinedShareUrl(data.url);
+    return data.url as string;
   };
 
   const handleCombinedPayment = async (method: string, cashReceived: number, changeGiven: number, onlineAccountId?: number, receiptId?: string) => {
@@ -2884,6 +2916,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
     accent: billBranding.accent,
     upiId: billBranding.upiId,
     qrUrl: billBranding.paymentQrUrl,
+    qrMode: billQrMode,
     footer: billBranding.footer,
     taxRate: foodTaxRateFromAmounts(
       orders.reduce((s: number, o: any) => s + (o.subtotal || 0), 0),
@@ -2937,50 +2970,38 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
       {preview && (
         <div className="space-y-4">
           <h4 className="text-sm font-bold text-brand-green-dark">Bill Preview</h4>
-          {preview.guests.map((g: any) => {
-            const orders = (g.orders || []) as any[];
-            return (
-              <GuestFoodBillCard
-                key={g.key ?? g.checkinId}
-                orders={orders.map((o) => ({
-                  guestName: g.guestName,
-                  roomInfo: g.roomInfo || o.roomInfo,
-                  paymentStatus: o.paymentStatus,
-                  amountPaid: foodAmountPaid(o),
-                  amountRefunded: 0,
-                  paymentMethod: o.paymentMethod,
-                  createdAt: o.createdAt,
-                  subtotal: o.subtotal,
-                  tax: o.tax,
-                  total: o.total,
-                  discount: o.discount || 0,
-                  items: (o.items || []).map((i: any) => ({
-                    itemName: i.itemName || i.name,
-                    quantity: i.quantity,
-                    itemPrice: i.itemPrice ?? i.price,
-                    lineTotal: i.lineTotal,
-                    status: i.status,
-                    pricingStatus: i.pricingStatus,
-                    notes: i.notes,
-                  })),
-                }))}
-                variant="unpaid"
-                branding={cardBranding(orders)}
-                alwaysExpanded
-                footerActions={
-                  <button
-                    type="button"
-                    onClick={() => void shareGuestBill(g)}
-                    disabled={whatsAppBusyKey === String(g.key ?? g.checkinId)}
-                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                  >
-                    {whatsAppBusyKey === String(g.key ?? g.checkinId) ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />}
-                    WhatsApp {g.guestName.split(" ")[0]}
-                  </button>
-                }
-              />
-            );
-          })}
+          <GuestFoodBillCard
+            orders={combinedOrders.map((o: any) => ({
+              guestName: o.guestName, roomInfo: o.roomInfo, paymentStatus: o.paymentStatus,
+              amountPaid: foodAmountPaid(o), amountRefunded: 0, paymentMethod: o.paymentMethod,
+              createdAt: o.createdAt, subtotal: o.subtotal, tax: o.tax, total: o.total, discount: o.discount || 0,
+              items: (o.items || []).map((i: any) => ({ itemName: i.itemName || i.name, quantity: i.quantity, itemPrice: i.itemPrice ?? i.price, lineTotal: i.lineTotal, status: i.status, pricingStatus: i.pricingStatus, notes: i.notes })),
+            }))}
+            variant="unpaid"
+            branding={cardBranding(combinedOrders)}
+            billTitle="Shared food tab"
+            participantNames={preview.guests.map((g: any) => g.guestName)}
+            dynamicQr={combinedDynamicQr}
+            fallbackToStaticOnDynamicError
+            alwaysExpanded
+            footerActions={preview.guests.map((g: any) => {
+              const key = String(g.key ?? g.checkinId);
+              return <button key={key} type="button" onClick={() => void (async () => {
+                setWhatsAppBusyKey(key);
+                try {
+                  const url = await ensureCombinedShareUrl();
+                  const phone = normalizePhone(g.guestPhone || (g.orders || []).find((o: any) => o.guestPhone)?.guestPhone || "");
+                  const draft = buildBillWhatsAppDraft({ guestPhone: phone, guestName: g.guestName, shareUrl: url });
+                  if (!draft) throw new Error("No valid phone number for this guest");
+                  prepareWhatsApp(draft.phone, draft.message, "foodOrders");
+                } catch (error) { showError("WhatsApp", error instanceof Error ? error.message : "Could not create combined bill link"); }
+                finally { setWhatsAppBusyKey(null); }
+              })()} disabled={whatsAppBusyKey === key}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                {whatsAppBusyKey === key ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleIcon className="h-3.5 w-3.5" />} WhatsApp {g.guestName.split(" ")[0]}
+              </button>;
+            })}
+          />
 
           <div className="rounded-xl border border-brand-mist bg-white dark:bg-card p-4">
             <div className="flex items-center justify-between">
@@ -3019,7 +3040,14 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
                     }
                   }
                   const combTax = Math.max(0, preview.grandTotal - combSub);
-                  const { branding, paymentQrDataUrl } = await withBillBranding(password, username, showError, { embedQr: true });
+                  const { branding, paymentQrDataUrl: staticQrDataUrl } = await withBillBranding(password, username, showError, { embedQr: true });
+                  const paymentQrDataUrl = combinedQrState.status === "active"
+                    ? (combinedQrState.upiIntent ? await foodBillQrDataUrl(combinedQrState.upiIntent) : "")
+                    : staticQrDataUrl;
+                  if (combinedQrState.status === "active" && !paymentQrDataUrl) {
+                    showError("Download PDF", "The active Razorpay QR image cannot be embedded safely");
+                    return;
+                  }
                   const combinedData: CombinedBillData = {
                     guests: preview.guests.map((g: any) => ({
                       guestName: g.guestName as string,
@@ -3056,6 +3084,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
                   };
                   await generateCombinedBill(combinedData);
                 }}
+                disabled={combinedQrState.status === "loading"}
                 className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
               >
                 <DownloadIcon className="h-4 w-4" />

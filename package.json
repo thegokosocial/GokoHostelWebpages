@@ -21,7 +21,7 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply goko-hostel-db --local",
-    "db:migrate:prod": "wrangler d1 migrations apply goko-hostel-db --remote",
+    "db:migrate:prod": "tsx scripts/migrate-production-d1.ts",
     "db:verify:prod": "tsx scripts/verify-production-migrations.ts",
     "build:pi": "GOKO_RUNTIME=pi BUILD_VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo unknown) next build",
     "start:pi": "GOKO_RUNTIME=pi next start -p 3000",

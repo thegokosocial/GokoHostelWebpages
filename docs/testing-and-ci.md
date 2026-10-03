@@ -1,5 +1,7 @@
 # Tests and CI
 
+Combined-bill QR regression coverage includes static/direct mode, Razorpay exact-total mode, static fallback after Razorpay failure, 200-order validation, and exact-order public-token scope.
+
 Unpaid Bills: `npx playwright test e2e/payable-bills.spec.ts` covers mobile combined history, text-only notes, payment uploads and retry keys, draft isolation, separate desktop creation/records navigation, search, and view-only access. API integration tests cover linked expenses and bill settlement/correction; `payable-bill-activity.test.ts` covers newest-first merged history, reversed payments, legacy timestamps and deterministic ordering.
 
 Browser tests use an exact Expense recorded toast locator to distinguish it from the task-card badge. The recurring-expense edit workflow updates its historical fixture to a valid current IST start date before saving, respecting the form's existing date constraint.

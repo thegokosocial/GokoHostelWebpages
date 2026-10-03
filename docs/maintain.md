@@ -65,6 +65,8 @@ npm run preview:cf
 3. Commit on `main` if you want history. GitHub CI tests/lints/`next build` and **does not ship**. Cloudflare **Workers Builds** on `goko-hostel-latest-webpage` **does** ship on push to `main` (`npm run cf:build` then `npx wrangler deploy`). Run `npx tsc --noEmit` first — a type error aborts that build (seen `4e62b55a` / `5b466f0`: `mode` used before assigned).
 4. Local Wrangler from a **worktree** (below) still works if Builds is red or you need a stamp without waiting.
 5. If new SQL: run `CI=true npm run db:migrate:prod` before the Worker build, then `npm run db:verify:prod`. Cloudflare `cf:build` and `deploy:cf` fail closed if any migration remains pending or D1 is unreachable.
+
+The production migration scripts load `.env.local` with Next's env loader and map the documented `CLOUDFLARE_D1_TOKEN` to Wrangler's `CLOUDFLARE_API_TOKEN`; do not shell-source `.env.local`.
 6. If Pi should get ops changes: pull/build on Pi (`npm run db:migrate:pi` skips CMS `0035` and splits `0041`; it **does** apply stay-payment `0042`).
 
 Do **not** run `drizzle-kit generate` expecting production SQL. Write `migrations/` by hand.

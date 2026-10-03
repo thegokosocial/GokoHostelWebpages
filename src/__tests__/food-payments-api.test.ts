@@ -26,7 +26,7 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(adminRoute).toContain("page: z.number().int().min(1).optional()");
   });
 
-  it("guest QR route is share-token only with checkin/walk-in scope and never trusts client amount", () => {
+  it("guest QR route is share-token only, supports exact combined-token scope, and never trusts client amount", () => {
     expect(guestRoute).toContain("ensureActiveFoodQrForOrders");
     expect(guestRoute).toContain("getValidFoodBillShareToken");
     expect(guestRoute).toContain("token: z.string().min(8).max(40)");
@@ -34,6 +34,9 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(guestRoute).toContain("Orders do not match this bill");
     expect(guestRoute).toContain("Payment attempt does not match this bill");
     expect(guestRoute).toContain("normalizeWalkinGuestName");
+    expect(guestRoute).toContain("getFoodCombinedBillShareTokenIds");
+    expect(guestRoute).toContain("Orders do not match the current combined bill");
+    expect(guestRoute).toContain("max(200)");
     expect(guestRoute).not.toMatch(/amountPaise.*body|body\.amount/);
     expect(guestRoute).toContain("}).strict()");
     expect(guestRoute).toContain('action: z.enum(["ensure", "status"])');
@@ -48,6 +51,8 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(billsRoute).toContain("amountPaid: o.amountPaid");
     expect(billsRoute).toContain("effectiveMode");
     expect(billsRoute).toContain("qrMode");
+    expect(billsRoute).toContain("loadBillsForSelectedOrders");
+    expect(billsRoute).toContain("getFoodCombinedBillShareTokenIds");
   });
 
   it("pay QR only on share-token My Bills + admin Bill drawer; menu items hide payment", () => {
@@ -64,6 +69,8 @@ describe("admin food-payments + guest bill QR routes", () => {
     expect(ordersUi).toContain("useFoodBillDynamicQr");
     expect(ordersUi).toContain("onPaid: onFoodQrPaid");
     expect(ordersUi).toContain("remintKey: unpaidBillRemintKey");
+    expect(ordersUi).toContain("createCombinedBillShareLink");
+    expect(ordersUi).toContain("Shared food tab");
     expect(ordersUi).not.toContain("Open Razorpay bill QR");
     expect(ordersUi).not.toContain("Retire QR");
     expect(ordersUi).toContain("isFoodOrderAlreadySettledError");

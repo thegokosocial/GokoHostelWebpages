@@ -43,6 +43,7 @@ for (const file of files) {
     || file === "0079_site_hero_videos.sql"
     || file === "0083_food_qr_payments.sql"
     || file === "0084_recurring_expenses.sql"
+    || file === "0088_combined_food_bill_share_tokens.sql"
   ) {
     console.log(`Skipping (Cloudflare-only): ${file}`);
     db.prepare("INSERT INTO _migrations (name) VALUES (?)").run(file);

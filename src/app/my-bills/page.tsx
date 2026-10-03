@@ -96,6 +96,7 @@ function MyBillsContent() {
   const [paidOrders, setPaidOrders] = useState<BillOrder[]>([]);
   const [guestChoices, setGuestChoices] = useState<GuestChoice[]>([]);
   const [billBranding, setBillBranding] = useState<BillBrandingPublic>(DEFAULT_PUBLIC_BRANDING);
+  const [combined, setCombined] = useState(false);
 
   const applyBillsPayload = useCallback((data: {
     unpaidOrders?: BillOrder[];
@@ -103,6 +104,7 @@ function MyBillsContent() {
     billBranding?: Partial<BillBrandingPublic>;
     viaToken?: boolean;
     phone?: string;
+    combined?: boolean;
   }) => {
     setUnpaidOrders(data.unpaidOrders || []);
     setPaidOrders(data.paidOrders || []);
@@ -110,6 +112,7 @@ function MyBillsContent() {
       setBillBranding({ ...DEFAULT_PUBLIC_BRANDING, ...data.billBranding });
     }
     setViaToken(!!data.viaToken);
+    setCombined(!!data.combined);
     if (data.viaToken) {
       setPhone("");
     } else if (data.phone) {
@@ -205,6 +208,7 @@ function MyBillsContent() {
     setViaToken(false);
     setUnpaidOrders([]);
     setPaidOrders([]);
+    setCombined(false);
     setGuestChoices([]);
     setError("");
     localStorage.removeItem("gokoFoodPhone");
@@ -217,7 +221,7 @@ function MyBillsContent() {
     router.push("/food-order");
   };
 
-  const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + o.total, 0);
+  const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + (combined ? Math.max(0, o.total - (o.amountPaid || 0)) : o.total), 0);
   const unpaidOrderIds = unpaidOrders.map((o) => o.id).filter((id): id is number => typeof id === "number" && id > 0);
   const unpaidRemintKey = unpaidOrders
     .filter((o) => typeof o.id === "number" && o.id > 0)
@@ -386,6 +390,8 @@ function MyBillsContent() {
                       branding={hidePayment ? menuBranding : payBranding}
                       dynamicQr={dynamicQr}
                       hidePayment={hidePayment}
+                      billTitle={combined ? "Shared food tab" : undefined}
+                      participantNames={combined ? [...new Set(unpaidOrders.map((order) => order.guestName))] : undefined}
                       alwaysExpanded
                     />
                   </div>

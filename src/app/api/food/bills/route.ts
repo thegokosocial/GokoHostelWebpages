@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveCheckins, getGuestAllFoodOrders, getFoodOrderItemsBatch, getSetting, getValidFoodBillShareToken } from "@/db/queries";
+import { getActiveCheckins, getFoodCombinedBillShareTokenIds, getGuestAllFoodOrders, getFoodOrderItemsBatch, getFoodOrdersByIds, getSetting, getValidFoodBillShareToken } from "@/db/queries";
 import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
 import { getDb } from "@/db/index";
 import { foodOrders, checkins } from "@/db/schema";
@@ -12,6 +12,47 @@ import { BILL_QR_MODE_KEY, parseBillQrMode, effectiveMode } from "@/lib/foodBill
 import { workerEnv } from "@/lib/razorpay";
 
 type BillSelection = { scope?: "hostel" | "walkin"; walkinNameKey?: string; checkinId?: number | null };
+
+function parseSelectedOrderIds(raw: string | null | undefined): number[] {
+  try {
+    return [...new Set((JSON.parse(raw || "[]") as unknown[]).map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0))].sort((a, b) => a - b);
+  } catch { return []; }
+}
+
+async function publicBillBrandingPayload() {
+  const billSettings: Record<string, string> = {};
+  for (const key of BILL_SETTINGS_KEYS) billSettings[key] = (await getSetting(key)) ?? "";
+  const qrMode = effectiveMode(parseBillQrMode(billSettings[BILL_QR_MODE_KEY] || await getSetting(BILL_QR_MODE_KEY)), workerEnv());
+  return {
+    ...publicBillBranding(brandingFromSettings(billSettings), qrMode),
+    taxRate: foodTaxPercent(await getSetting("food_tax_rate")),
+    qrMode,
+  };
+}
+
+/** Token-scoped combined bill: never expands to the recipient's other orders. */
+async function loadBillsForSelectedOrders(orderIds: number[]) {
+  const rows = (await getFoodOrdersByIds(orderIds)).filter((o) => o.status !== "cancelled");
+  const itemsMap = await getFoodOrderItemsBatch(rows.map((o) => o.id));
+  const orders = rows.map((o) => ({
+    id: o.id, orderNumber: o.orderNumber, status: o.status, guestType: o.guestType,
+    guestName: o.guestName, roomInfo: o.roomInfo, subtotal: o.subtotal, tax: o.tax,
+    total: o.total, amountPaid: foodAmountPaid(o), discount: o.discount,
+    paymentStatus: o.paymentStatus, paymentMethod: o.paymentMethod, createdAt: o.createdAt,
+    checkinId: o.checkinId,
+    items: (itemsMap.get(o.id) || []).filter((i) => i.quantity > 0 && i.status !== "voided").map((i) => ({
+      menuItemId: i.menuItemId, name: i.itemName, quantity: i.quantity, price: i.itemPrice,
+      lineTotal: i.lineTotal, pricingStatus: i.pricingStatus, notes: i.notes,
+    })),
+  }));
+  return {
+    unpaidOrders: orders.filter((o) => foodDue(o) > 0),
+    paidOrders: orders.filter((o) => foodDue(o) <= 0),
+    billBranding: await publicBillBrandingPayload(),
+    combined: true,
+  };
+}
 
 async function loadBillsForPhone(normalized: string, requested: BillSelection = {}) {
   const orderMap = new Map<number, true>();
@@ -173,17 +214,7 @@ async function loadBillsForPhone(normalized: string, requested: BillSelection = 
     (o) => foodDue(o) <= 0 && o.status !== "cancelled"
   );
 
-  const billSettings: Record<string, string> = {};
-  for (const key of BILL_SETTINGS_KEYS) {
-    billSettings[key] = (await getSetting(key)) ?? "";
-  }
-  const taxRate = foodTaxPercent(await getSetting("food_tax_rate"));
-  const qrMode = effectiveMode(parseBillQrMode(billSettings[BILL_QR_MODE_KEY] || await getSetting(BILL_QR_MODE_KEY)), workerEnv());
-  const billBranding = {
-    ...publicBillBranding(brandingFromSettings(billSettings), qrMode),
-    taxRate,
-    qrMode,
-  };
+  const billBranding = await publicBillBrandingPayload();
 
   return { unpaidOrders, paidOrders, latestCheckinId: selectedCheckinId, billBranding };
 }
@@ -206,6 +237,11 @@ export async function GET(req: NextRequest) {
       }
       normalized = row.phone;
       viaToken = true;
+      const selectedOrderIds = parseSelectedOrderIds(await getFoodCombinedBillShareTokenIds(row.token));
+      if (selectedOrderIds.length) {
+        const payload = await loadBillsForSelectedOrders(selectedOrderIds);
+        return NextResponse.json({ ...payload, viaToken, phone: undefined });
+      }
       selection = row.checkinId
         ? { scope: "hostel", checkinId: row.checkinId }
         : row.walkinNameKey

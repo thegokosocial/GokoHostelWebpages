@@ -1,4 +1,10 @@
 import { execFileSync } from "node:child_process";
+import { loadEnvConfig } from "@next/env";
+
+loadEnvConfig(process.cwd());
+if (!process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_D1_TOKEN) {
+  process.env.CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_D1_TOKEN;
+}
 
 const DATABASE = "goko-hostel-db";
 

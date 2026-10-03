@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, bookingContactMethods, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, orderModifications, expenses, dailyIncome, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
+import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, bookingContactMethods, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, foodCombinedBillShareTokens, orderModifications, expenses, dailyIncome, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -1603,10 +1603,10 @@ export async function getFoodOrdersByIds(orderIds: number[]) {
 // --- Food bill share tokens (Cloudflare-only) ---
 
 export async function createFoodBillShareToken(data: {
-  token: string; phone: string; checkinId?: number | null; walkinNameKey?: string | null; expiresAt: string; createdBy: string;
+  token: string; phone: string; checkinId?: number | null; walkinNameKey?: string | null; selectedOrderIds?: number[] | null; expiresAt: string; createdBy: string;
 }) {
   const db = getDb();
-  return db.insert(foodBillShareTokens).values({
+  await db.insert(foodBillShareTokens).values({
     token: data.token,
     phone: data.phone,
     checkinId: data.checkinId ?? null,
@@ -1615,6 +1615,9 @@ export async function createFoodBillShareToken(data: {
     createdBy: data.createdBy,
     createdAt: new Date().toISOString(),
   });
+  if (data.selectedOrderIds?.length) {
+    await db.insert(foodCombinedBillShareTokens).values({ token: data.token, selectedOrderIds: JSON.stringify(data.selectedOrderIds), createdAt: new Date().toISOString() });
+  }
 }
 
 export async function getValidFoodBillShareToken(token: string) {
@@ -1624,6 +1627,12 @@ export async function getValidFoodBillShareToken(token: string) {
     .where(and(eq(foodBillShareTokens.token, token), gte(foodBillShareTokens.expiresAt, now)))
     .limit(1);
   return rows[0] || null;
+}
+
+export async function getFoodCombinedBillShareTokenIds(token: string) {
+  const rows = await getDb().select({ selectedOrderIds: foodCombinedBillShareTokens.selectedOrderIds })
+    .from(foodCombinedBillShareTokens).where(eq(foodCombinedBillShareTokens.token, token)).limit(1);
+  return rows[0]?.selectedOrderIds || null;
 }
 
 export async function updateFoodOrder(id: number, data: Partial<typeof foodOrders.$inferInsert>) {

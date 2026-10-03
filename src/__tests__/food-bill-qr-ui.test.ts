@@ -376,13 +376,19 @@ describe("resolveFoodBillPayQrSource", () => {
     })).toEqual({ kind: "static", qrUrl: phonepe });
   });
 
-  it("hides QR for paid/loading/error/hidePayment; static mode uses bill QR", () => {
+  it("hides QR for paid/loading/error by default and uses static fallback only for Combined Bill", () => {
     expect(resolveFoodBillPayQrSource({
       dynamicStatus: "paid", imageUrl: poster, staticQrUrl: phonepe,
     }).kind).toBe("none");
     expect(resolveFoodBillPayQrSource({
       dynamicStatus: "loading", imageUrl: poster, staticQrUrl: phonepe,
     }).kind).toBe("none");
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "error", staticQrUrl: phonepe,
+    }).kind).toBe("none");
+    expect(resolveFoodBillPayQrSource({
+      dynamicStatus: "error", staticQrUrl: phonepe, fallbackToStaticOnDynamicError: true,
+    })).toEqual({ kind: "static", qrUrl: phonepe });
     expect(resolveFoodBillPayQrSource({
       hidePayment: true, dynamicStatus: "active", imageUrl: poster,
     }).kind).toBe("none");
@@ -413,9 +419,12 @@ describe("foodBillQrStaffCaption", () => {
     expect(foodBillQrStaffCaption({ hidePayment: true, dynamicStatus: "active", hasUpiIntent: true })).toBeNull();
   });
 
-  it("hides captions for paid and error; labels pure static when no dynamic overlay", () => {
+  it("hides captions for paid and labels static fallback after a Razorpay error", () => {
     expect(foodBillQrStaffCaption({ dynamicStatus: "paid", hasUpiIntent: true })).toBeNull();
     expect(foodBillQrStaffCaption({ dynamicStatus: "error" })).toBeNull();
+    expect(foodBillQrStaffCaption({ dynamicStatus: "error", fallbackToStaticOnDynamicError: true })).toEqual({
+      kind: "phonepe_fallback", text: "Razorpay unavailable · PhonePe static QR",
+    });
     expect(foodBillQrStaffCaption({ dynamicStatus: null, razorpayMode: true })).toEqual({
       kind: "phonepe_static", text: "PhonePe static QR",
     });

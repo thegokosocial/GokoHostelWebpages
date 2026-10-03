@@ -332,10 +332,12 @@ export function resolveFoodBillPayQrSource(opts: {
   upiIntent?: string | null;
   imageUrl?: string | null;
   staticQrUrl?: string | null;
+  /** Combined bills may intentionally fall back to their configured static QR after Razorpay fails. */
+  fallbackToStaticOnDynamicError?: boolean;
 }): FoodBillPayQrSource {
   if (opts.hidePayment) return { kind: "none" };
   const status = opts.dynamicStatus ?? null;
-  if (status === "paid" || status === "loading" || status === "error") {
+  if (status === "paid" || status === "loading" || (status === "error" && !opts.fallbackToStaticOnDynamicError)) {
     return { kind: "none" };
   }
   if (status === "active") {
@@ -360,10 +362,17 @@ export function foodBillQrStaffCaption(opts: {
   /** Active attempt has imageUrl and UI will CSS-crop the poster QR module. */
   hasPosterImage?: boolean;
   razorpayMode?: boolean;
+  fallbackToStaticOnDynamicError?: boolean;
 }): FoodBillQrStaffCaption {
   if (opts.hidePayment) return null;
   const status = opts.dynamicStatus ?? null;
-  if (status === "paid" || status === "error") return null;
+  if (status === "paid") return null;
+  if (status === "error") {
+    if (!opts.fallbackToStaticOnDynamicError) return null;
+    return opts.hasUpiIntent || opts.hasPosterImage
+      ? null
+      : { kind: "phonepe_fallback", text: "Razorpay unavailable · PhonePe static QR" };
+  }
   if (status === "loading") return { kind: "loading", text: "Preparing Razorpay QR…" };
   if (status === "active" && (opts.hasUpiIntent || opts.hasPosterImage)) {
     return { kind: "razorpay", text: "Razorpay UPI · exact amount" };

@@ -97,6 +97,9 @@ export function GuestFoodBillCard({
   expanded,
   onToggle,
   footerActions,
+  billTitle,
+  participantNames,
+  fallbackToStaticOnDynamicError = false,
   paymentDue,
   dynamicQr,
   hidePayment = false,
@@ -109,6 +112,10 @@ export function GuestFoodBillCard({
   expanded?: boolean;
   onToggle?: () => void;
   footerActions?: ReactNode;
+  /** Combined bills use the same layout with one shared heading and guest list. */
+  billTitle?: string;
+  participantNames?: string[];
+  fallbackToStaticOnDynamicError?: boolean;
   paymentDue?: number;
   dynamicQr?: GuestFoodBillDynamicQr | null;
   /** Menu My Bills: items only — never show UPI/QR pay block */
@@ -148,6 +155,7 @@ export function GuestFoodBillCard({
     upiIntent: dynamicQr?.status === "active" ? dynamicQr.upiIntent : null,
     imageUrl: dynamicQr?.status === "active" ? dynamicQr.imageUrl : null,
     staticQrUrl: branding.qrUrl,
+    fallbackToStaticOnDynamicError,
   });
   const dynamicUpiIntent = payQr.kind === "intent" ? payQr.upiIntent : null;
   const showPosterCrop = payQr.kind === "poster";
@@ -162,6 +170,7 @@ export function GuestFoodBillCard({
     hasUpiIntent: payQr.kind === "intent",
     hasPosterImage: payQr.kind === "poster",
     razorpayMode: isRazorpayBillMode(branding.qrMode),
+    fallbackToStaticOnDynamicError,
   });
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
@@ -248,7 +257,7 @@ export function GuestFoodBillCard({
           {dynamicQr?.status === "loading" && (
             <p className="text-sm text-zinc-500">{staffQrCaption?.text || "Preparing Razorpay QR…"}</p>
           )}
-          {dynamicQr?.status === "error" && (
+          {dynamicQr?.status === "error" && !qrSrc && (
             <p className="text-sm text-red-600">{dynamicQr.message || "Payment QR unavailable"}</p>
           )}
           {dynamicQr?.status === "paid" && (
@@ -326,7 +335,7 @@ export function GuestFoodBillCard({
       {alwaysExpanded ? (
         <div className="px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">Food tab</span>
+            <span className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{billTitle || "Food tab"}</span>
             <span
               className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
               style={{ borderColor: accent, color: accent }}
@@ -338,7 +347,9 @@ export function GuestFoodBillCard({
             )}
           </div>
           <p className="mt-1 text-xs text-zinc-400">
-            {[guestName, roomInfo].filter(Boolean).join(" · ")}
+            {participantNames?.length
+              ? participantNames.join(" · ")
+              : [guestName, roomInfo].filter(Boolean).join(" · ")}
           </p>
           {latest && (
             <p className="text-xs text-zinc-400">

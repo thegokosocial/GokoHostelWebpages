@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
       getCombinedBillOptions: ["canGenerateFoodBills", "canViewFoodOrders"],
       getCombinedBill: ["canGenerateFoodBills", "canViewFoodOrders"], getMenu: ["canViewFoodOrders", "canMarkPaid", "canGenerateFoodBills"],
       createBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
+      createCombinedBillShareLink: ["canGenerateFoodBills", "canMarkPaid", "canViewFoodOrders"],
       placeOrderForGuest: "canPlaceOrders",
       releaseCafeTable: "canPlaceOrders",
       cancelUnpaidOrder: "canVoidFoodOrders",
@@ -1650,6 +1651,36 @@ export async function POST(req: NextRequest) {
           details: `Bill share link expires ${expiresAt}`,
         });
         return NextResponse.json({ role, token, url, expiresAt, phone: normalized });
+      }
+
+      case "createCombinedBillShareLink": {
+        const requested = Array.isArray(rest.orderIds) ? rest.orderIds : [];
+        const orderIds = [...new Set(requested.filter((id: unknown) => typeof id === "number" && Number.isInteger(id) && id > 0) as number[])].sort((a, b) => a - b);
+        if (!orderIds.length || orderIds.length > 200) {
+          return NextResponse.json({ error: "Select between 1 and 200 unpaid orders" }, { status: 400 });
+        }
+        const orders = await getFoodOrdersByIds(orderIds);
+        if (orders.length !== orderIds.length || orders.some((order) => order.status === "cancelled" || foodDue(order) <= 0)) {
+          return NextResponse.json({ error: "Combined bill changed; refresh before sharing" }, { status: 409 });
+        }
+        const token = generateBillShareToken();
+        const expiresAt = billShareExpiresAt(7);
+        await createFoodBillShareToken({
+          token,
+          // Legacy non-null column; combined-token authorization is selectedOrderIds only.
+          phone: normalizePhone(orders[0]?.guestPhone || ""),
+          selectedOrderIds: orderIds,
+          expiresAt,
+          createdBy: actorName,
+        });
+        const url = publicBillShareUrl(req.nextUrl.origin, token);
+        await addAuditEntry({
+          username: actorName,
+          action: "food_combined_bill_share_created",
+          target: `orders:${orderIds.join(",")}`,
+          details: `Combined bill share link expires ${expiresAt}`,
+        });
+        return NextResponse.json({ role, token, url, expiresAt });
       }
 
       case "getMenu": {

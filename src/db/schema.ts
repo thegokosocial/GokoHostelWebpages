@@ -1152,6 +1152,13 @@ export const syncLog = sqliteTable("sync_log", {
   details: text("details").default(""),
 });
 
+/** Exact-order ACL for a shared combined bill; separate to preserve legacy token queries. */
+export const foodCombinedBillShareTokens = sqliteTable("food_combined_bill_share_tokens", {
+  token: text("token").primaryKey().references(() => foodBillShareTokens.token),
+  selectedOrderIds: text("selected_order_ids").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 // Cloudflare-owned schedules. Occurrences are deliberately separate from expenses so
 // an amount-less reminder cannot alter Accounts until an admin posts it.
 export const recurringExpenseRules = sqliteTable("recurring_expense_rules", {
