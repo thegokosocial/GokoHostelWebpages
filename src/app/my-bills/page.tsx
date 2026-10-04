@@ -338,15 +338,19 @@ function MyBillsContent() {
             onSubmit={handleSubmit}
             className="rounded-2xl bg-white/95 dark:bg-card/95 p-6 shadow-xl dark:shadow-none backdrop-blur-sm"
           >
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label htmlFor="bills-phone" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
               Phone number
             </label>
             <div className="flex gap-2">
               <div className="flex flex-1 items-center rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#0f0f0f] px-3">
                 <span className="text-sm text-gray-400">+91</span>
                 <input
+                  id="bills-phone"
                   type="tel"
                   inputMode="numeric"
+                  autoComplete="tel-national"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "bills-phone-error" : "bills-phone-help"}
                   value={formatPhone(phone)}
                   onChange={handlePhoneChange}
                   placeholder="98765 43210"
@@ -362,7 +366,8 @@ function MyBillsContent() {
                 {loading ? "…" : "View"}
               </button>
             </div>
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+            <p id="bills-phone-help" className="mt-2 text-xs text-gray-500 dark:text-gray-400">Use the number given with your food order.</p>
+            {error && <p id="bills-phone-error" className="mt-2 text-sm text-red-600" role="alert">{error}</p>}
           </motion.form>
         ) : (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>

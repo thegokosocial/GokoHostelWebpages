@@ -25,6 +25,7 @@ export default function BookingConfirmationPage() {
   const [status, setStatus] = useState<GuestBookingStatus | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -80,7 +81,7 @@ export default function BookingConfirmationPage() {
     return () => {
       active = false;
     };
-  }, [reference]);
+  }, [reference, reloadKey]);
 
   async function cancel() {
     if (!window.confirm("Cancel this booking? This cannot be undone online.")) return;
@@ -119,7 +120,7 @@ export default function BookingConfirmationPage() {
         className="min-h-[52vh] md:min-h-[56vh]"
       />
       <main className="mx-auto max-w-xl px-4 py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-brand-green-dark sm:py-12">
-        {busy && !status && <p className="text-sm">Loading your confirmation…</p>}
+        {busy && !status && <div className="space-y-4" role="status" aria-live="polite" aria-label="Loading booking confirmation"><div className="h-7 w-40 animate-pulse rounded bg-brand-green/10" /><div className="h-36 animate-pulse rounded-2xl bg-brand-sand/70" /><p className="text-sm">Loading your confirmation…</p></div>}
 
         {status && (
           <GuestBookingManage
@@ -129,11 +130,7 @@ export default function BookingConfirmationPage() {
           />
         )}
 
-        {message && (
-          <p role="status" className="mt-5 rounded-xl bg-brand-sand px-4 py-3 text-sm leading-relaxed">
-            {message}
-          </p>
-        )}
+        {message && <div role={message === "Booking cancelled." ? "status" : "alert"} className="mt-5 rounded-xl bg-brand-sand px-4 py-3 text-sm leading-relaxed"><p>{message}</p>{!status && <div className="mt-3 flex flex-wrap gap-3"><button type="button" className="min-h-11 rounded-lg border border-brand-green px-4 font-semibold" onClick={() => setReloadKey((key) => key + 1)}>Retry confirmation</button><Link className="inline-flex min-h-11 items-center font-semibold underline underline-offset-2" href="/book">Find my booking</Link></div>}</div>}
 
         <div className="mt-8">
           <Link

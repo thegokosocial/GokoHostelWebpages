@@ -58,14 +58,16 @@ export function PageRibbon({
         aria-hidden
       />
       <div className={cn("relative z-[2] px-4 text-center", children ? "w-full max-w-6xl py-8 md:py-16" : "max-w-4xl py-16")}>
-        <h1 className={cn("goko-hero-title font-display font-bold", children ? "text-3xl sm:text-display-lg" : "text-display-lg")}>
-          {title}
-        </h1>
-        {subtitle ? (
-          <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-white/95 md:text-xl">
-            {subtitle}
-          </p>
-        ) : null}
+        <div className="goko-hero-copy mx-auto max-w-4xl">
+          <h1 className={cn("goko-hero-title font-display font-bold", children ? "text-3xl sm:text-display-lg" : "text-display-lg")}>
+            {title}
+          </h1>
+          {subtitle ? (
+            <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-white/95 md:text-xl">
+              {subtitle}
+            </p>
+          ) : null}
+        </div>
         {children ? <div className="mt-8 text-left">{children}</div> : null}
       </div>
     </section>

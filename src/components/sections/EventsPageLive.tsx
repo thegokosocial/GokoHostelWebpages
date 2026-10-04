@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Reveal } from "@/components/motion/Reveal";
 import { EventCard } from "@/components/sections/CardWithModal";
 import { PageRibbon } from "@/components/layout/PageRibbon";
@@ -12,9 +12,11 @@ import type { EventsPageData } from "@/lib/siteContent";
 
 export function EventsPageLive({ initial }: { initial: EventsPageData }) {
   const [data, setData] = useState(initial);
+  const [refreshFailed, setRefreshFailed] = useState(false);
 
-  useEffect(() => {
+  const loadEvents = useCallback(() => {
     let cancelled = false;
+    setRefreshFailed(false);
     fetch("/api/site?page=events")
       .then((r) => (r.ok ? r.json() : null))
       .then((live: unknown) => {
@@ -23,11 +25,10 @@ export function EventsPageLive({ initial }: { initial: EventsPageData }) {
         if (!next.copy?.hero || !Array.isArray(next.upcoming) || !Array.isArray(next.past)) return;
         setData(next);
       })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => { if (!cancelled) setRefreshFailed(true); });
+    return () => { cancelled = true; };
   }, []);
+  useEffect(() => loadEvents(), [loadEvents]);
 
   const { copy, upcoming, past } = data;
 
@@ -54,6 +55,7 @@ export function EventsPageLive({ initial }: { initial: EventsPageData }) {
           </div>
         </Container>
       </section>
+      {refreshFailed && <div className="px-4" role="status"><div className="mx-auto max-w-3xl rounded-xl border border-brand-mist bg-brand-sand/60 p-3 text-center text-sm text-brand-green-dark">Showing the latest saved events while live updates reconnect. <button type="button" onClick={loadEvents} className="ml-2 min-h-11 font-semibold underline underline-offset-2">Retry</button></div></div>}
 
       {upcoming.length === 0 ? (
       <section className="py-16 md:py-24">

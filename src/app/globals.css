@@ -61,6 +61,37 @@ html {
     0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
+/* Copy stays legible over CMS-selected hero videos with bright frames or text. */
+.goko-hero-copy {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 1rem;
+  background: rgba(26, 61, 42, 0.82);
+  padding: 1rem;
+  box-shadow: 0 12px 32px rgba(7, 28, 17, 0.28);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .goko-hero-copy {
+    background: rgba(26, 61, 42, 0.72);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+}
+
+@media (min-width: 768px) {
+  .goko-hero-copy {
+    padding: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .goko-hero-copy {
+    background: rgb(26, 61, 42);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /*
  * Booking hero glass materials over video / ribbon imagery.
  * Panel = open shell; chip = light nested panes; ink = dark sticky estimate.

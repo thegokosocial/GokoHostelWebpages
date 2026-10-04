@@ -70,7 +70,7 @@ export default function KitchenPage() {
             Kitchen Dashboard
           </h1>
           <p className="mt-1 text-center text-sm text-gray-500 dark:text-muted-foreground">
-            Enter staff password to access
+            Enter the kitchen staff password. This access is separate from the admin account.
           </p>
           <form
             onSubmit={(e) => {
@@ -80,18 +80,24 @@ export default function KitchenPage() {
             className="mt-6 space-y-4"
           >
             <input
+              id="kitchen-password"
               type="password"
+              name="password"
               value={inputPassword}
               onChange={(e) => setInputPassword(e.target.value)}
               placeholder="Enter password"
+              autoComplete="current-password"
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "kitchen-password-error" : "kitchen-password-help"}
               autoFocus
               className="w-full rounded-xl border border-gray-300 dark:border-border bg-white dark:bg-muted px-4 py-3 text-gray-900 dark:text-foreground placeholder-gray-400 dark:placeholder-muted-foreground outline-none transition-all duration-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:focus:ring-amber-500/30 focus:shadow-sm"
             />
+            <p id="kitchen-password-help" className="text-xs text-gray-500 dark:text-muted-foreground">Remember this device only if it is a trusted kitchen device.</p>
             <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-muted-foreground">
               <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
               Remember me for 15 days
             </label>
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            {error && <p id="kitchen-password-error" className="text-sm text-red-500" role="alert">{error}</p>}
             <button
               type="submit"
               disabled={loading || !inputPassword}

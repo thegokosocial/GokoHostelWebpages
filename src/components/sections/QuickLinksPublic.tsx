@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { QrCodeIcon } from "lucide-react";
 import { AutoQrCode } from "./AutoQrCode";
 
@@ -13,7 +13,9 @@ export function QuickLinksPublic() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const loadLinks = useCallback(() => {
+    setLoading(true);
+    setError(false);
     fetch("/api/quick-links")
       .then(async (response) => {
         if (!response.ok) throw new Error("Failed to load");
@@ -23,6 +25,8 @@ export function QuickLinksPublic() {
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { void loadLinks(); }, [loadLinks]);
 
   const grouped = useMemo(() => new Map(sections.map((section) => [section.id, items.filter((item) => item.sectionId === section.id)])), [items, sections]);
 
@@ -34,9 +38,9 @@ export function QuickLinksPublic() {
           <h1 className="mt-5 font-display text-3xl font-bold text-brand-green-dark sm:text-4xl">Goko Guest Links</h1>
           <p className="mt-3 text-base leading-7 text-brand-green-dark/65">Scan a QR code below for check-in, food ordering, payments, and more.</p>
         </div>
-        {loading && <p className="mt-12 text-center text-sm text-brand-green-dark/60">Loading guest links…</p>}
-        {error && <p className="mx-auto mt-12 max-w-md rounded-2xl bg-white/80 p-5 text-center text-sm text-red-700 shadow-soft">Guest links are temporarily unavailable. Please try again shortly.</p>}
-        {!loading && !error && sections.length === 0 && <p className="mt-12 text-center text-sm text-brand-green-dark/60">No guest links have been added yet.</p>}
+        {loading && <p className="mt-12 text-center text-sm text-brand-green-dark/60" role="status" aria-live="polite">Loading guest links…</p>}
+        {error && <div className="mx-auto mt-12 max-w-md rounded-2xl bg-white/80 p-5 text-center text-sm text-red-700 shadow-soft" role="alert"><p>Guest links are temporarily unavailable.</p><button type="button" onClick={() => void loadLinks()} className="mt-3 min-h-11 rounded-lg border border-brand-green px-4 font-semibold text-brand-green-dark">Retry links</button></div>}
+        {!loading && !error && sections.length === 0 && <p className="mt-12 text-center text-sm text-brand-green-dark/60" role="status">No guest links have been added yet.</p>}
         {!loading && !error && <div className="mt-10 space-y-8">{sections.map((section) => {
           const sectionItems = grouped.get(section.id) || [];
           if (sectionItems.length === 0) return null;

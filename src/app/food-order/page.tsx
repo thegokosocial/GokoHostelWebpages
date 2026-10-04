@@ -392,12 +392,18 @@ export default function FoodOrderPage() {
   // Loading state
   if (view === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center goko-mesh goko-noise bg-brand-sand dark:bg-background">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="h-10 w-10 rounded-full border-4 border-brand-green/20 border-t-brand-green"
-        />
+      <div className="min-h-screen goko-mesh goko-noise bg-brand-sand px-4 py-12 dark:bg-background">
+        <div className="mx-auto max-w-md" aria-busy="true" aria-live="polite" role="status">
+          <div className="mx-auto h-14 w-14 animate-pulse rounded-2xl bg-brand-green/10" />
+          <div className="mx-auto mt-5 h-7 w-40 animate-pulse rounded bg-brand-green/10" />
+          <div className="mx-auto mt-2 h-4 w-28 animate-pulse rounded bg-brand-green/10" />
+          <div className="mt-8 rounded-2xl bg-white/95 p-6 shadow-xl dark:bg-card/95 dark:shadow-none">
+            <div className="h-6 w-52 animate-pulse rounded bg-brand-green/10" />
+            <div className="mt-3 h-4 w-40 animate-pulse rounded bg-brand-green/10" />
+            <div className="mt-6 h-14 animate-pulse rounded-xl bg-brand-green/10" />
+          </div>
+          <p className="mt-5 text-center text-sm text-brand-green-dark/70">Loading the menu…</p>
+        </div>
       </div>
     );
   }
@@ -453,17 +459,17 @@ export default function FoodOrderPage() {
                 savedPhone={savedPhone || undefined}
               />
               {fetchError && (
-                <div className="mt-4 px-4 text-center">
-                  <p className="text-sm text-brand-red">{fetchError}</p>
+                <div className="mx-4 mt-4 rounded-xl border border-brand-red/20 bg-white/90 p-4 text-center shadow-sm dark:bg-card/90">
+                  <p role="alert" className="text-sm text-brand-red">{fetchError}</p>
                   <button
                     type="button"
                     onClick={() => {
                       setView("loading");
                       fetchMenu();
                     }}
-                    className="mt-2 text-sm font-medium text-brand-green underline"
+                    className="mt-3 min-h-11 rounded-lg border border-brand-green px-4 text-sm font-semibold text-brand-green focus-visible:goko-focus"
                   >
-                    Try again
+                    Retry menu
                   </button>
                 </div>
               )}

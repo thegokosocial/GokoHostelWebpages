@@ -43,6 +43,17 @@ describe("guest menu diet filters and floating cart", () => {
     expect(menu).not.toContain("hasGokoSpecial");
   });
 
+  it("keeps phone lookup and menu loading recoverable on mobile", () => {
+    const phone = readFileSync("src/components/food/PhoneEntry.tsx", "utf8");
+    expect(page).toContain('aria-busy="true"');
+    expect(page).toContain("Loading the menu…");
+    expect(page).toContain("Retry menu");
+    expect(phone).toContain('name="phone"');
+    expect(phone).toContain('autoComplete="tel-national"');
+    expect(phone).toContain('aria-describedby={error ? "food-phone-error" : "food-phone-help"}');
+    expect(phone).toContain('role="alert"');
+  });
+
   it("uses full-height rail layout and floating View Cart with safe-area", () => {
     expect(menu).toContain("h-[calc(100dvh-4.75rem)]");
     expect(menu).toContain("pb-[calc(3.75rem+env(safe-area-inset-bottom))]");

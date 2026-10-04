@@ -81,7 +81,8 @@ export default function HowToReachPage() {
                     <p className="text-sm text-brand-green-dark/80">{a.note}</p>
                     <a
                       href={`tel:${a.phone.replace(/\s/g, "")}`}
-                      className="mt-2 inline-block text-sm font-medium text-brand-red underline-offset-2 hover:underline"
+                      aria-label={`Call ${a.name} at ${a.phone}`}
+                      className="mt-2 inline-flex min-h-12 items-center text-sm font-medium text-brand-red underline-offset-2 hover:underline"
                     >
                       {a.phone}
                     </a>
@@ -100,7 +101,8 @@ export default function HowToReachPage() {
                     <p className="text-sm text-brand-green-dark/80">{a.note}</p>
                     <a
                       href={`tel:${a.phone.replace(/\s/g, "")}`}
-                      className="mt-2 inline-block text-sm font-medium text-brand-red underline-offset-2 hover:underline"
+                      aria-label={`Call ${a.name} at ${a.phone}`}
+                      className="mt-2 inline-flex min-h-12 items-center text-sm font-medium text-brand-red underline-offset-2 hover:underline"
                     >
                       {a.phone}
                     </a>

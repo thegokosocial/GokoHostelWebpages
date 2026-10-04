@@ -134,7 +134,7 @@ export function PhoneEntry({ onIdentified, onWalkin, savedPhone }: PhoneEntryPro
       <div className="rounded-2xl bg-white/95 dark:bg-card/95 p-6 shadow-xl dark:shadow-none backdrop-blur-sm">
         <h2 className="mb-1 text-lg font-semibold text-gray-800 dark:text-foreground">Enter your phone number</h2>
         <p className="mb-1 text-sm text-gray-500 dark:text-muted-foreground">We&apos;ll find your booking details</p>
-        <p className="mb-5 text-xs text-gray-400 dark:text-muted-foreground">
+        <p id="food-phone-help" className="mb-5 text-xs text-gray-400 dark:text-muted-foreground">
           Use the same mobile number you gave at check-in
         </p>
 
@@ -144,8 +144,12 @@ export function PhoneEntry({ onIdentified, onWalkin, savedPhone }: PhoneEntryPro
               +91
             </span>
             <input
+              id="food-phone"
+              name="phone"
               type="tel"
               inputMode="numeric"
+              autoComplete="tel-national"
+              aria-describedby={error ? "food-phone-error" : "food-phone-help"}
               value={formatPhone(phone)}
               onChange={handlePhoneChange}
               placeholder="98765 43210"
@@ -171,6 +175,8 @@ export function PhoneEntry({ onIdentified, onWalkin, savedPhone }: PhoneEntryPro
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
+                id="food-phone-error"
+                role="alert"
                 className="mt-3 text-sm text-brand-red"
               >
                 {error}

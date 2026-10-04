@@ -15,7 +15,7 @@ import {
 } from "./managementSectionTabs";
 import { filterManagementNavGroups } from "./managementNavGroups";
 
-const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
+const tabLoader = () => <div className="flex items-center justify-center py-16" role="status" aria-live="polite" aria-label="Loading management section"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 
 const AdminSetup = dynamic(() => import("./AdminSetup").then((m) => m.AdminSetup), { loading: tabLoader, ssr: false });
 const ManagementUsers = dynamic(() => import("./ManagementUsers").then((m) => m.ManagementUsers), { loading: tabLoader, ssr: false });

@@ -34,6 +34,7 @@ Handoff in short: trust `src/` over docs; trust local `MAINTAINER.local.md` for 
 | Landmines / wire formats | [llm-onboarding.md](llm-onboarding.md) |
 | What the product is | [overview.md](overview.md) |
 | Pages + admin components | [pages-and-ui.md](pages-and-ui.md) |
+| Page-by-page UI delivery backlog | [ui-improvement-plan.md](ui-improvement-plan.md) |
 | Frosted glass / glassmorphism materials | [frosted-glass.md](frosted-glass.md) |
 | Guest booking UI workflows | [guest-booking-ui.md](guest-booking-ui.md) |
 | Sequences / state machines | [interactions.md](interactions.md) |

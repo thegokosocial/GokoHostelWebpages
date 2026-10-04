@@ -22,7 +22,7 @@ export function HomeHeroPremium() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="relative flex min-h-[88vh] items-end overflow-clip md:min-h-[92vh]">
+    <section className="relative flex min-h-[calc(100dvh-4rem)] items-end overflow-clip md:min-h-[92vh]">
       <div className="absolute inset-0 z-0 overflow-hidden">
         <HeroBackdrop
           image={homeHero.heroImage}
@@ -44,9 +44,9 @@ export function HomeHeroPremium() {
           reduce ? undefined : { duration: 14, repeat: Infinity, ease: "easeInOut" }
         }
       />
-      <Container className="relative z-[2] pb-12 pt-16 md:pb-16 md:pt-36">
+      <Container className="relative z-[2] pb-8 pt-20 sm:pb-12 md:pt-28">
         {reduce ? (
-          <div>
+          <div className="goko-hero-copy max-w-4xl">
             <p className="font-display text-sm font-semibold uppercase tracking-[0.2em] text-white/80">
               Gokarna · Karnataka
             </p>
@@ -59,6 +59,7 @@ export function HomeHeroPremium() {
           </div>
         ) : (
           <motion.div
+            className="goko-hero-copy max-w-4xl"
             initial="hidden"
             animate="show"
             variants={{

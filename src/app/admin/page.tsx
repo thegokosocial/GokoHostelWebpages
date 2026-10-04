@@ -19,7 +19,7 @@ import { clearStaffWhatsAppDraft } from "@/lib/staffWhatsApp";
 import { SyncStatusBar } from "@/components/admin/SyncStatusBar";
 import { firstVisibleAdminSection, isSplitsSectionEnabled } from "@/lib/adminNav";
 
-const tabLoader = () => <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
+const tabLoader = () => <div className="flex items-center justify-center py-20" role="status" aria-live="polite" aria-label="Loading admin section"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 
 const AdminDashboard = dynamic(() => import("@/components/admin/AdminDashboard").then((m) => m.AdminDashboard), { loading: tabLoader, ssr: false });
 const AdminRecords = dynamic(() => import("@/components/admin/AdminRecords").then((m) => m.AdminRecords), { loading: tabLoader, ssr: false });
@@ -231,7 +231,7 @@ function AdminPageInner() {
               <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
               Remember me for 15 days
             </label>
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
             <Button type="submit" variant="cta" className="w-full" disabled={loading || !password || !username}>
               {loading ? "Verifying..." : "Login"}
             </Button>

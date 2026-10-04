@@ -143,14 +143,20 @@ function OrderStatusContent() {
     return () => clearInterval(timer);
   }, [order]);
 
+  function retryStatus() {
+    setLoading(true);
+    void fetchStatus();
+  }
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center goko-mesh goko-noise bg-brand-sand dark:bg-background">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="h-10 w-10 rounded-full border-4 border-brand-green/20 border-t-brand-green"
-        />
+      <div className="min-h-screen goko-mesh goko-noise bg-brand-sand p-4 pt-8 dark:bg-background" role="status" aria-live="polite" aria-label="Loading order status">
+        <div className="mx-auto max-w-lg space-y-5 animate-pulse">
+          <div className="mx-auto h-5 w-40 rounded bg-brand-green/15" />
+          <div className="rounded-2xl bg-white/95 p-5 shadow-xl dark:bg-card/95 dark:shadow-none"><div className="h-10 rounded-full bg-brand-green/10" /><div className="mt-5 h-12 rounded-xl bg-brand-green/10" /></div>
+          <div className="rounded-2xl bg-white/95 p-5 shadow-xl dark:bg-card/95 dark:shadow-none"><div className="h-4 w-28 rounded bg-brand-green/15" /><div className="mt-5 space-y-3"><div className="h-4 rounded bg-brand-green/10" /><div className="h-4 w-4/5 rounded bg-brand-green/10" /></div></div>
+          <p className="text-center text-sm font-medium text-brand-green">Loading your order…</p>
+        </div>
       </div>
     );
   }
@@ -158,17 +164,14 @@ function OrderStatusContent() {
   if (error || !order) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center goko-mesh goko-noise bg-brand-sand dark:bg-background p-6">
-        <div className="max-w-sm rounded-2xl bg-white/95 dark:bg-card/95 p-8 text-center shadow-xl dark:shadow-none">
-          <span className="text-4xl">😕</span>
+        <div className="max-w-sm rounded-2xl bg-white/95 p-8 text-center shadow-xl dark:bg-card/95 dark:shadow-none" role="alert">
           <h1 className="mt-4 text-xl font-bold text-gray-800 dark:text-gray-200">
             {error || "Order not found"}
           </h1>
-          <a
-            href="/food-order"
-            className="mt-6 inline-block rounded-xl goko-gradient-cta px-6 py-3 font-semibold text-white shadow-lg dark:shadow-none"
-          >
-            Place an order
-          </a>
+          <div className="mt-6 flex flex-col gap-3">
+            {orderNumber && phone && <button type="button" onClick={retryStatus} className="min-h-12 rounded-xl goko-gradient-cta px-6 py-3 font-semibold text-white shadow-lg dark:shadow-none">Retry status</button>}
+            <a href="/food-order" className="inline-flex min-h-12 items-center justify-center rounded-xl border border-brand-green px-6 py-3 font-semibold text-brand-green">Place an order</a>
+          </div>
         </div>
       </div>
     );

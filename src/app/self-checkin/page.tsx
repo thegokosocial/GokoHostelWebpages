@@ -30,7 +30,7 @@ export default function SelfCheckinPage() {
         aria-hidden
       />
       <Container className="relative z-[2] py-8 md:py-16">
-        <div className="mx-auto mb-8 max-w-2xl text-center md:mb-10">
+        <div className="goko-hero-copy mx-auto mb-8 max-w-2xl text-center md:mb-10">
           <h1 className="goko-hero-title font-display text-2xl font-bold md:text-display-md">
             Welcome to Goko Hostel
           </h1>

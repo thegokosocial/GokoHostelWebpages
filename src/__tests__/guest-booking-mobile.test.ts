@@ -33,8 +33,11 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain('sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))]');
     expect(panel).toContain('xl:top-24 xl:bottom-auto'); expect(ribbon).toContain('children ? "overflow-clip"');
     expect(home).toContain('items-end overflow-clip');
+    expect(home).toContain('min-h-[calc(100dvh-4rem)]');
     expect(ribbon).toContain('goko-hero-title');
     expect(home).toContain('goko-hero-title');
+    expect(ribbon).toContain('goko-hero-copy');
+    expect(home).toContain('goko-hero-copy');
   });
   it("temporarily suppresses overlapping floats only on phones, and cleans up observation", () => {
     expect(css).toMatch(/@media \(max-width: 767px\)\s*\{\s*body:has\(\[data-booking-in-view="true"\]\) \.goko-floating-bottom\s*\{\s*display: none/);
@@ -79,6 +82,14 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("stayReady");
     expect(panel).toContain("disabled={busy || !stayReady}");
     expect(panel).toContain("Choose your check-in and check-out dates.");
+  });
+
+  it("gives a failed availability search an inline mobile recovery path", () => {
+    expect(panel).toContain("availabilityFailed");
+    expect(panel).toContain('role={availabilityFailed ? "alert" : "status"}');
+    expect(panel).toContain("Retry availability");
+    expect(panel).toContain("Ask Goko for help");
+    expect(panel).toContain("void runAvailabilitySearch(stay)");
   });
   it("gently scrolls the first available result into view", () => {
     expect(panel).toContain("firstAvailabilityCardRef");
@@ -170,6 +181,8 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).not.toMatch(/data-booking-in-view=\{inView\} className="[^"]*bg-white/);
     expect(panel).not.toContain("bg-brand-green-dark p-3 text-white");
     expect(css).toContain(".goko-glass-panel");
+    expect(css).toContain(".goko-hero-copy");
+    expect(css).toContain("background: rgba(26, 61, 42, 0.82)");
     expect(css).toContain(".goko-glass-chip");
     expect(css).toContain(".goko-glass-ink");
     expect(css).toContain("rgba(255, 255, 255, 0.42)");

@@ -20,7 +20,7 @@ Surfaces that use it today: kitchen Active Orders mutations; guest `FoodCart` pl
 
 ## Public marketing (`src/app/(marketing)/`)
 
-All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these only. Video-hero page titles use the shared `goko-hero-title` class (`PageRibbon` + homepage `HomeHeroPremium`): warm gold (`--brand-gold`) with a dark shadow for contrast over green foliage footage; subtitles stay white.
+All `dynamic = "force-static"`. Wrapped in SiteShell + GTM. Sitemap lists these only. Video-hero page titles use the shared `goko-hero-title` class (`PageRibbon` + homepage `HomeHeroPremium`): warm gold (`--brand-gold`) with a dark shadow for contrast over green foliage footage; titles and subtitles sit in the shared `goko-hero-copy` contrast surface so CMS-selected bright frames or embedded video text cannot obscure the primary action.
 
 | Path | Content source | Hero video (typical) |
 |------|----------------|----------------------|
@@ -42,7 +42,29 @@ Hero clips are assigned in Management → Website → **Hero Videos** (`GET /api
 
 `robots.ts` **disallows:** `/self-checkin`, `/admin`, `/api/`, `/food-order`, `/kitchen`, `/my-bills`, `/review/`.
 
-Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitized `/api/booking/config` → `/api/booking/destination` → saved `channel_config.bookingEngineUrl`. Blank/invalid/unavailable configuration uses Booking Enquiry; external links use their provider checkout. `/book` currently offers enquiry only; native checkout is disabled. See [Website booking foundation](flows-website-booking.md).
+Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitized `/api/booking/config` → `/api/booking/destination` → saved `channel_config.bookingEngineUrl`. Blank/invalid/unavailable configuration uses Booking Enquiry; external links use their provider checkout. On `/book`, a failed availability request is announced inline and offers Retry availability for the same dates or a labelled WhatsApp handoff with those dates; it does not change the checkout, payment, or booking-lookup path. See [Website booking foundation](flows-website-booking.md).
+
+Booking Enquiry keeps its existing payload and delivery paths. On mobile, each visible validation error is programmatically connected to its field, and a blocked WhatsApp pop-up provides an inline email retry path instead of a misleading success message.
+
+Self Check-in preserves its identity-document rules and existing lookup/create flow. Its mobile entry step now identifies the phone input and its error state to assistive technology, while the main form gives guests a concise step context and the submit state announces progress.
+
+Food order status keeps the existing 10-second, visibility-aware polling rule and phone requirement. It now uses an order-shaped mobile loading state and gives a recoverable status fetch failure a direct retry alongside the safe return to ordering.
+
+My Bills continues to use the existing phone/token access model and payment visibility rules. The phone lookup is now explicitly labelled for mobile/assistive technology and connects validation errors to the input without exposing bill details earlier.
+
+Kitchen login continues to use its own session scope. The password form now exposes password-manager semantics, an accessible error region, and a concise trusted-device explanation without changing cookie or credential behavior.
+
+Review links retain token validation, already-rated handling, and Google redirect behavior. Rating and improvement controls now expose their selected state and purpose to keyboard and screen-reader users; loading and failure states are announced inline.
+
+How to Reach keeps the existing contact data and legacy-contact caution. Phone actions are now labelled with their destination and meet the mobile touch-target baseline.
+
+Quick Links keeps all current QR destinations. Its loading, empty, and failed CMS states now communicate their state inline; the failed state can retry without leaving the page.
+
+Events and Community keep build-time seed content visible when their optional live CMS refresh fails. Each now explains that fallback and lets the visitor retry the refresh without hiding valid saved content.
+
+Admin navigation, URL-backed section selection, page gates, and action permissions remain unchanged. Deferred section loading and login failures now announce their state to assistive technology; the existing mobile section drawer remains the primary phone navigation pattern.
+
+Booking confirmation preserves magic-link removal, device session storage, status fetching, and cancellation behavior. It now uses a confirmation-shaped mobile loading state and provides a retry or Find my booking recovery path when access cannot be restored on the device.
 
 ---
 
@@ -51,7 +73,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 | Path | Role | Auth |
 |------|------|------|
 | `/self-checkin` | ID check-in over hero video with frosted glass form shells; foreign nationality is passport-only; mobile Form C flow has touch-safe country pickers, a reachable submit action, and inline submission errors. Foreign submissions create a recoverable Form C draft for Records review. | none |
-| `/food-order` | Menu + cart; category rail + dish pane; diet All/Veg/Non-veg; global dish search (Add lands on hit category); floating View Cart with safe-area; checkout shows hostel name+dorm or locked walk-in name when known | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
+| `/food-order` | Menu + cart; a menu-shaped loading state and retryable menu failure sit before phone lookup; category rail + dish pane; diet All/Veg/Non-veg; global dish search (Add lands on hit category); floating View Cart with safe-area; checkout shows hostel name+dorm or locked walk-in name when known | phone in localStorage; session in `sessionStorage.gokoFoodSession`; Logout clears both |
 | `/food-order/status` | Poll ~10s | phone |
 | `/my-bills` | Food bills | phone; one combined Open tab + Paid card (no per-order IDs); shared `GuestFoodBillCard`; back → `/food-order` (`router.push`, keeps guest session) |
 | `/kitchen` | Queue, thermal print | `sessionStorage.kitchen_pw` |

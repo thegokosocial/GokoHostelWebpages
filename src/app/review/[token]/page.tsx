@@ -160,7 +160,7 @@ export default function ReviewPage() {
 
   if (view === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-brand-sand">
+      <div className="flex min-h-screen items-center justify-center bg-brand-sand" role="status" aria-live="polite" aria-label="Loading review request">
         <Loader2Icon className="h-6 w-6 animate-spin text-brand-green" />
       </div>
     );
@@ -169,7 +169,7 @@ export default function ReviewPage() {
   if (view === "error") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-red-50 to-white p-6">
-        <div className="w-full max-w-sm text-center">
+        <div className="w-full max-w-sm text-center" role="alert">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
             <span className="text-2xl">😕</span>
           </div>
@@ -202,7 +202,7 @@ export default function ReviewPage() {
           <p className="mt-4 text-sm text-gray-600">Please rate your stay below</p>
 
           {/* Star rating */}
-          <div className="mt-6 flex items-center justify-center gap-2">
+          <div className="mt-6 flex items-center justify-center gap-2" role="group" aria-label="Choose a rating from 1 to 5 stars">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
@@ -210,6 +210,8 @@ export default function ReviewPage() {
                 onMouseEnter={() => setHoverRating(star)}
                 onMouseLeave={() => setHoverRating(0)}
                 onClick={() => setSelectedRating(star)}
+                aria-label={`${star} out of 5 stars`}
+                aria-pressed={selectedRating === star}
                 className="rounded-lg p-1 transition-transform hover:scale-110 active:scale-95 focus-visible:goko-focus"
               >
                 <StarIcon
@@ -307,13 +309,14 @@ export default function ReviewPage() {
 
           {/* Improvement areas */}
           <div className="mt-6">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">What could be better?</p>
-            <div className="grid grid-cols-2 gap-2">
+            <p id="improvement-areas-label" className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">What could be better?</p>
+            <div className="grid grid-cols-2 gap-2" role="group" aria-labelledby="improvement-areas-label">
               {IMPROVEMENT_OPTIONS.map((opt) => (
                 <button
                   key={opt.id}
                   type="button"
                   onClick={() => toggleArea(opt.id)}
+                  aria-pressed={selectedAreas.includes(opt.id)}
                   className={cn(
                     "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm font-medium transition-all",
                     selectedAreas.includes(opt.id)
@@ -330,8 +333,9 @@ export default function ReviewPage() {
 
           {/* Comments */}
           <div className="mt-6">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Additional feedback (optional)</p>
+            <label htmlFor="review-comments" className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Additional feedback (optional)</label>
             <textarea
+              id="review-comments"
               value={comments}
               onChange={(e) => setComments(e.target.value.slice(0, 1000))}
               placeholder="Please tell us more about your experience..."
@@ -342,7 +346,7 @@ export default function ReviewPage() {
           </div>
 
           {selectedAreas.length === 0 && (
-            <p className="mt-4 text-xs text-brand-red">Please select at least one area to continue.</p>
+            <p className="mt-4 text-xs text-brand-red" role="status">Please select at least one area to continue.</p>
           )}
           <button
             type="button"

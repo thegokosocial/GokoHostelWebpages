@@ -36,7 +36,11 @@ export function BookingEnquiryForm() {
   function openWhatsApp() {
     void form.handleSubmit((data) => {
       const text = encodeURIComponent(formatBookingEnquiryBody(data));
-      window.open(`${site.whatsAppUrl}?text=${text}`, "_blank", "noopener,noreferrer");
+      const popup = window.open(`${site.whatsAppUrl}?text=${text}`, "_blank", "noopener,noreferrer");
+      if (!popup) {
+        setSubmitError("WhatsApp did not open. Allow pop-ups, then try again or send your enquiry by email.");
+        return;
+      }
       setSubmitted("whatsapp");
       setSubmitError(null);
     })();
@@ -91,10 +95,12 @@ export function BookingEnquiryForm() {
           id="enq-name"
           className={cn(fieldRing, form.formState.errors.name && "border-brand-red")}
           autoComplete="name"
+          aria-invalid={Boolean(form.formState.errors.name)}
+          aria-describedby={form.formState.errors.name ? "enq-name-error" : undefined}
           {...form.register("name")}
         />
         {form.formState.errors.name ? (
-          <p className="text-sm text-brand-red">{form.formState.errors.name.message}</p>
+          <p id="enq-name-error" className="text-sm text-brand-red">{form.formState.errors.name.message}</p>
         ) : null}
       </div>
       <div className="grid gap-5 sm:grid-cols-2">
@@ -107,10 +113,12 @@ export function BookingEnquiryForm() {
             type="email"
             className={cn(fieldRing, form.formState.errors.email && "border-brand-red")}
             autoComplete="email"
+            aria-invalid={Boolean(form.formState.errors.email)}
+            aria-describedby={form.formState.errors.email ? "enq-email-error" : undefined}
             {...form.register("email")}
           />
           {form.formState.errors.email ? (
-            <p className="text-sm text-brand-red">{form.formState.errors.email.message}</p>
+            <p id="enq-email-error" className="text-sm text-brand-red">{form.formState.errors.email.message}</p>
           ) : null}
         </div>
         <div className="space-y-2">
@@ -122,10 +130,12 @@ export function BookingEnquiryForm() {
             type="tel"
             className={cn(fieldRing, form.formState.errors.phone && "border-brand-red")}
             autoComplete="tel"
+            aria-invalid={Boolean(form.formState.errors.phone)}
+            aria-describedby={form.formState.errors.phone ? "enq-phone-error" : undefined}
             {...form.register("phone")}
           />
           {form.formState.errors.phone ? (
-            <p className="text-sm text-brand-red">{form.formState.errors.phone.message}</p>
+            <p id="enq-phone-error" className="text-sm text-brand-red">{form.formState.errors.phone.message}</p>
           ) : null}
         </div>
       </div>
@@ -153,6 +163,7 @@ export function BookingEnquiryForm() {
             inputMode="numeric"
             placeholder="e.g. 2"
             className={fieldRing}
+            aria-invalid={Boolean(form.formState.errors.guests)}
             {...form.register("guests")}
           />
         </div>
@@ -170,10 +181,12 @@ export function BookingEnquiryForm() {
             "min-h-[140px] resize-y py-3",
             form.formState.errors.message && "border-brand-red"
           )}
+          aria-invalid={Boolean(form.formState.errors.message)}
+          aria-describedby={form.formState.errors.message ? "enq-msg-error" : undefined}
           {...form.register("message")}
         />
         {form.formState.errors.message ? (
-          <p className="text-sm text-brand-red">{form.formState.errors.message.message}</p>
+          <p id="enq-msg-error" className="text-sm text-brand-red">{form.formState.errors.message.message}</p>
         ) : null}
       </div>
       <div className="flex flex-col gap-3 sm:flex-row">

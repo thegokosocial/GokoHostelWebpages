@@ -899,7 +899,7 @@ export function SelfCheckinForm() {
         <h2 className="font-display text-2xl font-bold text-zinc-900 md:text-3xl">
           Guest Self Check-in
         </h2>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-zinc-700" id="phone-lookup-help">
           Enter your mobile number to get started. If you&apos;ve stayed with us before, we&apos;ll load your details.
         </p>
 
@@ -915,10 +915,13 @@ export function SelfCheckinForm() {
               onChange={(e) => { setPhoneInput(e.target.value); setLookupError(""); }}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handlePhoneLookup(); } }}
               className={cn(lookupError && "border-brand-red")}
+              autoComplete="tel-national"
+              aria-invalid={Boolean(lookupError)}
+              aria-describedby={lookupError ? "phone-lookup-error" : "phone-lookup-help"}
               autoFocus
             />
             {lookupError && (
-              <p className="mt-1 text-xs text-brand-red">{lookupError}</p>
+              <p id="phone-lookup-error" className="mt-1 text-xs text-brand-red" role="alert">{lookupError}</p>
             )}
           </div>
 
@@ -1008,13 +1011,13 @@ export function SelfCheckinForm() {
   if (submitting) {
     return (
       <div className="goko-glass-panel mx-auto max-w-2xl rounded-3xl p-12 text-center shadow-card md:p-16">
-        <div className="mx-auto flex h-20 w-20 items-center justify-center">
+        <div className="mx-auto flex h-20 w-20 items-center justify-center" aria-hidden>
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
         </div>
         <h2 className="mt-8 font-display text-2xl font-bold text-zinc-900">
           Submitting your check-in...
         </h2>
-        <p className="mt-3 text-zinc-700">
+        <p className="mt-3 text-zinc-700" role="status" aria-live="polite">
           Uploading documents and saving your details. Please wait and do not press the submit button again.
         </p>
         <div className="mt-6 flex justify-center gap-1">
@@ -1036,6 +1039,9 @@ export function SelfCheckinForm() {
       </h2>
       <p className="mt-2 text-sm text-zinc-700">
         Please fill in your details. Fields marked with <span className="text-brand-red">*</span> are required.
+      </p>
+      <p className="mt-3 rounded-xl bg-brand-sand/70 px-3 py-2 text-sm text-zinc-700" role="status">
+        Step 2 of 2: review your details and upload the required identity documents.
       </p>
 
       {returnGuest && (

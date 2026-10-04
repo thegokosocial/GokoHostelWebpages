@@ -65,6 +65,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [inView, setInView] = useState(false);
   const [tab, setTab] = useState<"search" | "booking">("search");
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  const [availabilityFailed, setAvailabilityFailed] = useState(false);
   const [checkoutWait, setCheckoutWait] = useState<CheckoutWaitPhase | null>(null);
   const [rooms, setRooms] = useState<GuestRoom[] | null>(null);
   const [selection, setSelection] = useState<Record<string, number>>({});
@@ -146,7 +147,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const stayReady = Boolean(stay.checkinDate && stay.checkoutDate && stay.checkoutDate > stay.checkinDate);
   const autoSearchStarted = useRef(false);
   async function runAvailabilitySearch(next: { checkinDate: string; checkoutDate: string }) {
-    setBusy(true); setMessage(""); setRooms(null); setSelection({}); setPlans({}); setReview(false); setHoldExpiresAt(null); setCheckoutRequestKey(null);
+    setBusy(true); setMessage(""); setAvailabilityFailed(false); setRooms(null); setSelection({}); setPlans({}); setReview(false); setHoldExpiresAt(null); setCheckoutRequestKey(null);
     try {
       const data = await readResponse(await fetch(`/api/guest-booking/availability?${new URLSearchParams(next)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) }));
       setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...next });
@@ -157,7 +158,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         : data.paymentOptions?.advancePercent > 0 ? "advance"
         : data.paymentOptions?.allowPayAtProperty ? "property" : "advance";
       setPaymentChoice(choice);
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not search. Try WhatsApp."); }
+    } catch (error) { setAvailabilityFailed(true); setMessage(error instanceof Error ? error.message : "Could not search. Please try again."); }
     finally { setBusy(false); }
   }
   useEffect(() => {
@@ -452,7 +453,7 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   <div ref={panelRef} data-booking-in-view={inView} className="goko-glass-panel min-w-0 rounded-2xl p-4 text-brand-green-dark shadow-2xl sm:p-5 md:p-7">
     {preview && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Design preview — availability, rates, tax and bed limit are fetched from the connected backend. Estimates only; no email, reservation or payment can be made.</p>}
     <div className="mb-5 grid grid-cols-2 gap-2 sm:flex" role="tablist" aria-label="Booking options">
-      {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "goko-glass-chip text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "Find my booking"}</button>)}
+      {(["search", "booking"] as const).map(value => <button key={value} id={`tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`panel-${value}`} disabled={busy} onClick={() => { setTab(value); setMessage(""); setAvailabilityFailed(false); }} className={`rounded-lg px-4 py-3 font-semibold ${tab === value ? "bg-brand-green text-white" : "goko-glass-chip text-brand-green-dark"}`}>{value === "search" ? "Find a stay" : "Find my booking"}</button>)}
     </div>
     {tab === "search" ? <div role="tabpanel" id="panel-search" aria-labelledby="tab-search">
       <form onSubmit={search} className="mt-5 grid grid-cols-2 items-end gap-3 lg:grid-cols-3">
@@ -748,7 +749,13 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
         {manageUrl && <a className={`${action} mt-4 inline-flex items-center justify-center`} href={manageUrl}>Manage booking</a>}
       </div>}
     </div>}
-    <p role="status" aria-live="polite" className="mt-4 break-words text-sm">{message}</p>
+    {message && <div className="mt-4 break-words text-sm" role={availabilityFailed ? "alert" : "status"} aria-live="polite">
+      <p>{message}</p>
+      {availabilityFailed && tab === "search" && stayReady && <div className="mt-3 flex flex-wrap gap-3">
+        <button type="button" className="min-h-12 rounded-lg border border-brand-green px-4 py-2 font-semibold" disabled={busy} onClick={() => void runAvailabilitySearch(stay)}>Retry availability</button>
+        <a className="inline-flex min-h-12 items-center rounded-lg px-1 py-2 font-semibold underline" href={`${site.whatsAppUrl}?text=${encodeURIComponent(`Hi Goko, I could not check availability for ${stay.checkinDate} to ${stay.checkoutDate}. Please help.`)}`} target="_blank" rel="noopener noreferrer">Ask Goko for help</a>
+      </div>}
+    </div>}
   </div>
   </>;
 }

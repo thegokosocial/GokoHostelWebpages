@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageRibbon } from "@/components/layout/PageRibbon";
 import { Reveal } from "@/components/motion/Reveal";
 import { CommunitySpaceCard } from "@/components/sections/CardWithModal";
@@ -11,9 +11,11 @@ import type { CommunityPageData } from "@/lib/siteContent";
 
 export function CommunityPageLive({ initial }: { initial: CommunityPageData }) {
   const [data, setData] = useState(initial);
+  const [refreshFailed, setRefreshFailed] = useState(false);
 
-  useEffect(() => {
+  const loadCommunity = useCallback(() => {
     let cancelled = false;
+    setRefreshFailed(false);
     fetch("/api/site?page=community")
       .then((r) => (r.ok ? r.json() : null))
       .then((live: unknown) => {
@@ -22,11 +24,10 @@ export function CommunityPageLive({ initial }: { initial: CommunityPageData }) {
         if (!next.copy?.hero || !Array.isArray(next.spaces)) return;
         setData(next);
       })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => { if (!cancelled) setRefreshFailed(true); });
+    return () => { cancelled = true; };
   }, []);
+  useEffect(() => loadCommunity(), [loadCommunity]);
 
   const { copy, spaces } = data;
 
@@ -49,6 +50,7 @@ export function CommunityPageLive({ initial }: { initial: CommunityPageData }) {
           </p>
         </Container>
       </section>
+      {refreshFailed && <div className="px-4" role="status"><div className="mx-auto max-w-3xl rounded-xl border border-brand-mist bg-brand-sand/60 p-3 text-center text-sm text-brand-green-dark">Showing saved community information while live updates reconnect. <button type="button" onClick={loadCommunity} className="ml-2 min-h-11 font-semibold underline underline-offset-2">Retry</button></div></div>}
 
       <section className="relative py-16 md:py-24">
         <div className="goko-divider-fade mx-auto mb-12 max-w-4xl" aria-hidden />
