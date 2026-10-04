@@ -140,7 +140,7 @@ export function BookingMobileDayView({
                       key={booking.id}
                       type="button"
                       onClick={() => onSelectBooking(booking.id)}
-                      className="flex w-full items-start gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+                      className="flex min-h-12 w-full items-start gap-3 p-3 text-left transition-colors hover:bg-muted/50"
                     >
                       <div className={cn("mt-0.5 h-8 w-1 shrink-0 rounded-full", statusColor.bg.split(" ")[0])} />
                       <div className="min-w-0 flex-1">

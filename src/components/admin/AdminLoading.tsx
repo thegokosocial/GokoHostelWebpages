@@ -2,7 +2,7 @@
 
 export function AdminLoading({ message = "Loading..." }: { message?: string }) {
   return (
-    <div className="space-y-6 py-4">
+    <div className="space-y-6 py-4" role="status" aria-live="polite" aria-label={message}>
       {/* Header shimmer */}
       <div className="space-y-2">
         <div className="h-7 w-36 animate-pulse rounded-lg bg-brand-green/10" />

@@ -221,7 +221,7 @@ export function InventoryRatePlan({ password, username, role, permissions }: Pro
 
   if (loading && !data) {
     return (
-      <div className="flex h-full min-h-0 flex-1 items-center justify-center py-20">
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center py-20" role="status" aria-live="polite" aria-label="Loading inventory">
         <Loader2Icon className="h-6 w-6 animate-spin text-brand-green" />
       </div>
     );

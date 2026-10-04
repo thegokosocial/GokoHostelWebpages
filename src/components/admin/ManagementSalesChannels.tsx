@@ -69,7 +69,7 @@ export function ManagementSalesChannels({ password, username }: { password: stri
     if (data.channels) setChannels(data.channels);
   };
 
-  if (loading) return <div className="flex justify-center py-10"><Loader2Icon className="h-5 w-5 animate-spin text-brand-green" /></div>;
+  if (loading) return <div className="flex justify-center py-10" role="status" aria-live="polite" aria-label="Loading sales channels"><Loader2Icon className="h-5 w-5 animate-spin text-brand-green" /></div>;
 
   return (
     <div className="space-y-4">

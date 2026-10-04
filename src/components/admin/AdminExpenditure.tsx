@@ -8,7 +8,7 @@ import { PlusCircleIcon, FileTextIcon, IndianRupeeIcon, BedDoubleIcon, BookOpenI
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import { hasPermission, type Role } from "./types";
 
-const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
+const tabLoader = () => <div className="flex items-center justify-center py-16" role="status" aria-live="polite" aria-label="Loading accounts section"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 const AdminAddExpense = dynamic(() => import("./AdminAddExpense").then((m) => m.AdminAddExpense), { loading: tabLoader, ssr: false });
 const AdminAddIncome = dynamic(() => import("./AdminAddIncome").then((m) => m.AdminAddIncome), { loading: tabLoader, ssr: false });
 const AdminRecurringExpenses = dynamic(() => import("./AdminRecurringExpenses").then((m) => m.AdminRecurringExpenses), { loading: tabLoader, ssr: false });

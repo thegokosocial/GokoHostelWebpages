@@ -15,7 +15,7 @@ export function ErrorFallback({ reset }: { reset: () => void }) {
         <button
           type="button"
           onClick={() => reset()}
-          className="mt-8 inline-flex rounded-xl goko-gradient-cta px-6 py-3 text-sm font-semibold text-white"
+          className="mt-8 inline-flex min-h-12 items-center rounded-xl goko-gradient-cta px-6 py-3 text-sm font-semibold text-white"
         >
           Try again
         </button>

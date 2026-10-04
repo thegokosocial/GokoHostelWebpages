@@ -280,7 +280,7 @@ function AdminPageInner() {
             aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={mobileMenuOpen}
             aria-controls="admin-mobile-navigation"
-            className="rounded-lg p-2 text-brand-green-dark/70 dark:text-zinc-400 transition-colors hover:bg-brand-green/[0.06] dark:hover:bg-zinc-800 lg:hidden"
+            className="min-h-11 min-w-11 rounded-lg p-2 text-brand-green-dark/70 dark:text-zinc-400 transition-colors hover:bg-brand-green/[0.06] dark:hover:bg-zinc-800 lg:hidden"
           >
             {mobileMenuOpen ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
           </button>
@@ -359,6 +359,7 @@ function AdminPageInner() {
                   <button
                     key={item.id}
                     type="button"
+                    aria-current={section === item.id ? "page" : undefined}
                     onClick={() => {
                       if (section === item.id) {
                         setMobileMenuOpen(false);
@@ -367,7 +368,7 @@ function AdminPageInner() {
                       setSection(item.id);
                     }}
                     className={cn(
-                      "flex min-w-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200",
+                      "flex min-h-12 min-w-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200",
                       section === item.id
                         ? "bg-brand-green text-white dark:text-zinc-900 shadow-sm"
                         : "text-brand-green-dark/70 dark:text-zinc-400 hover:bg-brand-green/[0.06] dark:hover:bg-zinc-800"
@@ -443,8 +444,8 @@ function AdminPageInner() {
                   <Label htmlFor="cp-confirm">Confirm New Password</Label>
                   <Input id="cp-confirm" type="password" value={cpConfirm} onChange={(e) => setCpConfirm(e.target.value)} placeholder="Confirm new password" />
                 </div>
-                {cpError && <p className="text-sm text-red-500">{cpError}</p>}
-                {cpSuccess && <p className="text-sm text-green-600">{cpSuccess}</p>}
+                {cpError && <p className="text-sm text-red-500" role="alert">{cpError}</p>}
+                {cpSuccess && <p className="text-sm text-green-600" role="status">{cpSuccess}</p>}
                 <Button type="button" variant="cta" className="w-full" onClick={handleChangePassword} disabled={cpLoading}>
                   {cpLoading ? "Saving..." : "Save New Password"}
                 </Button>

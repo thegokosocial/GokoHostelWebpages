@@ -299,7 +299,7 @@ export function StayRoomCard({
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger
         render={
-          <div role="button" tabIndex={0} className="group/room cursor-pointer" />
+          <button type="button" className="group/room w-full cursor-pointer text-left focus-visible:goko-focus" aria-label={`View photos and details for ${room.name}`} />
         }
       >
         <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
@@ -315,7 +315,7 @@ export function StayRoomCard({
               />
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover/room:opacity-100" />
-            <div className="absolute bottom-3 right-3 flex h-8 items-center gap-1.5 rounded-full bg-black/50 px-3 text-xs font-medium text-white backdrop-blur-sm opacity-0 transition-opacity duration-300 group-hover/room:opacity-100">
+            <div className="absolute bottom-3 right-3 flex min-h-8 items-center gap-1.5 rounded-full bg-black/50 px-3 text-xs font-medium text-white backdrop-blur-sm sm:opacity-0 sm:transition-opacity sm:duration-300 sm:group-hover/room:opacity-100">
               View all photos
               <ChevronRightIcon className="h-3.5 w-3.5" />
             </div>
@@ -343,7 +343,7 @@ export function StayRoomCard({
 
       <DialogPrimitive.Portal>
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
-        <DialogPrimitive.Popup className="fixed inset-x-4 top-1/2 z-50 mx-auto max-h-[90vh] max-w-2xl -translate-y-1/2 overflow-hidden overflow-y-auto rounded-3xl bg-white shadow-lift-lg outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 sm:inset-x-auto sm:left-1/2 sm:w-full sm:-translate-x-1/2">
+        <DialogPrimitive.Popup className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[92dvh] max-w-2xl overflow-hidden overflow-y-auto rounded-t-3xl bg-white shadow-lift-lg outline-none data-open:animate-in data-open:slide-in-from-bottom-4 data-closed:animate-out data-closed:fade-out-0 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[90vh] sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:data-open:zoom-in-95 sm:data-closed:zoom-out-95">
           <div className="relative">
             <PhotoCarousel photos={photos} alt={room.name} />
             <DialogPrimitive.Close
@@ -378,7 +378,7 @@ export function StayRoomCard({
               ))}
             </ul>
             <div className="mt-8 flex items-center gap-3 border-t border-brand-mist pt-6">
-              <BookNowButton>Book this room</BookNowButton>
+              <BookNowButton className="w-full sm:w-auto">Book this room</BookNowButton>
             </div>
           </div>
         </DialogPrimitive.Popup>

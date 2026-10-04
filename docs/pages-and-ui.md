@@ -64,7 +64,25 @@ Events and Community keep build-time seed content visible when their optional li
 
 Admin navigation, URL-backed section selection, page gates, and action permissions remain unchanged. Deferred section loading and login failures now announce their state to assistive technology; the existing mobile section drawer remains the primary phone navigation pattern.
 
+The admin phone navigation now meets the 44px touch-target baseline and identifies the current section programmatically. Change-password feedback is announced inline; no credential or session behavior changes.
+
+Admin Reviews keeps the same URL-backed tabs and review permissions. Its tab chooser now exposes selected state and touch-safe targets, while lazy sub-sections announce loading.
+
+Shared public error and not-found recovery actions meet the mobile touch-target baseline while retaining their existing reset and home navigation behavior.
+
+Accounts, Food Orders, and Sales Channels now announce deferred/loading states. Their existing action permissions, operational controls, and data flows are unchanged.
+
+Beds now gives operational actions 44px touch targets and announces an in-place update. Inventory announces its initial data-loading state; occupancy, availability, and update semantics remain unchanged.
+
+The Booking dashboard now announces all-bookings loading and uses touch-safe mobile day-view booking rows. Calendar, booking-detail, permissions, and mutation behavior remain unchanged.
+
+The shared AdminLoading skeleton now announces its supplied state for all consumers, including Timeline and Records. Timeline popover actions now meet the mobile touch-target baseline; its assignment and checkout behavior is unchanged.
+
 Booking confirmation preserves magic-link removal, device session storage, status fetching, and cancellation behavior. It now uses a confirmation-shaped mobile loading state and provides a retry or Find my booking recovery path when access cannot be restored on the device.
+
+Stay uses native room-detail triggers and a phone-first bottom-sheet detail view, with a full-width booking action. Its static room content remains visible during a failed optional CMS refresh, which can be retried in place.
+
+Reviews retains the existing public review data and outbound destinations. The page now uses clearer guest-story language, semantic review attribution, and explicit new-tab destinations for external review actions.
 
 ---
 

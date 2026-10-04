@@ -70,7 +70,7 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeB
       bed.status === "available" && !isLoading && onAssign && "hover:shadow-md dark:hover:shadow-none hover:-translate-y-0.5 cursor-pointer",
     )} onClick={bed.status === "available" && !isLoading && onAssign ? onAssign : undefined}>
       {isLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/70 dark:bg-card/70">
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/70 dark:bg-card/70" role="status" aria-label={`Updating bed ${bed.bedId}`}>
           <Loader2Icon className="h-5 w-5 animate-spin text-brand-green" />
         </div>
       )}
@@ -106,19 +106,19 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeB
           <div className="mt-2 flex gap-1">
             {onCheckout && (
               <button type="button" onClick={(e) => { e.stopPropagation(); onCheckout(); }}
-                className="flex-1 rounded-lg bg-red-500/10 px-1 py-1.5 text-[9px] font-semibold text-red-600 transition-colors hover:bg-red-500/20">
+                className="min-h-11 flex-1 rounded-lg bg-red-500/10 px-1 py-1.5 text-[9px] font-semibold text-red-600 transition-colors hover:bg-red-500/20">
                 Checkout
               </button>
             )}
             {onUnassign && (
               <button type="button" onClick={(e) => { e.stopPropagation(); onUnassign(); }}
-                className="flex-1 rounded-lg bg-gray-100 dark:bg-muted px-1 py-1.5 text-[9px] font-semibold text-gray-600 dark:text-gray-400 transition-colors hover:bg-gray-200 dark:hover:bg-accent">
+                className="min-h-11 flex-1 rounded-lg bg-gray-100 dark:bg-muted px-1 py-1.5 text-[9px] font-semibold text-gray-600 dark:text-gray-400 transition-colors hover:bg-gray-200 dark:hover:bg-accent">
                 Unassign
               </button>
             )}
             {onChangeBed && (
               <button type="button" onClick={(e) => { e.stopPropagation(); onChangeBed(); }}
-                className="flex-1 rounded-lg bg-blue-500/10 px-1 py-1.5 text-[9px] font-semibold text-blue-600 transition-colors hover:bg-blue-500/20">
+                className="min-h-11 flex-1 rounded-lg bg-blue-500/10 px-1 py-1.5 text-[9px] font-semibold text-blue-600 transition-colors hover:bg-blue-500/20">
                 Change
               </button>
             )}
@@ -134,7 +134,7 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeB
           </div>
           {onMarkClean && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onMarkClean(); }}
-              className="mt-2 w-full rounded-lg bg-orange-500/10 px-2 py-1.5 text-[10px] font-semibold text-orange-600 transition-colors hover:bg-orange-500/20">
+              className="mt-2 min-h-11 w-full rounded-lg bg-orange-500/10 px-2 py-1.5 text-[10px] font-semibold text-orange-600 transition-colors hover:bg-orange-500/20">
               Mark clean
             </button>
           )}

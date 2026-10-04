@@ -86,7 +86,7 @@ async function withBillBranding(
 type FoodTab = "summary" | "place" | "combined" | "active";
 
 const KitchenDashboard = dynamic(() => import("@/components/kitchen/KitchenDashboard").then((m) => m.KitchenDashboard), {
-  loading: () => <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>,
+  loading: () => <div className="flex items-center justify-center py-20" role="status" aria-live="polite" aria-label="Loading kitchen dashboard"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>,
   ssr: false,
 });
 

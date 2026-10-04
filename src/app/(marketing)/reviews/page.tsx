@@ -31,10 +31,10 @@ export default function ReviewsPage() {
       <section className="goko-mesh py-16 md:py-24">
         <Container>
           <div className="flex flex-wrap justify-center gap-3">
-            <ButtonLink href={site.googleReviewsSearchUrl} external>
+            <ButtonLink href={site.googleReviewsSearchUrl} external aria-label="Open Goko reviews on Google in a new tab">
               Google reviews
             </ButtonLink>
-            <ButtonLink href={social.instagram} external variant="ctaOutline">
+            <ButtonLink href={social.instagram} external variant="ctaOutline" aria-label="Open Goko Instagram in a new tab">
               Instagram
             </ButtonLink>
             <BookNowButton variant="ctaOutline">Book a bed</BookNowButton>
@@ -42,7 +42,7 @@ export default function ReviewsPage() {
 
           <div className="mt-16">
             <SectionHeader
-              title="Every card from the original site"
+              title="Guest stories"
               subtitle="Longer reviews our guests left on Google—lightly edited for typos only."
             />
           </div>
@@ -61,7 +61,7 @@ export default function ReviewsPage() {
                         “{t.quote}”
                       </p>
                       <footer className="mt-8 border-t border-brand-mist pt-6 font-display text-sm font-semibold text-brand-green">
-                        — {t.author}
+                        <cite className="not-italic">{t.author}</cite>
                       </footer>
                     </blockquote>
                   </CardContent>

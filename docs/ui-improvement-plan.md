@@ -1,8 +1,28 @@
 # UI improvement plan — page-by-page delivery
 
-**Status:** planned only. Implement one numbered page or shared foundation at a time.
+**Status:** complete — safe mobile-first improvements are implemented and the final regression gate passed on 4 October 2026.
 **Last reviewed:** 4 October 2026.
-**Evidence:** source review, desktop and 390 px mobile browser pass, and `cpu-chrome-workflows`, `admin-login-ui`, and `self-checkin-workflow-e2e` baseline (35 passing tests).
+**Evidence:** source review; 390 px, 768 px, and 1280 px browser checks; focused workflow suites; full Vitest; focused Playwright public/admin coverage; TypeScript; diff validation; and a production build.
+
+## Implementation ledger
+
+| Surface | Completed safe changes | Preserved behavior |
+|---|---|---|
+| Shared hero, booking, food | Contrast-safe hero copy, visible initial CTA, content-shaped loaders, inline retry/recovery, form semantics | Booking/payment/session payloads, cart persistence, phone privacy, polling |
+| Guest check-in, bills, kitchen, review | Touch-safe inputs/actions, announced errors/progress, keyboard/screen-reader state | Identity/visa rules, tokens, bill access/payment, separate kitchen session |
+| Public information pages | Mobile target sizing, explicit external destinations, CMS seed fallback/retry, phone-first room sheet | Existing copy/data sources, URLs, SEO and external-link safety |
+| Admin workspace | URL-backed mobile orientation, 44px operational controls, announced deferred/loading states | RBAC, action maps, destructive confirmations, accounting/inventory/check-in semantics |
+
+## Completion record
+
+| Plan rows | Result |
+|---|---|
+| Foundation 1–4 | Completed with the existing token system and primitives; no new visual dependency or data contract. |
+| Public 1–14 | Completed or retained where the audited route already met the mobile contract. Changed routes receive contrast, action-size, recovery, semantic, or CMS-fallback improvements without changing destinations or SEO. |
+| Guest/staff 15–20 | Completed with input/error/status improvements only; identity, order, bill, session, review-token, and payment behavior are unchanged. |
+| Admin 21 and rollout slices | Completed incrementally through navigation, loading/status, touch-target, and selected-state improvements. Existing page/action permission gates and confirmations are unchanged. |
+
+Final validation: `npx vitest run` (235 files, 3,386 tests), `npx playwright test e2e/public-navigation.spec.ts e2e/admin-navigation.spec.ts` (18 tests), `npx tsc --noEmit`, `git diff --check`, and `npm run build` all pass. The build retains pre-existing Next configuration and lint warnings; none were introduced or suppressed by this work.
 
 ## UI Atelier design contract
 

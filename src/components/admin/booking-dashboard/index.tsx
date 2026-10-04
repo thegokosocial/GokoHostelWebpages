@@ -598,7 +598,7 @@ export function BookingDashboard({
           </div>
 
           {allBookingsLoading ? (
-            <div className="flex min-h-48 items-center justify-center rounded-xl border border-border bg-white dark:bg-card">
+            <div className="flex min-h-48 items-center justify-center rounded-xl border border-border bg-white dark:bg-card" role="status" aria-live="polite" aria-label="Loading bookings">
               <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : (

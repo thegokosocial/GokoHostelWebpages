@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { useTabWithHistory } from "@/hooks/useTabWithHistory";
 import type { Role } from "./types";
 
-const tabLoader = () => <div className="flex items-center justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
+const tabLoader = () => <div className="flex items-center justify-center py-16" role="status" aria-live="polite" aria-label="Loading review section"><div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-green-dark border-t-transparent" /></div>;
 const ReviewAskTab = dynamic(() => import("./ReviewAskTab").then((m) => m.ReviewAskTab), { loading: tabLoader, ssr: false });
 const ReviewResponsesTab = dynamic(() => import("./ReviewResponsesTab").then((m) => m.ReviewResponsesTab), { loading: tabLoader, ssr: false });
 const ReviewAnalyticsTab = dynamic(() => import("./ReviewAnalyticsTab").then((m) => m.ReviewAnalyticsTab), { loading: tabLoader, ssr: false });
@@ -31,14 +31,16 @@ export function AdminReviews({ password, username, role, permissions }: Props) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-brand-mist bg-white dark:bg-card p-1">
+      <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-brand-mist bg-white dark:bg-card p-1" role="tablist" aria-label="Review sections">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
+            role="tab"
+            aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "relative rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              "relative min-h-11 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               tab === t.id ? "text-brand-green" : "text-brand-green-dark/60 hover:bg-brand-sand/50"
             )}
           >
