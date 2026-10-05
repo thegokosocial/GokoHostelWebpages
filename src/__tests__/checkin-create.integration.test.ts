@@ -153,6 +153,18 @@ describe("self check-in create (disposable SQLite)", () => {
     });
   });
 
+  it("preserves the Goko Hostel Website source without creating a manual booking ID", async () => {
+    const res = await postCheckin(buildForm(indiaFields({
+      bookingPlatform: "Goko Hostel Website",
+      bookingId: "",
+      idempotencyKey: uuid("121212121212"),
+    })));
+
+    expect(res.status).toBe(200);
+    const row = sqlite.prepare("SELECT booking_platform, booking_id FROM checkins").get() as Record<string, string>;
+    expect(row).toEqual({ booking_platform: "Goko Hostel Website", booking_id: "" });
+  });
+
   it("inserts foreign + passport + visa and rejects foreign without visa", async () => {
     const ok = await postCheckin(
       buildForm(foreignFields(), { idImages: [idFile("pp.jpg")], visaImages: [idFile("visa.jpg")] }),

@@ -223,6 +223,27 @@ test.describe("self check-in guest journeys", () => {
     expect(capture!.clientIdValidation).toBe("verified");
   });
 
+  test("new guest can select Goko Hostel Website without a booking ID", async ({ page }) => {
+    let capture: CheckinCapture | null = null;
+    await stubSelfCheckinApis(page, {
+      lookup: null,
+      onCheckin: (c) => { capture = c; },
+    });
+    await skipToForm(page);
+    await fillRequiredGuestFields(page);
+    await page.locator("#bookingPlatform").selectOption("Goko Hostel Website");
+    await page.locator("#idType").selectOption("aadhaar");
+    await galleryInputs(page).first().setInputFiles(tinyJpeg);
+    await page.getByRole("button", { name: "Verify document" }).click();
+    await expect(page.getByText(/Aadhaar verified/i)).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("button", { name: "Complete Check-in" }).click();
+    await expect(page.getByText("Check-in complete!")).toBeVisible({ timeout: 10_000 });
+    expect(capture).not.toBeNull();
+    expect(capture!.raw).toMatch(/name="bookingPlatform"[\s\S]*Goko Hostel Website/);
+    expect(capture!.raw).not.toMatch(/name="bookingId"/);
+  });
+
   test("foreign guest: visa required UI then Complete with mocked APIs", async ({ page }) => {
     let capture: CheckinCapture | null = null;
     await stubSelfCheckinApis(page, {

@@ -6,7 +6,7 @@ const numbersOnly = /^\d+$/;
 const phoneRegex = /^\+?[\d\s\-]{10,18}$/;
 
 export const BOOKING_PLATFORMS = [
-  "Booking.com", "Agoda", "MakeMyTrip", "Hostelworld", "Airbnb", "Offline booking", "Walk-in",
+  "Booking.com", "Agoda", "MakeMyTrip", "Hostelworld", "Airbnb", "Goko Hostel Website", "Offline booking", "Walk-in",
 ] as const;
 
 export type BookingPlatform = (typeof BOOKING_PLATFORMS)[number];
