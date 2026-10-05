@@ -13,13 +13,14 @@ type DualState = {
   amountTotal: number;
   amountPaid: number;
   loggedIn: boolean;
+  editPreview?: boolean;
 };
 
 function sampleBooking(state: DualState) {
   return {
     id: 5,
     bookingCycle: 1,
-    guestName: "Dual Guest",
+    guestName: state.editPreview ? "Preview Guest" : "Dual Guest",
     contact: "9000000000",
     email: "",
     platform: "walkin",
@@ -27,7 +28,7 @@ function sampleBooking(state: DualState) {
     cmBookingId: "",
     gokoBookingId: "GOKO20260920ABCDEF",
     checkinDate: "2026-09-20",
-    checkoutDate: "2026-09-22",
+    checkoutDate: state.editPreview ? "2026-09-21" : "2026-09-22",
     roomType: "",
     ratePlan: "",
     persons: 1,
@@ -41,7 +42,7 @@ function sampleBooking(state: DualState) {
     amountPaid: state.amountPaid,
     paymentStatus: state.paymentStatus,
     amountRefunded: 0,
-    nightlyRate: 0,
+    nightlyRate: state.editPreview ? 3600 : 0,
     currency: "INR",
     holdExpiresAt: "",
     cancelledAt: "",
@@ -51,7 +52,7 @@ function sampleBooking(state: DualState) {
     checkedOutAt: "",
     checkedOutBy: "",
     createdAt: "2026-09-20T10:00:00.000Z",
-    nights: 2,
+    nights: state.editPreview ? 1 : 2,
     balance: Math.max(0, state.amountTotal - state.amountPaid),
   };
 }
@@ -257,4 +258,24 @@ test("Check-in popup shows Collect payment then Payment done for prepaid", async
   await page.getByRole("button", { name: "Check In" }).click();
   await expect(page.getByRole("paragraph").filter({ hasText: "Payment done" })).toBeVisible();
   await expect(page.getByRole("paragraph").filter({ hasText: "Prepaid" })).toBeVisible();
+});
+
+test("manual booking edit previews due from the corrected amount received", async ({ page }) => {
+  const state: DualState = {
+    bookingCheckedIn: false,
+    bedOccupied: false,
+    paymentStatus: "paid",
+    amountTotal: 3600,
+    amountPaid: 3600,
+    loggedIn: false,
+    editPreview: true,
+  };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToBookings(page);
+
+  await page.getByPlaceholder(/search/i).first().fill("Preview Guest");
+  await page.getByText("Preview Guest").first().click();
+  await page.getByRole("button", { name: "Edit Booking" }).click();
+  await page.getByLabel("Amount received (₹)").fill("3400");
+  await expect(page.getByText("After save: Total ₹3,600 · Due ₹200")).toBeVisible();
 });

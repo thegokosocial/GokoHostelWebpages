@@ -141,6 +141,12 @@ export function formatCurrency(amount: number): string {
   return `\u20B9${amount.toLocaleString("en-IN")}`;
 }
 
+/** The edit preview uses the entered final payment once it is a valid whole amount. */
+export function previewBookingDue(total: number, savedPaid: number, editedPaid?: number): number {
+  const paid = Number.isInteger(editedPaid) && (editedPaid as number) >= 0 ? editedPaid as number : savedPaid;
+  return Math.max(0, total - paid);
+}
+
 export function formatDateShort(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00Z");
   const day = d.getUTCDate();

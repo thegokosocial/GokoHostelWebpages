@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { XIcon } from "lucide-react";
 import type { DashboardBooking, BedAssignment } from "./types";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
-import { getNights, formatCurrency } from "./utils";
+import { getNights, formatCurrency, previewBookingDue } from "./utils";
 import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import {
@@ -90,7 +90,7 @@ export function EditBookingModal({ booking, assignments, password, username, onA
     const currentTotal = Number(booking.amountTotal || 0);
     const currentDue = Math.max(0, currentTotal - paid);
     if (rate <= 0 || nights <= 0 || finalBedCount <= 0) {
-      return { currentTotal, paid, currentDue, previewTotal: currentTotal, previewDue: currentDue, totalUnchanged: true };
+      return { currentTotal, paid, currentDue, previewTotal: currentTotal, previewDue: previewBookingDue(currentTotal, paid, canEditPaid ? parsedAmountPaid : undefined), totalUnchanged: true };
     }
     const walkin = parseGokoWalkin(booking.rawData);
     const bedsForPrice = walkin?.unitPricing ? 1 : finalBedCount;
@@ -102,10 +102,10 @@ export function EditBookingModal({ booking, assignments, password, username, onA
       paid,
       currentDue,
       previewTotal: priced.total,
-      previewDue: Math.max(0, priced.total - paid),
+      previewDue: previewBookingDue(priced.total, paid, canEditPaid ? parsedAmountPaid : undefined),
       totalUnchanged: false,
     };
-  }, [booking.amountPaid, booking.amountTotal, booking.rawData, finalBedCount, nights, rate, taxPercent]);
+  }, [booking.amountPaid, booking.amountTotal, booking.rawData, canEditPaid, finalBedCount, nights, parsedAmountPaid, rate, taxPercent]);
 
   const recalcNightlyFromSelection = useCallback((keys: string[], units: AvailableBedUnit[], rates: Record<number, number>, kept: BedAssignment[]) => {
     const addUnits = units.filter((u) => keys.includes(u.key));

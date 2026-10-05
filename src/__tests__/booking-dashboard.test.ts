@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { isWeekend, getNights, platformLogo, stayOverlapsVisible, rangeCoveringStay, computeTilePlacements, getDateRange, getDatesArray, collectionCopy, displayedStayPayment, formatCurrency } from "@/components/admin/booking-dashboard/utils";
+import { isWeekend, getNights, platformLogo, stayOverlapsVisible, rangeCoveringStay, computeTilePlacements, getDateRange, getDatesArray, collectionCopy, displayedStayPayment, formatCurrency, previewBookingDue } from "@/components/admin/booking-dashboard/utils";
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { isRetryableAdminResponse } from "@/components/admin/useAdminApi";
 import { isTransientError } from "@/lib/dbRetry";
@@ -20,6 +20,13 @@ describe("Booking calendar date presets", () => {
   ] as const)("returns an inclusive %s range", (mode, expectedDays) => {
     const range = getDateRange(mode);
     expect(getDatesArray(range.start, range.end)).toHaveLength(expectedDays);
+  });
+});
+
+describe("Booking edit payment preview", () => {
+  it("uses a corrected manual amount received to show the due after save", () => {
+    expect(previewBookingDue(3600, 3600, 3400)).toBe(200);
+    expect(previewBookingDue(3600, 3600)).toBe(0);
   });
 });
 
