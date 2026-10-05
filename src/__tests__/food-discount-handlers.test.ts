@@ -108,6 +108,33 @@ beforeEach(() => {
 });
 
 describe("applyDiscount / removeDiscount handlers", () => {
+  it("records an admin-only partial revenue write-off without changing collected money", async () => {
+    q.getFoodOrderById.mockResolvedValue({ ...unpaidOrder(9, 120000), amountPaid: 100000, paymentStatus: "partial", guestName: "Guest", orderNumber: "D-9" });
+
+    const res = await POST(actionReq("writeOffRevenue", {
+      orderIds: [9], amountPaise: 20000, reason: "Guest unreachable", note: "Followed up twice", idempotencyKey: "writeoff-test-9",
+    }));
+
+    expect(res.status).toBe(200);
+    expect(updateSets[0]).toMatchObject({ writeOffAmount: 20000 });
+    expect(q.batch).toHaveBeenCalled();
+  });
+
+  it("rejects a write-off above the remaining balance and denies staff", async () => {
+    q.getFoodOrderById.mockResolvedValue({ ...unpaidOrder(8, 120000), amountPaid: 100000, paymentStatus: "partial" });
+    const tooHigh = await POST(actionReq("writeOffRevenue", {
+      orderIds: [8], amountPaise: 20001, reason: "Guest unreachable", idempotencyKey: "writeoff-too-high",
+    }));
+    expect(tooHigh.status).toBe(400);
+
+    q.authenticateUser.mockResolvedValue({ role: "staff", displayName: "Staff", permissions: { canMarkPaid: true } });
+    const denied = await POST(actionReq("writeOffRevenue", {
+      orderIds: [8], amountPaise: 20000, reason: "Guest unreachable", idempotencyKey: "writeoff-denied",
+    }));
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ error: "Admin access required" });
+  });
+
   it("applies a fixed-amount discount on an unpaid order", async () => {
     q.getFoodOrderById.mockResolvedValue(unpaidOrder(10, 10000));
     q.getFoodOrderItemsBatch.mockResolvedValue(new Map([[10, [line(1, 10000)]]]));

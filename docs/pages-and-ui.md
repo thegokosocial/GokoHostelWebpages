@@ -243,6 +243,10 @@ Phone-safe overlays: parent `flex items-center justify-center` + `modalVariants`
 ## Mobile shell invariants
 
 The shared public shell keeps anchor targets below the sticky header, preserves the browser text scale on mobile, and offsets fixed WhatsApp/back-to-top controls for device safe areas. Footer links and booking actions use touch-sized inline targets. These are presentation-only changes: routes, APIs, auth, permissions, booking, check-in, food, and payment workflows remain unchanged.
+
+## Food Orders: Revenue Lost
+
+In an admin's Food Order Summary Bill drawer, **Bill Adjustment** keeps the Discount workflow and adds a **Revenue Lost** tab. The tab accepts a partial or full net-unpaid amount and a reason, previews the still-collectable balance, and records it separately from discounts and payments. It is not shown to managers or staff.
 # Internal native hold milestone (17 September 2026)
 
 Accepted quotes can now be persisted/recovered internally against an owner-bound hold. There is still no guest quote-acceptance UI/API or payment confirmation; `/book` remains enquiry-only. See [implemented service and remaining UI gates](native-accepted-quotes.md).

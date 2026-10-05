@@ -195,6 +195,10 @@ Both `/book` and gated `/book/preview` call the same availability endpoint for c
 
 Landmines: release hold before assign (0059); never trust client bed IDs or subtotals; store `guestAccessToken` in sessionStorage after checkout or after consuming the emailed magic link (strip `?m=` via `replaceState`). See [guest-booking-ui.md](guest-booking-ui.md).
 
+## Revenue write-offs
+
+`POST /api/admin/food-orders` action `writeOffRevenue` is admin-only. It accepts unique order ids, a positive amount no larger than their net unpaid balance, a reason, optional note, and an idempotency key. It appends immutable per-order `revenue_writeoffs` records, updates only cached `write_off_amount`, and writes audit/modification history. It never changes a discount, payment, refund, receipt, or expense.
+
 Booking contact methods: `getDetail` returns active `contactMethods`; `saveBookingContacts` requires `canManageBookingContacts` and atomically adds, edits, or deletes up to five phones and five emails. Phone/email duplicates are rejected after normalization, PMS-origin rows cannot be changed or deleted, and actual changes create booking-history audit entries. Contact methods are synchronized booking data and are not used as fallback identity or food-tab lookup values.
 
 Account Activity `getAccountActivity` additionally accepts `accountId` `all`, which merges Cash, real, and virtual account projections; every row includes its account name and the response omits a combined balance/checkpoint. Its existing dual permission gate remains unchanged.

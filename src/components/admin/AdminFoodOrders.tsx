@@ -116,6 +116,7 @@ export interface Order {
   total: number;
   amountPaid?: number;
   amountRefunded?: number;
+  writeOffAmount?: number;
   status: string;
   paymentStatus: string;
   paymentMethod: string;
@@ -2497,10 +2498,12 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         return (
           <DiscountModal
             totalAmount={grossTotal}
+            unpaidAmount={applyOrders.reduce((sum, order) => sum + foodDue(order), 0)}
             discountableAmount={discountableTotal}
             exemptAmount={exemptTotal}
             currentDiscount={removableDiscount}
             guestName={discountModalGroup.guestName}
+            canWriteOff={role === "admin"}
             onApply={async (data) => {
               const orderIds = applyOrders.map((o) => o.id);
               if (orderIds.length === 0) {
@@ -2533,6 +2536,20 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                 setDiscountModalGroup(null);
               });
             } : undefined}
+            onWriteOff={async (data) => {
+              const orderIds = applyOrders.map((o) => o.id);
+              await runAction("Recording revenue write-off…", async () => {
+                const res = await apiCall({ action: "writeOffRevenue", orderIds, ...data });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  showError("Revenue write-off", body.error || "Could not record revenue lost");
+                  return;
+                }
+                showSuccess("Revenue loss recorded");
+                await refreshAfterEdit(discountModalGroup);
+                setDiscountModalGroup(null);
+              });
+            }}
             onClose={() => setDiscountModalGroup(null)}
           />
         );
@@ -4616,29 +4633,40 @@ const QUICK_PERCENTS = [5, 10, 15, 20, 25, 50, 100];
 
 function DiscountModal({
   totalAmount,
+  unpaidAmount = totalAmount,
   discountableAmount,
   exemptAmount,
   currentDiscount,
   guestName,
+  canWriteOff = false,
   onApply,
   onRemove,
+  onWriteOff,
   onClose,
 }: {
   totalAmount: number;
+  unpaidAmount?: number;
   discountableAmount: number;
   exemptAmount: number;
   currentDiscount: number;
   guestName: string;
+  canWriteOff?: boolean;
   onApply: (data: { discountPercent?: number; discountAmount?: number; reason: string }) => void | Promise<void>;
   onRemove?: () => void | Promise<void>;
+  onWriteOff?: (data: { amountPaise: number; reason: string; note: string; idempotencyKey: string }) => void | Promise<void>;
   onClose: () => void;
 }) {
+  const [panel, setPanel] = useState<"discount" | "writeoff">("discount");
   const [mode, setMode] = useState<"percent" | "fixed">("fixed");
   const [percentInput, setPercentInput] = useState("");
   const [fixedInput, setFixedInput] = useState("");
   const [reason, setReason] = useState("");
   const [customReason, setCustomReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const [writeOffInput, setWriteOffInput] = useState("");
+  const [writeOffReason, setWriteOffReason] = useState("Guest unreachable");
+  const [writeOffNote, setWriteOffNote] = useState("");
+  const writeOffIdempotencyKey = useRef(crypto.randomUUID());
 
   const totalRupees = totalAmount / 100;
   const hasExemptItems = exemptAmount > 0;
@@ -4657,6 +4685,10 @@ function DiscountModal({
   const highShare = discountableAmount > 0 && discountPaise >= Math.round(discountableAmount * 0.5);
 
   const canApply = discountPaise > 0 && !saving && !percentTooHigh;
+  const unpaidPaise = unpaidAmount;
+  const writeOffPaise = Math.round(Math.max(0, Number(writeOffInput) || 0) * 100);
+  const writeOffTooHigh = writeOffPaise > unpaidPaise;
+  const canWriteOffAmount = writeOffPaise > 0 && !writeOffTooHigh && !saving && (writeOffReason !== "Other" || writeOffNote.trim().length > 0);
 
   const handleApply = async () => {
     if (percentTooHigh) return;
@@ -4687,7 +4719,7 @@ function DiscountModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-brand-mist px-5 py-4">
           <div>
-            <h3 className="text-base font-bold text-brand-green-dark">Apply Discount</h3>
+            <h3 className="text-base font-bold text-brand-green-dark">Bill Adjustment</h3>
             <p className="text-xs text-brand-green-dark/50">{guestName}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 hover:bg-brand-sand">
@@ -4696,6 +4728,11 @@ function DiscountModal({
         </div>
 
         <div className="overflow-y-auto flex-1">
+          <div className="flex gap-1 border-b border-brand-mist px-5 pt-3">
+            <button type="button" onClick={() => setPanel("discount")} className={cn("rounded-t-lg px-3 py-2 text-sm font-medium", panel === "discount" ? "border-b-2 border-purple-600 bg-purple-50 text-purple-700" : "text-brand-green-dark/60 hover:text-brand-green-dark")}>Discount</button>
+            {canWriteOff && onWriteOff && <button type="button" onClick={() => setPanel("writeoff")} className={cn("rounded-t-lg px-3 py-2 text-sm font-medium", panel === "writeoff" ? "border-b-2 border-red-600 bg-red-50 text-red-700" : "text-brand-green-dark/60 hover:text-brand-green-dark")}>Revenue Lost</button>}
+          </div>
+
           {/* Original Total */}
           <div className="bg-brand-sand/40 px-5 py-3 text-center">
             <p className="text-xs text-brand-green-dark/60">Original Total</p>
@@ -4708,6 +4745,7 @@ function DiscountModal({
             )}
           </div>
 
+          {panel === "discount" && <>
           {/* Mode Tabs — Fixed Amount first / default */}
           <div className="flex gap-1 border-b border-brand-mist px-5 pt-3 pb-0">
             {([{ id: "fixed" as const, label: "Fixed Amount" }, { id: "percent" as const, label: "Percentage" }]).map((t) => (
@@ -4846,12 +4884,22 @@ function DiscountModal({
                 </div>
               </div>
             )}
-          </div>
+          </div></>}
+          {panel === "writeoff" && (
+            <div className="space-y-3 px-5 py-4">
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">Record money that is no longer collectible. This is not a discount, payment, refund, or expense.</p>
+              <div><label htmlFor="write-off-amount" className="mb-1 block text-xs font-medium text-brand-green-dark/70">Amount Lost (₹)</label><input id="write-off-amount" name="writeOffAmount" type="number" inputMode="decimal" min={0} max={unpaidPaise / 100} value={writeOffInput} onChange={(e) => setWriteOffInput(e.target.value)} placeholder="0" className="w-full rounded-lg border border-brand-mist px-3 py-2.5 text-lg font-semibold text-brand-green-dark focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500" /></div>
+              {writeOffTooHigh && <p className="text-xs font-medium text-red-600">Amount cannot exceed the unpaid ₹{(unpaidPaise / 100).toFixed(0)}.</p>}
+              <div><label htmlFor="write-off-reason" className="mb-1 block text-xs font-medium text-brand-green-dark/70">Reason</label><select id="write-off-reason" name="writeOffReason" value={writeOffReason} onChange={(e) => setWriteOffReason(e.target.value)} className="w-full rounded-lg border border-brand-mist px-3 py-2 text-sm text-brand-green-dark focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"><option>Guest unreachable</option><option>Guest left without paying</option><option>Payment dispute abandoned</option><option>Other</option></select></div>
+              {writeOffReason === "Other" && <div><label htmlFor="write-off-note" className="mb-1 block text-xs font-medium text-brand-green-dark/70">Note</label><input id="write-off-note" name="writeOffNote" value={writeOffNote} onChange={(e) => setWriteOffNote(e.target.value)} placeholder="Explain why this is uncollectible…" className="w-full rounded-lg border border-brand-mist px-3 py-2 text-sm text-brand-green-dark focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500" /></div>}
+              {writeOffPaise > 0 && !writeOffTooHigh && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm"><div className="flex justify-between text-brand-green-dark/70"><span>Unpaid</span><span>₹{(unpaidPaise / 100).toFixed(0)}</span></div><div className="mt-1 flex justify-between font-semibold text-red-700"><span>Revenue Lost</span><span>-₹{(writeOffPaise / 100).toFixed(0)}</span></div><div className="mt-1 flex justify-between border-t border-red-200 pt-1 font-bold text-brand-green-dark"><span>Still collectable</span><span>₹{((unpaidPaise - writeOffPaise) / 100).toFixed(0)}</span></div></div>}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
         <div className="flex gap-2 border-t border-brand-mist px-5 py-4">
-          {onRemove && currentDiscount > 0 && (
+          {panel === "discount" && onRemove && currentDiscount > 0 && (
             <button
               type="button"
               onClick={async () => {
@@ -4871,14 +4919,14 @@ function DiscountModal({
           >
             Cancel
           </button>
-          <button
+          {panel === "discount" ? <button
             type="button"
             onClick={() => void handleApply()}
             disabled={!canApply}
             className="flex-1 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-40"
           >
-            {saving ? "Applying..." : "Apply Discount"}
-          </button>
+            {saving ? "Applying…" : "Apply Discount"}
+          </button> : <button type="button" onClick={async () => { if (!canWriteOffAmount || !onWriteOff) return; setSaving(true); try { await onWriteOff({ amountPaise: writeOffPaise, reason: writeOffReason, note: writeOffNote.trim(), idempotencyKey: writeOffIdempotencyKey.current }); } finally { setSaving(false); } }} disabled={!canWriteOffAmount || !onWriteOff} className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40">{saving ? "Recording…" : "Record Revenue Lost"}</button>}
         </div>
       </div>
     </div>

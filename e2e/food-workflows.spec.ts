@@ -40,8 +40,8 @@ test("Order Summary discount applies via Apply Discount", async ({ page }) => {
   const discountBtn = drawer.getByRole("button", { name: /^Discount/ });
   await discountBtn.scrollIntoViewIfNeeded();
   await discountBtn.click();
-  await expect(page.getByRole("heading", { name: "Apply Discount" })).toBeVisible({ timeout: 10_000 });
-  const discountModal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Apply Discount" }) });
+  await expect(page.getByRole("heading", { name: "Bill Adjustment" })).toBeVisible({ timeout: 10_000 });
+  const discountModal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Bill Adjustment" }) });
   await expect(discountModal.getByRole("button", { name: "Fixed Amount" })).toHaveClass(/border-purple-600/);
   await discountModal.getByRole("button", { name: "Percentage" }).click();
   await discountModal.getByPlaceholder("0").fill("101");
@@ -52,6 +52,41 @@ test("Order Summary discount applies via Apply Discount", async ({ page }) => {
   await discountModal.getByRole("button", { name: "Apply Discount" }).click();
   await expect.poll(() => foodRequests.filter((r) => r.action === "applyDiscount")).toHaveLength(1);
   expect(foodRequests.find((r) => r.action === "applyDiscount")?.orderIds).toEqual([10]);
+});
+
+test("admin records revenue lost separately from a discount", async ({ page }) => {
+  const partiallyPaid = { ...SAMPLE_ORDER, total: 120000, subtotal: 120000, amountPaid: 100000, paymentStatus: "partial" as const };
+  const { foodRequests } = await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canMarkPaid: true, canApplyFoodDiscounts: true },
+    onFoodOrders: (body) => {
+      if (body.action === "getWalkinOrders") return { json: { orders: [partiallyPaid] } };
+      if (body.action === "listOrders" && body.status === "all_history") return { json: { orders: [partiallyPaid] } };
+      return null;
+    },
+  });
+  await loginAdmin(page);
+  const drawer = await openWalkinOrderDrawer(page);
+  await drawer.getByRole("button", { name: "Bill" }).click();
+  await drawer.getByRole("button", { name: /^Discount/ }).click();
+  const modal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Bill Adjustment" }) });
+  await modal.getByRole("button", { name: "Revenue Lost" }).click();
+  await modal.locator('input[name="writeOffAmount"]').fill("200");
+  await modal.getByRole("button", { name: "Record Revenue Lost" }).click();
+  await expect.poll(() => foodRequests.filter((r) => r.action === "writeOffRevenue")).toHaveLength(1);
+  expect(foodRequests.find((r) => r.action === "writeOffRevenue")).toMatchObject({ orderIds: [10], amountPaise: 20000, reason: "Guest unreachable" });
+});
+
+test("manager cannot see the Revenue Lost tab", async ({ page }) => {
+  await mockAdminShell(page, {
+    role: "manager",
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canMarkPaid: true, canApplyFoodDiscounts: true },
+  });
+  await loginAdmin(page);
+  const drawer = await openWalkinOrderDrawer(page);
+  await drawer.getByRole("button", { name: "Bill" }).click();
+  await drawer.getByRole("button", { name: /^Discount/ }).click();
+  const modal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Bill Adjustment" }) });
+  await expect(modal.getByRole("button", { name: "Revenue Lost" })).toHaveCount(0);
 });
 
 test("Order Summary Remove Discount clears zero-collection discounts", async ({ page }) => {
@@ -79,8 +114,8 @@ test("Order Summary Remove Discount clears zero-collection discounts", async ({ 
   await drawer.getByRole("button", { name: "Bill" }).click();
   await expect(drawer.getByRole("button", { name: /^Discount/ })).toBeVisible({ timeout: 10_000 });
   await drawer.getByRole("button", { name: /^Discount/ }).click();
-  await expect(page.getByRole("heading", { name: "Apply Discount" })).toBeVisible({ timeout: 10_000 });
-  const discountModal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Apply Discount" }) });
+  await expect(page.getByRole("heading", { name: "Bill Adjustment" })).toBeVisible({ timeout: 10_000 });
+  const discountModal = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("heading", { name: "Bill Adjustment" }) });
   await discountModal.getByRole("button", { name: "Remove Discount" }).click();
   await expect.poll(() => foodRequests.filter((r) => r.action === "removeDiscount")).toHaveLength(1);
   expect(foodRequests.find((r) => r.action === "removeDiscount")).toMatchObject({ orderIds: [10] });

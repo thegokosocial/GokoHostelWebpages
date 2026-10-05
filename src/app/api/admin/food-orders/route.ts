@@ -45,7 +45,7 @@ import { normalizePhone, phonesMatch } from "@/lib/phoneUtils";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, permissionDeniedPayload, type ActionPerm } from "@/lib/actionPermissions";
 import { getDb } from "@/db";
-import { auditLog, cashPaymentEvents, foodOrders, foodOrderItems, foodOrderEditBatches, foodPaymentEvents, menuItems, checkins, guestReceipts, orderModifications } from "@/db/schema";
+import { auditLog, cashPaymentEvents, foodOrders, foodOrderItems, foodOrderEditBatches, foodPaymentEvents, menuItems, checkins, guestReceipts, orderModifications, revenueWriteoffs } from "@/db/schema";
 import { eq, and, sql, desc, inArray, like, or, gte, lte } from "drizzle-orm";
 import { createGuestReceipt, latestReceiptAccount, receiptBusinessDate, resolveReceiptAccount } from "@/lib/guestReceipts";
 import { collectInBatches } from "@/lib/dbBatch";
@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
       reassignOrder: "canEditFoodOrders",
       markOrderPaid: "canMarkPaid", updatePaymentDetails: "canMarkPaid",
       applyDiscount: ["canApplyFoodDiscounts", "canMarkPaid"], removeDiscount: ["canApplyFoodDiscounts", "canMarkPaid"],
+      writeOffRevenue: "admin_only",
     };
 
     const gate = actionAllowed(role, permissions, ACTION_PERMISSIONS[action]);
@@ -1247,6 +1248,70 @@ export async function POST(req: NextRequest) {
             for (const write of buildDiscountWrites(tx)) await write;
           });
         }
+        return NextResponse.json({ success: true, role });
+      }
+
+      case "writeOffRevenue": {
+        const { orderIds, amountPaise, reason, note, idempotencyKey } = rest;
+        if (!Array.isArray(orderIds) || orderIds.length === 0 || orderIds.some((id: unknown) => !Number.isInteger(id)) || new Set(orderIds).size !== orderIds.length) {
+          return NextResponse.json({ error: "Unique orderIds required" }, { status: 400 });
+        }
+        const amount = Math.round(Number(amountPaise));
+        if (!Number.isSafeInteger(amount) || amount <= 0) return NextResponse.json({ error: "A positive write-off amount is required" }, { status: 400 });
+        const writeoffReason = typeof reason === "string" ? reason.trim().slice(0, 120) : "";
+        const writeoffNote = typeof note === "string" ? note.trim().slice(0, 240) : "";
+        const requestKey = typeof idempotencyKey === "string" ? idempotencyKey.trim().slice(0, 120) : "";
+        if (!writeoffReason || !requestKey) return NextResponse.json({ error: "Reason and idempotency key are required" }, { status: 400 });
+        if (writeoffReason === "Other" && !writeoffNote) return NextResponse.json({ error: "Add a note when using Other" }, { status: 400 });
+
+        const db = getDb() as any;
+        const prior = await db.select({ id: revenueWriteoffs.id }).from(revenueWriteoffs)
+          .where(like(revenueWriteoffs.idempotencyKey, `${requestKey}:%`)).limit(1);
+        if (prior.length > 0) return NextResponse.json({ success: true, idempotent: true, role });
+
+        const orders = await Promise.all(orderIds.map((id: number) => getFoodOrderById(id)));
+        if (orders.some((order) => !order)) return NextResponse.json({ error: "One or more orders were not found" }, { status: 404 });
+        const dueByOrder = orders.map((order) => ({ order: order!, due: foodDue(order!) })).filter(({ due }) => due > 0);
+        const outstanding = dueByOrder.reduce((sum, entry) => sum + entry.due, 0);
+        if (amount > outstanding) return NextResponse.json({ error: `Write-off cannot exceed the remaining ₹${(outstanding / 100).toFixed(0)}` }, { status: 400 });
+        const qrRelease = await releaseFoodQrOrConflict(orderIds);
+        if (!qrRelease.ok) return qrRelease.response;
+
+        let remaining = amount;
+        const now = new Date().toISOString();
+        const writes: any[] = [];
+        for (const { order, due } of dueByOrder) {
+          const allocated = Math.min(due, remaining);
+          remaining -= allocated;
+          if (allocated <= 0) continue;
+          const currentWriteOff = Math.max(0, Number((order as any).writeOffAmount) || 0);
+          writes.push(db.update(foodOrders).set(syncUpdate({ writeOffAmount: currentWriteOff + allocated, updatedAt: now })).where(eq(foodOrders.id, order.id)));
+          writes.push(db.insert(revenueWriteoffs).values(syncInsert({
+            idempotencyKey: `${requestKey}:${order.id}`,
+            sourceType: "food_order",
+            sourceId: order.id,
+            bookingCycle: null,
+            amountPaise: allocated,
+            reason: writeoffReason,
+            note: writeoffNote,
+            actor: actorName,
+            guestNameSnapshot: order.guestName || "",
+            referenceSnapshot: order.orderNumber || String(order.id),
+            createdAt: now,
+          })));
+          writes.push(db.insert(orderModifications).values(syncInsert({
+            orderId: order.id,
+            action: "revenue_writeoff",
+            oldValue: `₹${(due / 100).toFixed(0)} due`,
+            newValue: `₹${((due - allocated) / 100).toFixed(0)} due`,
+            reason: `${writeoffReason}${writeoffNote ? `: ${writeoffNote}` : ""} (₹${(allocated / 100).toFixed(0)} written off)`,
+            modifiedBy: actorName,
+            createdAt: now,
+          })));
+        }
+        writes.push(db.insert(auditLog).values({ timestamp: now, username: actorName, action: "food_revenue_writeoff", target: `orders:${orderIds.join(",")}`, details: `Revenue write-off ₹${(amount / 100).toFixed(0)}. Reason: ${writeoffReason}${writeoffNote ? `. Note: ${writeoffNote}` : ""}` }));
+        if (typeof db.batch === "function") await db.batch(writes);
+        else await db.transaction(async (tx: any) => { for (const write of writes) await write; });
         return NextResponse.json({ success: true, role });
       }
 
