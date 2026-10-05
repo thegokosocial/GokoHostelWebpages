@@ -1478,6 +1478,8 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
       ? null
       : drawerQrState.status === "loading"
         ? { status: "loading" as const }
+        : drawerQrState.status === "confirming"
+          ? { status: "confirming" as const, label: drawerQrState.label }
         : drawerQrState.status === "active"
           ? {
               status: "active" as const,
@@ -1940,7 +1942,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                           }
                           if (
                             isRazorpayBillMode(billQrMode)
-                            && drawerQrState.status === "active"
+                            && (drawerQrState.status === "active" || drawerQrState.status === "confirming")
                             && drawerQrState.attemptId
                           ) {
                             try {
@@ -2407,15 +2409,15 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
           password={password} username={username} receiptKind="food"
           requireAccountPick={
             drawerDynamicQrEnabled
-            && (drawerQrState.status === "active" || drawerQrState.status === "loading")
+            && (drawerQrState.status === "active" || drawerQrState.status === "loading" || drawerQrState.status === "confirming")
           }
           preferRazorpayReceipt={
             isRazorpayBillMode(billQrMode)
-            && !(drawerQrState.status === "active" || drawerQrState.status === "loading")
+            && !(drawerQrState.status === "active" || drawerQrState.status === "loading" || drawerQrState.status === "confirming")
           }
           accountPickHint={
             drawerDynamicQrEnabled
-            && (drawerQrState.status === "active" || drawerQrState.status === "loading")
+            && (drawerQrState.status === "active" || drawerQrState.status === "loading" || drawerQrState.status === "confirming")
               ? "Guest may have paid the reception PhonePe QR — pick the account that received the money. Saving closes any open Razorpay bill QR."
               : undefined
           }
@@ -2876,6 +2878,7 @@ function CombinedBill({ apiCall, password, username, role, permissions }: { apiC
   const combinedDynamicQr = !combinedQrEnabled || combinedQrState.status === "idle" || combinedQrState.status === "static"
     ? null
     : combinedQrState.status === "loading" ? { status: "loading" as const }
+      : combinedQrState.status === "confirming" ? { status: "confirming" as const, label: combinedQrState.label }
       : combinedQrState.status === "active" ? { status: "active" as const, imageUrl: combinedQrState.imageUrl, upiIntent: combinedQrState.upiIntent, closeBy: combinedQrState.closeBy, label: combinedQrState.label }
         : combinedQrState.status === "paid" ? { status: "paid" as const, label: combinedQrState.label }
           : { status: "error" as const, message: combinedQrState.message };

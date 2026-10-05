@@ -254,6 +254,8 @@ function MyBillsContent() {
       ? null
       : qrState.status === "loading"
         ? { status: "loading" as const }
+        : qrState.status === "confirming"
+          ? { status: "confirming" as const, label: qrState.label }
         : qrState.status === "active"
           ? {
               status: "active" as const,

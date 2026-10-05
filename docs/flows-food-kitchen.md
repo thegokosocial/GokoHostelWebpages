@@ -54,6 +54,8 @@ Neither guest path shows Total Spent chrome or the **Paid / past** section (rule
 
 Order Summary **Set price** persists the final price immediately, retiring an open dynamic QR first, then reloads the group; it is never a local staged edit.
 
+When Razorpay closes a bill QR as **paid** before its payment-list evidence propagates, the Cloudflare-only attempt stores `capture_pending` (migration **0089**) and keeps its order claim. Guest and admin bills replace the QR with **“Payment received — confirming with Razorpay…”** and continue reconciliation; Mark Paid, order edits, remint, and Retire QR stay blocked until the existing captured-payment path settles it. A non-paid QR closure still expires and releases normally. The Food payments ledger shows **Confirming payment** and permits Reconcile, not Retire. Pi stamps but skips `0089_food_qr_capture_pending.sql` with the other Cloudflare-only QR migration.
+
 ---
 
 ## Status machines

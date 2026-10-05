@@ -60,7 +60,7 @@ export type GuestFoodBillBranding = {
 
 /** Optional Razorpay dynamic-QR overlay for unpaid bills. */
 export type GuestFoodBillDynamicQr = {
-  status: "loading" | "active" | "paid" | "error" | "static";
+  status: "loading" | "confirming" | "active" | "paid" | "error" | "static";
   imageUrl?: string | null;
   /** Prefer rendering a square QR from this UPI intent when present. */
   upiIntent?: string | null;
@@ -174,7 +174,7 @@ export function GuestFoodBillCard({
     razorpayMode: isRazorpayBillMode(branding.qrMode),
     fallbackToStaticOnDynamicError,
   });
-  const showQrDetails = dynamicQr?.status !== "paid" && dynamicQr?.status !== "loading"
+  const showQrDetails = dynamicQr?.status !== "paid" && dynamicQr?.status !== "loading" && dynamicQr?.status !== "confirming"
     && (dynamicQr?.status !== "error" || payQr.kind === "static");
   const guestName = orders[0]?.guestName;
   const roomInfo = orders.find((o) => o.roomInfo)?.roomInfo;
@@ -261,6 +261,9 @@ export function GuestFoodBillCard({
           {dynamicQr?.status === "loading" && (
             <p className="text-sm text-zinc-500">{staffQrCaption?.text || "Preparing Razorpay QR…"}</p>
           )}
+          {dynamicQr?.status === "confirming" && (
+            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">{dynamicQr.label || "Payment received — confirming with Razorpay…"}</p>
+          )}
           {dynamicQr?.status === "error" && (
             <div className="mb-2 text-sm text-red-600">
               <p>{dynamicQr.message || "Payment QR unavailable"}</p>
@@ -276,13 +279,13 @@ export function GuestFoodBillCard({
               {dynamicQr.label || "Razorpay payment received"}
             </p>
           )}
-          {dynamicUpiIntent && dynamicQr?.status !== "paid" && (
+          {dynamicUpiIntent && dynamicQr?.status !== "paid" && dynamicQr?.status !== "confirming" && (
             <AutoQrCode data={dynamicUpiIntent} label="Payment QR" maxPx={280} />
           )}
-          {showPosterCrop && posterUrl && dynamicQr?.status !== "paid" && (
+          {showPosterCrop && posterUrl && dynamicQr?.status !== "paid" && dynamicQr?.status !== "confirming" && (
             <RazorpayPosterQr src={posterUrl} label="Payment QR" maxPx={280} />
           )}
-          {!dynamicUpiIntent && !showPosterCrop && qrSrc && dynamicQr?.status !== "paid" && (
+          {!dynamicUpiIntent && !showPosterCrop && qrSrc && dynamicQr?.status !== "paid" && dynamicQr?.status !== "confirming" && (
             // eslint-disable-next-line @next/next/no-img-element -- Bill Settings static QR upload
             <img
               src={qrSrc}

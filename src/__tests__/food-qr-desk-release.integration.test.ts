@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SQLite from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { readFileSync } from "fs";
 import * as schema from "@/db/schema";
 
 const razorpay = vi.hoisted(() => ({
@@ -70,6 +71,7 @@ import {
   ensureActiveFoodQrForOrders,
   foodQrSnapshot,
   hasActiveFoodQrClaim,
+  processFoodQrWebhook,
   reconcileFoodQrAttempt,
   releaseFoodQrForDeskPayment,
   settleFoodQrCapture,
@@ -77,6 +79,23 @@ import {
 
 const ATTEMPT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ATTEMPT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+describe("food QR capture-pending migration", () => {
+  it("adds the durable flag without rebuilding attempts or breaking claims", () => {
+    const sqlite = new SQLite(":memory:");
+    sqlite.pragma("foreign_keys = ON");
+    sqlite.exec(readFileSync("migrations/0083_food_qr_payments.sql", "utf8"));
+    sqlite.exec(readFileSync("migrations/0089_food_qr_capture_pending.sql", "utf8"));
+    sqlite.prepare(`INSERT INTO food_qr_attempts (
+      id, request_key, environment, key_id, payment_amount_paise, snapshot_due_paise,
+      state, food_order_ids, created_by, created_at, updated_at
+    ) VALUES ('a', 'r', 'test', 'k', 100, 100, 'active', '[]', 'test', 'now', 'now')`).run();
+    sqlite.prepare("INSERT INTO food_qr_order_claims (attempt_id, order_id, claimed_at) VALUES ('a', 1, 'now')").run();
+    expect(sqlite.prepare("SELECT capture_pending FROM food_qr_attempts WHERE id = 'a'").get()).toEqual({ capture_pending: 0 });
+    expect(sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    sqlite.close();
+  });
+});
 
 function createFoodQrTables(sqlite: SQLite.Database) {
   sqlite.exec(`
@@ -86,6 +105,7 @@ function createFoodQrTables(sqlite: SQLite.Database) {
       environment TEXT NOT NULL,
       key_id TEXT NOT NULL DEFAULT 'rzp_test_x',
       state TEXT NOT NULL,
+      capture_pending INTEGER NOT NULL DEFAULT 0,
       qr_code_id TEXT,
       qr_image_url TEXT,
       payment_amount_paise INTEGER NOT NULL,
@@ -118,6 +138,17 @@ function createFoodQrTables(sqlite: SQLite.Database) {
       tax_paise INTEGER,
       method TEXT,
       verified_at TEXT NOT NULL
+    );
+    CREATE TABLE food_qr_webhooks (
+      event_id TEXT PRIMARY KEY,
+      payload_hash TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      qr_code_id TEXT,
+      payment_id TEXT,
+      attempt_id TEXT,
+      state TEXT NOT NULL DEFAULT 'received',
+      received_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
     CREATE TABLE food_orders (
       id INTEGER PRIMARY KEY,
@@ -340,6 +371,49 @@ describe("releaseFoodQrForDeskPayment (disposable SQLite)", () => {
     expect(sqlite.prepare("SELECT released_at FROM food_qr_order_claims WHERE order_id = 10").get()).toEqual({
       released_at: null,
     });
+  });
+
+  it("keeps the claim locked while a paid-closed QR awaits capture evidence, then settles once visible", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-capture-pending" });
+    razorpay.fetchRazorpayFoodQr.mockResolvedValue({
+      id: "qr_test1", status: "closed", image_url: null, image_content: null,
+      close_by: null, close_reason: "paid",
+    });
+    razorpay.fetchRazorpayFoodQrPayments.mockResolvedValue([]);
+
+    await expect(reconcileFoodQrAttempt(ATTEMPT_A)).resolves.toMatchObject({ state: "capture_pending" });
+    expect(sqlite.prepare("SELECT capture_pending FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({ capture_pending: 1 });
+    expect(sqlite.prepare("SELECT released_at FROM food_qr_order_claims WHERE order_id = 10").get()).toEqual({ released_at: null });
+    await expect(releaseFoodQrForDeskPayment([10])).rejects.toMatchObject({ status: 409 });
+
+    const evidence = { id: "pay_confirmed", amount: 10000, status: "captured", captured: true, amount_refunded: 0, fee: 0, tax: 0, method: "upi" };
+    razorpay.fetchRazorpayFoodQrPayments.mockResolvedValue([evidence]);
+    queries.getFoodOrdersByIds.mockResolvedValue([{ id: 10, status: "placed", paymentStatus: "pending", total: 10000, amountPaid: 0, amountRefunded: 0 }]);
+    await expect(reconcileFoodQrAttempt(ATTEMPT_A)).resolves.toMatchObject({ state: "paid" });
+    expect(sqlite.prepare("SELECT capture_pending FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({ capture_pending: 0 });
+  });
+
+  it("asks Razorpay to retry a paid-close webhook until capture evidence is visible", async () => {
+    insertActiveAttempt(sqlite, { attemptId: ATTEMPT_A, orderId: 10, requestKey: "rk-webhook-pending" });
+    sqlite.prepare(`INSERT INTO food_qr_webhooks (
+      event_id, payload_hash, event_type, qr_code_id, attempt_id, state, received_at, updated_at
+    ) VALUES ('evt_pending', 'hash', 'qr_code.closed', 'qr_test1', ?, 'received', 'now', 'now')`).run(ATTEMPT_A);
+    razorpay.fetchRazorpayFoodQr.mockResolvedValue({
+      id: "qr_test1", status: "closed", image_url: null, image_content: null,
+      close_by: null, close_reason: "paid",
+    });
+    razorpay.fetchRazorpayFoodQrPayments.mockResolvedValue([]);
+
+    await expect(processFoodQrWebhook("evt_pending")).rejects.toMatchObject({ status: 503 });
+    expect(sqlite.prepare("SELECT state FROM food_qr_webhooks WHERE event_id = 'evt_pending'").get()).toEqual({ state: "retry" });
+    expect(sqlite.prepare("SELECT capture_pending FROM food_qr_attempts WHERE id = ?").get(ATTEMPT_A)).toEqual({ capture_pending: 1 });
+
+    razorpay.fetchRazorpayFoodQrPayments.mockResolvedValue([
+      { id: "pay_webhook", amount: 10000, status: "captured", captured: true, amount_refunded: 0, fee: 0, tax: 0, method: "upi" },
+    ]);
+    queries.getFoodOrdersByIds.mockResolvedValue([{ id: 10, status: "placed", paymentStatus: "pending", total: 10000, amountPaid: 0, amountRefunded: 0 }]);
+    await expect(processFoodQrWebhook("evt_pending")).resolves.toEqual({ state: "processed" });
+    expect(sqlite.prepare("SELECT state FROM food_qr_webhooks WHERE event_id = 'evt_pending'").get()).toEqual({ state: "processed" });
   });
 
   it("releases multiple distinct attempts covering the selected orders", async () => {

@@ -233,6 +233,19 @@ test.describe("My Bills guest surfaces (mobile)", () => {
     await expect(page.getByAltText("Payment QR")).toHaveCount(0);
   });
 
+  test("share token shows confirmation pending without a stale or static QR", async ({ page }) => {
+    const { qrCalls } = await mockBillsApis(page, {
+      viaToken: true,
+      qrMode: "razorpay_test",
+      qrEnsure: { json: { attempt: { attemptId: "99999999-2222-3333-4444-555555555555", state: "capture_pending" } } },
+    });
+    await page.goto("/my-bills?t=opaque-share-token-xyz", { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("Payment received — confirming with Razorpay…")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByAltText("Payment QR")).toHaveCount(0);
+    await expect(page.getByText(/via UPI/)).toHaveCount(0);
+    expect(qrCalls).toHaveLength(1);
+  });
+
   test("empty open tab copy when only paid orders exist", async ({ page }) => {
     await mockBillsApis(page, { viaToken: false, unpaid: [], paid: [PAID] });
     await page.goto("/my-bills?phone=9876543210", { waitUntil: "domcontentloaded" });

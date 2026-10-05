@@ -136,6 +136,7 @@ function paymentsReq(action: string, body: Record<string, unknown> = {}) {
 describe("foodQrAttemptOutcome + search helpers", () => {
   it.each([
     [{ state: "paid" }, "Paid"],
+    [{ state: "capture_pending" }, "Confirming payment"],
     [{ state: "active", payments: [{ captured: 1 }] }, "Paid"],
     [{ state: "active", payments: [{ captured: true }] }, "Paid"],
     [{ state: "active", payments: [{ captured: 0 }] }, "Active"],
@@ -155,6 +156,7 @@ describe("foodQrAttemptOutcome + search helpers", () => {
     ["active", true],
     ["creating", true],
     ["qr_unknown", true],
+    ["capture_pending", false],
     ["paid", false],
     ["expired", false],
     ["closed", false],

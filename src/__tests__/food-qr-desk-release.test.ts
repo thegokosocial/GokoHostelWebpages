@@ -32,7 +32,7 @@ describe("desk-release source contracts (money safety)", () => {
     expect(engine).toContain("closeRazorpayFoodQr");
     expect(engine).toContain("releaseClaims(attemptId)");
     expect(engine).toContain('state: terminal');
-    expect(engine).toContain("A Razorpay payment was already captured for this bill");
+    expect(engine).toContain("A Razorpay payment is confirming or was already captured for this bill");
     expect(engine).toContain("hasUpiIntent: Boolean(upiIntent)");
     expect(engine).toContain("foodQrBlocksDeskPayment");
     expect(engine).toContain("OPEN_FOOD_QR_STATES");

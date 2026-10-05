@@ -237,7 +237,8 @@ describe("claim helper + ensure remint contracts", () => {
     expect(src).toContain("foodQrBlocksDeskPayment");
     expect(src).toContain("isPiRuntime()) return false");
     expect(src).toContain("Due/order-set changed");
-    expect(src).toContain("QR closed as paid but capture evidence is not ready yet");
+    expect(src).toContain('capturePending: 1');
+    expect(src).toContain('state === "capture_pending"');
     expect(src).toContain("settleFoodQrCapture");
     expect(src).toContain("decideLateFoodQrCapture");
     expect(src).toContain("lateCapture");

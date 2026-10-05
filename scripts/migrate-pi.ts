@@ -42,6 +42,7 @@ for (const file of files) {
     || file === "0068_gateway_settlement_allocations.sql"
     || file === "0079_site_hero_videos.sql"
     || file === "0083_food_qr_payments.sql"
+    || file === "0089_food_qr_capture_pending.sql"
     || file === "0084_recurring_expenses.sql"
     || file === "0088_combined_food_bill_share_tokens.sql"
   ) {

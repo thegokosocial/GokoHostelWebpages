@@ -17,6 +17,7 @@ export const ACTIVE_FOOD_QR_EDIT_BLOCKED =
 
 export type FoodQrAttemptOutcome =
   | "Paid"
+  | "Confirming payment"
   | "Active"
   | "Expired"
   | "Closed"
@@ -31,6 +32,7 @@ export function foodQrAttemptOutcome(opts: {
 }): FoodQrAttemptOutcome {
   const hasCapture = (opts.payments || []).some((p) => Number(p.captured) === 1);
   if (opts.state === "paid") return "Paid";
+  if (opts.state === "capture_pending") return "Confirming payment";
   // Retired/expired QR with a capture that did not settle orders (or needs staff eyes).
   if ((opts.state === "closed" || opts.state === "expired") && hasCapture) return "Needs review";
   if (hasCapture) return "Paid";
@@ -52,7 +54,7 @@ export function foodQrAttemptCanReconcile(opts: {
   payments?: Array<{ captured?: number | boolean | null }>;
 }): boolean {
   if (!opts.qrCodeId) return false;
-  if (opts.state === "active" || opts.state === "creating" || opts.state === "qr_unknown") return true;
+  if (opts.state === "active" || opts.state === "creating" || opts.state === "qr_unknown" || opts.state === "capture_pending") return true;
   const hasCapture = (opts.payments || []).some((p) => Number(p.captured) === 1);
   return (opts.state === "closed" || opts.state === "expired") && hasCapture;
 }
@@ -183,6 +185,7 @@ export function pickFoodOnlineAccountId(opts: {
 export type FoodBillQrUiState =
   | { status: "idle" }
   | { status: "loading"; attemptId?: string }
+  | { status: "confirming"; attemptId: string; label: string }
   | {
       status: "active";
       attemptId: string;
@@ -198,7 +201,7 @@ export type FoodBillQrUiState =
 
 /** Bill drawer / Save: open Razorpay QR (active or still preparing). */
 export function foodBillQrUiLocksEdits(status: FoodBillQrUiState["status"]): boolean {
-  return status === "active" || status === "loading";
+  return status === "active" || status === "loading" || status === "confirming";
 }
 
 /** Attempt id for Retire when UI is active or creating/qr_unknown loading. */
@@ -261,6 +264,9 @@ export function mapFoodQrAttemptToUi(attempt: FoodQrAttemptPayload | null | unde
   const id = attempt.attemptId || attempt.id || "";
   if (attempt.state === "paid") {
     return { status: "paid", label: attempt.paymentMethodLabel || "Razorpay payment received" };
+  }
+  if (attempt.state === "capture_pending") {
+    return { status: "confirming", attemptId: id, label: "Payment received — confirming with Razorpay…" };
   }
   const upiIntent = attempt.upiIntent?.trim() || null;
   const imageUrl = attempt.imageUrl?.trim() || null;
@@ -337,7 +343,7 @@ export type FoodBillPayQrSource =
  */
 export function resolveFoodBillPayQrSource(opts: {
   hidePayment?: boolean;
-  dynamicStatus?: "loading" | "active" | "paid" | "error" | "static" | null;
+  dynamicStatus?: "loading" | "confirming" | "active" | "paid" | "error" | "static" | null;
   upiIntent?: string | null;
   imageUrl?: string | null;
   staticQrUrl?: string | null;
@@ -346,7 +352,7 @@ export function resolveFoodBillPayQrSource(opts: {
 }): FoodBillPayQrSource {
   if (opts.hidePayment) return { kind: "none" };
   const status = opts.dynamicStatus ?? null;
-  if (status === "paid" || status === "loading" || (status === "error" && !opts.fallbackToStaticOnDynamicError)) {
+  if (status === "paid" || status === "loading" || status === "confirming" || (status === "error" && !opts.fallbackToStaticOnDynamicError)) {
     return { kind: "none" };
   }
   if (status === "active") {
@@ -366,7 +372,7 @@ export function resolveFoodBillPayQrSource(opts: {
  */
 export function foodBillQrStaffCaption(opts: {
   hidePayment?: boolean;
-  dynamicStatus?: "loading" | "active" | "paid" | "error" | "static" | null;
+  dynamicStatus?: "loading" | "confirming" | "active" | "paid" | "error" | "static" | null;
   hasUpiIntent?: boolean;
   /** Active attempt has imageUrl and UI will CSS-crop the poster QR module. */
   hasPosterImage?: boolean;
@@ -383,6 +389,7 @@ export function foodBillQrStaffCaption(opts: {
       : { kind: "phonepe_fallback", text: "Razorpay unavailable · PhonePe static QR" };
   }
   if (status === "loading") return { kind: "loading", text: "Preparing Razorpay QR…" };
+  if (status === "confirming") return { kind: "loading", text: "Payment received — confirming with Razorpay…" };
   if (status === "active" && (opts.hasUpiIntent || opts.hasPosterImage)) {
     return { kind: "razorpay", text: "Razorpay UPI · exact amount" };
   }

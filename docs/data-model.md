@@ -151,7 +151,7 @@ Internal native milestone: `native_inventory_holds` (0059) stores request/owner 
 | `push_subscriptions` | Per-browser web-push endpoint, authenticated owner, keys, and muted notification event IDs. |
 | `review_requests` / `review_feedback` | Review funnel. |
 | `food_bill_share_tokens` | Opaque My Bills WhatsApp links (`token`, phone, optional checkin_id, expires_at). Cloudflare-only (0064); not Pi-synced. |
-| `food_qr_attempts` / `food_qr_order_claims` / `food_qr_payments` / `food_qr_webhooks` | Cloudflare-only Razorpay single-use fixed-amount UPI QRs for food bills (0083). Not Pi-synced; migrator skips `0083_food_qr_payments.sql`. |
+| `food_qr_attempts` / `food_qr_order_claims` / `food_qr_payments` / `food_qr_webhooks` | Cloudflare-only Razorpay single-use fixed-amount UPI QRs for food bills (0083/0089). `capture_pending` retains the order claim when Razorpay closes a QR as paid before capture evidence appears. Not Pi-synced; migrator skips both QR migrations. |
 | `quick_link_sections` | Custom admin sections for reusable links and QR/image cards. |
 | `quick_links` | Ordered link/QR cards; `is_active` hides a card from non-admin viewers. |
 | `sync_log` / `sync_conflicts` / `sync_id_map` | Pi ↔ CF. |
@@ -215,7 +215,7 @@ Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kan
 
 ## What Pi never has
 
-`site_events`, `site_community_spaces`, `site_page_copy`, `site_hero_videos`, `site_page_heroes`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`, `food_bill_share_tokens`, `food_qr_*`. Migrator skips `0035_site_cms.sql`, `0041_splits.sql`, `0081_split_expense_idempotency.sql`, `0064_food_bill_share_tokens.sql`, `0079_site_hero_videos.sql`, and `0083_food_qr_payments.sql` (among other Cloudflare-only stamps) but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
+`site_events`, `site_community_spaces`, `site_page_copy`, `site_hero_videos`, `site_page_heroes`, `split_members`, `split_groups`, `split_group_members`, `split_expenses`, `split_expense_shares`, `split_settlements`, `food_bill_share_tokens`, `food_qr_*`. Migrator skips `0035_site_cms.sql`, `0041_splits.sql`, `0081_split_expense_idempotency.sql`, `0064_food_bill_share_tokens.sql`, `0079_site_hero_videos.sql`, `0083_food_qr_payments.sql`, and `0089_food_qr_capture_pending.sql` (among other Cloudflare-only stamps) but stamps `_migrations`. Public `/events` on Pi = git `src/content/events.ts`. Splits nav is hidden on Pi.
 # Cloud-only guest booking verification
 
 The existing settings row `website_booking_settings_v1` JSON now includes `maxSelectedBeds` (integer 1–100; absent field defaults to 4). No new table/migration is needed for the browsing limit. Existing revision-protected admin saves retain payment fields; availability exposes only the public limit, never the full settings JSON.

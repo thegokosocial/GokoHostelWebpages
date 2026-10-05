@@ -86,6 +86,7 @@ export function useFoodBillDynamicQr(opts: {
     const next = mapFoodQrAttemptToUi(attempt);
     if (next.status === "active") attemptIdRef.current = next.attemptId;
     else if (next.status === "loading" && next.attemptId) attemptIdRef.current = next.attemptId;
+    else if (next.status === "confirming") attemptIdRef.current = next.attemptId;
     else if (next.status === "paid") attemptIdRef.current = attempt?.attemptId || attempt?.id || null;
     commitState(next);
   }, [commitState, remintIfTerminal]);
@@ -135,6 +136,7 @@ export function useFoodBillDynamicQr(opts: {
       const next = mapFoodQrEnsureResponse({ ok: res.ok, status: res.status, admin: opts.admin, body: data });
       if (next.status === "active") attemptIdRef.current = next.attemptId;
       else if (next.status === "loading" && next.attemptId) attemptIdRef.current = next.attemptId;
+      else if (next.status === "confirming") attemptIdRef.current = next.attemptId;
       commitState(next);
     } catch (e: unknown) {
       commitState({ status: "error", message: e instanceof Error ? e.message : "Could not prepare payment QR" });
@@ -198,7 +200,7 @@ export function useFoodBillDynamicQr(opts: {
   }, [commitState, ensure, opts.enabled, orderKey, remintKey]);
 
   useEffect(() => {
-    if (state.status !== "active" && state.status !== "loading") return;
+    if (state.status !== "active" && state.status !== "loading" && state.status !== "confirming") return;
     const id = window.setInterval(() => { void pollStatus(); }, 8000);
     return () => window.clearInterval(id);
   }, [pollStatus, state.status]);

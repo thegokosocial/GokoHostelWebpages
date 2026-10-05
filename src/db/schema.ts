@@ -262,6 +262,7 @@ export const foodQrAttempts = sqliteTable("food_qr_attempts", {
   paymentAmountPaise: integer("payment_amount_paise").notNull(),
   snapshotDuePaise: integer("snapshot_due_paise").notNull(),
   state: text("state").notNull().default("creating"),
+  capturePending: integer("capture_pending").notNull().default(0),
   closeBy: text("close_by"), foodOrderIds: text("food_order_ids").notNull().default("[]"),
   checkinId: integer("checkin_id"), guestName: text("guest_name").notNull().default(""),
   guestPhone: text("guest_phone").notNull().default(""), notes: text("notes").notNull().default("{}"),
@@ -273,6 +274,7 @@ export const foodQrAttempts = sqliteTable("food_qr_attempts", {
   check("food_qr_amount", sql`${t.paymentAmountPaise} >= 100`),
   check("food_qr_snapshot", sql`${t.snapshotDuePaise} >= 100`),
   check("food_qr_state", sql`${t.state} IN ('creating','qr_unknown','active','paid','closed','expired')`),
+  check("food_qr_capture_pending", sql`${t.capturePending} IN (0,1)`),
 ]);
 export const foodQrOrderClaims = sqliteTable("food_qr_order_claims", {
   id: integer("id").primaryKey({ autoIncrement: true }),

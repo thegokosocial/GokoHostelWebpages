@@ -1136,9 +1136,9 @@ Cloudflare-only; excluded from Pi sync allowlist by omission.
 
 Mirror preview recovery semantics with **variable** amounts (≥100 paise). Webhook inbox keyed by `event_id`; route via `notes.goko_checkout_id`. Migration `0066_gateway_receivables.sql` adds optional `fee_paise` and `tax_paise` provider evidence to native booking payments; `0068_gateway_settlement_allocations.sql` creates the Cloudflare-only payout map.
 
-# Food bill Razorpay QR (migration 0083)
+# Food bill Razorpay QR (migrations 0083, 0089)
 
-Cloudflare-only; Pi migrator skips `0083_food_qr_payments.sql`. Engine: `foodQrPayment.ts`.
+Cloudflare-only; Pi migrator skips the food-QR migrations. Engine: `foodQrPayment.ts`.
 
 ### `food_qr_attempts`
 
@@ -1147,6 +1147,7 @@ Cloudflare-only; Pi migrator skips `0083_food_qr_payments.sql`. Engine: `foodQrP
 | `id` / `request_key` | UUID PK; unique client request key |
 | `environment` | `test` \| `live` |
 | `state` | `creating` \| `qr_unknown` \| `active` \| `paid` \| `closed` \| `expired` |
+| `capture_pending` | 0/1; exposed as `capture_pending` while Razorpay reports a paid-closed QR before captured evidence is visible. Retains the active claim until settlement. |
 | `payment_amount_paise` / `snapshot_due_paise` | ≥100; server-computed due |
 | `food_order_ids` | JSON snapshot of claimed order ids |
 | `qr_code_id` / `qr_image_url` / `close_by` | Razorpay QR entity + echoed expiry |

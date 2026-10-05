@@ -75,10 +75,11 @@ describe("shouldEnsureDynamicFoodQr", () => {
 });
 
 describe("foodBillQrUiLocksEdits / foodBillQrRetireAttemptId", () => {
-  it("locks edits for active and loading; retire id from active or preparing", async () => {
+  it("locks edits for active, loading, and confirming; retire id from active or preparing", async () => {
     const { foodBillQrUiLocksEdits, foodBillQrRetireAttemptId } = await import("@/lib/foodBillQrUi");
     expect(foodBillQrUiLocksEdits("active")).toBe(true);
     expect(foodBillQrUiLocksEdits("loading")).toBe(true);
+    expect(foodBillQrUiLocksEdits("confirming")).toBe(true);
     expect(foodBillQrUiLocksEdits("paid")).toBe(false);
     expect(foodBillQrRetireAttemptId({ status: "active", attemptId: "a1", imageUrl: null, upiIntent: null, closeBy: null, amountPaise: 0, label: "x" })).toBe("a1");
     expect(foodBillQrRetireAttemptId({ status: "loading", attemptId: "a2" })).toBe("a2");
@@ -103,6 +104,7 @@ describe("foodQrAttemptCanReconcile / formatFoodQrOrderIdsPreview", () => {
     const { foodQrAttemptCanReconcile } = await import("@/lib/foodBillQrUi");
     expect(foodQrAttemptCanReconcile({ state: "active", qrCodeId: "qr_x" })).toBe(true);
     expect(foodQrAttemptCanReconcile({ state: "creating", qrCodeId: "qr_x" })).toBe(true);
+    expect(foodQrAttemptCanReconcile({ state: "capture_pending", qrCodeId: "qr_x" })).toBe(true);
     expect(foodQrAttemptCanReconcile({ state: "creating", qrCodeId: null })).toBe(false);
     expect(foodQrAttemptCanReconcile({ state: "expired", qrCodeId: "qr_x" })).toBe(false);
     expect(foodQrAttemptCanReconcile({ state: "closed", qrCodeId: "qr_x" })).toBe(false);
@@ -161,6 +163,13 @@ describe("mapFoodQrAttemptToUi", () => {
     expect(mapFoodQrAttemptToUi({
       attemptId: "a1", state: "paid", paymentMethodLabel: "razorpay_test",
     })).toEqual({ status: "paid", label: "razorpay_test" });
+  });
+
+  it("maps paid-closed pending evidence to confirming without a QR", () => {
+    expect(mapFoodQrAttemptToUi({ attemptId: "a1", state: "capture_pending" })).toEqual({
+      status: "confirming", attemptId: "a1", label: "Payment received — confirming with Razorpay…",
+    });
+    expect(resolveFoodBillPayQrSource({ dynamicStatus: "confirming", staticQrUrl: "https://example.test/static.png" })).toEqual({ kind: "none" });
   });
 
   it("maps creating/qr_unknown to loading with attemptId (Retire while preparing)", () => {
