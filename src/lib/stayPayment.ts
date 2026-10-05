@@ -16,9 +16,14 @@ export function stayDueAtHotel(
   amountTotal: Amount = 0,
   amountPaid: Amount = 0,
   amountRefunded: Amount = 0,
+  writeOffAmount: Amount = 0,
 ): number {
   if (isPrepaidStatus(paymentStatus)) return 0;
-  return Math.max(0, (amountTotal || 0) - ((amountPaid || 0) - (amountRefunded || 0)));
+  const total = Math.max(0, Number(amountTotal) || 0);
+  const paid = Math.max(0, Number(amountPaid) || 0);
+  const refunded = Math.max(0, Number(amountRefunded) || 0);
+  const writtenOff = Math.max(0, Number(writeOffAmount) || 0);
+  return Math.max(0, total - (paid - refunded) - writtenOff);
 }
 
 export function cashCollected(method?: string | null, amountPaid: Amount = 0, cashReceived: Amount = 0): number {

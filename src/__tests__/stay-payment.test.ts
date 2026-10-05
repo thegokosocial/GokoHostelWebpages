@@ -28,6 +28,11 @@ describe("stayDueAtHotel", () => {
   it("price-up remainder is still due", () => {
     expect(stayDueAtHotel("paid", 120000, 100000)).toBe(20000);
   });
+  it("subtracts a declared write-off without treating it as money collected", () => {
+    expect(stayDueAtHotel("pay_at_hotel", 1200, 1000, 0, 200)).toBe(0);
+    expect(stayDueAtHotel("pay_at_hotel", 1200, 1000, 0, -200)).toBe(200);
+    expect(stayDueAtHotel("prepaid", 1200, 0, 0, 200)).toBe(0);
+  });
 });
 
 describe("cash / online split portions", () => {

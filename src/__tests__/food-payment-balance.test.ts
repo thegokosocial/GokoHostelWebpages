@@ -34,6 +34,12 @@ describe("food payment balances", () => {
     expect(foodDue({ total: 300, amountPaid: 100, paymentStatus: "paid" })).toBe(200);
   });
 
+  it("subtracts only a valid declared write-off from the outstanding balance", () => {
+    expect(foodDue({ total: 120000, amountPaid: 100000, writeOffAmount: 20000 })).toBe(0);
+    expect(foodDue({ total: 120000, amountPaid: 100000, writeOffAmount: -1 })).toBe(20000);
+    expect(foodDue({ total: 120000, amountPaid: 0, writeOffAmount: 999999 })).toBe(0);
+  });
+
   it("derives the visible badge from the net balance, not a stale status", () => {
     expect(foodPaymentStatus({ total: 300, amountPaid: 100, amountRefunded: 0 })).toBe("partial");
     expect(foodPaymentStatus({ total: 300, amountPaid: 400, amountRefunded: 100 })).toBe("paid");

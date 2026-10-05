@@ -444,6 +444,7 @@ export const bookings = sqliteTable("bookings", {
   cashReceived: integer("cash_received").notNull().default(0),
   changeGiven: integer("change_given").notNull().default(0),
   amountRefunded: integer("amount_refunded").notNull().default(0),
+  writeOffAmount: integer("write_off_amount").notNull().default(0),
   refundMethod: text("refund_method").notNull().default(""),
   refundCash: integer("refund_cash").notNull().default(0),
   refundedAt: text("refunded_at").notNull().default(""),
@@ -627,6 +628,7 @@ export const foodOrders = sqliteTable("food_orders", {
   paymentStatus: text("payment_status").notNull().default("pending"),
   amountPaid: integer("amount_paid").notNull().default(0),
   amountRefunded: integer("amount_refunded").notNull().default(0),
+  writeOffAmount: integer("write_off_amount").notNull().default(0),
   refundMethod: text("refund_method").notNull().default(""),
   refundCash: integer("refund_cash").notNull().default(0),
   refundedAt: text("refunded_at").notNull().default(""),
@@ -1153,6 +1155,29 @@ export const syncLog = sqliteTable("sync_log", {
   completedAt: text("completed_at").default(""),
   details: text("details").default(""),
 });
+
+/** Immutable admin-declared uncollectible revenue; never a payment, refund, expense, or discount. */
+export const revenueWriteoffs = sqliteTable("revenue_writeoffs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  sourceType: text("source_type").notNull(),
+  sourceId: integer("source_id").notNull(),
+  bookingCycle: integer("booking_cycle"),
+  amountPaise: integer("amount_paise").notNull(),
+  reason: text("reason").notNull(),
+  note: text("note").notNull().default(""),
+  actor: text("actor").notNull(),
+  guestNameSnapshot: text("guest_name_snapshot").notNull().default(""),
+  referenceSnapshot: text("reference_snapshot").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  ...syncColumns,
+}, (table) => [
+  check("revenue_writeoffs_source_type", sql`${table.sourceType} IN ('food_order', 'booking')`),
+  check("revenue_writeoffs_amount_positive", sql`${table.amountPaise} > 0`),
+  check("revenue_writeoffs_booking_cycle", sql`${table.bookingCycle} IS NULL OR ${table.bookingCycle} > 0`),
+  index("idx_revenue_writeoffs_source").on(table.sourceType, table.sourceId, table.bookingCycle),
+  index("idx_revenue_writeoffs_created").on(table.createdAt),
+]);
 
 /** Exact-order ACL for a shared combined bill; separate to preserve legacy token queries. */
 export const foodCombinedBillShareTokens = sqliteTable("food_combined_bill_share_tokens", {

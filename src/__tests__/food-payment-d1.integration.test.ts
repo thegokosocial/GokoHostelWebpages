@@ -99,6 +99,7 @@ function createPaymentTables(sqlite: SQLite.Database) {
       payment_status TEXT NOT NULL DEFAULT 'pending',
       amount_paid INTEGER NOT NULL DEFAULT 0,
       amount_refunded INTEGER NOT NULL DEFAULT 0,
+      write_off_amount INTEGER NOT NULL DEFAULT 0,
       refund_method TEXT NOT NULL DEFAULT '',
       refund_cash INTEGER NOT NULL DEFAULT 0,
       refunded_at TEXT NOT NULL DEFAULT '',

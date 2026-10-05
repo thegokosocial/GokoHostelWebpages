@@ -18,8 +18,8 @@ export function foodPaymentState(total: number, amountPaid: number, onTab = fals
   };
 }
 
-export function foodDue(order: { total: number; amountPaid?: number | null; amountRefunded?: number | null; paymentStatus?: string | null }): number {
-  return Math.max(0, order.total - foodAmountPaid(order));
+export function foodDue(order: { total: number; amountPaid?: number | null; amountRefunded?: number | null; writeOffAmount?: number | null; paymentStatus?: string | null }): number {
+  return Math.max(0, order.total - foodAmountPaid(order) - Math.max(0, Number(order.writeOffAmount) || 0));
 }
 
 export function foodPaymentStatus(order: { total: number; amountPaid?: number | null; amountRefunded?: number | null }): FoodPaymentStatus {

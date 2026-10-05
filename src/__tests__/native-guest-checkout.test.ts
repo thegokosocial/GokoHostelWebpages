@@ -119,7 +119,7 @@ beforeEach(() => {
       created_at TEXT NOT NULL, synced_at TEXT,
       amount_before_tax INTEGER DEFAULT 0, amount_tax INTEGER DEFAULT 0, amount_total INTEGER DEFAULT 0,
       amount_paid INTEGER DEFAULT 0, payment_method TEXT DEFAULT '', cash_received INTEGER DEFAULT 0,
-      change_given INTEGER DEFAULT 0, amount_refunded INTEGER DEFAULT 0, refund_method TEXT DEFAULT '',
+      change_given INTEGER DEFAULT 0, amount_refunded INTEGER DEFAULT 0, write_off_amount INTEGER NOT NULL DEFAULT 0, refund_method TEXT DEFAULT '',
       refund_cash INTEGER DEFAULT 0, refunded_at TEXT DEFAULT '', refunded_by TEXT DEFAULT '',
       booking_cycle INTEGER DEFAULT 1, nightly_rate INTEGER DEFAULT 0, currency TEXT DEFAULT 'INR',
       ota_payment_terms TEXT, ota_currency TEXT,

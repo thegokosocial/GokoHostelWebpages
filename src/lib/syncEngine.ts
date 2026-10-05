@@ -20,6 +20,7 @@ const SYNCED_TABLES_APPEND = [
   "daily_ledger", "qr_history", "booking_cycle_snapshots", "booking_payment_events", "guest_receipts",
   "cash_payment_events",
   "employee_attendance_history", "payable_bill_adjustments", "payable_bill_notes",
+  "revenue_writeoffs",
   "platform_receivable_entries", "platform_settlements", "platform_settlement_allocations",
 ] as const;
 
@@ -54,6 +55,7 @@ const TABLE_MAP: Record<string, any> = {
   payable_bills: schema.payableBills,
   payable_bill_adjustments: schema.payableBillAdjustments,
   payable_bill_notes: schema.payableBillNotes,
+  revenue_writeoffs: schema.revenueWriteoffs,
   tasks: schema.tasks,
   daily_income: schema.dailyIncome,
   users: schema.users,
