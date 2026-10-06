@@ -83,6 +83,29 @@ describe("Expenses API RBAC (route)", () => {
     expect((await POST(request("deleteExpense", { id: 1 }))).status).toBe(403);
   });
 
+  it("reports partial collection, unpaid balance, and revenue lost separately", async () => {
+    auth.authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Food viewer",
+      permissions: { canViewFoodBills: true },
+    });
+    q.getDb.mockReturnValue(listDb([{
+      id: 9, status: "placed", guestName: "Guest", guestPhone: "9000000000", roomInfo: "Table 2", checkinId: null,
+      total: 120000, discount: 0, amountPaid: 100000, amountRefunded: 0, writeOffAmount: 20000,
+      paymentStatus: "partial", paymentMethod: "cash", createdAt: "2026-09-22T12:00:00Z",
+    }]).db);
+
+    const response = await POST(request("getFoodRevenue", { fromDate: "2026-09-01", toDate: "2026-09-30" }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      summary: {
+        totalRevenue: 120000, cashPayments: 100000, unpaidTabs: 0, totalWrittenOff: 20000,
+        cashOrders: 1, unpaidOrders: 0, writtenOffOrders: 1,
+      },
+      guestBreakdown: [{ cashPaid: 100000, unpaid: 0, writtenOff: 20000 }],
+    });
+  });
+
   it("marks only linked Cloudflare recurring expenses and skips the Cloudflare-only join on Pi", async () => {
     auth.authenticateUser.mockResolvedValue({ role: "staff", displayName: "Viewer", permissions: { canViewExpenses: true } });
     const cloud = listDb([{ id: 1, category: "Internet", isRecurring: 7 }, { id: 2, category: "Supplies", isRecurring: null }]);

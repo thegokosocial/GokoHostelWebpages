@@ -31,6 +31,7 @@ import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { bookingEventMethod, paiseToRupees } from "@/lib/bookingPaymentJournal";
 import { collectInBatches } from "@/lib/dbBatch";
 import { walkinOrderGroupKey } from "@/lib/foodWalkinIdentity";
+import { foodAmountPaid, foodDue } from "@/lib/foodPaymentBalance";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import { syncInsert, syncUpdate } from "@/db/syncMeta";
 
@@ -786,26 +787,34 @@ export async function POST(req: NextRequest) {
         let onlineOrders = 0;
         let unpaidOrders = 0;
         let totalDiscount = 0;
+        let totalWrittenOff = 0;
+        let writtenOffOrders = 0;
 
         const guestMap = new Map<string, {
           guestName: string; guestPhone: string; roomInfo: string; checkinId: number | null;
-          totalSpent: number; totalDiscount: number; cashPaid: number; onlinePaid: number; unpaid: number; orderCount: number;
+          totalSpent: number; totalDiscount: number; cashPaid: number; onlinePaid: number; unpaid: number; writtenOff: number; orderCount: number;
         }>();
 
         for (const order of orders) {
           totalRevenue += order.total;
           totalDiscount += order.discount || 0;
+          const paid = foodAmountPaid(order);
+          const unpaid = foodDue(order);
+          const writtenOff = Math.max(0, Number(order.writeOffAmount) || 0);
+          totalWrittenOff += writtenOff;
+          if (writtenOff > 0) writtenOffOrders += 1;
 
-          if (order.paymentStatus === "paid") {
+          if (paid > 0) {
             if (order.paymentMethod === "cash") {
-              cashPayments += order.total;
+              cashPayments += paid;
               cashOrders += 1;
             } else {
-              onlinePayments += order.total;
+              onlinePayments += paid;
               onlineOrders += 1;
             }
-          } else if (order.paymentStatus === "on_tab" || order.paymentStatus === "pending") {
-            unpaidTabs += order.total;
+          }
+          if (unpaid > 0) {
+            unpaidTabs += unpaid;
             unpaidOrders += 1;
           }
 
@@ -819,9 +828,10 @@ export async function POST(req: NextRequest) {
             existing.totalSpent += order.total;
             existing.totalDiscount += order.discount || 0;
             existing.orderCount += 1;
-            if (order.paymentStatus === "paid" && order.paymentMethod === "cash") existing.cashPaid += order.total;
-            else if (order.paymentStatus === "paid") existing.onlinePaid += order.total;
-            else existing.unpaid += order.total;
+            if (paid > 0 && order.paymentMethod === "cash") existing.cashPaid += paid;
+            else if (paid > 0) existing.onlinePaid += paid;
+            existing.unpaid += unpaid;
+            existing.writtenOff += writtenOff;
             if (!existing.guestPhone && order.guestPhone) existing.guestPhone = order.guestPhone;
             if (!existing.roomInfo && order.roomInfo) existing.roomInfo = order.roomInfo;
           } else {
@@ -832,9 +842,10 @@ export async function POST(req: NextRequest) {
               checkinId: order.checkinId,
               totalSpent: order.total,
               totalDiscount: order.discount || 0,
-              cashPaid: order.paymentStatus === "paid" && order.paymentMethod === "cash" ? order.total : 0,
-              onlinePaid: order.paymentStatus === "paid" && order.paymentMethod !== "cash" ? order.total : 0,
-              unpaid: order.paymentStatus !== "paid" ? order.total : 0,
+              cashPaid: paid > 0 && order.paymentMethod === "cash" ? paid : 0,
+              onlinePaid: paid > 0 && order.paymentMethod !== "cash" ? paid : 0,
+              unpaid,
+              writtenOff,
               orderCount: 1,
             });
           }
@@ -863,7 +874,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
           role,
-          summary: { totalRevenue, totalDiscount, cashPayments, onlinePayments, unpaidTabs, orderCount, cashOrders, onlineOrders, unpaidOrders },
+          summary: { totalRevenue, totalDiscount, totalWrittenOff, writtenOffOrders, cashPayments, onlinePayments, unpaidTabs, orderCount, cashOrders, onlineOrders, unpaidOrders },
           guestBreakdown,
         });
       }
@@ -915,6 +926,7 @@ export async function POST(req: NextRequest) {
             id: b.id, bookingCycle: b.bookingCycle, guestName: b.guestName, contact: b.contact || "",
             checkinDate: b.checkinDate, checkoutDate: b.checkoutDate || "", status: b.status,
             amountTotal: b.amountTotal || 0, amountPaid: b.amountPaid || 0, amountRefunded: b.amountRefunded || 0,
+            writeOffAmount: b.writeOffAmount || 0,
             paymentStatus: b.paymentStatus || "", paymentMethod: b.paymentMethod || "", cashReceived: b.cashReceived || 0,
             refundMethod: b.refundMethod || "", refundCash: b.refundCash || 0,
           })),
@@ -922,6 +934,7 @@ export async function POST(req: NextRequest) {
             id: b.bookingId, bookingCycle: b.bookingCycle, guestName: b.guestName, contact: b.contact || "",
             checkinDate: b.checkinDate, checkoutDate: b.checkoutDate || "", status: b.status,
             amountTotal: paiseToRupees(b.amountTotalPaise), amountPaid: paiseToRupees(b.amountPaidPaise), amountRefunded: paiseToRupees(b.amountRefundedPaise),
+            writeOffAmount: 0,
             paymentStatus: b.paymentStatus,
             paymentMethod: b.paymentMethod, cashReceived: paiseToRupees(b.cashReceivedPaise),
             refundMethod: b.refundMethod, refundCash: paiseToRupees(b.refundCashPaise),
@@ -938,6 +951,8 @@ export async function POST(req: NextRequest) {
         let cashOut = 0;
         let onlineOut = 0;
         let refunded = 0;
+        let revenueLost = 0;
+        let writtenOffStays = 0;
 
         const guestBreakdown = stays.map((b) => {
           const events = cycleEvents.get(`${b.id}:${b.bookingCycle}`) || [];
@@ -977,8 +992,11 @@ export async function POST(req: NextRequest) {
           billed += b.amountTotal || 0;
           gokoCollected += paid;
           refunded += refundedAmount;
-          const due = stayDueAtHotel(b.paymentStatus, b.amountTotal, paid, refundedAmount);
+          const writtenOff = Math.max(0, Number(b.writeOffAmount) || 0);
+          const due = stayDueAtHotel(b.paymentStatus, b.amountTotal, paid, refundedAmount, writtenOff);
           unpaid += due;
+          revenueLost += writtenOff;
+          if (writtenOff > 0) writtenOffStays += 1;
           if (isPrepaidStatus(b.paymentStatus) && paid <= 0) prepaid += b.amountTotal || 0;
           cashIn += cIn;
           onlineIn += oIn;
@@ -998,6 +1016,7 @@ export async function POST(req: NextRequest) {
             cashIn: cIn,
             onlineIn: oIn,
             unpaid: due,
+            revenueLost: writtenOff,
             refundMethod: hasJournal ? (cOut > 0 && oOut > 0 ? "split" : cOut > 0 ? "cash" : oOut > 0 ? "online" : "—") : b.refundMethod || "—",
             cashOut: cOut,
             onlineOut: oOut,
@@ -1085,6 +1104,8 @@ export async function POST(req: NextRequest) {
             cashRefunded: cashOut,
             onlineRefunded: onlineOut,
             refunded,
+            revenueLost,
+            writtenOffStays,
             netCash: cashIn - cashOut,
             netOnline: onlineIn - onlineOut,
             netGoko: gokoCollected - refunded,

@@ -199,7 +199,7 @@ Landmines: release hold before assign (0059); never trust client bed IDs or subt
 
 ## Revenue write-offs
 
-`POST /api/admin/food-orders` action `writeOffRevenue` is admin-only. It accepts unique order ids, a positive amount no larger than their net unpaid balance, a reason, optional note, and an idempotency key. It appends immutable per-order `revenue_writeoffs` records, updates only cached `write_off_amount`, and writes audit/modification history. It never changes a discount, payment, refund, receipt, or expense.
+`POST /api/admin/food-orders` action `writeOffRevenue` and `POST /api/admin/bookings` action `writeOffStayRevenue` are admin-only. They accept a positive amount no larger than the current net unpaid balance, a reason, optional note, and an ASCII alphanumeric/hyphen idempotency key. They append immutable `revenue_writeoffs` records, update only cached `write_off_amount`, and write history/audit entries. They never change a discount, payment, refund, receipt, or expense. `getFoodRevenue` and `getRoomRevenue` return written-off revenue separately from unpaid money.
 
 Booking contact methods: `getDetail` returns active `contactMethods`; `saveBookingContacts` requires `canManageBookingContacts` and atomically adds, edits, or deletes up to five phones and five emails. Phone/email duplicates are rejected after normalization, PMS-origin rows cannot be changed or deleted, and actual changes create booking-history audit entries. Contact methods are synchronized booking data and are not used as fallback identity or food-tab lookup values.
 

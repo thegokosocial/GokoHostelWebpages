@@ -78,6 +78,8 @@ export function AdminFoodBill({
     onlineOrders: 0,
     unpaidTabs: 0,
     unpaidOrders: 0,
+    totalWrittenOff: 0,
+    writtenOffOrders: 0,
   };
 
   const guests: any[] = data?.guestBreakdown || [];
@@ -100,12 +102,12 @@ export function AdminFoodBill({
           }}
         />
         <Button type="button" variant="cta" onClick={loadData} disabled={loading}>
-          {loading ? "Loading..." : "Apply"}
+          {loading ? "Loading…" : "Apply"}
         </Button>
       </div>
 
       {loading && !data ? (
-        <AdminLoading message="Loading food bill data..." />
+        <AdminLoading message="Loading food bill data…" />
       ) : (
         <>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -124,6 +126,23 @@ export function AdminFoodBill({
                 </div>
               </div>
             </div>
+            {summary.totalWrittenOff > 0 && (
+              <div className="rounded-2xl border border-red-200 bg-red-50/40 p-5 shadow-card dark:border-red-900/70 dark:bg-red-950/30 dark:shadow-none">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-950">
+                    <AlertTriangleIcon className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-red-700 dark:text-red-400">
+                      ₹{(summary.totalWrittenOff / 100).toFixed(0)}
+                    </p>
+                    <p className="text-xs text-red-800/80 dark:text-red-300/80">
+                      Revenue Lost ({summary.writtenOffOrders} orders)
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="rounded-2xl border border-brand-mist bg-white dark:bg-card p-5 shadow-card dark:shadow-none">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950">
@@ -206,6 +225,7 @@ export function AdminFoodBill({
                       <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Cash</th>
                       <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Online</th>
                       <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Unpaid</th>
+                      <th className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">Revenue Lost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -239,6 +259,9 @@ export function AdminFoodBill({
                           (g.unpaid || 0) > 0 ? "font-medium text-orange-600" : "text-brand-green-dark/70"
                         )}>
                           ₹{((g.unpaid || 0) / 100).toFixed(0)}
+                        </td>
+                        <td className={cn("whitespace-nowrap px-3 py-3", (g.writtenOff || 0) > 0 ? "font-medium text-red-700 dark:text-red-400" : "text-brand-green-dark/70")}>
+                          ₹{((g.writtenOff || 0) / 100).toFixed(0)}
                         </td>
                       </tr>
                     ))}

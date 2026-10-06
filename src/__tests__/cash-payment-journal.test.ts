@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { drizzle as drizzleD1 } from "drizzle-orm/d1";
 import type { Database } from "@/db";
 import * as schema from "@/db/schema";
-import { cashPaymentEvents, syncIdMap } from "@/db/schema";
+import { cashPaymentEvents, revenueWriteoffs, syncIdMap } from "@/db/schema";
 import { recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
 import { applyPullRecords } from "@/lib/syncEngine";
 
@@ -207,5 +207,26 @@ describe("ordinary cash payment journal", () => {
 
     expect(result.applied).toBe(1);
     expect(await db.select().from(cashPaymentEvents)).toMatchObject([{ eventId: "remote-cash", sourceId: 11 }]);
+  });
+
+  it("remaps a synced revenue write-off to the local food-order id", async () => {
+    await db.insert(syncIdMap).values({
+      tableName: "food_orders", syncId: "food-order-sync", localId: 11, remoteId: 55,
+    });
+    const result = await applyPullRecords(db, [{
+      table: "revenue_writeoffs",
+      records: [{
+        syncId: "writeoff-sync-1", syncUpdatedAt: "2026-10-06T12:00:00Z", syncSource: "cloudflare",
+        data: {
+          id: 9, idempotencyKey: "writeoff-remote:55", sourceType: "food_order", sourceId: 55,
+          bookingCycle: null, amountPaise: 20000, reason: "Guest unreachable", note: "", actor: "admin",
+          guestNameSnapshot: "Remote Guest", referenceSnapshot: "D262-55", createdAt: "2026-10-06T12:00:00Z",
+          syncId: "writeoff-sync-1", syncUpdatedAt: "2026-10-06T12:00:00Z", syncSource: "cloudflare",
+        },
+      }],
+    }], "cloudflare");
+
+    expect(result.applied).toBe(1);
+    expect(await db.select().from(revenueWriteoffs)).toMatchObject([{ idempotencyKey: "writeoff-remote:55", sourceId: 11, amountPaise: 20000 }]);
   });
 });

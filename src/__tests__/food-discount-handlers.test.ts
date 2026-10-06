@@ -135,6 +135,14 @@ describe("applyDiscount / removeDiscount handlers", () => {
     expect(await denied.json()).toMatchObject({ error: "Admin access required" });
   });
 
+  it("rejects write-off idempotency keys that could alter prefix matching", async () => {
+    const res = await POST(actionReq("writeOffRevenue", {
+      orderIds: [8], amountPaise: 20000, reason: "Guest unreachable", idempotencyKey: "writeoff_%",
+    }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "Invalid idempotency key" });
+  });
+
   it("applies a fixed-amount discount on an unpaid order", async () => {
     q.getFoodOrderById.mockResolvedValue(unpaidOrder(10, 10000));
     q.getFoodOrderItemsBatch.mockResolvedValue(new Map([[10, [line(1, 10000)]]]));

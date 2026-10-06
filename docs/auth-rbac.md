@@ -250,7 +250,7 @@ Kitchen is staff-passworded but not full admin RBAC. Its `updateStatusBulk` acti
 
 ## Revenue write-offs
 
-Food-order action `writeOffRevenue` is **admin-only**; there is deliberately no manager/staff permission key. The server validates positive net-unpaid amount, reason, optional note, and idempotency key before appending the immutable ledger record. It cannot create a payment, refund, discount, receipt, or expense.
+Food-order action `writeOffRevenue` and booking action `writeOffStayRevenue` are **admin-only**; there is deliberately no manager/staff permission key. The server validates positive net-unpaid amount, reason, optional note, and a safe idempotency key before appending the immutable ledger record. It cannot create a payment, refund, discount, receipt, or expense.
 # Internal native hold milestone (17 September 2026)
 
 Accepted-quote persistence/recovery verifies original hold ownership and rejects Pi. It adds no route, active permission or compatibility alias; internal acceptance is opt-in. SQL protects immutable evidence, but that does not authorize payment/booking fulfilment. See [accepted-quote workflow](native-accepted-quotes.md).

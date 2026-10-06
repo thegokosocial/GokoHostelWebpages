@@ -246,7 +246,7 @@ The shared public shell keeps anchor targets below the sticky header, preserves 
 
 ## Food Orders: Revenue Lost
 
-In an admin's Food Order Summary Bill drawer, **Bill Adjustment** keeps the Discount workflow and adds a **Revenue Lost** tab. The tab accepts a partial or full net-unpaid amount and a reason, previews the still-collectable balance, and records it separately from discounts and payments. It is not shown to managers or staff.
+In an admin's Food Order Summary Bill drawer, **Bill Adjustment** keeps the Discount workflow and adds a **Revenue Lost** tab. The tab accepts a partial or full net-unpaid amount and a reason, previews the still-collectable balance, and records it separately from discounts and payments. It is not shown to managers or staff. A checked-in or checked-out booking has the matching admin-only **Write Off Balance** action. Food Bill Summary and Room Revenue keep written-off money out of Unpaid and show it separately as **Revenue Lost**.
 # Internal native hold milestone (17 September 2026)
 
 Accepted quotes can now be persisted/recovered internally against an owner-bound hold. There is still no guest quote-acceptance UI/API or payment confirmation; `/book` remains enquiry-only. See [implemented service and remaining UI gates](native-accepted-quotes.md).

@@ -41,6 +41,8 @@ Ledger / expenses / food / salary integers are **paise**. UI: rupees × 100 on t
 
 **Room Revenue** (`getRoomRevenue`) uses booking amounts, which are **rupees** — do not divide by 100. Prepaid check-in records `amountPaid` as online; the OTA prepaid card is only stays not yet recorded.
 
+**Food Revenue** (`getFoodRevenue`) and **Room Revenue** (`getRoomRevenue`) keep billed revenue, collections, unpaid balances, discounts, and **Revenue Lost** distinct. A revenue write-off is shown separately from Unpaid and never becomes an expense, discount, payment, refund, receipt, or account movement.
+
 ---
 
 ## Add expense

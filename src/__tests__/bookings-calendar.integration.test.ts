@@ -316,6 +316,51 @@ describe("bookings calendar (disposable SQLite)", () => {
     expect(paid.amount_paid).toBe(paid.amount_total);
   });
 
+  it("records an admin-only stay revenue write-off without changing collected money", async () => {
+    const created = await (await bookingsPOST(bookingsReq({
+      action: "createBooking",
+      guestName: "Unreachable Guest",
+      checkinDate,
+      checkoutDate,
+      persons: 1,
+      staySubtotal: 1200,
+      bedIds: [1],
+    }))).json();
+    await bookingsPOST(bookingsReq({ action: "checkIn", bookingId: created.bookingId, collectPayment: false }));
+    sqlite.prepare("UPDATE bookings SET status = 'checked_out', amount_paid = 1000, payment_status = 'paid' WHERE id = ?").run(created.bookingId);
+
+    const first = await bookingsPOST(bookingsReq({
+      action: "writeOffStayRevenue", bookingId: created.bookingId, amount: 200,
+      reason: "Guest unreachable", note: "Called twice", idempotencyKey: "stay-writeoff-integration-1",
+    }));
+    expect(first.status).toBe(200);
+    const booking = sqlite.prepare("SELECT amount_total, amount_paid, write_off_amount FROM bookings WHERE id = ?").get(created.bookingId) as { amount_total: number; amount_paid: number; write_off_amount: number };
+    expect(booking).toEqual({ amount_total: 1200, amount_paid: 1000, write_off_amount: 200 });
+    expect(sqlite.prepare("SELECT source_type, source_id, booking_cycle, amount_paise, reason FROM revenue_writeoffs").all()).toEqual([
+      { source_type: "booking", source_id: created.bookingId, booking_cycle: 1, amount_paise: 20000, reason: "Guest unreachable" },
+    ]);
+
+    const retry = await bookingsPOST(bookingsReq({
+      action: "writeOffStayRevenue", bookingId: created.bookingId, amount: 200,
+      reason: "Guest unreachable", note: "Called twice", idempotencyKey: "stay-writeoff-integration-1",
+    }));
+    expect(await retry.json()).toMatchObject({ success: true, idempotent: true });
+    expect(sqlite.prepare("SELECT write_off_amount FROM bookings WHERE id = ?").get(created.bookingId)).toEqual({ write_off_amount: 200 });
+
+    const invalidKey = await bookingsPOST(bookingsReq({
+      action: "writeOffStayRevenue", bookingId: created.bookingId, amount: 1,
+      reason: "Guest unreachable", idempotencyKey: "stay-writeoff_%",
+    }));
+    expect(invalidKey.status).toBe(400);
+    expect(await invalidKey.json()).toMatchObject({ error: "Invalid idempotency key" });
+
+    state.auth = { role: "staff", displayName: "Staff", permissions: { canCheckIn: true } };
+    expect((await bookingsPOST(bookingsReq({
+      action: "writeOffStayRevenue", bookingId: created.bookingId, amount: 1,
+      reason: "Guest unreachable", idempotencyKey: "stay-writeoff-staff-denied",
+    }))).status).toBe(403);
+  });
+
   it("multi-bed stay assign/unassign keeps batch-safe assignment row counts", async () => {
     const created = await (await bookingsPOST(bookingsReq({
       action: "createBooking",

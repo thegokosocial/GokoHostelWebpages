@@ -36,6 +36,7 @@ export type DashboardBooking = {
   cashReceived?: number;
   changeGiven?: number;
   amountRefunded?: number;
+  writeOffAmount?: number;
   refundMethod?: string;
   refundCash?: number;
   nightlyRate: number;

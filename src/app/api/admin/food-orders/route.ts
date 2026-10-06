@@ -1262,6 +1262,7 @@ export async function POST(req: NextRequest) {
         const writeoffNote = typeof note === "string" ? note.trim().slice(0, 240) : "";
         const requestKey = typeof idempotencyKey === "string" ? idempotencyKey.trim().slice(0, 120) : "";
         if (!writeoffReason || !requestKey) return NextResponse.json({ error: "Reason and idempotency key are required" }, { status: 400 });
+        if (!/^[A-Za-z0-9-]{1,120}$/.test(requestKey)) return NextResponse.json({ error: "Invalid idempotency key" }, { status: 400 });
         if (writeoffReason === "Other" && !writeoffNote) return NextResponse.json({ error: "Add a note when using Other" }, { status: 400 });
 
         const db = getDb() as any;
@@ -1277,41 +1278,44 @@ export async function POST(req: NextRequest) {
         const qrRelease = await releaseFoodQrOrConflict(orderIds);
         if (!qrRelease.ok) return qrRelease.response;
 
-        let remaining = amount;
         const now = new Date().toISOString();
-        const writes: any[] = [];
-        for (const { order, due } of dueByOrder) {
-          const allocated = Math.min(due, remaining);
-          remaining -= allocated;
-          if (allocated <= 0) continue;
-          const currentWriteOff = Math.max(0, Number((order as any).writeOffAmount) || 0);
-          writes.push(db.update(foodOrders).set(syncUpdate({ writeOffAmount: currentWriteOff + allocated, updatedAt: now })).where(eq(foodOrders.id, order.id)));
-          writes.push(db.insert(revenueWriteoffs).values(syncInsert({
-            idempotencyKey: `${requestKey}:${order.id}`,
-            sourceType: "food_order",
-            sourceId: order.id,
-            bookingCycle: null,
-            amountPaise: allocated,
-            reason: writeoffReason,
-            note: writeoffNote,
-            actor: actorName,
-            guestNameSnapshot: order.guestName || "",
-            referenceSnapshot: order.orderNumber || String(order.id),
-            createdAt: now,
-          })));
-          writes.push(db.insert(orderModifications).values(syncInsert({
-            orderId: order.id,
-            action: "revenue_writeoff",
-            oldValue: `₹${(due / 100).toFixed(0)} due`,
-            newValue: `₹${((due - allocated) / 100).toFixed(0)} due`,
-            reason: `${writeoffReason}${writeoffNote ? `: ${writeoffNote}` : ""} (₹${(allocated / 100).toFixed(0)} written off)`,
-            modifiedBy: actorName,
-            createdAt: now,
-          })));
-        }
-        writes.push(db.insert(auditLog).values({ timestamp: now, username: actorName, action: "food_revenue_writeoff", target: `orders:${orderIds.join(",")}`, details: `Revenue write-off ₹${(amount / 100).toFixed(0)}. Reason: ${writeoffReason}${writeoffNote ? `. Note: ${writeoffNote}` : ""}` }));
-        if (typeof db.batch === "function") await db.batch(writes);
-        else await db.transaction(async (tx: any) => { for (const write of writes) await write; });
+        const buildWrites = (client: any) => {
+          let remaining = amount;
+          const writes: any[] = [];
+          for (const { order, due } of dueByOrder) {
+            const allocated = Math.min(due, remaining);
+            remaining -= allocated;
+            if (allocated <= 0) continue;
+            const currentWriteOff = Math.max(0, Number((order as any).writeOffAmount) || 0);
+            writes.push(client.update(foodOrders).set(syncUpdate({ writeOffAmount: currentWriteOff + allocated, updatedAt: now })).where(eq(foodOrders.id, order.id)));
+            writes.push(client.insert(revenueWriteoffs).values(syncInsert({
+              idempotencyKey: `${requestKey}:${order.id}`,
+              sourceType: "food_order",
+              sourceId: order.id,
+              bookingCycle: null,
+              amountPaise: allocated,
+              reason: writeoffReason,
+              note: writeoffNote,
+              actor: actorName,
+              guestNameSnapshot: order.guestName || "",
+              referenceSnapshot: order.orderNumber || String(order.id),
+              createdAt: now,
+            })));
+            writes.push(client.insert(orderModifications).values(syncInsert({
+              orderId: order.id,
+              action: "revenue_writeoff",
+              oldValue: `₹${(due / 100).toFixed(0)} due`,
+              newValue: `₹${((due - allocated) / 100).toFixed(0)} due`,
+              reason: `${writeoffReason}${writeoffNote ? `: ${writeoffNote}` : ""} (₹${(allocated / 100).toFixed(0)} written off)`,
+              modifiedBy: actorName,
+              createdAt: now,
+            })));
+          }
+          writes.push(client.insert(auditLog).values({ timestamp: now, username: actorName, action: "food_revenue_writeoff", target: `orders:${orderIds.join(",")}`, details: `Revenue write-off ₹${(amount / 100).toFixed(0)}. Reason: ${writeoffReason}${writeoffNote ? `. Note: ${writeoffNote}` : ""}` }));
+          return writes;
+        };
+        if (typeof db.batch === "function") await db.batch(buildWrites(db));
+        else db.transaction((tx: any) => { for (const write of buildWrites(tx)) write.run(); });
         return NextResponse.json({ success: true, role });
       }
 

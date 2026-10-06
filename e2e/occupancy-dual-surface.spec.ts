@@ -12,6 +12,7 @@ type DualState = {
   paymentStatus: "pay_at_hotel" | "prepaid" | "paid";
   amountTotal: number;
   amountPaid: number;
+  writeOffAmount?: number;
   loggedIn: boolean;
   editPreview?: boolean;
 };
@@ -42,6 +43,7 @@ function sampleBooking(state: DualState) {
     amountPaid: state.amountPaid,
     paymentStatus: state.paymentStatus,
     amountRefunded: 0,
+    writeOffAmount: state.writeOffAmount || 0,
     nightlyRate: state.editPreview ? 3600 : 0,
     currency: "INR",
     holdExpiresAt: "",
@@ -91,6 +93,11 @@ async function mockDualOccupancyApis(page: Page, state: DualState) {
     }
 
     if (url.pathname.includes("/bookings")) {
+      if (action === "writeOffStayRevenue") {
+        state.writeOffAmount = Number(body.amount || 0);
+        await route.fulfill({ json: { success: true } });
+        return;
+      }
       if (action === "checkIn") {
         state.bookingCheckedIn = true;
         await route.fulfill({ json: { success: true } });
@@ -278,4 +285,25 @@ test("manual booking edit previews due from the corrected amount received", asyn
   await page.getByRole("button", { name: "Edit Booking" }).click();
   await page.getByLabel("Amount received (₹)").fill("3400");
   await expect(page.getByText("After save: Total ₹3,600 · Due ₹200")).toBeVisible();
+});
+
+test("admin writes off a checked-in stay balance separately from payment", async ({ page }) => {
+  const state: DualState = {
+    bookingCheckedIn: true,
+    bedOccupied: false,
+    paymentStatus: "paid",
+    amountTotal: 1200,
+    amountPaid: 1000,
+    loggedIn: false,
+  };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToBookings(page);
+  await page.getByPlaceholder(/search/i).first().fill("Dual Guest");
+  await page.getByText("Dual Guest").first().click();
+  await page.getByRole("button", { name: "Write Off Balance" }).click();
+  await expect(page.getByRole("heading", { name: "Write Off Unpaid Balance" })).toBeVisible();
+  await page.getByLabel("Amount Lost (₹)").fill("200");
+  await expect(page.getByText("Still Collectible")).toBeVisible();
+  await page.getByRole("button", { name: "Record Revenue Lost" }).click();
+  await expect.poll(() => state.writeOffAmount).toBe(200);
 });

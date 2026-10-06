@@ -68,6 +68,7 @@ export function AdminRoomRevenue({
   const summary = data?.summary || {
     billed: 0, stayCount: 0, cashCollected: 0, onlineCollected: 0, unspecifiedCollected: 0,
     unpaid: 0, prepaid: 0, cashRefunded: 0, onlineRefunded: 0, refunded: 0,
+    revenueLost: 0, writtenOffStays: 0,
     netCash: 0, netOnline: 0, netGoko: 0,
   };
   const guests: any[] = data?.guestBreakdown || [];
@@ -77,6 +78,7 @@ export function AdminRoomRevenue({
     { label: "Cash collected", value: summary.cashCollected, hint: "Goko till", icon: <BanknoteIcon className="h-5 w-5 text-emerald-600" />, wrap: "bg-emerald-50 dark:bg-emerald-950" },
     { label: "Online collected", value: summary.onlineCollected, hint: "UPI / card", icon: <SmartphoneIcon className="h-5 w-5 text-blue-600" />, wrap: "bg-blue-50 dark:bg-blue-950" },
     { label: "Unpaid", value: summary.unpaid, hint: "Hotel due", icon: <AlertTriangleIcon className="h-5 w-5 text-orange-600" />, wrap: "bg-orange-50 dark:bg-orange-950" },
+    ...(summary.revenueLost > 0 ? [{ label: "Revenue Lost", value: summary.revenueLost, hint: `${summary.writtenOffStays} stays`, icon: <AlertTriangleIcon className="h-5 w-5 text-red-600" />, wrap: "bg-red-50 dark:bg-red-950" }] : []),
     { label: "OTA prepaid", value: summary.prepaid, hint: "Not yet checked in / not recorded", icon: <BedDoubleIcon className="h-5 w-5 text-indigo-600" />, wrap: "bg-indigo-50 dark:bg-indigo-950" },
     { label: "Cash refunded", value: summary.cashRefunded, hint: "Out", icon: <RotateCcwIcon className="h-5 w-5 text-red-600" />, wrap: "bg-red-50 dark:bg-red-950" },
     { label: "Online refunded", value: summary.onlineRefunded, hint: "Out", icon: <RotateCcwIcon className="h-5 w-5 text-red-500" />, wrap: "bg-red-50 dark:bg-red-950" },
@@ -143,7 +145,7 @@ export function AdminRoomRevenue({
                 <table className="w-full min-w-[1100px] text-left text-sm">
                   <thead className="bg-brand-sand/95">
                     <tr className="border-b border-brand-mist bg-brand-sand/50">
-                      {["Guest", "Dates", "Status", "Method", "Billed", "Cash in", "Online in", "Unpaid", "Refund", "Cash out", "Online out"].map((h) => (
+                      {["Guest", "Dates", "Status", "Method", "Billed", "Cash in", "Online in", "Unpaid", "Revenue Lost", "Refund", "Cash out", "Online out"].map((h) => (
                         <th key={h} className="whitespace-nowrap bg-brand-sand px-3 py-3 font-display text-xs font-bold uppercase tracking-wide text-brand-green-dark/70">{h}</th>
                       ))}
                     </tr>
@@ -159,6 +161,7 @@ export function AdminRoomRevenue({
                         <td className="whitespace-nowrap px-3 py-3 text-emerald-700">{rupees(g.cashIn)}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-blue-700">{rupees(g.onlineIn)}</td>
                         <td className={cn("whitespace-nowrap px-3 py-3", g.unpaid > 0 ? "font-medium text-orange-600" : "")}>{rupees(g.unpaid)}</td>
+                        <td className={cn("whitespace-nowrap px-3 py-3", g.revenueLost > 0 ? "font-medium text-red-700 dark:text-red-400" : "")}>{rupees(g.revenueLost)}</td>
                         <td className="whitespace-nowrap px-3 py-3">{g.refundMethod}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-red-700">{rupees(g.cashOut)}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-red-700">{rupees(g.onlineOut)}</td>

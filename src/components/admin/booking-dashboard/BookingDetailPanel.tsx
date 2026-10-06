@@ -78,6 +78,7 @@ export function BookingDetailPanel({
   const [busy, setBusy] = useState(false);
   const [showCheckinPopup, setShowCheckinPopup] = useState(false);
   const [showCollect, setShowCollect] = useState(false);
+  const [showWriteOff, setShowWriteOff] = useState(false);
   const [showOtaCollect, setShowOtaCollect] = useState(false);
   const [otaCancelFlow, setOtaCancelFlow] = useState(false);
   const [otaNoShowFlow, setOtaNoShowFlow] = useState(false);
@@ -234,11 +235,11 @@ export function BookingDetailPanel({
   const discount = walkin
     ? walkinDiscountOnGross(gross, walkin)
     : (booking.source === "manual" ? Math.max(0, gross - booking.amountBeforeTax) : 0);
-  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded);
+  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded, booking.writeOffAmount);
   const collection = collectionCopy(booking.paymentStatus, due);
   const dueAtHotel = due > 0;
   // Prepaid: Paid = total / Balance = ₹0. Check-in copies amountPaid as online; status stays prepaid.
-  const shownPay = displayedStayPayment(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded);
+  const shownPay = displayedStayPayment(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded, booking.writeOffAmount);
   const propertyName = booking.property === "sunnys_paradise" ? "Sunny's Paradise" : "Goko Hostel";
   const bookingId = bookingWhatsAppReference(booking);
   const balanceText = booking.currency && booking.currency !== "INR"
@@ -297,6 +298,9 @@ export function BookingDetailPanel({
     && booking.otaCurrency?.toUpperCase() === "INR"
     && ["received", "hold", "checked_in", "checked_out"].includes(booking.status)
     && hasPermission(role, permissions, "canRecordBookingPayments");
+  const canWriteOffStay = role === "admin"
+    && due > 0
+    && (booking.status === "checked_in" || booking.status === "checked_out");
   const isOtaPostpaid = booking.source === "channel_manager" && booking.otaPaymentTerms === "pay_at_hotel" && booking.otaCurrency?.toUpperCase() === "INR";
   const grossUnrefunded = Math.max(0, (booking.amountPaid || 0) - (booking.amountRefunded || 0));
   const otaRefundOverage = isOtaPostpaid ? Math.max(0, (booking.amountRefunded || 0) - (booking.amountPaid || 0)) : 0;
@@ -425,6 +429,7 @@ export function BookingDetailPanel({
               />
               <InfoRow label="Total" value={formatCurrency(booking.amountTotal)} highlight />
               <InfoRow label="Paid" value={formatCurrency(shownPay.paid)} />
+              {(booking.writeOffAmount || 0) > 0 && <InfoRow label="Revenue Lost" value={`-${formatCurrency(booking.writeOffAmount || 0)}`} className="text-red-700 dark:text-red-400" />}
               <InfoRow
                 label="Balance"
                 value={formatCurrency(shownPay.balance)}
@@ -706,6 +711,12 @@ export function BookingDetailPanel({
                 Collect payment
               </Button>
             )}
+            {canWriteOffStay && (
+              <Button size="sm" variant="destructive" onClick={() => setShowWriteOff(true)} disabled={busy}>
+                <BanIcon className="size-3.5" />
+                Write Off Balance
+              </Button>
+            )}
             {(booking.status === "received" || booking.status === "hold") &&
               canCancelStay && (
                 <Button
@@ -890,6 +901,19 @@ export function BookingDetailPanel({
             return ok;
           }}
           onClose={() => setShowCollect(false)}
+        />
+      )}
+
+      {showWriteOff && (
+        <WriteOffStayModal
+          guestName={booking.guestName}
+          unpaidAmount={due}
+          onClose={() => setShowWriteOff(false)}
+          onConfirm={async (data) => {
+            const ok = await handleAction("writeOffStayRevenue", data);
+            if (ok) setShowWriteOff(false);
+            return Boolean(ok);
+          }}
         />
       )}
 
@@ -1102,6 +1126,52 @@ export function BookingDetailPanel({
         />
       )}
     </>
+  );
+}
+
+function WriteOffStayModal({
+  guestName,
+  unpaidAmount,
+  onClose,
+  onConfirm,
+}: {
+  guestName: string;
+  unpaidAmount: number;
+  onClose: () => void;
+  onConfirm: (data: { amount: number; reason: string; note: string; idempotencyKey: string }) => Promise<boolean>;
+}) {
+  const [amountInput, setAmountInput] = useState("");
+  const [reason, setReason] = useState("Guest unreachable");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const amount = Math.round(Math.max(0, Number(amountInput) || 0) * 100) / 100;
+  const tooHigh = amount > unpaidAmount;
+  const valid = amount > 0 && !tooHigh && (reason !== "Other" || note.trim().length > 0);
+
+  return (
+    <AnimatePresence>
+      <motion.div variants={overlayVariants} initial="hidden" animate="visible" exit="exit" className="fixed inset-0 z-[70] flex overscroll-contain items-center justify-center overflow-y-auto bg-black/30 p-4 backdrop-blur-sm" onClick={() => { if (!saving) onClose(); }}>
+        <motion.div role="dialog" aria-modal="true" aria-labelledby="stay-write-off-title" variants={modalVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0 max-w-sm rounded-2xl border border-red-200 bg-popover p-5 shadow-xl dark:border-red-900/70" onClick={(event) => event.stopPropagation()}>
+          <h3 id="stay-write-off-title" className="text-base font-semibold text-foreground">Write Off Unpaid Balance</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Record uncollectible stay revenue for {guestName}. This is not a payment, discount, refund, or expense.</p>
+          <div className="mt-4 space-y-3">
+            <div>
+              <label htmlFor="stay-write-off-amount" className="mb-1 block text-xs font-medium text-muted-foreground">Amount Lost (₹)</label>
+              <input id="stay-write-off-amount" name="stayWriteOffAmount" type="number" inputMode="decimal" autoComplete="off" min={0} max={unpaidAmount} step="0.01" value={amountInput} onChange={(event) => setAmountInput(event.target.value)} placeholder="0.00" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500" />
+              {tooHigh && <p role="alert" className="mt-1 text-xs text-red-700 dark:text-red-400">Amount cannot exceed unpaid ₹{unpaidAmount.toFixed(2)}.</p>}
+            </div>
+            <div>
+              <label htmlFor="stay-write-off-reason" className="mb-1 block text-xs font-medium text-muted-foreground">Reason</label>
+              <select id="stay-write-off-reason" name="stayWriteOffReason" value={reason} onChange={(event) => setReason(event.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"><option>Guest unreachable</option><option>Guest left without paying</option><option>Payment dispute abandoned</option><option>Other</option></select>
+            </div>
+            {reason === "Other" && <div><label htmlFor="stay-write-off-note" className="mb-1 block text-xs font-medium text-muted-foreground">Note</label><input id="stay-write-off-note" name="stayWriteOffNote" autoComplete="off" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explain why this is uncollectible…" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500" /></div>}
+            {amount > 0 && !tooHigh && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm dark:border-red-900/70 dark:bg-red-950/30"><div className="flex justify-between text-muted-foreground"><span>Unpaid</span><span>₹{unpaidAmount.toFixed(2)}</span></div><div className="mt-1 flex justify-between font-semibold text-red-700 dark:text-red-400"><span>Revenue Lost</span><span>-₹{amount.toFixed(2)}</span></div><div className="mt-1 flex justify-between border-t border-red-200 pt-1 font-semibold text-foreground dark:border-red-900/70"><span>Still Collectible</span><span>₹{(unpaidAmount - amount).toFixed(2)}</span></div></div>}
+          </div>
+          <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button><Button type="button" variant="destructive" size="sm" disabled={!valid || saving} onClick={async () => { if (!valid) return; setSaving(true); try { await onConfirm({ amount, reason, note: note.trim(), idempotencyKey }); } finally { setSaving(false); } }}>{saving ? "Recording…" : "Record Revenue Lost"}</Button></div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 

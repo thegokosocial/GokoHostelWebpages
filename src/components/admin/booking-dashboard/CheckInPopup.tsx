@@ -24,7 +24,7 @@ export function CheckInPopup({
   onCancel: () => void;
 }) {
   const [showPay, setShowPay] = useState(false);
-  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded);
+  const due = stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded, booking.writeOffAmount);
   const collection = collectionCopy(booking.paymentStatus, due);
   const offerCollect = due > 0;
   const paymentDone = !!collection && !collection.due;

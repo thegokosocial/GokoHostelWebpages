@@ -70,6 +70,7 @@ const BOOKINGS_PERMISSIONS: Record<string, ActionPerm> = {
   correctOtaBookingPayment: "canCorrectBookingPayments",
   checkIn: ["canCheckIn", "canAddBooking"],
   collectStayPayment: ["canCheckIn", "canAddBooking"],
+  writeOffStayRevenue: "admin_only",
   checkOut: ["canCheckOut", "canAddBooking"],
   getPendingFoodTab: ["canCheckOut", "canAddBooking"],
   createBooking: "canAddBooking",
@@ -343,6 +344,7 @@ describe("RBAC: Dual-key OR (fine-grained or today's coarse key)", () => {
     expect(checkPermission(role, { canAddBooking: true }, BOOKINGS_PERMISSIONS, "checkIn")).toBe("allowed");
     expect(checkPermission(role, { canCheckIn: true }, BOOKINGS_PERMISSIONS, "checkIn")).toBe("allowed");
     expect(checkPermission(role, { canCheckIn: true }, BOOKINGS_PERMISSIONS, "collectStayPayment")).toBe("allowed");
+    expect(checkPermission(role, { canCheckIn: true }, BOOKINGS_PERMISSIONS, "writeOffStayRevenue")).toBe("admin_required");
     expect(checkPermission(role, { canCheckOut: true }, BOOKINGS_PERMISSIONS, "checkOut")).toBe("allowed");
     expect(checkPermission(role, { canCheckOut: true }, BOOKINGS_PERMISSIONS, "getPendingFoodTab")).toBe("allowed");
     expect(checkPermission(role, { canCheckIn: true }, BOOKINGS_PERMISSIONS, "checkOut")).toBe("forbidden");

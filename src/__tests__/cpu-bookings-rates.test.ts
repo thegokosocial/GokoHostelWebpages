@@ -1395,6 +1395,7 @@ describe("Bookings calendar and rates workflows", () => {
         status: "checked_in",
         amountTotal: 94500,
         amountPaid: 0,
+        amountRefunded: 0,
         paymentStatus: "pay_at_hotel",
         paymentMethod: "",
         cashReceived: 0,

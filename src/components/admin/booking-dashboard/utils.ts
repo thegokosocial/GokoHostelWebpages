@@ -91,11 +91,12 @@ export function displayedStayPayment(
   amountTotal = 0,
   amountPaid = 0,
   amountRefunded = 0,
+  writeOffAmount = 0,
 ): { paid: number; balance: number } {
   if ((status || "").toLowerCase() === "prepaid") {
     return { paid: amountTotal, balance: 0 };
   }
-  return { paid: amountPaid - amountRefunded, balance: Math.max(0, amountTotal - amountPaid + amountRefunded) };
+  return { paid: amountPaid - amountRefunded, balance: Math.max(0, amountTotal - amountPaid + amountRefunded - writeOffAmount) };
 }
 
 export function getHostelToday(): string {

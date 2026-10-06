@@ -953,7 +953,7 @@ async function remapForeignKeys(
 
   // Ordinary cash events have a polymorphic source. Normal full sync applies
   // bookings/food_orders first, so their integer identity map is available here.
-  if (tableName === "cash_payment_events" || (tableName === "guest_receipts" && remapped.sourceType === "food_order")) {
+  if (tableName === "cash_payment_events" || tableName === "revenue_writeoffs" || (tableName === "guest_receipts" && remapped.sourceType === "food_order")) {
     const parentTable = remapped.sourceType === "booking" ? "bookings"
       : remapped.sourceType === "food_order" ? "food_orders" : null;
     const remoteId = parseSyncFkId(remapped.sourceId);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getDb } from "@/db";
-import { accounts, bookingPaymentEvents } from "@/db/schema";
+import { accounts, bookingPaymentEvents, bookings, revenueWriteoffs } from "@/db/schema";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { isRedundantOtaMoneyHistoryAction } from "@/lib/otaPaymentHistory";
@@ -75,6 +75,7 @@ import { WEBSITE_BOOKING_SETTINGS_KEY, readWebsiteBookingSettings } from "@/lib/
 import { GuestCheckoutError, refundWebsiteOrphanCapture } from "@/lib/nativeGuestCheckout";
 import { RazorpayError } from "@/lib/razorpay";
 import { assertCashDateOpen, assertCashPaymentCorrectionOpen, recordCashPaymentCorrection, recordCashPaymentEvent } from "@/lib/cashPaymentJournal";
+import { syncInsert, syncUpdate } from "@/db/syncMeta";
 
 function bookingDateRange(checkinDate: string, checkoutDate?: string | null): string[] {
   return occupiedNights(checkinDate, checkoutDate);
@@ -316,6 +317,7 @@ const ACTION_PERMISSIONS: Record<string, ActionPerm> = {
   assignBeds: "canAddBooking",
   checkIn: ["canCheckIn", "canAddBooking"],
   collectStayPayment: ["canCheckIn", "canAddBooking"],
+  writeOffStayRevenue: "admin_only",
   collectOtaBookingPayment: "canRecordBookingPayments",
   refundOtaBookingPayment: "canDeleteBooking",
   correctOtaBookingPayment: "canCorrectBookingPayments",
@@ -414,7 +416,7 @@ export async function POST(req: NextRequest) {
       const bookings = result.bookings.map((b) => {
         const checkout = stayCheckout(b.checkinDate, b.checkoutDate);
         const nights = checkout ? diffDays(b.checkinDate, checkout) : 0;
-        return { ...b, nights, balance: Math.max(0, (b.amountTotal ?? 0) - (b.amountPaid ?? 0) + (b.amountRefunded ?? 0)) };
+        return { ...b, nights, balance: stayDueAtHotel(b.paymentStatus, b.amountTotal, b.amountPaid, b.amountRefunded, b.writeOffAmount) };
       });
       return NextResponse.json({ ...result, bookings, role, permissions });
     }
@@ -463,7 +465,7 @@ export async function POST(req: NextRequest) {
         const checkout = stayCheckout(b.checkinDate, b.checkoutDate);
         const nights = checkout ? diffDays(b.checkinDate, checkout) : 0;
         // Ledger, not the detail card. Prepaid check-in copies amountPaid; until then this is the OTA total.
-        const balance = Math.max(0, (b.amountTotal ?? 0) - (b.amountPaid ?? 0) + (b.amountRefunded ?? 0));
+        const balance = stayDueAtHotel(b.paymentStatus, b.amountTotal, b.amountPaid, b.amountRefunded, b.writeOffAmount);
         return { ...b, nights, balance };
       });
 
@@ -523,7 +525,7 @@ export async function POST(req: NextRequest) {
         booking: {
           ...detail.booking,
           nights,
-          balance: Math.max(0, (detail.booking.amountTotal ?? 0) - (detail.booking.amountPaid ?? 0) + (detail.booking.amountRefunded ?? 0)),
+          balance: stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid, detail.booking.amountRefunded, detail.booking.writeOffAmount),
         },
         assignments: assignedOnly.flatMap((assignment) => {
           const bed = bedById.get(assignment.bedId);
@@ -1079,7 +1081,7 @@ export async function POST(req: NextRequest) {
       };
 
       // Desk collect when due. Prepaid is never due; check-in records it as online stay revenue below.
-      const dueAtCheckIn = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid, detail.booking.amountRefunded);
+      const dueAtCheckIn = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid, detail.booking.amountRefunded, detail.booking.writeOffAmount);
       let collectedAtCheckIn = false;
       let collectedMethod = "";
       let prepaidRecorded = 0;
@@ -1226,7 +1228,7 @@ export async function POST(req: NextRequest) {
           duplicate: result.duplicate,
           eventId: result.eventId,
           booking: result.booking,
-          balance: Math.max(0, (result.booking.amountTotal || 0) - (result.booking.amountPaid || 0) + (result.booking.amountRefunded || 0)),
+          balance: stayDueAtHotel(result.booking.paymentStatus, result.booking.amountTotal, result.booking.amountPaid, result.booking.amountRefunded, result.booking.writeOffAmount),
         });
       } catch (error) {
         if (error instanceof BookingPaymentError) {
@@ -1312,7 +1314,7 @@ export async function POST(req: NextRequest) {
       if (st !== "checked_in" && st !== "checked_out") {
         return NextResponse.json({ error: "Collect is only for checked-in or checked-out stays" }, { status: 409 });
       }
-      const due = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid, detail.booking.amountRefunded);
+      const due = stayDueAtHotel(detail.booking.paymentStatus, detail.booking.amountTotal, detail.booking.amountPaid, detail.booking.amountRefunded, detail.booking.writeOffAmount);
       if (due <= 0) {
         return NextResponse.json({ error: "Nothing due" }, { status: 400 });
       }
@@ -1374,6 +1376,81 @@ export async function POST(req: NextRequest) {
         action: "Payment Collected",
         details: `Stay payment collected (${merged.paymentMethod}) by ${actingUser}`,
         performedBy: actingUser,
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "writeOffStayRevenue") {
+      const bookingId = Number(body.bookingId);
+      const amount = Number(body.amount);
+      const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 120) : "";
+      const note = typeof body.note === "string" ? body.note.trim().slice(0, 240) : "";
+      const requestKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim().slice(0, 120) : "";
+      const amountPaise = Math.round(amount * 100);
+      if (!Number.isInteger(bookingId) || bookingId <= 0 || !Number.isFinite(amount) || amount <= 0 || !Number.isSafeInteger(amountPaise) || amountPaise <= 0) {
+        return NextResponse.json({ error: "A positive write-off amount is required" }, { status: 400 });
+      }
+      if (!reason || !requestKey) return NextResponse.json({ error: "Reason and idempotency key are required" }, { status: 400 });
+      if (!/^[A-Za-z0-9-]{1,120}$/.test(requestKey)) return NextResponse.json({ error: "Invalid idempotency key" }, { status: 400 });
+      if (reason === "Other" && !note) return NextResponse.json({ error: "Add a note when using Other" }, { status: 400 });
+
+      const detail = await getBookingDetail(bookingId);
+      if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (detail.booking.status !== "checked_in" && detail.booking.status !== "checked_out") {
+        return NextResponse.json({ error: "Revenue can be written off only for a checked-in or checked-out stay" }, { status: 409 });
+      }
+      const db = getDb() as any;
+      const writeOffKey = `${requestKey}:booking:${bookingId}:${detail.booking.bookingCycle}`;
+      const prior = await db.select({ id: revenueWriteoffs.id }).from(revenueWriteoffs)
+        .where(eq(revenueWriteoffs.idempotencyKey, writeOffKey)).limit(1);
+      if (prior.length > 0) return NextResponse.json({ success: true, idempotent: true });
+      const due = stayDueAtHotel(
+        detail.booking.paymentStatus,
+        detail.booking.amountTotal,
+        detail.booking.amountPaid,
+        detail.booking.amountRefunded,
+        detail.booking.writeOffAmount,
+      );
+      if (amount > due) return NextResponse.json({ error: `Write-off cannot exceed the remaining ₹${due.toFixed(2)}` }, { status: 400 });
+
+      const now = new Date().toISOString();
+      const currentWriteOff = Math.max(0, Number(detail.booking.writeOffAmount) || 0);
+      const nextWriteOff = currentWriteOff + amount;
+      const reference = detail.booking.gokoBookingId || detail.booking.bookingRef || `Booking #${bookingId}`;
+      const bookingUpdate = syncUpdate({ writeOffAmount: nextWriteOff, updatedAt: now });
+      const writeOffRecord = syncInsert({
+        idempotencyKey: writeOffKey,
+        sourceType: "booking" as const,
+        sourceId: bookingId,
+        bookingCycle: detail.booking.bookingCycle,
+        amountPaise,
+        reason,
+        note,
+        actor: actingUser,
+        guestNameSnapshot: detail.booking.guestName || "",
+        referenceSnapshot: reference,
+        createdAt: now,
+      });
+      const writes = [
+        db.update(bookings).set(bookingUpdate).where(eq(bookings.id, bookingId)),
+        db.insert(revenueWriteoffs).values(writeOffRecord),
+      ];
+      if (typeof db.batch === "function") await db.batch(writes);
+      else db.transaction((tx: any) => {
+        tx.update(bookings).set(bookingUpdate).where(eq(bookings.id, bookingId)).run();
+        tx.insert(revenueWriteoffs).values(writeOffRecord).run();
+      });
+      await addBookingHistoryEntry({
+        bookingId,
+        action: "Revenue Written Off",
+        details: `₹${amount.toFixed(2)} written off. Reason: ${reason}${note ? `. Note: ${note}` : ""}`,
+        performedBy: actingUser,
+      });
+      await addAuditEntry({
+        username: actingUser,
+        action: "booking_revenue_writeoff",
+        target: `booking:${bookingId}`,
+        details: `Revenue write-off ₹${amount.toFixed(2)}. Reason: ${reason}${note ? `. Note: ${note}` : ""}`,
       });
       return NextResponse.json({ success: true });
     }
