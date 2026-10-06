@@ -9,6 +9,40 @@ import {
 
 test.describe.configure({ timeout: 90_000 });
 
+test("Payment History loads every page in the selected date range", async ({ page }) => {
+  const historyOrders = Array.from({ length: 201 }, (_, index) => ({
+    ...SAMPLE_ORDER,
+    id: 1_000 + index,
+    orderNumber: `D278-${index + 1}`,
+    guestName: `History guest ${index + 1}`,
+    createdAt: "2026-10-05T06:00:00.000Z",
+  }));
+  const { foodRequests } = await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canMarkPaid: true },
+    onFoodOrders: (body) => {
+      if (body.action === "listOrders" && body.status === "all_history" && !body.paymentStatus) {
+        const offset = Number(body.offset || 0);
+        return { json: { orders: historyOrders.slice(offset, offset + 200) } };
+      }
+      return null;
+    },
+  });
+  await loginAdmin(page);
+  await page.getByRole("button", { name: "Payment History", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "Payment History" })).toBeVisible();
+  await expect(page.getByText("201 orders · 201 guests")).toBeVisible();
+
+  const historyRequests = () => foodRequests.filter((request) => request.action === "listOrders" && request.status === "all_history" && !request.paymentStatus);
+  expect(historyRequests()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ limit: 200, offset: 0, includeItems: false, includeModifications: false }),
+    expect.objectContaining({ limit: 200, offset: 200, includeItems: false, includeModifications: false }),
+  ]));
+
+  const requestsBeforeRangeChange = historyRequests().length;
+  await page.getByRole("button", { name: "15 days", exact: true }).click();
+  await expect.poll(() => historyRequests().slice(requestsBeforeRangeChange).some((request) => request.offset === 200)).toBe(true);
+});
+
 test("Order Summary cash pay records markOrderPaid", async ({ page }) => {
   const { foodRequests } = await mockAdminShell(page, {
     permissions: { canViewFoodOrders: true, canViewFoodTabs: true, canMarkPaid: true },

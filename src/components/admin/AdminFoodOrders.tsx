@@ -29,6 +29,7 @@ import { foodTaxPercent, foodTaxRateFromAmounts } from "@/lib/foodLookup";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { normalizePhone } from "@/lib/phoneUtils";
 import { foodAmountPaid, foodDue, foodPaymentStatus, isFoodDiscountRemovable } from "@/lib/foodPaymentBalance";
+import { foodPaymentHistoryDateRange, type FoodPaymentHistoryRange } from "@/lib/foodPaymentHistoryRange";
 import {
   hostelStubFromPrefill,
   loadActiveGuestsWithMatch,
@@ -3906,7 +3907,8 @@ function PaymentSummary({ apiCall, password, username }: { apiCall: (body: any) 
 
 // ─── Payment History Panel ────────────────────────────────────────────────────
 
-type HistoryRange = "7" | "15" | "30" | "custom";
+type HistoryRange = `${FoodPaymentHistoryRange}` | "custom";
+const PAYMENT_HISTORY_PAGE_SIZE = 200;
 
 function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Promise<Response>; onClose: () => void }) {
   const { showError } = useAdminToast();
@@ -3917,30 +3919,47 @@ function PaymentHistoryPanel({ apiCall, onClose }: { apiCall: (body: any) => Pro
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const requestGeneration = useRef(0);
 
   const getDateRange = useCallback(() => {
     if (range === "custom") return { from: customFrom, to: customTo };
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - parseInt(range));
-    return { from: localDateStr(from), to: localDateStr(to) };
+    return foodPaymentHistoryDateRange(Number(range) as FoodPaymentHistoryRange);
   }, [range, customFrom, customTo]);
 
   const loadHistory = useCallback(async () => {
     const { from, to } = getDateRange();
     if (!from || !to) return;
+    const generation = ++requestGeneration.current;
     setLoading(true);
     try {
-      const res = await apiCall({ action: "listOrders", dateFrom: from, dateTo: to, limit: 200, includeItems: false, includeModifications: false });
-      if (res.ok) {
+      const allOrders: Order[] = [];
+      for (let offset = 0; ; offset += PAYMENT_HISTORY_PAGE_SIZE) {
+        const res = await apiCall({ action: "listOrders", status: "all_history", dateFrom: from, dateTo: to, limit: PAYMENT_HISTORY_PAGE_SIZE, offset, includeItems: false, includeModifications: false });
+        if (generation !== requestGeneration.current) return;
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (generation === requestGeneration.current) {
+            setOrders([]);
+            showError("Payment History", data.error || "Could not load history");
+          }
+          return;
+        }
         const data = await res.json();
-        setOrders(data.orders || []);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setOrders([]);
-        showError("Payment History", data.error || "Could not load history");
+        const page = data.orders || [];
+        allOrders.push(...page);
+        if (page.length < PAYMENT_HISTORY_PAGE_SIZE) break;
       }
-    } finally { setLoading(false); }
+      if (generation === requestGeneration.current) {
+        setOrders(allOrders);
+      }
+    } catch {
+      if (generation === requestGeneration.current) {
+        setOrders([]);
+        showError("Payment History", "Could not load history");
+      }
+    } finally {
+      if (generation === requestGeneration.current) setLoading(false);
+    }
   }, [apiCall, getDateRange, showError]);
 
   useEffect(() => { if (range !== "custom") loadHistory(); }, [range, loadHistory]);
