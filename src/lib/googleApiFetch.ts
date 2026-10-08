@@ -231,6 +231,7 @@ export async function driveUploadFile(
         "Content-Type": `multipart/related; boundary=${boundary}`,
       },
       body,
+      signal: AbortSignal.timeout(15_000),
     }
   );
 
@@ -242,6 +243,7 @@ export async function driveUploadFile(
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ role: "reader", type: "anyone" }),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!permRes.ok) {
     throw new Error(`Drive sharing failed (${permRes.status})`);
@@ -270,7 +272,7 @@ export async function driveGetOrCreateFolder(parentId: string, folderName: strin
     `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
   )}&fields=files(id)`;
 
-  const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${token}` } });
+  const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) });
   if (searchRes.ok) {
     const searchData = await searchRes.json();
     if (searchData.files?.length > 0) return searchData.files[0].id;
@@ -280,6 +282,7 @@ export async function driveGetOrCreateFolder(parentId: string, folderName: strin
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }),
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!createRes.ok) return parentId;

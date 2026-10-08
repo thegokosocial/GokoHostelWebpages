@@ -234,7 +234,7 @@ describe("self check-in create (disposable SQLite)", () => {
     expect(countCheckins()).toBe(1);
   });
 
-  it("still inserts when Drive upload throws on the online path", async () => {
+  it("does not insert when required Drive upload throws on the online path", async () => {
     state.offline = false;
     state.driveUpload.mockRejectedValue(new Error("Drive unavailable"));
     process.env.GOOGLE_DRIVE_FOLDER_ID = "root-folder";
@@ -245,12 +245,8 @@ describe("self check-in create (disposable SQLite)", () => {
       name: "Drive Fail Guest",
       clientIdValidation: "verified",
     })));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true });
-    expect(countCheckins()).toBe(1);
-    const row = sqlite.prepare("SELECT id_card_link, name FROM checkins").get() as { id_card_link: string; name: string };
-    expect(row.name).toBe("Drive Fail Guest");
-    expect(row.id_card_link).toBe("Upload failed");
+    expect(res.status).toBe(503);
+    expect(countCheckins()).toBe(0);
   });
 
   it("rejects missing or invalid idempotency keys", async () => {

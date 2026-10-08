@@ -53,8 +53,9 @@ describe("self-checkin contrast and error surfacing contracts", () => {
     expect(form).not.toContain("runAction");
   });
 
-  it("skips re-Vision after verify and uses progressive other-side prompts", () => {
-    expect(form).toContain('formData.append("clientIdValidation", "verified")');
+  it("uses a server attestation after verify and keeps progressive other-side prompts", () => {
+    expect(form).toContain('formData.append("idValidationAttestation", idValidationAttestation)');
+    expect(form).not.toContain('clientIdValidation");');
     expect(form).toContain("setIdServerError(staffReview)");
     expect(form).toContain("requiresBothIdSides");
     expect(form).toContain("idFrontFiles");

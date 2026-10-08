@@ -14,7 +14,7 @@ const tinyJpeg = {
 type CheckinCapture = {
   raw: string;
   hasIdempotencyKey: boolean;
-  clientIdValidation: string | null;
+  idValidationAttestation: string | null;
 };
 
 async function stubSelfCheckinApis(
@@ -29,6 +29,7 @@ async function stubSelfCheckinApis(
   const validateSequence = opts.validateSequence ?? [
     {
       valid: true,
+      attestation: "test-signed-attestation",
       documentType: "aadhaar",
       confidence: "high",
       layers: ["both_sides_ok", "name_verified"],
@@ -80,11 +81,11 @@ async function stubSelfCheckinApis(
     if (url.pathname === "/api/checkin" && method === "POST") {
       const raw = route.request().postData() || "";
       const keyMatch = raw.match(/name="idempotencyKey"\r?\n\r?\n([0-9a-f-]{36})/i);
-      const verifiedMatch = raw.match(/name="clientIdValidation"\r?\n\r?\n([^\r\n]+)/i);
+      const attestationMatch = raw.match(/name="idValidationAttestation"\r?\n\r?\n([^\r\n]+)/i);
       opts.onCheckin?.({
         raw,
         hasIdempotencyKey: Boolean(keyMatch?.[1]),
-        clientIdValidation: verifiedMatch?.[1] ?? null,
+        idValidationAttestation: attestationMatch?.[1] ?? null,
       });
       await route.fulfill({ json: { success: true } });
       return;
@@ -182,6 +183,26 @@ test.describe("self check-in guest journeys", () => {
     await expect(page.getByRole("button", { name: "Complete Check-in" })).toBeEnabled();
   });
 
+  test("QR or other unrecognized upload blocks completion and asks for a valid ID", async ({ page }) => {
+    await stubSelfCheckinApis(page, {
+      lookup: null,
+      validateSequence: [{
+        valid: false,
+        documentType: "unknown",
+        confidence: "high",
+        layers: ["invalid_id"],
+        message: "This does not appear to be a valid ID. Please upload Aadhaar, Driving Licence, or Passport.",
+      }],
+    });
+    await skipToForm(page);
+    await fillRequiredGuestFields(page);
+    await page.locator("#idType").selectOption("aadhaar");
+    await galleryInputs(page).first().setInputFiles({ ...tinyJpeg, name: "qr-photo.jpg" });
+    await page.getByRole("button", { name: "Verify document" }).click();
+    await expect(page.getByText(/does not appear to be a valid ID/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Complete Check-in" })).toBeDisabled();
+  });
+
   test("returning guest: Remove X clears previous ID preview", async ({ page }) => {
     await stubSelfCheckinApis(page);
     await page.goto("/self-checkin");
@@ -220,7 +241,7 @@ test.describe("self check-in guest journeys", () => {
     await expect(page.getByText("Check-in complete!")).toBeVisible({ timeout: 10_000 });
     expect(capture).not.toBeNull();
     expect(capture!.hasIdempotencyKey).toBe(true);
-    expect(capture!.clientIdValidation).toBe("verified");
+    expect(capture!.idValidationAttestation).toBe("test-signed-attestation");
   });
 
   test("new guest can select Goko Hostel Website without a booking ID", async ({ page }) => {

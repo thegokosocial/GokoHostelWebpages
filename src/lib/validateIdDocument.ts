@@ -125,6 +125,8 @@ export type ValidationResult = {
   needsDocReview?: boolean;
   ocrText?: string;
   spoofWarning?: boolean;
+  /** Vision/credential transport failed; this is the only staff-review fallback. */
+  unavailable?: boolean;
 };
 
 export type IdSidesResult = {
@@ -381,15 +383,14 @@ function runTextValidation(
   guestName?: string,
   nationality?: string | null,
 ): ValidationResult {
-  // Unreadable OCR is not high-confidence junk — soft-accept for staff review.
+  // A provider response with unreadable text cannot establish a valid ID.
   if (!text || text.trim().length < 10) {
     return {
-      valid: true,
+      valid: false,
       documentType: "unknown",
-      confidence: "low",
-      needsDocReview: true,
-      layers: ["text_detection", "unreadable", "doc_review"],
-      message: "Could not read clear text from this upload. You can still submit — staff will verify manually.",
+      confidence: "high",
+      layers: ["text_detection", "unreadable", "invalid_id"],
+      message: `Could not read a valid ID from this upload. ${ALLOWED_ID_HINT}`,
     };
   }
 
@@ -411,14 +412,13 @@ function runTextValidation(
     const { type, matchCount } = detectDocumentType(text);
     const validIdTypes: DocumentType[] = ["aadhaar", "driving_licence", "passport"];
     if (!validIdTypes.includes(type) || matchCount === 0) {
-      layers.push("invalid_id", "doc_review");
+      layers.push("invalid_id");
       return {
-        valid: true,
+        valid: false,
         documentType: "unknown",
-        confidence: "low",
-        needsDocReview: true,
+        confidence: "high",
         layers,
-        message: `Document accepted for staff review. ${ALLOWED_ID_HINT}`,
+        message: `This does not appear to be a valid ID. ${ALLOWED_ID_HINT}`,
       };
     }
 
@@ -526,32 +526,31 @@ function runTextValidation(
     }
     layers.push("visa_unidentified");
     return {
-      valid: true,
+      valid: false,
       documentType: "unknown",
-      confidence: "low",
-      needsDocReview: true,
+      confidence: "high",
       layers,
-      message: "Could not identify this as a visa automatically. You can still submit — staff will verify.",
+      message: "Could not identify this as a valid visa. Please upload a clear visa document.",
     };
   }
 
   return {
-    valid: true,
+    valid: false,
     documentType: "unknown",
-    confidence: "low",
-    needsDocReview: true,
-    layers: ["doc_review"],
-    message: "Document accepted for staff review.",
+    confidence: "high",
+    layers: ["invalid_id"],
+    message: "Please upload a valid identity document.",
   };
 }
 
 function unavailableResult(): ValidationResult {
   return {
-    valid: true,
+    valid: false,
     documentType: "unknown",
     confidence: "low",
+    unavailable: true,
     layers: ["validation_unavailable"],
-    message: "Validation service unavailable, document accepted for staff review.",
+    message: "Validation service temporarily unavailable. You can still submit — staff will verify manually.",
   };
 }
 
@@ -640,14 +639,17 @@ export async function validateMultipleFiles(
   }
 
   try {
+    const analyses: VisionAnalysis[] = [];
+    for (let index = 0; index < files.length; index += 2) {
+      const batch = files.slice(index, index + 2);
+      analyses.push(...await Promise.all(batch.map((file) => visionAnalyze(file.buffer.toString("base64"), file.mimeType))));
+    }
     const allTexts: string[] = [];
     const allLabels: string[] = [];
     const allObjects: string[] = [];
     let safeSearch: VisionAnalysis["safeSearch"] | null = null;
 
-    for (const file of files) {
-      const base64 = file.buffer.toString("base64");
-      const analysis = await visionAnalyze(base64, file.mimeType);
+    for (const analysis of analyses) {
       allTexts.push(analysis.text);
       allLabels.push(...analysis.labels);
       allObjects.push(...analysis.objects);

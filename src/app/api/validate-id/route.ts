@@ -3,10 +3,17 @@ import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocum
 import { incrementStat, addSystemLog } from "@/db/queries";
 import { isOfflineMode } from "@/lib/runtime";
 import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
+import { digestFiles, issueCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
+import { assertGuestOrigin, guestBookingRateLimit } from "@/lib/guestBookingRateLimit";
 
 export async function POST(req: NextRequest) {
+  try { assertGuestOrigin(req); } catch { return NextResponse.json({ error: "Invalid request origin" }, { status: 403 }); }
+  const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
+  if (!guestBookingRateLimit(`validate-id:${ip}`, 12, 10 * 60_000)) {
+    return NextResponse.json({ error: "Too many document checks. Please wait a few minutes and try again." }, { status: 429 });
+  }
   if (isOfflineMode()) {
-    return NextResponse.json({ valid: true, offline: true, message: "ID validation unavailable offline" });
+    return NextResponse.json({ valid: false, unavailable: true, offline: true, message: "ID validation unavailable offline" }, { status: 503 });
   }
 
   try {
@@ -44,6 +51,13 @@ export async function POST(req: NextRequest) {
         nationality,
       );
       incrementStat("vision", 1).catch(() => {});
+      if (result.unavailable) return NextResponse.json(result, { status: 503 });
+      if (result.valid) {
+        const attestation = await issueCheckinValidationAttestation({
+          category: category as "id" | "visa", fileDigests: await digestFiles(files), idType: idType || "", guestName: guestName || "", nationality: nationality || "",
+        });
+        return NextResponse.json({ ...result, attestation });
+      }
       return NextResponse.json(result);
     }
 
@@ -59,6 +73,13 @@ export async function POST(req: NextRequest) {
       nationality,
     );
     incrementStat("vision", files.length).catch(() => {});
+    if (result.unavailable) return NextResponse.json(result, { status: 503 });
+    if (result.valid) {
+      const attestation = await issueCheckinValidationAttestation({
+        category: category as "id" | "visa", fileDigests: await digestFiles(files), idType: idType || "", guestName: guestName || "", nationality: nationality || "",
+      });
+      return NextResponse.json({ ...result, attestation });
+    }
     return NextResponse.json(result);
   } catch (error) {
     console.error("Validate ID error:", error);

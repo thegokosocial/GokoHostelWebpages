@@ -156,6 +156,7 @@ describe("self-check-in mock E2E workflows", () => {
       private_key: "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n",
     }));
     vi.stubEnv("GOOGLE_DRIVE_FOLDER_ID", "root-folder");
+    vi.stubEnv("CHECKIN_VALIDATION_TOKEN_SECRET", "01234567890123456789012345678901");
   });
 
   describe("happy path: verify then complete", () => {
@@ -239,7 +240,7 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("name_review");
     });
 
-    it("Vision throw with 1 Aadhaar file soft-allows check-in as pending", async () => {
+    it("Vision outage is the only pending staff-review fallback", async () => {
       q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
 
       const validateRes = await validateIdPOST(validateRequest({
@@ -247,8 +248,10 @@ describe("self-check-in mock E2E workflows", () => {
         guestName: "Pawan Dhiran",
         nationality: "India",
       }));
+      expect(validateRes.status).toBe(503);
       const validated = await validateRes.json();
-      expect(validated.valid).toBe(true);
+      expect(validated.valid).toBe(false);
+      expect(validated.unavailable).toBe(true);
       expect(validated.layers).toContain("validation_unavailable");
 
       q.visionAnalyze.mockRejectedValue(new Error("Vision annotate 403"));
@@ -295,7 +298,7 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("pending");
     });
 
-    it("unreadable OCR soft-allows with doc_review", async () => {
+    it("unreadable OCR rejects instead of creating a staff-review check-in", async () => {
       q.visionAnalyze.mockResolvedValue(visionOk("tiny"));
 
       const validateRes = await validateIdPOST(validateRequest({
@@ -304,16 +307,15 @@ describe("self-check-in mock E2E workflows", () => {
         nationality: "India",
       }));
       const validated = await validateRes.json();
-      expect(validated.valid).toBe(true);
+      expect(validated.valid).toBe(false);
       expect(validated.layers).toContain("unreadable");
-      expect(verifiedFromIdValidation(validated)).toBe("doc_review");
 
       const checkinRes = await checkinPOST(checkinRequest(baseFields({
         name: "Guest",
         contactNumber: "9000000004",
       })));
-      expect(checkinRes.status).toBe(200);
-      expect(q.addCheckin.mock.calls[0][0].verified).toBe("doc_review");
+      expect(checkinRes.status).toBe(422);
+      expect(q.addCheckin).not.toHaveBeenCalled();
     });
   });
 
@@ -436,13 +438,25 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin.mock.calls[0][0].idCardLink).toContain("prev");
     });
 
-    it("skips Vision when image_validation is off and still inserts", async () => {
+    it("does not reuse a failed-upload placeholder as identity evidence", async () => {
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(baseFields({ contactNumber: "9000000017" }))) fd.set(k, v);
+      fd.set("idempotencyKey", "cccccccc-cccc-4ccc-8ccc-cccccccccc17");
+      fd.set("prevIdCardLink", "Upload failed");
+      const res = await checkinPOST(new NextRequest("http://localhost/api/checkin", {
+        method: "POST", body: fd, headers: { origin: "http://localhost" },
+      }));
+      expect(res.status).toBe(400);
+      expect(q.addCheckin).not.toHaveBeenCalled();
+    });
+
+    it("does not bypass public ID validation when image_validation is off", async () => {
       q.getSetting.mockResolvedValue("off");
       q.visionAnalyze.mockResolvedValue(visionOk(PRAVALLIKA_PAN));
       const res = await checkinPOST(checkinRequest(baseFields({ contactNumber: "9000000011" })));
-      expect(res.status).toBe(200);
-      expect(q.visionAnalyze).not.toHaveBeenCalled();
-      expect(q.addCheckin.mock.calls[0][0].verified).toBe("pending");
+      expect(res.status).toBe(422);
+      expect(q.visionAnalyze).toHaveBeenCalled();
+      expect(q.addCheckin).not.toHaveBeenCalled();
     });
 
     it("idempotent duplicate active visit returns success without second insert", async () => {
@@ -459,15 +473,15 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin).not.toHaveBeenCalled();
     });
 
-    it("Drive upload failure does not block check-in insert", async () => {
+    it("Drive upload failure does not create a check-in without a document", async () => {
       q.visionAnalyze.mockResolvedValue(visionOk(DIGILOCKER_AADHAAR_WITH_ADDRESS));
       q.driveUploadFile.mockRejectedValue(new Error("Drive OAuth expired"));
       const res = await checkinPOST(checkinRequest(baseFields({
         name: "Test User",
         contactNumber: "9000000012",
       })));
-      expect(res.status).toBe(200);
-      expect(q.addCheckin.mock.calls[0][0].idCardLink).toBe("Upload failed");
+      expect(res.status).toBe(503);
+      expect(q.addCheckin).not.toHaveBeenCalled();
     });
 
     it("rejects foreigner without visa before Vision", async () => {
@@ -502,15 +516,22 @@ describe("self-check-in mock E2E workflows", () => {
       expect(saved.vibeMatched).toBeUndefined();
     });
 
-    it("skips second Vision pass when clientIdValidation=verified", async () => {
+    it("skips second Vision pass only with an attestation for the exact upload", async () => {
       q.visionAnalyze.mockResolvedValue(visionOk(SUGUMAR_AADHAAR_BOTH));
-      const res = await checkinPOST(checkinRequest({
-        ...baseFields({ contactNumber: "9000000015" }),
-        clientIdValidation: "verified",
-      }));
+      const validateRes = await validateIdPOST(validateRequest({ idType: "aadhaar", guestName: "Sugumar G", nationality: "India" }));
+      const { attestation } = await validateRes.json();
+      q.visionAnalyze.mockClear();
+      const res = await checkinPOST(checkinRequest({ ...baseFields({ contactNumber: "9000000015" }), idValidationAttestation: attestation }));
       expect(res.status).toBe(200);
       expect(q.visionAnalyze).not.toHaveBeenCalled();
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("yes");
+    });
+
+    it("does not trust a forged browser validation value", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(SUGUMAR_AADHAAR_BOTH));
+      const res = await checkinPOST(checkinRequest({ ...baseFields({ contactNumber: "9000000016" }), clientIdValidation: "verified" }));
+      expect(res.status).toBe(200);
+      expect(q.visionAnalyze).toHaveBeenCalledTimes(1);
     });
   });
 

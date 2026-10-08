@@ -293,6 +293,11 @@ function driveThumb(link: string): string | null {
   return fileId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w400` : null;
 }
 
+function reusableDriveLinks(joined: string): string {
+  const links = joined.split(" | ").map((link) => link.trim()).filter(Boolean);
+  return links.length > 0 && links.every((link) => /^https:\/\/drive\.google\.com\/file\/d\/[^/]+\/view(?:\?|$)/.test(link)) ? joined : "";
+}
+
 function PreviousDocumentPreview({
   link,
   label,
@@ -392,27 +397,18 @@ export function SelfCheckinForm() {
   const [idValidationMsg, setIdValidationMsg] = useState<{ valid: boolean; message: string; staffReview?: boolean } | null>(null);
   const [validatingId, setValidatingId] = useState(false);
   const [idValidated, setIdValidated] = useState(false);
+  const [idValidationAttestation, setIdValidationAttestation] = useState("");
   const [idServerError, setIdServerError] = useState(false);
   const [visaValidationMsg, setVisaValidationMsg] = useState<{ valid: boolean; message: string; staffReview?: boolean } | null>(null);
   const [validatingVisa, setValidatingVisa] = useState(false);
   const [visaServerError, setVisaServerError] = useState(false);
+  const [visaValidationAttestation, setVisaValidationAttestation] = useState("");
   const [validationEnabled, setValidationEnabled] = useState(true);
   const [validationLoaded, setValidationLoaded] = useState(false);
   const [detectedIdType, setDetectedIdType] = useState<string | null>(null);
   const prefilledNameRef = useRef<{ firstName: string; lastName: string } | null>(null);
 
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.image_validation === "off") {
-          setValidationEnabled(false);
-          setIdValidated(true);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setValidationLoaded(true));
-  }, []);
+  useEffect(() => { setValidationLoaded(true); }, []);
 
   const {
     register,
@@ -468,6 +464,7 @@ export function SelfCheckinForm() {
     setSidePrompt(null);
     setOfferOtherSide(false);
     setValue("idImages", null, { shouldValidate: true });
+    setIdValidationAttestation("");
   };
 
   useEffect(() => {
@@ -500,8 +497,10 @@ export function SelfCheckinForm() {
       if (json.found && json.data) {
         const d = json.data as LookupData;
         setReturnGuest(d);
-        setPrevIdCardLink(d.idCardLink || "");
-        setPrevVisaLink(d.visaLink || "");
+        const reusableId = reusableDriveLinks(d.idCardLink || "");
+        const reusableVisa = reusableDriveLinks(d.visaLink || "");
+        setPrevIdCardLink(reusableId);
+        setPrevVisaLink(reusableVisa);
 
         const { date: nowDate, time: nowTime } = getNow();
         const formCFields: Record<string, string> = {};
@@ -539,12 +538,12 @@ export function SelfCheckinForm() {
           idType: (["aadhaar", "driving_licence", "passport"].includes(d.idType) ? d.idType : undefined) as any,
           bookingPlatform: undefined as any,
           bookingId: "",
-          prevIdCardLink: d.idCardLink || undefined,
-          prevVisaLink: d.visaLink || undefined,
+          prevIdCardLink: reusableId || undefined,
+          prevVisaLink: reusableVisa || undefined,
           ...formCFields,
         });
 
-        if (d.idCardLink) {
+        if (reusableId) {
           setIdValidated(true);
         }
       } else {
@@ -598,6 +597,7 @@ export function SelfCheckinForm() {
     setPrevIdCardLink("");
     setValue("prevIdCardLink", undefined);
     setIdValidated(false);
+    setIdValidationAttestation("");
     appendDocFile(file, idFrontFiles, setIdFrontFiles, (next) => {
       syncIdImages(next, idBackFiles);
       setIdValidationMsg(null);
@@ -609,6 +609,7 @@ export function SelfCheckinForm() {
     setPrevIdCardLink("");
     setValue("prevIdCardLink", undefined);
     setIdValidated(false);
+    setIdValidationAttestation("");
     appendDocFile(file, idBackFiles, setIdBackFiles, (next) => {
       syncIdImages(idFrontFiles, next);
       setIdValidationMsg(null);
@@ -621,6 +622,7 @@ export function SelfCheckinForm() {
     setIdFrontFiles(next);
     syncIdImages(next, idBackFiles);
     if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
+    setIdValidationAttestation("");
     setIdValidationMsg(null);
     if (next.length === 0 && idBackFiles.length === 0) {
       setSidePrompt(null);
@@ -633,6 +635,7 @@ export function SelfCheckinForm() {
     setIdBackFiles(next);
     syncIdImages(idFrontFiles, next);
     if (validationEnabled) { setIdValidated(false); setIdServerError(false); }
+    setIdValidationAttestation("");
     setIdValidationMsg(null);
   };
 
@@ -686,6 +689,7 @@ export function SelfCheckinForm() {
         const staffReview = isStaffReviewValidation(result);
         setIdValidationMsg({ valid: true, staffReview, message: result.message });
         setIdValidated(true);
+        setIdValidationAttestation(typeof result.attestation === "string" ? result.attestation : "");
         setIdServerError(staffReview);
         setDetectedIdType(null);
         setSidePrompt(null);
@@ -696,20 +700,24 @@ export function SelfCheckinForm() {
         setOfferOtherSide(false);
         setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
+        setIdValidationAttestation("");
         setDetectedIdType(null);
       } else if (layers.includes("type_mismatch") && result.documentType !== "unknown") {
         setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
+        setIdValidationAttestation("");
         setDetectedIdType(result.documentType);
       } else if (layers.some((l: string) => String(l).startsWith("unsupported_"))) {
         setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
+        setIdValidationAttestation("");
         setDetectedIdType(null);
         clearIdUploads();
       } else {
         // Remaining hard rejects (SafeSearch / label junk)
         setIdValidationMsg({ valid: false, message: result.message });
         setIdValidated(false);
+        setIdValidationAttestation("");
         setDetectedIdType(null);
         clearIdUploads();
       }
@@ -720,6 +728,7 @@ export function SelfCheckinForm() {
         message: "Validation service temporarily unavailable. You can still submit — staff will verify manually.",
       });
       setIdValidated(false);
+      setIdValidationAttestation("");
       setIdServerError(true);
     } finally {
       setValidatingId(false);
@@ -733,6 +742,7 @@ export function SelfCheckinForm() {
     appendDocFile(file, visaFiles, setVisaFiles, (next) => {
       setValue("visaImages", next.map((f) => f.file), { shouldValidate: true });
       setVisaValidationMsg(null);
+      setVisaValidationAttestation("");
     });
   };
 
@@ -741,6 +751,7 @@ export function SelfCheckinForm() {
     setVisaFiles(newFiles);
     setValue("visaImages", newFiles.length > 0 ? newFiles.map((f) => f.file) : null, { shouldValidate: true });
     if (newFiles.length === 0) setVisaValidationMsg(null);
+    setVisaValidationAttestation("");
   };
 
   const validateVisaFiles = async () => {
@@ -749,11 +760,8 @@ export function SelfCheckinForm() {
     setVisaValidationMsg(null);
     setVisaServerError(false);
     try {
-      const firstImage = visaFiles.find((f) => f.file.type.startsWith("image/"));
-      const fileToValidate = firstImage?.file || visaFiles[0].file;
-
       const formData = new FormData();
-      formData.append("file", fileToValidate);
+      visaFiles.forEach((doc) => formData.append("file", doc.file));
       formData.append("category", "visa");
 
       const res = await fetch("/api/validate-id", { method: "POST", body: formData });
@@ -775,6 +783,9 @@ export function SelfCheckinForm() {
       if (!result.valid) {
         setVisaFiles([]);
         setValue("visaImages", null, { shouldValidate: true });
+        setVisaValidationAttestation("");
+      } else {
+        setVisaValidationAttestation(typeof result.attestation === "string" ? result.attestation : "");
       }
     } catch {
       setVisaValidationMsg({
@@ -813,9 +824,7 @@ export function SelfCheckinForm() {
         idFiles.forEach((doc) => {
           formData.append("idImages", doc.file);
         });
-        if (idValidated && !idServerError && validationEnabled) {
-          formData.append("clientIdValidation", "verified");
-        }
+        if (idValidated && !idServerError && validationEnabled && idValidationAttestation) formData.append("idValidationAttestation", idValidationAttestation);
       } else if (prevIdCardLink) {
         formData.append("prevIdCardLink", prevIdCardLink);
       }
@@ -824,6 +833,7 @@ export function SelfCheckinForm() {
         visaFiles.forEach((doc) => {
           formData.append("visaImages", doc.file);
         });
+        if (visaValidationAttestation) formData.append("visaValidationAttestation", visaValidationAttestation);
       } else if (prevVisaLink) {
         formData.append("prevVisaLink", prevVisaLink);
       }
@@ -880,8 +890,10 @@ export function SelfCheckinForm() {
       setIdValidationMsg(null);
       setVisaValidationMsg(null);
       setIdValidated(false);
+      setIdValidationAttestation("");
       setIdServerError(false);
       setVisaServerError(false);
+      setVisaValidationAttestation("");
       setDetectedIdType(null);
       setReturnGuest(null);
       setPrevIdCardLink("");

@@ -46,7 +46,7 @@ Book now: `BookingGateProvider` (`src/content/bookingGate.ts`) → fresh sanitiz
 
 Booking Enquiry keeps its existing payload and delivery paths. On mobile, each visible validation error is programmatically connected to its field, and a blocked WhatsApp pop-up provides an inline email retry path instead of a misleading success message.
 
-Self Check-in preserves its identity-document rules and existing lookup/create flow. Its mobile entry step now identifies the phone input and its error state to assistive technology, while the main form gives guests a concise step context and the submit state announces progress.
+Self Check-in strictly blocks QR photos, generic/unreadable uploads, and other non-ID documents, asking the guest for a valid ID before completion. Only a real validation-provider outage can proceed for staff review; valid browser verification is reused through a short-lived server-signed proof rather than trusting a browser flag. Its mobile entry step identifies the phone input and its error state to assistive technology, while the main form gives guests a concise step context and the submit state announces progress.
 
 Food order status keeps the existing 10-second, visibility-aware polling rule and phone requirement. It now uses an order-shaped mobile loading state and gives a recoverable status fetch failure a direct retry alongside the safe return to ordering.
 

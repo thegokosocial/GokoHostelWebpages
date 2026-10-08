@@ -244,7 +244,7 @@ Accounts/vendors/categories actions use `canManageAccountSettings` (or legacy `c
 
 ## Public / guest (no staff password)
 
-Check-in, food menu/order/status/bills, `/api/site`, `/api/media`, `/api/settings`, `/api/validate-id`, review token page, Aiosell webhook (provider auth, not staff password).
+Check-in, food menu/order/status/bills, `/api/site`, `/api/media`, `/api/settings`, `/api/validate-id`, review token page, Aiosell webhook (provider auth, not staff password). Public identity validation is same-origin and rate-limited; it does not grant an authorization bypass, and `/api/checkin` verifies the short-lived signed proof before skipping duplicate OCR.
 
 Kitchen is staff-passworded but not full admin RBAC. Its `updateStatusBulk` action only permits the forward stage transitions placed → preparing, preparing → ready, and ready → served; it skips orders that have moved out of the requested stage so stale screens cannot move them backward or across stages.
 

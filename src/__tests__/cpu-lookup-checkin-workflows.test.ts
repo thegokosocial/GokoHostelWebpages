@@ -339,8 +339,9 @@ describe("Self-checkin, robots, sitemap, my-bills, bare routes", () => {
     expect(form).toContain("Math.min(attempt + 1, 2)");
     expect(form).toContain('target="_blank"');
     expect(form).toContain('Preview unavailable');
-    expect(form).toContain("setPrevIdCardLink(d.idCardLink || \"\")");
-    expect(form).toContain("setPrevVisaLink(d.visaLink || \"\")");
+    expect(form).toContain("const reusableId = reusableDriveLinks(d.idCardLink || \"\")");
+    expect(form).toContain("setPrevIdCardLink(reusableId)");
+    expect(form).toContain("setPrevVisaLink(reusableVisa)");
   });
 
   it("keeps foreign guest controls usable on touch screens", () => {

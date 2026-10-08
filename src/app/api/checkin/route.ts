@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
-import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, incrementStat, getSetting, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
+import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, incrementStat, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
@@ -10,6 +10,7 @@ import { dobEqualsArrivalDate, getAgeFromDob } from "@/lib/parseDob";
 import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRateLimit";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
+import { digestFiles, verifyCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -22,24 +23,28 @@ function generateBookingId(): string {
   return `GOKO${yyyy}${mm}${dd}${random}`;
 }
 
-async function uploadToDrive(file: File, guestName: string, fileType: string): Promise<string> {
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
+async function uploadToDrive(file: File, guestName: string, fileType: string, targetFolderId?: string): Promise<string> {
   const buffer = await file.arrayBuffer();
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const ext = file.name.split(".").pop() || "jpg";
   const fileName = `${guestName.replace(/[^a-zA-Z]/g, "_")}_${fileType}_${timestamp}.${ext}`;
 
-  let targetFolderId = folderId;
-  if (folderId) {
-    try {
-      targetFolderId = await driveGetOrCreateFolder(folderId, getMonthKey());
-    } catch (err: any) {
-      console.error("Month folder creation failed:", err?.message);
-    }
-  }
-
   return driveUploadFile(fileName, file.type || "image/jpeg", buffer, targetFolderId);
+}
+
+function isReusableDriveLink(value: string) {
+  const links = value.split(" | ").map((link) => link.trim()).filter(Boolean);
+  return links.length > 0 && links.every((link) => /^https:\/\/drive\.google\.com\/file\/d\/[^/]+\/view(?:\?|$)/.test(link));
+}
+
+async function uploadFiles(files: File[], guestName: string, prefix: string, folderId?: string) {
+  const links: string[] = [];
+  for (let index = 0; index < files.length; index += 2) {
+    const batch = files.slice(index, index + 2);
+    const results = await Promise.all(batch.map((file, offset) => uploadToDrive(file, guestName, `${prefix}_${index + offset + 1}`, folderId)));
+    links.push(...results);
+  }
+  return links;
 }
 
 export async function POST(req: NextRequest) {
@@ -72,7 +77,8 @@ export async function POST(req: NextRequest) {
 
     const prevIdCardLink = formData.get("prevIdCardLink") as string || "";
     const prevVisaLink = formData.get("prevVisaLink") as string || "";
-    const clientIdValidation = (formData.get("clientIdValidation") as string || "").trim();
+    const idValidationAttestation = (formData.get("idValidationAttestation") as string || "").trim();
+    const visaValidationAttestation = (formData.get("visaValidationAttestation") as string || "").trim();
 
     const arrivedFromCountry = formData.get("arrivedFromCountry") as string || "";
     const arrivedFromCity = formData.get("arrivedFromCity") as string || "";
@@ -98,14 +104,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, duplicate: true, checkinId: existingByKey.id });
     }
 
-    const hasIdImages = idImages.length > 0 || !!prevIdCardLink;
+    const validPrevIdCardLink = isReusableDriveLink(prevIdCardLink) ? prevIdCardLink : "";
+    const validPrevVisaLink = isReusableDriveLink(prevVisaLink) ? prevVisaLink : "";
+    const hasIdImages = idImages.length > 0 || !!validPrevIdCardLink;
     if (!name || !contactNumber || !nationality || !idType || !hasIdImages || !arrivalDate || !stayingDays || !comingFrom || !numberOfPersons) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
     if (isForeignNationality(nationality) && idType !== "passport") {
       return NextResponse.json({ error: "Foreign nationals must provide a passport", field: "idType" }, { status: 400 });
     }
-    if (isForeignNationality(nationality) && visaImages.length === 0 && !prevVisaLink) {
+    if (isForeignNationality(nationality) && visaImages.length === 0 && !validPrevVisaLink) {
       return NextResponse.json({ error: "Visa document is required for non-Indian nationals", field: "visaImages" }, { status: 400 });
     }
     if (formDob && getAgeFromDob(formDob) === null) {
@@ -131,11 +139,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let validationEnabled = true;
-    try {
-      const val = await getSetting("image_validation");
-      validationEnabled = val !== "off";
-    } catch { /* default to enabled */ }
+    // Public check-in is fail-closed for known bad documents. The admin Vision
+    // display setting must not turn this identity boundary into client trust.
+    const validationEnabled = true;
 
     let serverVisionCalls = 0;
     let validationFailed = false;
@@ -145,11 +151,20 @@ export async function POST(req: NextRequest) {
     let visaOcrText = "";
     let idOcrText = "";
 
-    const reusingPrevId = idImages.length === 0 && !!prevIdCardLink;
-    const reusingPrevVisa = visaImages.length === 0 && !!prevVisaLink;
-    const skipVisionTrusted = clientIdValidation === "verified" && idImages.length > 0;
+    const reusingPrevId = idImages.length === 0 && !!validPrevIdCardLink;
+    const reusingPrevVisa = visaImages.length === 0 && !!validPrevVisaLink;
+    const idFileDigests = idImages.length > 0 ? await digestFiles(idImages) : [];
+    const visaFileDigests = visaImages.length > 0 ? await digestFiles(visaImages) : [];
+    const trustedIdValidation = idImages.length > 0 && await verifyCheckinValidationAttestation(idValidationAttestation, {
+      category: "id", fileDigests: idFileDigests, idType, guestName: name, nationality,
+    });
+    const trustedVisaValidation = visaImages.length > 0 && await verifyCheckinValidationAttestation(visaValidationAttestation, {
+      category: "visa", fileDigests: visaFileDigests, idType: "", guestName: "", nationality: "",
+    });
 
-    if (validationEnabled && !reusingPrevId && !skipVisionTrusted && !isOfflineMode()) {
+    if (trustedIdValidation) idVerifiedOverride = "yes";
+
+    if (validationEnabled && !isOfflineMode()) {
       async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
         if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
           return { valid: false, documentType: "unknown" as const, confidence: "high" as const, message: "Only images and PDFs accepted" };
@@ -158,7 +173,7 @@ export async function POST(req: NextRequest) {
         return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type, nationality);
       }
 
-      try {
+      if (!reusingPrevId && !trustedIdValidation) try {
         let idValidation;
         if (idImages.length > 1) {
           for (const f of idImages) {
@@ -185,23 +200,26 @@ export async function POST(req: NextRequest) {
         if (idValidation.spoofWarning) {
           idSpoofWarning = true;
         }
-        if (!idValidation.valid) {
+        if (idValidation.unavailable) {
+          validationFailed = true;
+        } else if (!idValidation.valid) {
           return NextResponse.json({ error: idValidation.message, field: "idImages" }, { status: 422 });
-        }
-        const visionSoftDown = (idValidation.layers || []).includes("validation_unavailable");
-        if (visionSoftDown) {
+        } else {
+          const visionSoftDown = (idValidation.layers || []).includes("validation_unavailable");
+          if (visionSoftDown) {
           // One file is enough when Vision is down (DigiLocker / combined photo OK).
           // Hard both-sides applies only when OCR succeeds and a side is missing.
-          validationFailed = true;
-        } else {
-          idVerifiedOverride = verifiedFromIdValidation(idValidation);
+            validationFailed = true;
+          } else {
+            idVerifiedOverride = verifiedFromIdValidation(idValidation);
+          }
         }
       } catch (valErr: any) {
         console.error("ID validation error:", valErr?.message);
         validationFailed = true;
       }
 
-      if (visaImages.length > 0 && !reusingPrevVisa) {
+      if (visaImages.length > 0 && !reusingPrevVisa && !trustedVisaValidation) {
         try {
           let visaValidation;
           if (visaImages.length > 1) {
@@ -223,7 +241,9 @@ export async function POST(req: NextRequest) {
           if (visaValidation.ocrText) {
             visaOcrText = visaValidation.ocrText;
           }
-          if (!visaValidation.valid) {
+          if (visaValidation.unavailable) {
+            validationFailed = true;
+          } else if (!visaValidation.valid) {
             return NextResponse.json({ error: visaValidation.message, field: "visaImages" }, { status: 422 });
           }
         } catch (valErr: any) {
@@ -231,49 +251,48 @@ export async function POST(req: NextRequest) {
           validationFailed = true;
         }
       }
-    } else if (skipVisionTrusted) {
-      idVerifiedOverride = "yes";
     }
 
     if (serverVisionCalls > 0) incrementStat("vision", serverVisionCalls).catch(() => {});
+
+    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    let monthFolderId: string | undefined;
+    if (!isOfflineMode() && rootFolderId && (idImages.length > 0 || visaImages.length > 0)) {
+      try {
+        monthFolderId = await driveGetOrCreateFolder(rootFolderId, getMonthKey());
+      } catch (folderError: any) {
+        console.error("ID upload folder failed:", folderError?.message);
+        return NextResponse.json({ error: "Could not prepare document storage. Please try again." }, { status: 503 });
+      }
+    }
 
     let idCardLink: string;
     let visaLink: string;
 
     if (reusingPrevId) {
-      idCardLink = prevIdCardLink;
+      idCardLink = validPrevIdCardLink;
     } else if (isOfflineMode()) {
       idCardLink = "offline-pending";
     } else {
-      const idCardLinks: string[] = [];
-      for (let i = 0; i < idImages.length; i++) {
-        try {
-          const link = await uploadToDrive(idImages[i], name, `id_${i + 1}`);
-          idCardLinks.push(link);
-        } catch (uploadErr: any) {
-          console.error(`ID image ${i + 1} upload failed:`, uploadErr?.message);
-          idCardLinks.push("Upload failed");
-        }
+      try {
+        idCardLink = (await uploadFiles(idImages, name, "id", monthFolderId)).join(" | ");
+      } catch (uploadErr: any) {
+        console.error("ID upload failed:", uploadErr?.message);
+        return NextResponse.json({ error: "Could not save your ID document. Please try again." }, { status: 503 });
       }
-      idCardLink = idCardLinks.join(" | ");
     }
 
     if (reusingPrevVisa) {
-      visaLink = prevVisaLink;
+      visaLink = validPrevVisaLink;
     } else if (isOfflineMode()) {
       visaLink = visaImages.length > 0 ? "offline-pending" : "";
     } else {
-      const visaLinks: string[] = [];
-      for (let i = 0; i < visaImages.length; i++) {
-        try {
-          const link = await uploadToDrive(visaImages[i], name, `visa_${i + 1}`);
-          visaLinks.push(link);
-        } catch (uploadErr: any) {
-          console.error(`Visa image ${i + 1} upload failed:`, uploadErr?.message);
-          visaLinks.push("Upload failed");
-        }
+      try {
+        visaLink = (await uploadFiles(visaImages, name, "visa", monthFolderId)).join(" | ");
+      } catch (uploadErr: any) {
+        console.error("Visa upload failed:", uploadErr?.message);
+        return NextResponse.json({ error: "Could not save your visa document. Please try again." }, { status: 503 });
       }
-      visaLink = visaLinks.join(" | ");
     }
     const submittedAt = new Date().toISOString();
     const verified = reusingPrevId

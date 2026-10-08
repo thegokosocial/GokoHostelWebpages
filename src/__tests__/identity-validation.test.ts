@@ -166,16 +166,14 @@ describe("DigiLocker Aadhaar and verified mapping", () => {
     expect(verifiedFromIdValidation({ layers: ["unreadable", "doc_review"], needsDocReview: true })).toBe("doc_review");
   });
 
-  it("soft-allows unreadable OCR and unidentified visa for staff review", () => {
+  it("rejects unreadable OCR and unidentified visa", () => {
     const blank = validateIdFromText("abc", "id", "aadhaar", "Test User", "India");
-    expect(blank.valid).toBe(true);
+    expect(blank.valid).toBe(false);
     expect(blank.layers).toContain("unreadable");
-    expect(verifiedFromIdValidation(blank)).toBe("doc_review");
 
     const visa = validateIdFromText("random boarding pass text only here", "visa");
-    expect(visa.valid).toBe(true);
+    expect(visa.valid).toBe(false);
     expect(visa.layers).toContain("visa_unidentified");
-    expect(verifiedFromIdValidation(visa)).toBe("doc_review");
   });
 
   it("still hard-rejects type mismatch so the guest can fix the dropdown", () => {
