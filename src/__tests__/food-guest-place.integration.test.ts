@@ -100,6 +100,18 @@ describe("guest food place (disposable SQLite)", () => {
     expect((sqlite.prepare("SELECT COUNT(*) AS n FROM food_orders").get() as { n: number }).n).toBe(1);
   });
 
+  it("allows only one simultaneous guest order to reserve the final unit", async () => {
+    sqlite.prepare("UPDATE menu_items SET stock_quantity = 1 WHERE id = 143").run();
+    const base = { guestName: "Race Guest", guestType: "walkin", items: [{ menuItemId: 143, quantity: 1 }], createdBy: "guest" };
+    const [first, second] = await Promise.all([
+      place({ ...base, idempotencyKey: "550e8400-e29b-41d4-a716-446655440011" }),
+      place({ ...base, idempotencyKey: "550e8400-e29b-41d4-a716-446655440012" }),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    expect(sqlite.prepare("SELECT stock_quantity FROM menu_items WHERE id = 143").get()).toEqual({ stock_quantity: 0 });
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM food_orders WHERE status != 'cancelled'").get()).toEqual({ n: 1 });
+  });
+
   it("mid-chunk fail leaves partial lines; retry is duplicate not a second order", async () => {
     expect(FOOD_ORDER_ITEM_INSERT_CHUNK).toBe(5);
     const db = state.db!;

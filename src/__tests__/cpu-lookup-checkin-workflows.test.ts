@@ -6,6 +6,8 @@ import * as path from "path";
 const q = vi.hoisted(() => ({
   getActiveCheckins: vi.fn(),
   getCheckinByIdempotencyKey: vi.fn(),
+  claimCheckinSubmission: vi.fn(),
+  releaseCheckinSubmissionClaim: vi.fn(),
   getAllBeds: vi.fn(),
   getRecentlyCheckedOutGuests: vi.fn(),
   getLatestCheckinByNormalizedPhone: vi.fn(),
@@ -22,6 +24,8 @@ const q = vi.hoisted(() => ({
 vi.mock("@/db/queries", () => ({
   getActiveCheckins: q.getActiveCheckins,
   getCheckinByIdempotencyKey: q.getCheckinByIdempotencyKey,
+  claimCheckinSubmission: q.claimCheckinSubmission,
+  releaseCheckinSubmissionClaim: q.releaseCheckinSubmissionClaim,
   getAllBeds: q.getAllBeds,
   getRecentlyCheckedOutGuests: q.getRecentlyCheckedOutGuests,
   getLatestCheckinByNormalizedPhone: q.getLatestCheckinByNormalizedPhone,
@@ -194,6 +198,8 @@ describe("POST /api/checkin required fields", () => {
     q.getMonthKey.mockReturnValue("2026-08");
     q.isOfflineMode.mockReturnValue(true);
     q.getCheckinByIdempotencyKey.mockResolvedValue(null);
+    q.claimCheckinSubmission.mockResolvedValue(true);
+    q.releaseCheckinSubmissionClaim.mockResolvedValue(undefined);
     q.getActiveCheckins.mockResolvedValue([]);
   });
 

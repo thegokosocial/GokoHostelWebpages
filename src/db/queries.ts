@@ -5,7 +5,7 @@ import { calendarAvailability, addCalendarDays, bedsFitInventoryCap, countUnassi
 import { sqliteWriteCount } from "@/lib/sqliteWriteCount";
 import { sqliteLikePrefix } from "@/lib/pmsLog";
 import { clampLogOffset, clampLogPageSize, clampLogSince, LOG_DOWNLOAD_MAX, logRetentionSince } from "@/lib/logRetention";
-import { checkins, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, bookingContactMethods, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, foodCombinedBillShareTokens, orderModifications, expenses, dailyIncome, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
+import { checkins, checkinSubmissionClaims, dorms, beds, bedHistory, settings, apiStats, users, tasks, auditLog, systemLogs, rateScrapes, bookings, bookingContactMethods, menuCategories, menuItems, foodOrders, foodOrderItems, foodBillShareTokens, foodCombinedBillShareTokens, orderModifications, expenses, dailyIncome, reviewRequests, reviewFeedback, channelConfig, roomTypeMapping, ratePlanMapping, dailyRates, channelSyncLog, bookingBedAssignments, bookingHistory, bedTypeConfig, channels, channelRates, bedBlocks, inventoryOverrides, inventoryDirty, employeeAttendanceHistory, guestReceipts, platformReceivableEntries, platformSettlementAllocations, guestBookingLookupChallenges, nativeInventoryHolds, nativeBookingCheckouts } from "./schema";
 import { dbRead, dbWrite } from "@/lib/dbRetry";
 import { syncInsert, syncUpdate } from "./syncMeta";
 import { auditDateBounds, auditRetentionCutoff, auditRetentionParts, DEFAULT_AUDIT_RETENTION_MONTHS, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
@@ -58,6 +58,28 @@ export async function getCheckinByIdempotencyKey(key: string) {
   const db = getDb();
   const rows = await db.select().from(checkins).where(eq(checkins.idempotencyKey, key)).limit(1);
   return rows[0] || null;
+}
+
+const CHECKIN_SUBMISSION_CLAIM_SECONDS = 15 * 60;
+
+/** Atomically owns the Drive-upload portion of a guest submission. */
+export async function claimCheckinSubmission(key: string) {
+  const now = Math.floor(Date.now() / 1000);
+  const db = getDb();
+  const rows = await db.insert(checkinSubmissionClaims).values({
+    idempotencyKey: key,
+    expiresAt: now + CHECKIN_SUBMISSION_CLAIM_SECONDS,
+  }).onConflictDoUpdate({
+    target: checkinSubmissionClaims.idempotencyKey,
+    set: { expiresAt: now + CHECKIN_SUBMISSION_CLAIM_SECONDS },
+    where: lt(checkinSubmissionClaims.expiresAt, now),
+  }).returning({ idempotencyKey: checkinSubmissionClaims.idempotencyKey });
+  return rows.length === 1;
+}
+
+export async function releaseCheckinSubmissionClaim(key: string) {
+  const db = getDb();
+  await db.delete(checkinSubmissionClaims).where(eq(checkinSubmissionClaims.idempotencyKey, key));
 }
 
 export async function updateCheckin(id: number, data: Partial<typeof checkins.$inferInsert>) {
@@ -1416,6 +1438,23 @@ export async function abandonIncompleteFoodOrder(orderId: number, actor: string,
   return { abandoned: true as const, order };
 }
 
+/** Cancel an unpaid guest order after an atomic stock reservation loses a race. */
+export async function abandonFoodOrderForStockRace(orderId: number, actor: string, reason: string) {
+  const order = await getFoodOrderById(orderId);
+  if (!order || order.status === "cancelled" || foodAmountPaid(order) > 0) return false;
+  const db = getDb();
+  await db.update(foodOrders).set(syncUpdate({
+    status: "cancelled",
+    cancelledAt: new Date().toISOString(),
+    cancelledReason: reason,
+    idempotencyKey: null,
+    updatedAt: new Date().toISOString(),
+  })).where(eq(foodOrders.id, orderId));
+  await addOrderModification({ orderId, action: "order_cancelled", oldValue: order.status, newValue: "cancelled", reason, modifiedBy: actor });
+  await addAuditEntry({ username: actor, action: "food_order_stock_race", target: `order:${orderId}`, details: reason });
+  return true;
+}
+
 export async function getFoodOrderItemsBatch(orderIds: number[]) {
   if (orderIds.length === 0) return new Map<number, Awaited<ReturnType<typeof getFoodOrderItems>>>();
   const db = getDb();
@@ -1704,6 +1743,22 @@ export async function decrementStockIfAvailable(menuItemId: number, quantity: nu
     eq(menuItems.trackInventory, 1),
   )).returning({ id: menuItems.id });
   return updated.length > 0;
+}
+
+/** Guest checkout must never oversell; staff paths intentionally use the permissive helper above. */
+export async function reserveGuestStock(menuItemId: number, quantity: number): Promise<boolean> {
+  if (!Number.isInteger(quantity) || quantity <= 0) return false;
+  const db = getDb();
+  const updated = await db.update(menuItems).set({
+    stockQuantity: sql`${menuItems.stockQuantity} - ${quantity}`,
+    isAvailable: sql`CASE WHEN ${menuItems.stockQuantity} - ${quantity} <= 0 THEN 0 ELSE ${menuItems.isAvailable} END`,
+  }).where(and(
+    eq(menuItems.id, menuItemId),
+    eq(menuItems.trackInventory, 1),
+    eq(menuItems.isAvailable, 1),
+    gte(menuItems.stockQuantity, quantity),
+  )).returning({ id: menuItems.id });
+  return updated.length === 1;
 }
 
 export async function addStock(menuItemId: number, quantity: number) {

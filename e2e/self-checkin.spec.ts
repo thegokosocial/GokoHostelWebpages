@@ -23,6 +23,7 @@ async function stubSelfCheckinApis(
     lookup?: Record<string, unknown> | null;
     validateSequence?: Array<Record<string, unknown>>;
     onCheckin?: (capture: CheckinCapture) => void;
+    checkinResponse?: { status: number; json: Record<string, unknown> };
   } = {},
 ) {
   let validateCall = 0;
@@ -87,7 +88,7 @@ async function stubSelfCheckinApis(
         hasIdempotencyKey: Boolean(keyMatch?.[1]),
         idValidationAttestation: attestationMatch?.[1] ?? null,
       });
-      await route.fulfill({ json: { success: true } });
+      await route.fulfill(opts.checkinResponse ?? { json: { success: true } });
       return;
     }
 
@@ -242,6 +243,25 @@ test.describe("self check-in guest journeys", () => {
     expect(capture).not.toBeNull();
     expect(capture!.hasIdempotencyKey).toBe(true);
     expect(capture!.idValidationAttestation).toBe("test-signed-attestation");
+  });
+
+  test("in-progress submission keeps the form retryable", async ({ page }) => {
+    await stubSelfCheckinApis(page, {
+      lookup: null,
+      checkinResponse: {
+        status: 409,
+        json: { code: "checkin_submission_in_progress", error: "This check-in is already being submitted." },
+      },
+    });
+    await skipToForm(page);
+    await fillRequiredGuestFields(page);
+    await page.locator("#idType").selectOption("aadhaar");
+    await galleryInputs(page).first().setInputFiles(tinyJpeg);
+    await page.getByRole("button", { name: "Verify document" }).click();
+    await expect(page.getByText(/Aadhaar verified/i)).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: "Complete Check-in" }).click();
+    await expect(page.getByText(/already being submitted/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Complete Check-in" })).toBeEnabled();
   });
 
   test("new guest can select Goko Hostel Website without a booking ID", async ({ page }) => {

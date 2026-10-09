@@ -7,7 +7,7 @@ const dbState = vi.hoisted(() => ({ getDb: vi.fn() }));
 
 vi.mock("@/db", () => ({ getDb: dbState.getDb }));
 
-import { addStock, decrementStockIfAvailable } from "@/db/queries";
+import { addStock, decrementStockIfAvailable, reserveGuestStock } from "@/db/queries";
 
 function d1Client(sqlite: SQLite.Database) {
   const result = (value: unknown) => ({ results: value, success: true, meta: {} });
@@ -77,6 +77,13 @@ describe("food inventory D1 integration", () => {
     await expect(decrementStockIfAvailable(1, 2)).resolves.toBe(true);
     expect(sqlite.prepare("SELECT stock_quantity, is_available FROM menu_items WHERE id = 1").get())
       .toEqual({ stock_quantity: -3, is_available: 0 });
+  });
+
+  it("rejects a guest reservation that would oversell tracked stock", async () => {
+    await expect(reserveGuestStock(1, 2)).resolves.toBe(true);
+    await expect(reserveGuestStock(1, 2)).resolves.toBe(false);
+    expect(sqlite.prepare("SELECT stock_quantity, is_available FROM menu_items WHERE id = 1").get())
+      .toEqual({ stock_quantity: 1, is_available: 1 });
   });
 
   it("restock from negative restores positive availability (-10 + 40 → 30)", async () => {

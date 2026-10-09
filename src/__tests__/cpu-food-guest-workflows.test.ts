@@ -18,7 +18,9 @@ const q = vi.hoisted(() => ({
   abandonIncompleteFoodOrder: vi.fn(),
   getActiveCheckins: vi.fn(),
   getRecentlyCheckedOutGuests: vi.fn(),
-  decrementStock: vi.fn(),
+  reserveGuestStock: vi.fn(),
+  addStock: vi.fn(),
+  abandonFoodOrderForStockRace: vi.fn(),
   updateFoodOrderStatus: vi.fn(),
   getFoodOrderByNumber: vi.fn(),
   getFoodOrderItems: vi.fn(),
@@ -42,7 +44,9 @@ vi.mock("@/db/queries", () => ({
   abandonIncompleteFoodOrder: q.abandonIncompleteFoodOrder,
   getActiveCheckins: q.getActiveCheckins,
   getRecentlyCheckedOutGuests: q.getRecentlyCheckedOutGuests,
-  decrementStock: q.decrementStock,
+  reserveGuestStock: q.reserveGuestStock,
+  addStock: q.addStock,
+  abandonFoodOrderForStockRace: q.abandonFoodOrderForStockRace,
   updateFoodOrderStatus: q.updateFoodOrderStatus,
   getFoodOrderByNumber: q.getFoodOrderByNumber,
   getFoodOrderItems: q.getFoodOrderItems,
@@ -169,7 +173,9 @@ describe("POST /api/food/order", () => {
     q.countFoodOrderItems.mockResolvedValue(1);
     q.abandonIncompleteFoodOrder.mockResolvedValue({ abandoned: true, order: null });
     q.addFoodOrderItems.mockResolvedValue(undefined);
-    q.decrementStock.mockResolvedValue(undefined);
+    q.reserveGuestStock.mockResolvedValue(true);
+    q.addStock.mockResolvedValue(undefined);
+    q.abandonFoodOrderForStockRace.mockResolvedValue(true);
     q.updateFoodOrderStatus.mockResolvedValue(undefined);
     q.getActiveCheckins.mockResolvedValue([]);
     q.getRecentlyCheckedOutGuests.mockResolvedValue([]);
@@ -333,7 +339,7 @@ describe("POST /api/food/order", () => {
     expect(await res.json()).toMatchObject({ success: true, orderId: 9, healed: true });
     expect(q.addFoodOrderItems).toHaveBeenCalled();
     expect(q.createFoodOrder).not.toHaveBeenCalled();
-    expect(q.decrementStock).toHaveBeenCalled();
+    expect(q.reserveGuestStock).not.toHaveBeenCalled();
     expect(q.dispatchPush).toHaveBeenCalled();
   });
 
@@ -391,7 +397,7 @@ describe("POST /api/food/order", () => {
     q.createFoodOrder.mockResolvedValue([{ id: 12, orderNumber: "F-12", total: 525 }]);
     const res = await postOrder(orderReq({ ...validOrder, items: [{ menuItemId: 2, quantity: 1 }] }));
     expect(res.status).toBe(200);
-    expect(q.decrementStock).toHaveBeenCalledWith(2, 1);
+    expect(q.reserveGuestStock).toHaveBeenCalledWith(2, 1);
     expect(q.updateFoodOrderStatus).toHaveBeenCalledWith(12, "ready");
   });
 

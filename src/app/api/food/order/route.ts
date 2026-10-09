@@ -11,7 +11,9 @@ import {
   abandonIncompleteFoodOrder,
   getActiveCheckins,
   getRecentlyCheckedOutGuests,
-  decrementStock,
+  reserveGuestStock,
+  addStock,
+  abandonFoodOrderForStockRace,
   updateFoodOrderStatus,
 } from "@/db/queries";
 import { parseFoodCheckoutGraceDays, foodTaxPercent } from "@/lib/foodLookup";
@@ -163,8 +165,19 @@ export async function POST(req: NextRequest) {
     const initialStatus = requireApproval ? "pending_approval" : "placed";
 
     async function finalizeGuestOrder(orderRow: { id: number; orderNumber: string; total: number }, opts?: { healed?: boolean; duplicate?: boolean }) {
+      const reserved: Array<{ menuItemId: number; quantity: number }> = [];
       for (const v of validatedItems) {
-        await decrementStock(v.menuItemId, v.quantity);
+        if (!v.trackInventory) continue;
+        if (await reserveGuestStock(v.menuItemId, v.quantity)) {
+          reserved.push(v);
+          continue;
+        }
+        await Promise.all(reserved.map((item) => addStock(item.menuItemId, item.quantity)));
+        await abandonFoodOrderForStockRace(orderRow.id, actor, `Inventory changed while reserving ${v.itemName}`);
+        return NextResponse.json({
+          error: `"${v.itemName}" is no longer available. Please review your cart and try again.`,
+          code: "food_inventory_changed",
+        }, { status: 409 });
       }
       if (initialStatus === "placed" && validatedItems.length > 0 && validatedItems.every((v) => v.trackInventory)) {
         await updateFoodOrderStatus(orderRow.id, "ready");

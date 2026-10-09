@@ -67,6 +67,12 @@ export const dorms = sqliteTable("dorms", {
   ...syncColumnsWithDelete,
 });
 
+/** Short-lived ownership of self check-in document side effects. */
+export const checkinSubmissionClaims = sqliteTable("checkin_submission_claims", {
+  idempotencyKey: text("idempotency_key").primaryKey(),
+  expiresAt: integer("expires_at").notNull(),
+});
+
 export const beds = sqliteTable("beds", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   dormId: integer("dorm_id").notNull().references(() => dorms.id),

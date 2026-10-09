@@ -8,7 +8,7 @@ Goko uses small [P](https://p-org.github.io/P/) models to systematically explore
 
 The expected-failure test models the existing dangerous pattern: a request reads availability and a later unconditional decrement writes the result. The guarded-reserve test models the required database contract: the same write checks `stock >= requested quantity` and decrements it, accepting at most one order.
 
-This is directly relevant to the guest order flow in [flows-food-kitchen.md](flows-food-kitchen.md): validation reads menu stock before the order header/line creation path decrements it. The production change following a counterexample must preserve staff's explicit oversell behavior while using the guarded path for guest orders, return a reloadable sold-out conflict, and add route/integration plus browser retry coverage.
+This maps to the guest order flow in [flows-food-kitchen.md](flows-food-kitchen.md): the route now uses a conditional `stock_quantity >= requested` reservation for guests, returns a retryable `409 food_inventory_changed` when it loses, and leaves staff's explicit oversell behavior on its separate path.
 
 On the Pi (64-bit Bookworm), the guarded model completed 100 schedules with zero bugs; the unsafe fixture found the negative-stock counterexample on its first schedule. The runner supports the official Docker image or a local P CLI through `P_BIN`.
 

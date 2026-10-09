@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
-import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, incrementStat, getMonthKey, getSetting, addAuditEntry, addSystemLog } from "@/db/queries";
+import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, claimCheckinSubmission, releaseCheckinSubmissionClaim, incrementStat, getMonthKey, getSetting, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
@@ -254,6 +254,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const ownsSubmission = await claimCheckinSubmission(idempotencyKey);
+    if (!ownsSubmission) {
+      const completed = await getCheckinByIdempotencyKey(idempotencyKey);
+      if (completed) return NextResponse.json({ success: true, duplicate: true, checkinId: completed.id });
+      return NextResponse.json({
+        error: "This check-in is already being submitted. Please wait a moment and try again.",
+        code: "checkin_submission_in_progress",
+      }, { status: 409 });
+    }
+
+    try {
     if (serverVisionCalls > 0) incrementStat("vision", serverVisionCalls).catch(() => {});
 
     const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
@@ -431,6 +442,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
+    } finally {
+      await releaseCheckinSubmissionClaim(idempotencyKey).catch(() => undefined);
+    }
   } catch (error: any) {
     console.error("Check-in API error:", error?.message || error);
     addSystemLog({ level: "error", source: "checkin", message: error?.message || "Unknown error" }).catch(() => {});

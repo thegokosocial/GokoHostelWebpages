@@ -875,6 +875,10 @@ export function SelfCheckinForm() {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        if (errData.code === "checkin_submission_in_progress") {
+          setSubmitError("This check-in is already being submitted. Please wait a moment and try again.");
+          return;
+        }
         setSubmitError(messageFromCheckinFailure(res.status, errData));
         return;
       }

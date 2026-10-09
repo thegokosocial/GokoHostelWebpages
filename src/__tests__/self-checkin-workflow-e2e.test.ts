@@ -17,6 +17,8 @@ import { verifiedFromIdValidation } from "@/lib/validateIdDocument";
 const q = vi.hoisted(() => ({
   getActiveCheckins: vi.fn(),
   getCheckinByIdempotencyKey: vi.fn(),
+  claimCheckinSubmission: vi.fn(),
+  releaseCheckinSubmissionClaim: vi.fn(),
   getSetting: vi.fn(),
   addCheckin: vi.fn(),
   incrementStat: vi.fn(),
@@ -33,6 +35,8 @@ const q = vi.hoisted(() => ({
 vi.mock("@/db/queries", () => ({
   getActiveCheckins: q.getActiveCheckins,
   getCheckinByIdempotencyKey: q.getCheckinByIdempotencyKey,
+  claimCheckinSubmission: q.claimCheckinSubmission,
+  releaseCheckinSubmissionClaim: q.releaseCheckinSubmissionClaim,
   getSetting: q.getSetting,
   addCheckin: q.addCheckin,
   incrementStat: q.incrementStat,
@@ -143,6 +147,8 @@ describe("self-check-in mock E2E workflows", () => {
     q.isOfflineMode.mockReturnValue(false);
     q.getActiveCheckins.mockResolvedValue([]);
     q.getCheckinByIdempotencyKey.mockResolvedValue(null);
+    q.claimCheckinSubmission.mockResolvedValue(true);
+    q.releaseCheckinSubmissionClaim.mockResolvedValue(undefined);
     q.getSetting.mockResolvedValue("on");
     q.addCheckin.mockResolvedValue(undefined);
     q.incrementStat.mockResolvedValue(undefined);

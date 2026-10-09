@@ -215,6 +215,36 @@ describe("self check-in create (disposable SQLite)", () => {
     expect(countCheckins()).toBe(1);
   });
 
+  it("blocks a concurrent retry before it can repeat a Drive upload", async () => {
+    state.offline = false;
+    process.env.GOOGLE_DRIVE_FOLDER_ID = "root-folder";
+    let releaseUpload: (() => void) | undefined;
+    const uploadGate = new Promise<void>((resolve) => { releaseUpload = resolve; });
+    state.driveUpload.mockImplementation(async () => {
+      await uploadGate;
+      return "https://drive.example/id";
+    });
+    const key = uuid("565656565656");
+    const first = postCheckin(buildForm(indiaFields({ idempotencyKey: key, contactNumber: "9000000009" })));
+    await vi.waitFor(() => expect(state.driveUpload).toHaveBeenCalledTimes(1));
+    const second = await postCheckin(buildForm(indiaFields({ idempotencyKey: key, contactNumber: "9000000009" })));
+    expect(second.status).toBe(409);
+    expect(await second.json()).toMatchObject({ code: "checkin_submission_in_progress" });
+    releaseUpload?.();
+    expect((await first).status).toBe(200);
+    expect(state.driveUpload).toHaveBeenCalledTimes(1);
+    expect(countCheckins()).toBe(1);
+  });
+
+  it("recovers a check-in claim left behind by an interrupted request", async () => {
+    const key = uuid("575757575757");
+    sqlite.prepare("INSERT INTO checkin_submission_claims (idempotency_key, expires_at) VALUES (?, ?)").run(key, 1);
+    const res = await postCheckin(buildForm(indiaFields({ idempotencyKey: key, contactNumber: "9000000010" })));
+    expect(res.status).toBe(200);
+    expect(countCheckins()).toBe(1);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM checkin_submission_claims").get()).toEqual({ n: 0 });
+  });
+
   it("soft-allows a same visit (name+contact+arrival) without a second active row", async () => {
     const first = await postCheckin(buildForm(indiaFields({
       idempotencyKey: uuid("666666666666"),
