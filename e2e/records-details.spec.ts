@@ -14,7 +14,7 @@ async function mockRecords(page: Page) {
     if (url.pathname !== "/api/admin/checkins") return route.fulfill({ json: {} });
     const body = JSON.parse(route.request().postData() || "{}") as { action?: string; key?: string };
     if (body.action === "getDashboard") return route.fulfill({ json: { todayCheckins: [DASHBOARD_CHECKIN] } });
-    if (body.action === "list") return route.fulfill({ json: { rows: [RECORD], tabs: ["OCTOBER-2026"], currentTab: "OCTOBER-2026" } });
+    if (body.action === "list") return route.fulfill({ json: { rows: [RECORD], tabs: ["OCTOBER-2026"], currentTab: "OCTOBER-2026", bookingResolutions: { "42": { state: "pending" } } } });
     if (body.action === "getSetting") return route.fulfill({ json: { value: body.key === "show_dob_in_records" ? "false" : "" } });
     if (body.action === "auth") return route.fulfill({ json: { role: "admin", permissions: {} } });
     return route.fulfill({ json: { success: true } });
@@ -45,10 +45,24 @@ test("record details open from desktop row and keep document links separate", as
   await expect(page.getByRole("heading", { name: "Asha Guest" })).toBeVisible();
   await expect(page.getByText("Stay details")).toBeVisible();
   await expect(page.getByRole("button", { name: "Verify" })).toBeVisible();
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByRole("heading", { name: "Manual ID Verification" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Asha Guest" })).toBeHidden();
+  await page.getByRole("button", { name: "Close verification" }).click();
+  await page.getByRole("button", { name: "Asha Guest" }).click();
   await page.getByRole("button", { name: "Edit" }).click();
   await expect(page.getByRole("heading", { name: "Edit check-in" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "Asha Guest" })).toBeHidden();
+});
+
+test("record booking link replaces the details dialog", async ({ page }) => {
+  await mockRecords(page);
+  await signIn(page);
+  await page.getByRole("button", { name: "Asha Guest" }).click();
+  await page.getByRole("button", { name: "Link existing" }).click();
+  await expect(page.getByRole("heading", { name: "Link existing booking" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Asha Guest" })).toBeHidden();
 });
 

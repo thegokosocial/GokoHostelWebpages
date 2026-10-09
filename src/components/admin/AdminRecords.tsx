@@ -193,6 +193,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
   const recordsRequestId = useRef(0);
 
   const openUploadPopup = (origIdx: number, type: "id" | "visa", guestName: string, nationality: string) => {
+    setSelectedRecord(null);
     setUploadIdType(type === "id" && isForeignNationality(nationality) ? "passport" : "");
     setUploadPopup({ origIdx, type, guestName, nationality });
   };
@@ -319,6 +320,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
   };
 
   const openBookingLink = async (checkinId: number, guestName: string) => {
+    setSelectedRecord(null);
     setBookingLinkPopup({ checkinId, guestName }); setBookingSearch(guestName); setBookingSearchResults([]);
     if (guestName.trim().length < 4) return;
     setBookingSearchLoading(true);
@@ -558,6 +560,11 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
     } finally { setLoading(false); }
   };
 
+  const openVerifyPopup = (origIdx: number, row: string[]) => {
+    setSelectedRecord(null);
+    setVerifyPopup({ origIdx, row });
+  };
+
   const verifyManually = async (origIdx: number, verified: boolean) => {
     setVerifying(true);
     try {
@@ -613,6 +620,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
   };
 
   const openFormC = async (origIdx: number, row: string[]) => {
+    setSelectedRecord(null);
     setFormCLoading(true);
     setFrroStatus("");
     setFormCEditing(false);
@@ -1229,7 +1237,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                             </button>
                           )}
                           {(verified === "pending" || verified === "spoof_warning") && (
-                            <button type="button" onClick={() => setVerifyPopup({ origIdx, row })} className="flex items-center gap-1 rounded-lg bg-yellow-50 dark:bg-yellow-950 px-2 py-1 text-[10px] font-medium text-yellow-700 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/50">
+                            <button type="button" onClick={() => openVerifyPopup(origIdx, row)} className="flex items-center gap-1 rounded-lg bg-yellow-50 dark:bg-yellow-950 px-2 py-1 text-[10px] font-medium text-yellow-700 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/50">
                               <ShieldAlertIcon className="h-3 w-3" /> Verify
                             </button>
                           )}
@@ -1326,7 +1334,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                                 <ShieldAlertIcon className="h-3 w-3" /> Rejected
                               </span>
                             ) : cell === "spoof_warning" ? (
-                              <button type="button" onClick={() => setVerifyPopup({ origIdx, row })}
+                              <button type="button" onClick={() => openVerifyPopup(origIdx, row)}
                                 className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800">
                                 <ShieldAlertIcon className="h-3 w-3" /> Possibly fake
                               </button>
@@ -1339,7 +1347,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                                 <ShieldAlertIcon className="h-3 w-3" /> Doc check
                               </span>
                             ) : (
-                              <button type="button" onClick={() => setVerifyPopup({ origIdx, row })}
+                              <button type="button" onClick={() => openVerifyPopup(origIdx, row)}
                                 className="inline-flex items-center gap-1 rounded-full bg-yellow-100 dark:bg-yellow-900/50 px-2 py-0.5 text-[10px] font-semibold text-yellow-700 dark:text-yellow-400 hover:bg-yellow-200 dark:hover:bg-yellow-800">
                                 <ShieldAlertIcon className="h-3 w-3" /> Pending
                               </button>
@@ -1488,7 +1496,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                       <Button size="sm" variant="outline" onClick={() => void markNoBookingNeeded(checkinId)}>No booking needed</Button>
                     </>}
                     {hasPermission(role, permissions, "canDeleteBooking") && resolution?.deletableBookingId && <Button size="sm" variant="destructive" onClick={() => void hardDeleteLinkedBooking(resolution.deletableBookingId!, row[3] || "Guest")}><CalendarXIcon className="h-3.5 w-3.5" />Delete booking</Button>}
-                    {(row[16] === "pending" || row[16] === "spoof_warning") && <Button size="sm" variant="outline" onClick={() => setVerifyPopup({ origIdx: selectedRecord, row })}><ShieldAlertIcon className="h-3.5 w-3.5" />Verify</Button>}
+                    {(row[16] === "pending" || row[16] === "spoof_warning") && <Button size="sm" variant="outline" onClick={() => openVerifyPopup(selectedRecord, row)}><ShieldAlertIcon className="h-3.5 w-3.5" />Verify</Button>}
                     {canResolveVibe && guestAnyFlag && <Button size="sm" variant="outline" disabled={vibeMatchingId === checkinId} onClick={() => void handleVibeMatch(checkinId, selectedRecord)}>{vibeMatchingId === checkinId ? "Checking..." : "Vibe OK"}</Button>}
                     {canEdit && isForeignNationality(row[8]) && <Button size="sm" variant="outline" onClick={() => openFormC(selectedRecord, row)}><FileTextIcon className="h-3.5 w-3.5" />Form C</Button>}
                     {canEdit && row[18] === "checked_out" && row[19] && Date.now() - new Date(row[19]).getTime() < 24 * 60 * 60 * 1000 && <Button size="sm" variant="outline" onClick={() => void undoCheckout(selectedRecord)}>Reactivate</Button>}
@@ -1529,7 +1537,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-card p-6 shadow-lift" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-bold text-brand-green-dark">Manual ID Verification</h3>
-              <button type="button" onClick={() => setVerifyPopup(null)} className="rounded-lg p-1 hover:bg-brand-sand">
+              <button type="button" onClick={() => setVerifyPopup(null)} aria-label="Close verification" className="rounded-lg p-1 hover:bg-brand-sand">
                 <XIcon className="h-5 w-5 text-brand-green-dark/50" />
               </button>
             </div>
