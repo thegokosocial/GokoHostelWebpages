@@ -63,6 +63,7 @@ function AdminPageInner() {
   const [pendingAssignCheckinId, setPendingAssignCheckinId] = useState<number | null>(null);
   const [pendingBookingId, setPendingBookingId] = useState<number | null>(null);
   const [pendingCheckinId, setPendingCheckinId] = useState<number | null>(null);
+  const [pendingRecordCheckinId, setPendingRecordCheckinId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -402,12 +403,12 @@ function AdminPageInner() {
         fillViewport && "flex min-h-0 flex-1 flex-col",
       )}>
         <div className={cn(fillViewport && "flex h-full min-h-0 flex-1 flex-col")}>
-            {section === "dashboard" && <AdminDashboard password={password} username={username} role={role} onNavigate={(s, opts) => { if (opts?.assignGuestCheckinId) setPendingAssignCheckinId(opts.assignGuestCheckinId); if (opts?.bookingId) setPendingBookingId(opts.bookingId); if (opts?.managementTab) setManagementTab(opts.managementTab); setChannelManagerTab(opts?.channelManagerTab); setSection(s); }} permissions={permissions} />}
+            {section === "dashboard" && <AdminDashboard password={password} username={username} role={role} onNavigate={(s, opts) => { if (opts?.assignGuestCheckinId) setPendingAssignCheckinId(opts.assignGuestCheckinId); if (opts?.bookingId) setPendingBookingId(opts.bookingId); if (opts?.recordCheckinId) setPendingRecordCheckinId(opts.recordCheckinId); if (opts?.managementTab) setManagementTab(opts.managementTab); setChannelManagerTab(opts?.channelManagerTab); setSection(s); }} permissions={permissions} />}
             {section === "bookings" && <BookingDashboard password={password} username={username} role={role} permissions={permissions} initialBookingId={pendingBookingId} onInitialBookingConsumed={() => setPendingBookingId(null)} initialCheckinId={pendingCheckinId} onInitialCheckinConsumed={() => setPendingCheckinId(null)} />}
             {section === "beds" && <AdminBeds password={password} username={username} role={role} permissions={permissions} pendingAssignCheckinId={pendingAssignCheckinId} onPendingAssignConsumed={() => setPendingAssignCheckinId(null)} />}
             {section === "timeline" && <AdminTimeline password={password} username={username} role={role} permissions={permissions} />}
             {section === "inventory" && <InventoryRatePlan password={password} username={username} role={role} permissions={permissions} />}
-            {section === "records" && <AdminRecords password={password} username={username} role={role} permissions={permissions} onNavigate={(s, opts) => { if (opts?.checkinId) setPendingCheckinId(opts.checkinId); setSection(s); }} />}
+            {section === "records" && <AdminRecords password={password} username={username} role={role} permissions={permissions} initialCheckinId={pendingRecordCheckinId} onInitialCheckinConsumed={() => setPendingRecordCheckinId(null)} onNavigate={(s, opts) => { if (opts?.checkinId) setPendingCheckinId(opts.checkinId); setSection(s); }} />}
             {section === "foodOrders" && <AdminFoodOrders password={password} username={username} role={role} permissions={permissions} />}
             {section === "expenditure" && <AdminExpenditure password={password} username={username} role={role} permissions={permissions} />}
             {section === "splits" && isSplitsSectionEnabled() && <AdminSplits password={password} username={username} role={role} permissions={permissions} />}

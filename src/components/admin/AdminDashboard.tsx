@@ -26,7 +26,7 @@ export function AdminDashboard({
   password: string;
   username?: string;
   role: Role;
-  onNavigate: (section: AdminSection, opts?: { assignGuestCheckinId?: number; bookingId?: number; managementTab?: ManagementTab; channelManagerTab?: "sync" }) => void;
+  onNavigate: (section: AdminSection, opts?: { assignGuestCheckinId?: number; bookingId?: number; recordCheckinId?: number; managementTab?: ManagementTab; channelManagerTab?: "sync" }) => void;
   permissions?: Record<string, boolean>;
 }) {
   const { apiCall } = useAdminApi(password, username);
@@ -491,11 +491,12 @@ export function AdminDashboard({
               const hasDocReview = !item.vibeMatched && verifiedStatus === "doc_review";
               const isAnyFlagged = isFlagged || hasDobMismatch || hasNameReview || hasDocReview;
               const checkinId = parseInt(item.row[15]);
+              const canOpenRecord = hasPermission(role, permissions || {}, "canViewRecords");
               return (
-              <motion.div key={i} variants={staggerItem} className={cn("rounded-xl border bg-white dark:bg-zinc-900 p-3 shadow-sm dark:shadow-none transition-all duration-200 hover:bg-brand-sand/50 dark:hover:bg-zinc-800/50", isAnyFlagged ? "border-orange-300 dark:border-amber-800/50 bg-orange-50/40 dark:bg-amber-950/20" : "border-gray-100 dark:border-zinc-800")}>
+              <motion.div key={i} variants={staggerItem} onClick={(event) => { if (canOpenRecord && !(event.target as HTMLElement).closest("button,a,input,select,label")) onNavigate("records", { recordCheckinId: checkinId }); }} className={cn("rounded-xl border bg-white dark:bg-zinc-900 p-3 shadow-sm dark:shadow-none transition-all duration-200 hover:bg-brand-sand/50 dark:hover:bg-zinc-800/50", canOpenRecord && "cursor-pointer", isAnyFlagged ? "border-orange-300 dark:border-amber-800/50 bg-orange-50/40 dark:bg-amber-950/20" : "border-gray-100 dark:border-zinc-800")}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-semibold text-brand-green-dark dark:text-zinc-100">{item.row[3]}</p>
+                    {canOpenRecord ? <button type="button" onClick={() => onNavigate("records", { recordCheckinId: checkinId })} className="block max-w-full truncate text-left text-[15px] font-semibold text-brand-green-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green/50 dark:text-zinc-100" aria-label={`View details for ${item.row[3] || "guest"}`}>{item.row[3]}</button> : <p className="truncate text-[15px] font-semibold text-brand-green-dark dark:text-zinc-100">{item.row[3]}</p>}
                     <p className="mt-0.5 text-xs text-brand-green-dark/60 dark:text-zinc-500">{item.row[7]}, {item.row[8]} · {item.row[4]} person{item.row[4] !== "1" ? "s" : ""} · {item.row[6]} days</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

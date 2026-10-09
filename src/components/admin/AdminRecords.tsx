@@ -118,7 +118,7 @@ type BookingResolution = {
   deletableBookingId?: number;
 };
 
-export function AdminRecords({ password, username, role, permissions = {}, onNavigate }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; onNavigate?: (section: "bookings", opts?: { checkinId?: number }) => void }) {
+export function AdminRecords({ password, username, role, permissions = {}, initialCheckinId, onInitialCheckinConsumed, onNavigate }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; initialCheckinId?: number | null; onInitialCheckinConsumed?: () => void; onNavigate?: (section: "bookings", opts?: { checkinId?: number }) => void }) {
   const { apiCall } = useAdminApi(password, username);
   const { showError, showSuccess } = useAdminToast();
   const [rows, setRows] = useState<string[][]>([]);
@@ -207,6 +207,14 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
       }, 200);
     }
   }, [rows]);
+
+  useEffect(() => {
+    if (!initialCheckinId) return;
+    const index = rows.findIndex((row) => Number(row[17]) === initialCheckinId);
+    if (index === -1) return;
+    setSelectedRecord(index);
+    onInitialCheckinConsumed?.();
+  }, [initialCheckinId, onInitialCheckinConsumed, rows]);
 
   const filteredRows = useMemo(() => {
     let result = rows.map((row, origIdx) => ({ row, origIdx }));
