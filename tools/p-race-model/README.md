@@ -2,7 +2,17 @@
 
 This directory is a design-time model checker for bounded Goko workflows. It does not run in the Next.js application, touch D1, or use production credentials.
 
-## Food-order inventory
+## Runnable workflow suite
+
+`check.sh` compiles and checks five independent, bounded models:
+
+| Model | Contract |
+|---|---|
+| `FoodOrderRace` | two guest orders cannot oversell one tracked unit |
+| `FoodPaymentRace` | Razorpay capture and desk payment settle a food bill once |
+| `BookingPaymentRace` | stale booking-payment commits cannot over-collect |
+| `NativeHoldRace` | one physical bed cannot receive overlapping website holds |
+| `CheckinRace` | one idempotency key cannot upload identity files twice |
 
 `FoodOrderRace.p` models two guest orders for one tracked stock unit. Each attempt reads stock, then later requests a reservation. The scheduler explores the interleavings between those steps.
 
@@ -23,8 +33,6 @@ P_BIN=/home/goko/.local/bin/p bash tools/p-race-model/check.sh
 
 The script checks 100 schedules per test. The Pi baseline passed the guarded model for 100 schedules and found the unsafe counterexample on its first schedule. A P counterexample is an abstract trace, not evidence that a database implementation is fixed; promote every relevant trace to a D1 route/integration regression before changing production behavior.
 
-## Scope and next models
+## Scope
 
-The model deliberately excludes order headers, line-item compensation, tab limits, and push notifications. They are separate state transitions; including them before the stock reservation contract is wired into the route would add state without making the first race easier to diagnose.
-
-Next, add models for food QR capture versus desk payment, booking payment CAS/retry, native inventory holds, and self-check-in idempotency/checkout. Keep each model bounded and attach its invariants to the relevant flow document.
+The models deliberately exclude unbounded request volume, real provider I/O, Drive, D1, and UI rendering. They establish ownership contracts, not framework wiring. Keep future additions bounded and attach their invariants to the relevant flow document.

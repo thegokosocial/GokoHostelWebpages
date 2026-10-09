@@ -1,5 +1,9 @@
 # Guest self check-in
 
+## Race-model coverage
+
+[`CheckinRace.p`](../tools/p-race-model/CheckinRace.p) bounds two submissions with one idempotency key. Its guarded contract claims the submission before the document-upload side effect; the unsafe fixture demonstrates why a database uniqueness constraint reached only after upload cannot by itself prevent duplicate external uploads. This informs future route changes but does not replace the existing self-check-in integration coverage.
+
 **Git-safe.** Admin reviews records at `/admin` → Records. Password: [secrets-and-access.md](secrets-and-access.md).
 
 Pages: `/self-checkin` (static shell with full-bleed hero loop video + frosted glass form cards — see [frosted-glass.md](frosted-glass.md)). APIs: `/api/checkin/lookup`, `/api/validate-id`, `/api/checkin`.

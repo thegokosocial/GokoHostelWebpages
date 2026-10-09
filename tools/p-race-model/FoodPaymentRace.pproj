@@ -1,0 +1,5 @@
+<Project>
+  <ProjectName>GokoFoodPaymentRace</ProjectName>
+  <InputFiles><PFile>./FoodPaymentRace.p</PFile></InputFiles>
+  <OutputDir>./PGenerated/FoodPaymentRace/</OutputDir>
+</Project>

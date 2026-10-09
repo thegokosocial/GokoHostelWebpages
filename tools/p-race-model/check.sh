@@ -17,12 +17,21 @@ run_p() {
   fi
 }
 
-run_p p compile --pproj FoodOrderRace.pproj
-run_p p check -tc tcGuardedReserve -i 100
+run_model() {
+  local project="$1" safe_test="$2" unsafe_test="$3" dll
+  dll="./PGenerated/${project}/PChecker/net8.0/Goko${project}.dll"
+  run_p p compile --pproj "${project}.pproj"
+  run_p p check "$dll" -tc "$safe_test" -s 100
+  if run_p p check "$dll" -tc "$unsafe_test" -s 100; then
+    echo "${project} unsafe fixture unexpectedly passed" >&2
+    exit 1
+  fi
+}
 
-if run_p p check -tc tcUnsafeReadThenWrite -i 100; then
-  echo "unsafe model unexpectedly passed; the counterexample fixture is no longer exercising a race" >&2
-  exit 1
-fi
+run_model FoodOrderRace tcGuardedReserve tcUnsafeReadThenWrite
+run_model FoodPaymentRace tcClaimedFoodSettlement tcUnsafeFoodSettlement
+run_model BookingPaymentRace tcCasBookingPayment tcUnsafeBookingPayment
+run_model NativeHoldRace tcGuardedHold tcUnsafeHold
+run_model CheckinRace tcClaimedCheckin tcUnsafeCheckin
 
-echo "P model passed: guarded reserve is safe and unsafe read-then-write was rejected."
+echo "P models passed: every guarded contract held and every unsafe fixture was rejected."

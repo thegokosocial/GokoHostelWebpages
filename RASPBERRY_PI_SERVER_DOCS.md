@@ -194,14 +194,14 @@ P model checks are isolated design-time tests. They do not start the Goko app, t
 | Local P CLI | `/home/goko/.local/bin/p` |
 | Generated checker/output | `PGenerated/` and `PCheckerOutput/` inside the model workspace |
 
-Run the food-inventory model:
+Run the full P workflow suite:
 
 ```bash
 cd /home/goko/p-race-model
 P_BIN=/home/goko/.local/bin/p bash check.sh
 ```
 
-The runner first proves the guarded inventory-reservation model over 100 schedules, then requires the unsafe read-then-write fixture to fail. Its counterexample trace is retained on the Pi for replay. The official GHCR Docker image rejected anonymous pulls during setup, so use the verified local CLI command above until that registry access is resolved.
+The runner checks food inventory, food QR/desk settlement, booking-payment commits, native bed holds, and self-check-in upload claims. Every guarded model explores 100 schedules; every unsafe reference fixture must fail and retain a replay trace. The official GHCR Docker image rejected anonymous pulls during setup, so use the verified local CLI command above until that registry access is resolved.
 
 The committed source is `tools/p-race-model/`; see `docs/p-race-models.md` for model scope and the rule that every relevant counterexample becomes a D1 route/integration regression before a production behavior change.
 

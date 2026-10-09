@@ -2,7 +2,7 @@
 
 Goko uses small [P](https://p-org.github.io/P/) models to systematically explore asynchronous workflow interleavings before or alongside implementation changes. They complement unit, route/integration, and Playwright coverage; they are not production code, a D1 simulator, or a substitute for authorization tests.
 
-## Current model: guest food inventory
+## Runnable models
 
 `tools/p-race-model/FoodOrderRace.p` explores two one-item guest orders against one stock unit. Its invariant is that guest stock never becomes negative.
 
@@ -11,6 +11,18 @@ The expected-failure test models the existing dangerous pattern: a request reads
 This is directly relevant to the guest order flow in [flows-food-kitchen.md](flows-food-kitchen.md): validation reads menu stock before the order header/line creation path decrements it. The production change following a counterexample must preserve staff's explicit oversell behavior while using the guarded path for guest orders, return a reloadable sold-out conflict, and add route/integration plus browser retry coverage.
 
 On the Pi (64-bit Bookworm), the guarded model completed 100 schedules with zero bugs; the unsafe fixture found the negative-stock counterexample on its first schedule. The runner supports the official Docker image or a local P CLI through `P_BIN`.
+
+`check.sh` runs these bounded contracts as a set:
+
+| Model | Race boundary | Safety invariant |
+|---|---|---|
+| `FoodOrderRace` | stock read → guest reservation | tracked stock never goes negative |
+| `FoodPaymentRace` | Razorpay capture ↔ desk payment | one food bill is settled at most once |
+| `BookingPaymentRace` | stale payment snapshot → booking journal commit | collection never exceeds the due amount |
+| `NativeHoldRace` | two website checkouts → one physical bed hold | a physical bed has at most one active hold |
+| `CheckinRace` | retry submissions → identity-document upload | one idempotency key uploads documents at most once |
+
+Each has a guarded test that must pass and an unsafe reference test that must fail. The latter proves the checker can exercise the stated bug class; it is not an assertion that the production implementation has every unsafe behavior.
 
 ## Rules for future models
 
