@@ -165,6 +165,8 @@ Management tabs: My Preferences is self-service for every authenticated admin-sh
 | markClean | `canMarkClean` |
 
 Before deletion, Records checks linked food orders using `getDeleteInfo` and shows their order numbers, totals, and statuses. Deleting a check-in preserves historical food orders and physical bed rows by clearing their nullable `checkinId` references before deleting the check-in record.
+
+Records detail and edit dialogs are presentation only: opening a record adds no API permission. Their controls use the existing action map (for example, `canEditRecords` for edit/upload, `canAddBooking` for booking resolution, `canDeleteRecords` for record deletion, and `canViewDashboard` for Vibe resolution); the server remains authoritative for every mutation.
 | getBookings, getUpcomingBookings, updateBookingStatus | `canViewBookings` |
 | addBooking | `canAddBooking` |
 | deleteBooking | `canDeleteBooking` |

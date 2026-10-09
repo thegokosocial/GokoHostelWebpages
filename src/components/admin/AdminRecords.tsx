@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, ChevronDownIcon, PhoneIcon, MapPinIcon, CalendarIcon, CalendarXIcon, EyeIcon, EyeOffIcon, PowerIcon, LinkIcon, CalendarPlusIcon } from "lucide-react";
+import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, PhoneIcon, MapPinIcon, CalendarIcon, CalendarXIcon, EyeIcon, EyeOffIcon, PowerIcon, LinkIcon, CalendarPlusIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
@@ -16,6 +16,7 @@ import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { countries } from "@/content/countries";
 import { BOOKING_PLATFORMS, isForeignNationality } from "@/lib/checkinSchema";
 import { useAdminToast } from "@/components/admin/AdminToast";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const TEXT_FIELDS = [
   { index: 1, label: "Arrival Date", type: "date" },
@@ -182,12 +183,12 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
   const [showDobInRecords, setShowDobInRecords] = useState(false);
   const [viewMode, setViewMode] = useState<"card" | "table">(() => typeof window !== "undefined" && window.innerWidth < 1024 ? "card" : "table");
   const [expandedCard, setExpandedCard] = useState<number | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<number | null>(null);
   const [bookingResolutions, setBookingResolutions] = useState<Record<string, BookingResolution>>({});
   const [bookingLinkPopup, setBookingLinkPopup] = useState<{ checkinId: number; guestName: string } | null>(null);
   const [bookingSearch, setBookingSearch] = useState("");
   const [bookingSearchResults, setBookingSearchResults] = useState<any[]>([]);
   const [bookingSearchLoading, setBookingSearchLoading] = useState(false);
-  const editFormRef = useRef<HTMLDivElement>(null);
   const scrollBackId = useRef<string | null>(null);
   const recordsRequestId = useRef(0);
 
@@ -377,7 +378,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
     setEditLastName(nameParts.slice(1).join(" ") || "");
     setEditIdFiles([]);
     setEditVisaFiles([]);
-    setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    setSelectedRecord(null);
   };
 
   const updateRow = async () => {
@@ -1032,8 +1033,12 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
 
       {/* Edit form */}
       {editIndex !== null && (
-        <div ref={editFormRef} className="mt-4 rounded-2xl border-2 border-brand-green/20 bg-white dark:bg-card p-4 sm:p-6 shadow-card dark:shadow-none">
-          <h3 className="font-display text-lg font-bold text-brand-green">Edit entry</h3>
+        <Dialog open onOpenChange={(open) => { if (!open) setEditIndex(null); }}>
+        <DialogContent showCloseButton={false} className="max-h-[90dvh] max-w-4xl overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold text-brand-green">Edit check-in</DialogTitle>
+            <DialogDescription>Update this guest&apos;s check-in details and documents.</DialogDescription>
+          </DialogHeader>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
             {CHECKIN_COLUMNS.map((col, i) => (
               i === 0 ? null : col === "Name" ? (
@@ -1079,7 +1084,8 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
             <Button type="button" onClick={updateRow} disabled={loading}>{loading ? "Saving..." : "Save"}</Button>
             <Button type="button" variant="ghost" onClick={() => setEditIndex(null)}>Cancel</Button>
           </div>
-        </div>
+        </DialogContent>
+        </Dialog>
       )}
 
       {/* Card View */}
@@ -1111,8 +1117,9 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                   {/* Collapsed — always visible */}
                   <button
                     type="button"
-                    onClick={() => setExpandedCard(isExpanded ? null : origIdx)}
+                    onClick={() => { setExpandedCard(null); setSelectedRecord(origIdx); }}
                     className="flex w-full items-start justify-between gap-2 p-3 text-left"
+                    aria-label={`View details for ${row[3] || "guest"}`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1139,7 +1146,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                         <span className="flex items-center gap-1"><MapPinIcon className="h-3 w-3" />{row[7] || "—"}</span>
                       </div>
                     </div>
-                    <ChevronDownIcon className={cn("h-4 w-4 shrink-0 text-brand-green-dark/40 transition-transform mt-1", isExpanded && "rotate-180")} />
+                    <EyeIcon className="mt-1 h-4 w-4 shrink-0 text-brand-green-dark/40" aria-hidden="true" />
                   </button>
 
                   {/* Expanded — details + actions */}
@@ -1264,7 +1271,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                 const checkinId = parseInt(row[17] || "0", 10);
                 const resolution = bookingResolutions[String(checkinId)];
                 return (
-                <tr key={origIdx} data-record-id={row[17] || origIdx} className={cn("border-b border-brand-mist/60 last:border-b-0 transition-colors duration-150 hover:bg-brand-sand/40", guestAnyFlag && "bg-orange-50/40 dark:bg-orange-950/40")}>
+                <tr key={origIdx} data-record-id={row[17] || origIdx} onClick={(event) => { if (!(event.target as HTMLElement).closest("a,button,input,select,label")) setSelectedRecord(origIdx); }} className={cn("cursor-pointer border-b border-brand-mist/60 last:border-b-0 transition-colors duration-150 hover:bg-brand-sand/40", guestAnyFlag && "bg-orange-50/40 dark:bg-orange-950/40")}>
                   {CHECKIN_COLUMNS.map((col, ci) => {
                     if (ci === 0) return null;
                     const cell = row[ci] || "";
@@ -1274,7 +1281,7 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
                       return (
                         <td key={ci} className="whitespace-nowrap px-3 py-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-brand-green-dark/90">{cell}</span>
+                            <button type="button" onClick={() => setSelectedRecord(origIdx)} className="text-left text-brand-green-dark/90 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green/50">{cell}</button>
                             {showDobInRecords && guestDob && (
                               <span className="text-[10px] text-brand-green-dark/40">DOB: {guestDob}</span>
                             )}
@@ -1417,6 +1424,75 @@ export function AdminRecords({ password, username, role, permissions = {}, onNav
           </tbody>
         </table>
       </div>}
+
+      {selectedRecord !== null && rows[selectedRecord] && (() => {
+        const row = rows[selectedRecord];
+        const checkinId = parseInt(row[17] || "0", 10);
+        const resolution = bookingResolutions[String(checkinId)];
+        const guestDob = row[20] || "";
+        const guestDobFromId = row[22] || "";
+        const guestAge = getAgeFromDob(resolveDobForChecks(guestDob, guestDobFromId) || "");
+        const guestVibeMatched = row[21] === "1";
+        const guestAnyFlag = !guestVibeMatched && (
+          (guestAge !== null && (guestAge < ageRange.min || guestAge > ageRange.max)) ||
+          Boolean(guestDob && guestDobFromId && !dobsMatch(guestDob, guestDobFromId)) ||
+          row[16] === "name_review" || row[16] === "doc_review"
+        );
+        const linksFor = (value: string) => value.includes(" | ") ? value.split(" | ").filter((url) => url.startsWith("http")) : value.startsWith("http") ? [value] : [];
+        const idLinks = linksFor(row[14] || "");
+        const visaLinks = linksFor(row[15] || "");
+        const canEdit = hasPermission(role, permissions, "canEditRecords");
+        const canAddBooking = hasPermission(role, permissions, "canAddBooking");
+        const canResolveVibe = hasPermission(role, permissions, "canViewDashboard");
+        return (
+          <Dialog open onOpenChange={(open) => { if (!open) setSelectedRecord(null); }}>
+            <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto p-0" showCloseButton={false}>
+              <DialogHeader className="border-b border-brand-mist px-5 py-4 pr-12 sm:px-6">
+                <DialogTitle className="font-display text-xl font-bold text-brand-green-dark">{row[3] || "Guest record"}</DialogTitle>
+                <DialogDescription>{row[18] === "checked_out" ? "Checked out" : "Active check-in"} · {row[1] || "Arrival date unavailable"} {row[2] || ""}</DialogDescription>
+              </DialogHeader>
+              <button type="button" onClick={() => setSelectedRecord(null)} aria-label="Close record details" className="absolute right-3 top-3 rounded-md p-2 text-brand-green-dark/60 hover:bg-brand-sand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green/50"><XIcon className="h-4 w-4" /></button>
+              <div className="space-y-5 px-5 py-4 sm:px-6">
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-brand-green-dark/60">Stay details</h4>
+                  <dl className="mt-2 grid grid-cols-2 gap-x-5 gap-y-3 text-sm sm:grid-cols-3">
+                    {[["Persons", row[4]], ["Days", row[6]], ["Coming from", row[7]], ["Nationality", row[8]], ["Contact", row[5]], ["Emergency", row[9]], ["Emergency phone", row[10]], ["Platform", row[11]], ["Booking ID", row[12]], ["ID type", row[13]], ...(showDobInRecords && guestDob ? [["Date of birth", guestDob]] : [])].map(([label, value]) => <div key={String(label)}><dt className="text-xs text-brand-green-dark/50">{label}</dt><dd className="mt-0.5 break-words text-brand-green-dark">{value || "—"}</dd></div>)}
+                  </dl>
+                </section>
+                <section>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-brand-green-dark/60">Review and documents</h4>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-brand-sand px-2 py-1 text-xs font-medium text-brand-green-dark">{row[16] || "Pending"}</span>
+                    {guestAnyFlag && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Needs review</span>}
+                    {guestVibeMatched && <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Vibe OK</span>}
+                    {idLinks.map((url, index) => <a key={`id-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-xs font-medium text-brand-green hover:bg-brand-green/[0.12]">ID {idLinks.length > 1 ? index + 1 : "card"}<ExternalLinkIcon className="h-3 w-3" /></a>)}
+                    {visaLinks.map((url, index) => <a key={`visa-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">Visa {visaLinks.length > 1 ? index + 1 : ""}<ExternalLinkIcon className="h-3 w-3" /></a>)}
+                    {canEdit && idLinks.length === 0 && <Button size="sm" variant="outline" onClick={() => openUploadPopup(selectedRecord, "id", row[3] || "Guest", row[8] || "")}><UploadIcon className="h-3.5 w-3.5" />Upload ID</Button>}
+                    {canEdit && isForeignNationality(row[8]) && visaLinks.length === 0 && <Button size="sm" variant="outline" onClick={() => openUploadPopup(selectedRecord, "visa", row[3] || "Guest", row[8] || "")}><UploadIcon className="h-3.5 w-3.5" />Upload visa</Button>}
+                  </div>
+                </section>
+                <section className="border-t border-brand-mist pt-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-brand-green-dark/60">Actions</h4>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {canAddBooking && (resolution?.state === "pending" || resolution?.state === "matched") && <>
+                      <Button size="sm" onClick={() => onNavigate?.("bookings", { checkinId })}><CalendarPlusIcon className="h-3.5 w-3.5" />Create booking</Button>
+                      {resolution?.state === "matched" && resolution.match?.id ? <Button size="sm" variant="outline" onClick={() => void linkMatchedBooking(checkinId, resolution.match!.id)}><LinkIcon className="h-3.5 w-3.5" />Link matched</Button> : <Button size="sm" variant="outline" onClick={() => openBookingLink(checkinId, row[3] || "Guest")}><LinkIcon className="h-3.5 w-3.5" />Link existing</Button>}
+                      <Button size="sm" variant="outline" onClick={() => void markNoBookingNeeded(checkinId)}>No booking needed</Button>
+                    </>}
+                    {hasPermission(role, permissions, "canDeleteBooking") && resolution?.deletableBookingId && <Button size="sm" variant="destructive" onClick={() => void hardDeleteLinkedBooking(resolution.deletableBookingId!, row[3] || "Guest")}><CalendarXIcon className="h-3.5 w-3.5" />Delete booking</Button>}
+                    {(row[16] === "pending" || row[16] === "spoof_warning") && <Button size="sm" variant="outline" onClick={() => setVerifyPopup({ origIdx: selectedRecord, row })}><ShieldAlertIcon className="h-3.5 w-3.5" />Verify</Button>}
+                    {canResolveVibe && guestAnyFlag && <Button size="sm" variant="outline" disabled={vibeMatchingId === checkinId} onClick={() => void handleVibeMatch(checkinId, selectedRecord)}>{vibeMatchingId === checkinId ? "Checking..." : "Vibe OK"}</Button>}
+                    {canEdit && isForeignNationality(row[8]) && <Button size="sm" variant="outline" onClick={() => openFormC(selectedRecord, row)}><FileTextIcon className="h-3.5 w-3.5" />Form C</Button>}
+                    {canEdit && row[18] === "checked_out" && row[19] && Date.now() - new Date(row[19]).getTime() < 24 * 60 * 60 * 1000 && <Button size="sm" variant="outline" onClick={() => void undoCheckout(selectedRecord)}>Reactivate</Button>}
+                    {canEdit && <Button size="sm" variant="outline" onClick={() => startEdit(selectedRecord)}><PencilIcon className="h-3.5 w-3.5" />Edit</Button>}
+                    {hasPermission(role, permissions, "canDeleteRecords") && <Button size="sm" variant="destructive" onClick={() => void deleteRow(selectedRecord)}><Trash2Icon className="h-3.5 w-3.5" />Delete record</Button>}
+                  </div>
+                </section>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {bookingLinkPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setBookingLinkPopup(null)}>
