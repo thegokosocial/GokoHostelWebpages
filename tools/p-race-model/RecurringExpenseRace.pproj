@@ -1,5 +1,7 @@
-{
-  "ProjectName": "RecurringExpenseRace",
-  "PFiles": [ "RecurringExpenseRace.p" ],
-  "OutputDir": "PGenerated"
-}
+<Project>
+  <ProjectName>GokoRecurringExpenseRace</ProjectName>
+  <InputFiles>
+    <PFile>./RecurringExpenseRace.p</PFile>
+  </InputFiles>
+  <OutputDir>./PGenerated/RecurringExpenseRace/</OutputDir>
+</Project>

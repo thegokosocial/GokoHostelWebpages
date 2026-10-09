@@ -1,5 +1,7 @@
-{
-  "ProjectName": "PhysicalBedRace",
-  "PFiles": [ "PhysicalBedRace.p" ],
-  "OutputDir": "PGenerated"
-}
+<Project>
+  <ProjectName>GokoPhysicalBedRace</ProjectName>
+  <InputFiles>
+    <PFile>./PhysicalBedRace.p</PFile>
+  </InputFiles>
+  <OutputDir>./PGenerated/PhysicalBedRace/</OutputDir>
+</Project>
