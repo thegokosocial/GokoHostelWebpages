@@ -1,0 +1,5 @@
+{
+  "ProjectName": "PhysicalBedRace",
+  "PFiles": [ "PhysicalBedRace.p" ],
+  "OutputDir": "PGenerated"
+}

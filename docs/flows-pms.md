@@ -38,6 +38,8 @@ Math: `src/lib/inventoryAvailability.ts` (tested). Past nights (`date < todayIST
 
 ## Bed status
 
+`PhysicalBedRace.p` is the bounded concurrency contract for staff claims: exactly one guest may transition an available physical bed to occupied. `assignBed` already uses a conditional `status = 'available'` write. Bed moves need the same target claim before releasing the source; see [P race models](p-race-models.md) for the current hardening status.
+
 ```mermaid
 stateDiagram-v2
   available --> occupied: assignBed

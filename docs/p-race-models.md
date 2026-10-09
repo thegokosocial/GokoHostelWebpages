@@ -21,8 +21,31 @@ On the Pi (64-bit Bookworm), the guarded model completed 100 schedules with zero
 | `BookingPaymentRace` | stale payment snapshot → booking journal commit | collection never exceeds the due amount |
 | `NativeHoldRace` | two website checkouts → one physical bed hold | a physical bed has at most one active hold |
 | `CheckinRace` | retry submissions → identity-document upload | one idempotency key uploads documents at most once |
+| `PhysicalBedRace` | two staff claims → physical-bed occupancy | one physical bed is claimed at most once |
+| `ChannelBookingRace` | duplicate Aiosell webhook deliveries → booking creation | one channel reference creates at most one live booking |
+| `RecurringExpenseRace` | overlapping cron/manual schedule generation → occurrence/post | one rule/date creates at most one occurrence and expense |
 
 Each has a guarded test that must pass and an unsafe reference test that must fail. The latter proves the checker can exercise the stated bug class; it is not an assertion that the production implementation has every unsafe behavior.
+
+## Workflow coverage matrix
+
+This is the coverage boundary for the whole application. A P model belongs only where independently retried actors can violate a durable state invariant. Read-only pages, ordinary settings/CMS edits, and single-owner CRUD retain route and browser coverage rather than a toy concurrency model.
+
+| Area | Concurrent boundary | P status | Durable test target |
+|---|---|---|---|
+| Guest food order, kitchen, tab | stock reserve; QR capture versus desk payment | modelled | D1 inventory/payment routes + kitchen/browser flows |
+| Website booking and payment | bed hold; stale booking payment | modelled | checkout/payment integration + browser flow |
+| Self check-in and records | retry before Drive upload | modelled | claim/idempotency integration + browser retry |
+| Physical beds and timeline | two staff assign/change/checkout actions | modelled; route hardening required for change | D1 CAS lifecycle regression + Beds UI |
+| Aiosell booking ingest | duplicate or overlapping webhook/fetch delivery | modelled; uniqueness hardening required | webhook integration against duplicate delivery |
+| Calendar date-range assignment | overlapping bed assignment | modelled indirectly by `NativeHoldRace`; SQL conditional insert already covers the claim | booking-calendar integration |
+| Recurring expenses | cron/manual overlap for one rule/date | modelled | occurrence uniqueness + automatic-post integration |
+| Accounts, payouts, splits, reconciliation | append-only journals and unique receipt/allocation keys | route/integration coverage; add a model only if a concrete stale-write gap is found | financial D1 suites |
+| Tasks, reviews, notifications, attendance | last-write-wins collaboration; best-effort notifications | route/browser coverage | workflow/RBAC suites |
+| CMS, media, settings, quick links, analytics | administrative CRUD only | route/browser coverage | CMS/settings suites |
+| Auth, push preferences, sync/failover | session/replica/provider contracts, not a shared state-machine claim | auth/sync integration coverage | auth/sync suites |
+
+The two **hardening required** rows are intentional findings from this review, not coverage claims: `changeBed` makes two unconditional writes after a stale read, and `bookings.booking_ref` is indexed but not unique. The P models provide the bounded trace; the corresponding D1 regression and production-safe repair must land before those rows can be marked protected.
 
 ## Rules for future models
 

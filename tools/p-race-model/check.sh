@@ -33,5 +33,8 @@ run_model FoodPaymentRace tcClaimedFoodSettlement tcUnsafeFoodSettlement
 run_model BookingPaymentRace tcCasBookingPayment tcUnsafeBookingPayment
 run_model NativeHoldRace tcGuardedHold tcUnsafeHold
 run_model CheckinRace tcClaimedCheckin tcUnsafeCheckin
+run_model PhysicalBedRace tcClaimedPhysicalBed tcUnsafePhysicalBed
+run_model ChannelBookingRace tcUniqueChannelBooking tcUnsafeChannelBooking
+run_model RecurringExpenseRace tcUniqueRecurringExpense tcUnsafeRecurringExpense
 
 echo "P models passed: every guarded contract held and every unsafe fixture was rejected."

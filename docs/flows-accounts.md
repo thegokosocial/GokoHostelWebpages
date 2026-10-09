@@ -117,6 +117,8 @@ XLSX template → validate → dedupe → batch 50. Duplicate expense: date + am
 
 ## Recurring expenses
 
+`RecurringExpenseRace.p` bounds two overlapping schedule runs. The production owner is the unique `(rule_id, due_date)` occurrence plus the expense idempotency key; the P model asserts that only one occurrence and automatic expense can result. See [P race models](p-race-models.md) for the full matrix.
+
 Cloudflare web Admins can create daily, weekly, monthly, or yearly recurring expense rules with an optional inclusive end date. Rules retain normal expense category, vendor, payment, type, and notes fields; Internal Transfer is deliberately not recurring. Review rules create non-financial due drafts; automatic rules require a fixed amount and post a normal expense. Pending drafts may be posted with an actual amount and bill files or skipped. A unique rule/date occurrence makes retries safe, and a draft never affects Accounts or reconciliation before posting. Expense Records labels every expense linked to an occurrence as **Recurring**, including automatic posts and reviewed drafts that were posted from the schedule.
 
 Rules are displayed as detail cards showing status, amount, type/category, schedule, payment/account, vendor, notes, and audit metadata. The pencil opens a scroll-safe full-field editor; it uses the same validation and `saveRule` contract as creation.

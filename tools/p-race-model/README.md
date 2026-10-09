@@ -4,7 +4,7 @@ This directory is a design-time model checker for bounded Goko workflows. It doe
 
 ## Runnable workflow suite
 
-`check.sh` compiles and checks five independent, bounded models:
+`check.sh` compiles and checks eight independent, bounded models:
 
 | Model | Contract |
 |---|---|
@@ -13,6 +13,9 @@ This directory is a design-time model checker for bounded Goko workflows. It doe
 | `BookingPaymentRace` | stale booking-payment commits cannot over-collect |
 | `NativeHoldRace` | one physical bed cannot receive overlapping website holds |
 | `CheckinRace` | one idempotency key cannot upload identity files twice |
+| `PhysicalBedRace` | two staff claims cannot occupy the same physical bed |
+| `ChannelBookingRace` | duplicate Aiosell deliveries cannot create two bookings |
+| `RecurringExpenseRace` | duplicate cron runs cannot create/post the same rule/date twice |
 
 `FoodOrderRace.p` models two guest orders for one tracked stock unit. Each attempt reads stock, then later requests a reservation. The scheduler explores the interleavings between those steps.
 
