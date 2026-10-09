@@ -953,7 +953,7 @@ export async function POST(req: NextRequest) {
         : null;
       const taskViewer = username ? await getUserByUsername(username) : null;
       const myTaskRows = taskViewer && (role === "admin" || actionAllowed(role, permissions, ["canViewTasks", "canManageTasks"]) === "allowed")
-        ? await getTasks({ assigneeUserId: taskViewer.id })
+        ? await getTasks({ ownerUserId: taskViewer.id })
         : [];
       const myTasks = myTaskRows.map((row) => {
         let attachments: unknown[] = [];
@@ -1387,7 +1387,7 @@ export async function POST(req: NextRequest) {
     if (action === "deleteUser") {
       const { userId } = rest;
       if (!isValidId(userId)) return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
-      const assignedTasks = await getTasks({ assigneeUserId: userId, includeArchived: true });
+      const assignedTasks = await getTasks({ ownerUserId: userId, includeArchived: true });
       if (assignedTasks.length > 0) {
         return NextResponse.json({ error: "Reassign all tasks before deleting this user" }, { status: 409 });
       }

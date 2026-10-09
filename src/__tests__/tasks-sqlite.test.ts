@@ -35,6 +35,7 @@ describe("Tasks SQLite workflows", () => {
     sqlite.exec(`
       INSERT INTO users (username, password_hash, display_name, role, created_at) VALUES
         ('staff', 'hash', 'Staff User', 'staff', '2026-09-17T00:00:00.000Z'),
+        ('manager', 'hash', 'Manager User', 'manager', '2026-09-17T00:00:00.000Z'),
         ('deleted', 'hash', 'Deleted User', 'staff', '2026-09-17T00:00:00.000Z');
       UPDATE users SET deleted_at = '2026-09-17T01:00:00.000Z' WHERE username = 'deleted';
     `);
@@ -67,11 +68,17 @@ describe("Tasks SQLite workflows", () => {
     expect((await getTaskById(id!))?.tasks.assigneeUserId).toBeNull();
   });
 
+  it("returns a task for either task owner", async () => {
+    const id = await createTask({ title: "Pair inspection", assigneeUserId: 1, secondaryAssigneeUserId: 2, createdBy: "admin", updatedBy: "admin" });
+    expect((await getTasks({ ownerUserId: 1 })).map((row) => row.tasks.id)).toEqual([id]);
+    expect((await getTasks({ ownerUserId: 2 })).map((row) => row.tasks.id)).toEqual([id]);
+  });
+
   it("preserves task-linked expenses when the optional-assignee migration rebuilds tasks", async () => {
     const id = await createTask({ title: "Legacy purchase", taskType: "purchase", assigneeUserId: 1, createdBy: "admin", updatedBy: "admin" });
     const expenseId = await addExpense({ amount: 500, category: "Supplies", purpose: "Legacy", expenseDate: "2026-09-17", createdMonth: "2026-09", createdBy: "staff", taskId: id });
 
-    sqlite.exec(readMigration("0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql", "0082_task_notes_and_shopping.sql"));
+    sqlite.exec(readMigration("0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql", "0082_task_notes_and_shopping.sql", "0091_task_secondary_assignee.sql"));
     mocks.db = drizzle(sqlite, { schema });
 
     const task = await getTaskById(id!);
@@ -90,7 +97,7 @@ describe("Tasks SQLite workflows", () => {
   });
 
   it("only returns active users as task assignees", async () => {
-    expect((await getTaskAssignees()).map((user) => user.username)).toEqual(["staff"]);
+    expect((await getTaskAssignees()).map((user) => user.username)).toEqual(["manager", "staff"]);
   });
 
   it("stores follower usernames on the synced task row", async () => {
@@ -161,7 +168,7 @@ describe("Tasks SQLite workflows", () => {
 });
 
 function readMigration(...files: string[]) {
-  return (files.length ? files : ["0055_tasks.sql", "0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql", "0082_task_notes_and_shopping.sql"])
+  return (files.length ? files : ["0055_tasks.sql", "0056_tasks_optional_assignee.sql", "0076_task_followers_and_notifications.sql", "0082_task_notes_and_shopping.sql", "0091_task_secondary_assignee.sql"])
     .map((file) => readFileSync(`migrations/${file}`, "utf8"))
     .join("\n");
 }

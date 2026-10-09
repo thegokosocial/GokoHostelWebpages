@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
     if (!row || row.tasks.deletedAt) return NextResponse.json({ error: "Task not found" }, { status: 404 });
     const actorName = username || auth.displayName || auth.role;
     const actorUser = username ? await getUserByUsername(username) : null;
-    if (!canManage && (!actorUser || actorUser.id !== row.tasks.assigneeUserId)) {
-      return NextResponse.json({ error: "Only the assigned user can upload to this task" }, { status: 403 });
+    if (!canManage && (!actorUser || (actorUser.id !== row.tasks.assigneeUserId && actorUser.id !== row.tasks.secondaryAssigneeUserId))) {
+      return NextResponse.json({ error: "Only an assigned user can upload to this task" }, { status: 403 });
     }
     const existing = jsonAttachments(row.tasks.attachments);
     if (existing.length >= 5) return NextResponse.json({ error: "A task can have at most five files" }, { status: 400 });

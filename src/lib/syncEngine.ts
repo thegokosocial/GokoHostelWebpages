@@ -94,7 +94,7 @@ const FK_REMAP: Record<string, Record<string, string>> = {
   payable_bills: { vendorId: "vendors" },
   payable_bill_adjustments: { payableBillId: "payable_bills" },
   payable_bill_notes: { payableBillId: "payable_bills" },
-  tasks: { assigneeUserId: "users" },
+  tasks: { assigneeUserId: "users", secondaryAssigneeUserId: "users" },
   guest_receipts: { accountId: "accounts" },
   booking_cycle_snapshots: { bookingId: "bookings" },
   booking_payment_events: { bookingId: "bookings", accountId: "accounts" },

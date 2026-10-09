@@ -12,6 +12,7 @@ type TaskRow = {
   priority: string;
   dueDate: string;
   assigneeUserId: number | null;
+  secondaryAssigneeUserId: number | null;
   status: string;
   note: string;
   notes: Note[];
@@ -38,10 +39,13 @@ const USERS: User[] = [
 
 function serializeTask(task: TaskRow) {
   const assignee = USERS.find((user) => user.id === task.assigneeUserId) || null;
+  const secondaryAssignee = USERS.find((user) => user.id === task.secondaryAssigneeUserId) || null;
   const followers = USERS.filter((user) => task.followerUsernames.includes(user.username));
   return {
     ...task,
     assignee: assignee ? { id: assignee.id, username: assignee.username, displayName: assignee.displayName, role: assignee.role } : null,
+    secondaryAssignee: secondaryAssignee ? { id: secondaryAssignee.id, username: secondaryAssignee.username, displayName: secondaryAssignee.displayName, role: secondaryAssignee.role } : null,
+    creatorDisplayName: USERS.find((user) => user.username === task.createdBy)?.displayName || task.createdBy,
     followers,
   };
 }
@@ -143,6 +147,7 @@ async function mockTasksShell(page: Page) {
         priority: String(body.priority || "normal"),
         dueDate: String(body.dueDate || ""),
         assigneeUserId: Number.isFinite(assigneeUserId as number) ? assigneeUserId : null,
+        secondaryAssigneeUserId: body.secondaryAssigneeUserId == null || body.secondaryAssigneeUserId === "" ? null : Number(body.secondaryAssigneeUserId),
         status: "todo",
         note: "",
         notes: [],
@@ -191,6 +196,11 @@ async function mockTasksShell(page: Page) {
         next.assigneeUserId = body.assigneeUserId == null || body.assigneeUserId === ""
           ? null
           : Number(body.assigneeUserId);
+      }
+      if (body.secondaryAssigneeUserId !== undefined) {
+        next.secondaryAssigneeUserId = body.secondaryAssigneeUserId == null || body.secondaryAssigneeUserId === ""
+          ? null
+          : Number(body.secondaryAssigneeUserId);
       }
       if (Array.isArray(body.followerUsernames)) next.followerUsernames = body.followerUsernames as string[];
       if (Array.isArray(body.shoppingItems)) {
@@ -376,7 +386,7 @@ async function fillCoreFields(page: Page, opts: {
   await dialog.locator("label").filter({ hasText: "Description" }).locator("textarea").fill(opts.description);
   await dialog.locator("label").filter({ hasText: "Type" }).locator("select").selectOption(opts.type);
   if (opts.assignStaff) {
-    await dialog.locator("label").filter({ hasText: "Assignee" }).locator("select").selectOption("2");
+    await dialog.getByLabel(/Primary assignee/i).selectOption("2");
   }
   if (opts.followManager) {
     await dialog.locator("fieldset").filter({ hasText: "Followers" }).getByText("Manager User · manager").click();
@@ -433,6 +443,22 @@ test("general task: create → followers → note → edit → done (status noti
   expect(update?.body.followerUsernames).toEqual(expect.arrayContaining(["staff", "manager"]));
   await expect(page.getByRole("heading", { name: "Fix lobby light ASAP" })).toBeVisible();
   await expect(page.locator("div.rounded-xl", { has: page.getByRole("heading", { name: "Fix lobby light ASAP" }) }).getByText("Done", { exact: true })).toBeVisible();
+});
+
+test("task card shows creator and a secondary co-owner", async ({ page }) => {
+  const api = await mockTasksShell(page);
+  await signInToTasks(page);
+  await openNewTask(page);
+  const dialog = page.locator(".fixed.inset-0").filter({ has: page.getByRole("heading", { name: "New task" }) });
+  await dialog.getByLabel(/Title/i).fill("Joint safety review");
+  await dialog.getByLabel(/Primary assignee/i).selectOption("2");
+  await dialog.getByLabel(/Secondary assignee/i).selectOption("3");
+  await dialog.getByRole("button", { name: /^Save$/ }).click();
+  const card = page.locator("div.rounded-xl", { has: page.getByRole("heading", { name: "Joint safety review" }) });
+  await expect(card.getByText(/Created by E2E Admin/)).toBeVisible();
+  await expect(card.getByText(/Secondary: Manager User/)).toBeVisible();
+  expect(api.last("createTask")?.body).toMatchObject({ assigneeUserId: "2", secondaryAssigneeUserId: "3" });
+  expect(api.last("createTask")?.body.followerUsernames).toEqual(expect.arrayContaining(["manager"]));
 });
 
 test("purchase task: create → edit → note → done → expense pending → record expense", async ({ page }) => {
@@ -558,7 +584,7 @@ test("assignee card status select marks general task done without opening editor
     type: "general",
   });
   const createDialog = page.locator(".fixed.inset-0").filter({ has: page.getByRole("heading", { name: "New task" }) });
-  await createDialog.locator("label").filter({ hasText: "Assignee" }).locator("select").selectOption("1");
+  await createDialog.getByLabel(/Primary assignee/i).selectOption("1");
   await createDialog.getByRole("button", { name: /^Save$/ }).click();
   await expect(page.getByText("Task created")).toBeVisible();
 

@@ -60,6 +60,9 @@ function jsonUsernames(value: string | null | undefined): string[] {
 function presentTask(row: Awaited<ReturnType<typeof getTaskById>>, activeUsers: Map<string, TaskUser>) {
   if (!row) return null;
   const task = row.tasks;
+  const activeUsersById = new Map([...activeUsers.values()].map((user) => [user.id, user]));
+  const secondaryAssignee = task.secondaryAssigneeUserId ? activeUsersById.get(task.secondaryAssigneeUserId) : null;
+  const creator = activeUsers.get(task.createdBy);
   return {
     ...task,
     notes: presentTaskNotes(task.notes, task.note, {
@@ -76,6 +79,13 @@ function presentTask(row: Awaited<ReturnType<typeof getTaskById>>, activeUsers: 
       displayName: row.users.displayName,
       role: row.users.role,
     } : null,
+    secondaryAssignee: secondaryAssignee ? {
+      id: secondaryAssignee.id,
+      username: secondaryAssignee.username,
+      displayName: secondaryAssignee.displayName,
+      role: secondaryAssignee.role,
+    } : null,
+    creatorDisplayName: creator?.displayName || task.createdBy,
     expense: row.expenses ? {
       id: row.expenses.id,
       amount: row.expenses.amount,
@@ -205,17 +215,23 @@ export async function POST(req: NextRequest) {
       const title = typeof rest.title === "string" ? rest.title.trim() : "";
       const hasAssignee = rest.assigneeUserId !== undefined && rest.assigneeUserId !== null && String(rest.assigneeUserId).trim() !== "";
       const assigneeUserId = hasAssignee ? Number(rest.assigneeUserId) : null;
+      const hasSecondaryAssignee = rest.secondaryAssigneeUserId !== undefined && rest.secondaryAssigneeUserId !== null && String(rest.secondaryAssigneeUserId).trim() !== "";
+      const secondaryAssigneeUserId = hasSecondaryAssignee ? Number(rest.secondaryAssigneeUserId) : null;
       const taskType = rest.taskType || "general";
       if (!title || title.length > 200) return taskError("A title between 1 and 200 characters is required");
       if (hasAssignee && !validId(assigneeUserId)) return taskError("Assignee must be a valid user");
+      if (hasSecondaryAssignee && !validId(secondaryAssigneeUserId)) return taskError("Secondary assignee must be a valid user");
+      if (assigneeUserId && secondaryAssigneeUserId === assigneeUserId) return taskError("Primary and secondary assignees must be different users");
       if (!TASK_TYPE_SET.has(taskType)) return taskError("Invalid task type");
       if (!PRIORITIES.has(rest.priority || "normal")) return taskError("Invalid priority");
       if (!validDate(rest.dueDate || "")) return taskError("dueDate must be YYYY-MM-DD");
       const assignee = assigneeUserId ? await getUserById(assigneeUserId) : null;
       if (hasAssignee && (!assignee || assignee.deletedAt)) return taskError("Assignee is not available", 404);
+      const secondaryAssignee = secondaryAssigneeUserId ? await getUserById(secondaryAssigneeUserId) : null;
+      if (hasSecondaryAssignee && (!secondaryAssignee || secondaryAssignee.deletedAt)) return taskError("Secondary assignee is not available", 404);
       const resolvedFollowers = rest.followerUsernames === undefined ? null : await resolveFollowers(rest.followerUsernames);
       if (rest.followerUsernames !== undefined && !resolvedFollowers) return taskError("Followers must be active users");
-      const followerUsernames = resolvedFollowers || [...new Set([actorUser && !actorUser.deletedAt ? actorUser.username : null, assignee?.username].filter((name): name is string => Boolean(name)))];
+      const followerUsernames = [...new Set([...(resolvedFollowers || [actorUser && !actorUser.deletedAt ? actorUser.username : null, assignee?.username].filter((name): name is string => Boolean(name))), secondaryAssignee?.username].filter((name): name is string => Boolean(name)))];
       let shoppingItems = "[]";
       if (taskType === "shopping") {
         const built = buildShoppingItemsFromInput(rest.shoppingItems ?? []);
@@ -230,6 +246,7 @@ export async function POST(req: NextRequest) {
         priority: rest.priority || "normal",
         dueDate: rest.dueDate || "",
         assigneeUserId,
+        secondaryAssigneeUserId,
         followerUsernames: JSON.stringify(followerUsernames),
         notes: "[]",
         shoppingItems,
@@ -237,7 +254,8 @@ export async function POST(req: NextRequest) {
         updatedBy: actorName,
       });
       await addAuditEntry({ username: actorName, action: "task_created", target: `task:${id}`, details: `${title} → ${assignee?.displayName || "Unassigned"}` });
-      if (id && assignee?.username && assignee.username !== actorUsername) await notifyTaskAssigned(id, title, actorName, [assignee.username]);
+      const newAssigneeUsernames = [...new Set([assignee?.username, secondaryAssignee?.username].filter((name): name is string => Boolean(name) && name !== actorUsername))];
+      if (id && newAssigneeUsernames.length) await notifyTaskAssigned(id, title, actorName, newAssigneeUsernames);
       return NextResponse.json({ success: true, id });
     }
 
@@ -252,6 +270,7 @@ export async function POST(req: NextRequest) {
       actorUserId: actorUser?.id,
       actorUsername,
       assigneeUserId: task.assigneeUserId,
+      secondaryAssigneeUserId: task.secondaryAssigneeUserId,
       followerUsernamesJson: task.followerUsernames,
     });
 
@@ -345,7 +364,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "updateAssignedTask") {
       if (task.deletedAt) return taskError("Archived tasks cannot be updated", 409);
-      if (!actorUser || actorUser.id !== task.assigneeUserId) return taskError("Only the assigned user can update this task", 403);
+      if (!actorUser || (actorUser.id !== task.assigneeUserId && actorUser.id !== task.secondaryAssigneeUserId)) return taskError("Only an assigned user can update this task", 403);
       const status = rest.status;
       if (status !== undefined && !STATUSES.has(status)) return taskError("Invalid task status");
       if (task.status === "done" && status !== undefined && status !== "done" && !canManage) {
@@ -381,6 +400,8 @@ export async function POST(req: NextRequest) {
       const data: Parameters<typeof updateTask>[1] = { updatedBy: actorName };
       let nextAssignee = row.users;
       let assigneeChanged = false;
+      let nextSecondaryAssignee: TaskUser | null = task.secondaryAssigneeUserId ? (await getTaskAssignees()).find((user) => user.id === task.secondaryAssigneeUserId) || null : null;
+      let secondaryAssigneeChanged = false;
       let followerUsernames = jsonUsernames(task.followerUsernames);
       if (rest.followerUsernames !== undefined) {
         const resolved = await resolveFollowers(rest.followerUsernames);
@@ -437,6 +458,34 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+      if (data.assigneeUserId && nextSecondaryAssignee?.id === data.assigneeUserId) {
+        return taskError("Primary and secondary assignees must be different users");
+      }
+      if (rest.secondaryAssigneeUserId !== undefined) {
+        const hasSecondaryAssignee = rest.secondaryAssigneeUserId !== null && String(rest.secondaryAssigneeUserId).trim() !== "";
+        if (!hasSecondaryAssignee) {
+          data.secondaryAssigneeUserId = null;
+          nextSecondaryAssignee = null;
+          secondaryAssigneeChanged = task.secondaryAssigneeUserId !== null;
+        } else {
+          const secondaryAssigneeUserId = Number(rest.secondaryAssigneeUserId);
+          const secondaryAssignee = validId(secondaryAssigneeUserId) ? await getUserById(secondaryAssigneeUserId) : null;
+          if (!secondaryAssignee || secondaryAssignee.deletedAt) return taskError("Secondary assignee is not available", 404);
+          const nextPrimaryId = data.assigneeUserId === undefined ? task.assigneeUserId : data.assigneeUserId;
+          if (secondaryAssigneeUserId === nextPrimaryId) return taskError("Primary and secondary assignees must be different users");
+          data.secondaryAssigneeUserId = secondaryAssigneeUserId;
+          nextSecondaryAssignee = secondaryAssignee;
+          secondaryAssigneeChanged = task.secondaryAssigneeUserId !== secondaryAssigneeUserId;
+          if (secondaryAssigneeChanged && !followerUsernames.includes(secondaryAssignee.username)) {
+            followerUsernames = [...followerUsernames, secondaryAssignee.username];
+            data.followerUsernames = JSON.stringify(followerUsernames);
+          }
+        }
+      }
+      if (nextSecondaryAssignee && !followerUsernames.includes(nextSecondaryAssignee.username)) {
+        followerUsernames = [...followerUsernames, nextSecondaryAssignee.username];
+        data.followerUsernames = JSON.stringify(followerUsernames);
+      }
       if (rest.status !== undefined) {
         if (!STATUSES.has(rest.status)) return taskError("Invalid task status");
         data.status = rest.status;
@@ -450,8 +499,12 @@ export async function POST(req: NextRequest) {
       }
       await updateTask(taskId, data);
       await addAuditEntry({ username: actorName, action: "task_updated", target: `task:${taskId}`, details: JSON.stringify({ ...rest, note: undefined }) });
-      if (assigneeChanged && nextAssignee?.username && nextAssignee.username !== actorUsername) {
-        await notifyTaskAssigned(taskId, data.title || task.title, actorName, [nextAssignee.username]);
+      const newlyAssignedUsernames = [...new Set([
+        assigneeChanged ? nextAssignee?.username : null,
+        secondaryAssigneeChanged ? nextSecondaryAssignee?.username : null,
+      ].filter((name): name is string => Boolean(name) && name !== actorUsername))];
+      if (newlyAssignedUsernames.length) {
+        await notifyTaskAssigned(taskId, data.title || task.title, actorName, newlyAssignedUsernames);
       }
       if (rest.status !== undefined) {
         await notifyStatusTransition({

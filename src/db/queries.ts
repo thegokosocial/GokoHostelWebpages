@@ -374,18 +374,19 @@ export async function getTaskAssignees() {
     .orderBy(users.displayName);
 }
 
-function taskWhere(includeArchived: boolean, assigneeUserId?: number) {
+function taskWhere(includeArchived: boolean, assigneeUserId?: number, ownerUserId?: number) {
   const conditions = [includeArchived ? undefined : sql`${tasks.deletedAt} IS NULL`];
   if (assigneeUserId != null) conditions.push(eq(tasks.assigneeUserId, assigneeUserId));
+  if (ownerUserId != null) conditions.push(or(eq(tasks.assigneeUserId, ownerUserId), eq(tasks.secondaryAssigneeUserId, ownerUserId)));
   return and(...conditions.filter((condition): condition is NonNullable<typeof condition> => Boolean(condition)));
 }
 
-export async function getTasks(options: { includeArchived?: boolean; assigneeUserId?: number } = {}) {
+export async function getTasks(options: { includeArchived?: boolean; assigneeUserId?: number; ownerUserId?: number } = {}) {
   const db = getDb();
   return db.select().from(tasks)
     .leftJoin(users, eq(tasks.assigneeUserId, users.id))
     .leftJoin(expenses, and(eq(tasks.id, expenses.taskId), sql`${expenses.deletedAt} IS NULL`))
-    .where(taskWhere(Boolean(options.includeArchived), options.assigneeUserId))
+    .where(taskWhere(Boolean(options.includeArchived), options.assigneeUserId, options.ownerUserId))
     .orderBy(sql`CASE WHEN ${tasks.status} = 'done' THEN 1 ELSE 0 END`, sql`CASE WHEN ${tasks.dueDate} = '' THEN 1 ELSE 0 END`, tasks.dueDate, desc(tasks.id));
 }
 
@@ -400,7 +401,7 @@ export async function getTaskById(id: number) {
 
 export async function createTask(data: {
   title: string; description?: string; taskType?: string; category?: string;
-  priority?: TaskPriority; dueDate?: string; assigneeUserId?: number | null;
+  priority?: TaskPriority; dueDate?: string; assigneeUserId?: number | null; secondaryAssigneeUserId?: number | null;
   status?: TaskStatus; note?: string; notes?: string; shoppingItems?: string;
   attachments?: string; createdBy: string;
   followerUsernames?: string;
@@ -429,7 +430,7 @@ export async function createTask(data: {
 
 export async function updateTask(id: number, data: Partial<{
   title: string; description: string; taskType: string; category: string;
-  priority: TaskPriority; dueDate: string; assigneeUserId: number | null;
+  priority: TaskPriority; dueDate: string; assigneeUserId: number | null; secondaryAssigneeUserId: number | null;
   status: TaskStatus; note: string; notes: string; shoppingItems: string;
   attachments: string; completedAt: string;
   completedBy: string; updatedBy: string; followerUsernames: string;

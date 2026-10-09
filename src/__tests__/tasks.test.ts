@@ -43,7 +43,7 @@ describe("Tasks implementation wiring", () => {
     expect(route).toContain('toggleShoppingItem: ["canViewTasks", "canManageTasks"]');
     expect(route).toContain('deleteArchivedTask: "admin_only"');
     expect(route).toContain('createTaskExpense: "canAddExpense"');
-    expect(route).toContain("actorUser.id !== task.assigneeUserId");
+    expect(route).toContain("actorUser.id !== task.assigneeUserId && actorUser.id !== task.secondaryAssigneeUserId");
     expect(route).toContain("Archived tasks cannot be updated");
     expect(route).toContain("Only a task manager can reopen a completed task");
     expect(route).toContain("This task already has a linked expense");
@@ -56,13 +56,14 @@ describe("Tasks implementation wiring", () => {
     expect(route).toContain("application/pdf");
     expect(route).toContain("10 * 1024 * 1024");
     expect(route).toContain("existing.length >= 5");
-    expect(route).toContain("Only the assigned user can upload to this task");
+    expect(route).toContain("Only an assigned user can upload to this task");
   });
 
   it("wires tasks into schema, migration, dashboard, management UI, and sync", () => {
     const schema = readFileSync("src/db/schema.ts", "utf8");
     const migration = readFileSync("migrations/0055_tasks.sql", "utf8");
     const optionalAssigneeMigration = readFileSync("migrations/0056_tasks_optional_assignee.sql", "utf8");
+    const secondaryAssigneeMigration = readFileSync("migrations/0091_task_secondary_assignee.sql", "utf8");
     const sync = readFileSync("src/lib/syncEngine.ts", "utf8");
     const dashboardApi = readFileSync("src/app/api/admin/checkins/route.ts", "utf8");
     const dashboard = readFileSync("src/components/admin/AdminDashboard.tsx", "utf8");
@@ -80,11 +81,13 @@ describe("Tasks implementation wiring", () => {
     expect(taskManagement).toContain("deleteArchivedTask");
     expect(schema).toContain('taskId: integer("task_id")');
     expect(schema).toContain('assigneeUserId: integer("assignee_user_id").references');
+    expect(schema).toContain('secondaryAssigneeUserId: integer("secondary_assignee_user_id").references');
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS tasks");
     expect(migration).toContain("ALTER TABLE expenses ADD COLUMN task_id");
     expect(optionalAssigneeMigration).toContain("assignee_user_id INTEGER REFERENCES users(id)");
     expect(sync).toContain('tasks: schema.tasks');
-    expect(sync).toContain('tasks: { assigneeUserId: "users" }');
+    expect(secondaryAssigneeMigration).toContain("secondary_assignee_user_id INTEGER REFERENCES users(id)");
+    expect(sync).toContain('tasks: { assigneeUserId: "users", secondaryAssigneeUserId: "users" }');
     expect(dashboardApi).toContain("myTasks");
     expect(dashboard.indexOf("<AdminMyTasks")).toBeLessThan(dashboard.indexOf("{/* Validation toggle"));
     expect(dashboard.indexOf("<AdminMyTasks")).toBeGreaterThan(dashboard.indexOf("{/* Quick actions */}"));

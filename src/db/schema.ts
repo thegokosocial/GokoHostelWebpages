@@ -354,6 +354,7 @@ export const tasks = sqliteTable("tasks", {
   priority: text("priority").notNull().default("normal"),
   dueDate: text("due_date").default(""),
   assigneeUserId: integer("assignee_user_id").references(() => users.id),
+  secondaryAssigneeUserId: integer("secondary_assignee_user_id").references(() => users.id),
   status: text("status").notNull().default("todo"),
   note: text("note").notNull().default(""),
   notes: text("notes").notNull().default("[]"),
@@ -369,6 +370,7 @@ export const tasks = sqliteTable("tasks", {
   ...syncColumnsWithDelete,
 }, (table) => [
   index("idx_tasks_assignee").on(table.assigneeUserId),
+  index("idx_tasks_secondary_assignee").on(table.secondaryAssigneeUserId),
   index("idx_tasks_status").on(table.status),
   index("idx_tasks_due_date").on(table.dueDate),
 ]);

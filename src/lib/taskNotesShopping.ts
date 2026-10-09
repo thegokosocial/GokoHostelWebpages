@@ -164,10 +164,12 @@ export function canCollaborateOnTask(opts: {
   actorUserId?: number | null;
   actorUsername?: string | null;
   assigneeUserId?: number | null;
+  secondaryAssigneeUserId?: number | null;
   followerUsernamesJson?: string | null;
 }): boolean {
   if (opts.canManage) return true;
   if (opts.actorUserId && opts.assigneeUserId && opts.actorUserId === opts.assigneeUserId) return true;
+  if (opts.actorUserId && opts.secondaryAssigneeUserId && opts.actorUserId === opts.secondaryAssigneeUserId) return true;
   if (opts.actorUsername) {
     try {
       const parsed = JSON.parse(opts.followerUsernamesJson || "[]");

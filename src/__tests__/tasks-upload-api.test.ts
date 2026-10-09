@@ -45,7 +45,7 @@ beforeEach(() => {
   }
   q.isOfflineMode.mockReturnValue(false);
   q.getTaskById.mockResolvedValue({
-    tasks: { id: 10, deletedAt: null, assigneeUserId: 5, attachments: "[]" },
+    tasks: { id: 10, deletedAt: null, assigneeUserId: 5, secondaryAssigneeUserId: null, attachments: "[]" },
   });
   q.getUserByUsername.mockResolvedValue({ id: 5, username: "staff1" });
   q.updateTask.mockResolvedValue(undefined);
@@ -75,6 +75,13 @@ describe("Tasks upload API RBAC / ownership", () => {
     expect(res.status).toBe(200);
     expect(q.driveUploadFile).toHaveBeenCalled();
     expect(q.updateTask).toHaveBeenCalled();
+  });
+
+  it("secondary assignee with canViewTasks can upload", async () => {
+    q.authenticateUser.mockResolvedValue({ role: "staff", displayName: "Staff", permissions: { canViewTasks: true } });
+    q.getTaskById.mockResolvedValue({ tasks: { id: 10, deletedAt: null, assigneeUserId: 5, secondaryAssigneeUserId: 6, attachments: "[]" } });
+    q.getUserByUsername.mockResolvedValue({ id: 6, username: "staff1" });
+    expect((await POST(upload())).status).toBe(200);
   });
 
   it("viewer who is not assignee cannot upload", async () => {
