@@ -16,6 +16,13 @@ async function mockAdminApi(page: Page) {
       await route.fulfill({ json: { success: true } });
       return;
     }
+    if (url.pathname === "/api/push") {
+      const body = JSON.parse(route.request().postData() || "{}") as { action?: string; mutedNotificationTypes?: string[] };
+      await route.fulfill({ json: body.action === "getPreferences"
+        ? { allowedCategories: ["checkin"], mutedNotificationTypes: [] }
+        : { success: true, allowedCategories: ["checkin"], mutedNotificationTypes: body.mutedNotificationTypes || [] } });
+      return;
+    }
     if (!url.pathname.startsWith("/api/admin/")) {
       await route.fulfill({ json: {} });
       return;
@@ -184,6 +191,26 @@ test("desktop Management tabs still switch directly", async ({ page }) => {
 
   await page.getByRole("button", { name: "Rates", exact: true }).click();
   await expect(page).toHaveURL(/tab=rates/);
+});
+
+test("notification preferences expose and save the actionable check-in alert", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: {
+      ready: Promise.resolve({ pushManager: { getSubscription: async () => ({ endpoint: "https://push.example/e2e" }) } }),
+    } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInToManagement(page);
+  const picker = page.getByRole("button", { name: "History", exact: true });
+  await picker.click();
+  await page.locator("#management-mobile-nav").getByRole("option", { name: "My Preferences", exact: true }).click();
+  const review = page.getByLabel("Check-in needs review");
+  await expect(review).toBeChecked();
+  await review.uncheck();
+  await page.getByRole("button", { name: "Save notification preferences" }).click();
+  await expect(page.getByRole("status")).toContainText("Notification preferences saved");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.getByLabel("Check-in needs review")).toBeVisible();
 });
 
 test("Food Settings confirms Save All completion", async ({ page }) => {

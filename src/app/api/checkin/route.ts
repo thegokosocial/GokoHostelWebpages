@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation } from "@/lib/validateIdDocument";
 import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
-import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, incrementStat, getMonthKey, addAuditEntry, addSystemLog } from "@/db/queries";
+import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, incrementStat, getMonthKey, getSetting, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
 import { isForeignNationality } from "@/lib/checkinSchema";
@@ -11,6 +11,7 @@ import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRate
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
 import { digestFiles, verifyCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
+import { checkinReviewReasons } from "@/lib/checkinReview";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -377,8 +378,10 @@ export async function POST(req: NextRequest) {
       idempotencyKey,
     };
 
+    let createdId: number | undefined;
     try {
-      await addCheckin(checkinData);
+      const rows = await addCheckin(checkinData);
+      createdId = rows?.[0]?.id;
     } catch (insertErr: unknown) {
       if (isUniqueConstraintError(insertErr)) {
         const raced = await getCheckinByIdempotencyKey(idempotencyKey);
@@ -389,7 +392,8 @@ export async function POST(req: NextRequest) {
       const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
       if (msg.includes("dob") || msg.includes("vibe_matched") || msg.includes("dob_from_id")) {
         const { dob: _d, dobFromId: _di, ...fallbackData } = checkinData;
-        await addCheckin(fallbackData as Parameters<typeof addCheckin>[0]);
+        const rows = await addCheckin(fallbackData as Parameters<typeof addCheckin>[0]);
+        createdId = rows?.[0]?.id;
       } else {
         throw insertErr;
       }
@@ -411,6 +415,19 @@ export async function POST(req: NextRequest) {
       })).catch((pushErr: any) => {
         console.error("Check-in notification failed after save:", pushErr?.message || pushErr);
       });
+      const [minSetting, maxSetting] = await Promise.all([getSetting("guest_min_age"), getSetting("guest_max_age")]).catch(() => [null, null]);
+      const reasons = checkinReviewReasons({ dob, dobFromId, verified, minAge: Number(minSetting) || 18, maxAge: Number(maxSetting) || 40 });
+      if (reasons.length > 0) {
+        void Promise.resolve(dispatchPush({
+          notificationType: "checkin.needs_review",
+          title: "Check-in needs review",
+          body: `${notificationFirstName(name)} · ${reasons.map((reason) => reason.label).join(" · ")}`,
+          url: "/admin?section=records",
+          eventId: `self-checkin-review-${createdId || finalBookingId || submittedAt}`,
+        })).catch((pushErr: any) => {
+          console.error("Check-in review notification failed after save:", pushErr?.message || pushErr);
+        });
+      }
     }
 
     return NextResponse.json({ success: true });

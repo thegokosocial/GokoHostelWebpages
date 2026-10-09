@@ -238,6 +238,13 @@ describe("self-check-in mock E2E workflows", () => {
       })));
       expect(checkinRes.status).toBe(200);
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("name_review");
+      expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "checkin.new" }));
+      expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({
+        notificationType: "checkin.needs_review",
+        title: "Check-in needs review",
+        body: "Sameer · Name check",
+        url: "/admin?section=records",
+      }));
     });
 
     it("Vision outage is the only pending staff-review fallback", async () => {

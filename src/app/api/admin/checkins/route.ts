@@ -43,6 +43,7 @@ import { presentTaskNotes } from "@/lib/taskNotesShopping";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import { syncInsert } from "@/db/syncMeta";
 import { collectInBatches, uniqueInBatches } from "@/lib/dbBatch";
+import { checkinReviewReasons } from "@/lib/checkinReview";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
   const token = process.env.GITHUB_TOKEN;
@@ -366,6 +367,17 @@ export async function POST(req: NextRequest) {
         url: "/admin?section=dashboard",
         eventId: `admin-checkin-${finalBookingId || addData.submittedAt}`,
       });
+      const [minSetting, maxSetting] = await Promise.all([getSetting("guest_min_age"), getSetting("guest_max_age")]).catch(() => [null, null]);
+      const reasons = checkinReviewReasons({ dob: addData.dob, verified: addData.verified, minAge: Number(minSetting) || 18, maxAge: Number(maxSetting) || 40 });
+      if (reasons.length > 0) {
+        await dispatchPush({
+          notificationType: "checkin.needs_review",
+          title: "Check-in needs review",
+          body: `${notificationFirstName(String(e[3] || "Guest"))} · ${reasons.map((reason) => reason.label).join(" · ")}`,
+          url: "/admin?section=records",
+          eventId: `admin-checkin-review-${createdId || finalBookingId || addData.submittedAt}`,
+        });
+      }
       return NextResponse.json({ success: true, checkinId: createdId });
     }
 

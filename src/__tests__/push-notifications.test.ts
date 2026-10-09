@@ -71,6 +71,13 @@ describe("push notification payloads", () => {
     expect(notificationFirstName("")).toBe("Guest");
   });
 
+  it("lists the actionable check-in alert as a separately mutable check-in event", () => {
+    const checkins = NOTIFICATION_CATEGORIES.find((category) => category.id === "checkin")!;
+    expect(checkins.events).toContainEqual(["checkin.needs_review", "Check-in needs review"]);
+    expect(NOTIFICATION_TYPE_IDS).toContain("checkin.needs_review");
+    expect(parseMutedNotificationTypes('["checkin.needs_review"]')).toEqual(["checkin.needs_review"]);
+  });
+
   it.each(["Dorm 1 · Bed DOR-3", "Table 4", ""])("includes the name alongside location %s", (location) => {
     expect(notificationFoodBody("Ada Lovelace", [{ itemName: "Chai", quantity: 2 }], location, 60000, true))
       .toBe(["Ada", "2× Chai", location, "₹600", "Approval needed"].filter(Boolean).join(" · "));

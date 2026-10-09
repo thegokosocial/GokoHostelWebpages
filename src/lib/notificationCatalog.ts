@@ -19,6 +19,7 @@ export const NOTIFICATION_CATEGORIES = [
     permission: "canReceiveCheckinNotifications",
     events: [
       ["checkin.new", "New check-in"],
+      ["checkin.needs_review", "Check-in needs review"],
       ["checkin.guest_checked_in", "Booking guest checked in"],
     ],
   },

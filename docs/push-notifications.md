@@ -9,7 +9,7 @@ The dialog always shows an **Install app** section (admin bell only). Chrome/And
 | Family | Events / producers |
 | --- | --- |
 | Food | New Food Order: guest ordering and admin-created orders |
-| Check-in | New Check-in: self-check-in and admin records; Guest Checked In: bookings |
+| Check-in | New Check-in: self-check-in and admin records; **Check-in Needs Review**: an additional alert when the unresolved Vibe? rules find an age, DOB, name, or document check (opens Records); Guest Checked In: bookings |
 | Booking | New Booking, Booking Rebooked, Booking Modified, Booking Dates Changed, Booking Cancelled, Booking Partially Cancelled, Booking Marked No-show: admin bookings and/or Aiosell reservations |
 | Tasks | Task Assigned: newly assigned user; Task Completed: followers on first transition to done; Task Status Changed: followers on other status transitions including reopen |
 | Attention | Booking Needs Attention, Booking Needs Bed Assignment |

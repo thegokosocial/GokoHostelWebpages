@@ -8,6 +8,7 @@ const q = vi.hoisted(() => ({
   getCheckinByIdempotencyKey: vi.fn(),
   getActiveCheckins: vi.fn(),
   getMonthKey: vi.fn(() => "2026-09"),
+  getSetting: vi.fn(),
   addAuditEntry: vi.fn(),
   addSystemLog: vi.fn(),
   dispatchPush: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("@/db/queries", async (importOriginal) => {
     getCheckinByIdempotencyKey: q.getCheckinByIdempotencyKey,
     getActiveCheckins: q.getActiveCheckins,
     getMonthKey: q.getMonthKey,
+    getSetting: q.getSetting,
     addAuditEntry: q.addAuditEntry,
     addSystemLog: q.addSystemLog,
   };
@@ -53,6 +55,7 @@ beforeEach(() => {
   q.addSystemLog.mockResolvedValue(undefined);
   q.dispatchPush.mockResolvedValue(undefined);
   q.getMonthKey.mockReturnValue("2026-09");
+  q.getSetting.mockResolvedValue(null);
 });
 
 describe("check-in create idempotency", () => {
@@ -85,6 +88,24 @@ describe("check-in create idempotency", () => {
     }));
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: "idempotencyKey required" });
+  });
+
+  it("adds an actionable review push alongside the normal admin check-in push", async () => {
+    q.getSetting.mockImplementation((key: string) => Promise.resolve(key === "guest_min_age" ? "18" : "40"));
+    const res = await adminPost(new NextRequest("http://localhost/api/admin/checkins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        password: "pw", action: "add", idempotencyKey: KEY,
+        entry: ["2026-09-26T10:00:00.000Z", "2026-09-26", "10:00", "Ada Lovelace", "1", "9000000000", "2", "BLR", "India", "", "", "", "", "aadhaar", "http://id", "", "doc_review"],
+        dob: "2000-01-01",
+      }),
+    }));
+    expect(res.status).toBe(200);
+    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "checkin.new" }));
+    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({
+      notificationType: "checkin.needs_review", title: "Check-in needs review", body: "Ada Lovelace · Document check", url: "/admin?section=records",
+    }));
   });
 
   it("self-check-in returns duplicate on key hit before soft visit scan", async () => {
