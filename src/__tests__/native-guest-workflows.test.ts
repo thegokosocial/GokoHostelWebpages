@@ -342,6 +342,17 @@ describe("Native guest checkout end-to-end workflows", () => {
     expect(await hasPendingWebsiteCheckout(pending[0].booking.id)).toBe(true);
   });
 
+  it.each(["preparing", "order_unknown", "ready", "claimed"])(
+    "keeps a %s website payment state out of Unassigned",
+    async (checkoutState) => {
+      await prepareGuestCheckout(selection("advance"));
+      sqlite.prepare("UPDATE native_booking_checkouts SET state=?").run(checkoutState);
+
+      expect(await getUnassignedBookings()).toHaveLength(0);
+      expect(await getPendingWebsiteReservations()).toHaveLength(1);
+    },
+  );
+
   it("keeps an expired unpaid website checkout out of Unassigned", async () => {
     const prepared = await prepareGuestCheckout(selection("advance"));
     const now = Math.floor(Date.now() / 1000);
@@ -351,6 +362,14 @@ describe("Native guest checkout end-to-end workflows", () => {
     expect(await getUnassignedBookings()).toHaveLength(0);
     const booking = sqlite.prepare("SELECT id FROM bookings").get() as { id: number };
     expect(await hasPendingWebsiteCheckout(booking.id)).toBe(true);
+  });
+
+  it("keeps an unassigned fulfilled website booking actionable", async () => {
+    await prepareGuestCheckout(selection("property"));
+    sqlite.prepare("DELETE FROM booking_bed_assignments").run();
+
+    expect(await getPendingWebsiteReservations()).toHaveLength(0);
+    expect(await getUnassignedBookings()).toHaveLength(1);
   });
 
   it("guest cancel before deadline releases hold", async () => {
