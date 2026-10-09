@@ -12,6 +12,7 @@ import { getSyncableTableNames } from "@/lib/syncEngine";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
 import { todayIST } from "@/lib/utils";
 import { WEBSITE_BOOKING_SETTINGS_KEY, DEFAULT_WEBSITE_BOOKING_SETTINGS } from "@/lib/websiteBookingSettings";
+import { getPendingWebsiteReservations, getUnassignedBookings, hasPendingWebsiteCheckout } from "@/db/queries";
 
 const state = vi.hoisted(() => ({
   db: null as any,
@@ -22,6 +23,7 @@ const state = vi.hoisted(() => ({
   /** Bed IDs that throw NATIVE_HOLD_CONFLICT (simulates another active hold). */
   assignConflictBedIds: new Set<number>(),
   assignCalls: [] as Array<{ bedId: number; inventoryPool?: string }>,
+  systemLogs: [] as Array<{ level: string; source: string; message: string; details?: string }>,
   onAssign: null as null | (() => void),
 }));
 const fixtureBeds = [
@@ -42,6 +44,9 @@ vi.mock("@/db/queries", async (importOriginal) => {
     getAllDorms: async () => [{ id: 1, name: "Mixed", deletedAt: null }],
     getAvailableBedsForRange: async () => fixtureBeds.map((b) => ({ ...b, pool: "online" as const })),
     getGuestBookingConfig: async () => ({ bookingEngineUrl: "/book", apiBaseUrl: "" }),
+    addSystemLog: async (data: { level: string; source: string; message: string; details?: string }) => {
+      state.systemLogs.push(data);
+    },
     assignBedToBooking: async (data: Parameters<typeof actual.assignBedToBooking>[0]) => {
       state.assignCalls.push({ bedId: data.bedId, inventoryPool: data.inventoryPool });
       state.onAssign?.();
@@ -137,6 +142,7 @@ beforeEach(() => {
   state.failOnlineOnly = false;
   state.assignConflictBedIds = new Set();
   state.assignCalls = [];
+  state.systemLogs = [];
   state.onAssign = null;
   sqlite = new SQLite(":memory:");
   sqlite.pragma("foreign_keys = ON");
@@ -301,6 +307,8 @@ describe("Native guest checkout end-to-end workflows", () => {
     expect(result.dueAtPropertyPaise).toBe(0);
     expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
       .toEqual({ n: 1 });
+    expect(await getPendingWebsiteReservations()).toHaveLength(0);
+    expect(await getUnassignedBookings()).toHaveLength(0);
   });
 
   it("pay at property → no Razorpay order, booking received, balance due", async () => {
@@ -321,6 +329,28 @@ describe("Native guest checkout end-to-end workflows", () => {
     expect(sqlite.prepare("SELECT payment_status FROM bookings").get()).toEqual({ payment_status: "pay_at_property" });
     expect(sqlite.prepare("SELECT count(*) n FROM booking_bed_assignments WHERE status='assigned'").get())
       .toEqual({ n: 1 });
+  });
+
+  it("keeps an unpaid website hold out of Unassigned but exposes its reserved unit", async () => {
+    const prepared = await prepareGuestCheckout(selection("advance"));
+    const pending = await getPendingWebsiteReservations();
+    const unassigned = await getUnassignedBookings();
+
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ checkoutId: prepared.checkoutId, checkoutState: "ready" });
+    expect(unassigned).toHaveLength(0);
+    expect(await hasPendingWebsiteCheckout(pending[0].booking.id)).toBe(true);
+  });
+
+  it("keeps an expired unpaid website checkout out of Unassigned", async () => {
+    const prepared = await prepareGuestCheckout(selection("advance"));
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.prepare("UPDATE native_inventory_holds SET created_at=?, expires_at=?").run(now - 900, now - 1);
+
+    expect(await getPendingWebsiteReservations()).toHaveLength(0);
+    expect(await getUnassignedBookings()).toHaveLength(0);
+    const booking = sqlite.prepare("SELECT id FROM bookings").get() as { id: number };
+    expect(await hasPendingWebsiteCheckout(booking.id)).toBe(true);
   });
 
   it("guest cancel before deadline releases hold", async () => {
@@ -406,6 +436,11 @@ describe("Native guest checkout end-to-end workflows", () => {
       .toEqual({ n: 0 });
     expect(sqlite.prepare("SELECT action, details FROM booking_history WHERE action='website_unfulfilled'").get())
       .toMatchObject({ action: "website_unfulfilled" });
+    expect(state.systemLogs).toContainEqual(expect.objectContaining({
+      source: "website-checkout", level: "error", message: expect.stringContaining("payment captured"),
+    }));
+    expect(await getPendingWebsiteReservations()).toHaveLength(0);
+    expect(await getUnassignedBookings()).toHaveLength(1);
     expect(calls.filter((c) => c.method === "POST" && c.path === "orders")).toHaveLength(1);
 
     // Replay verify must not create another order or payment row.

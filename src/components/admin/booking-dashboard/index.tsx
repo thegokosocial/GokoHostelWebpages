@@ -12,11 +12,12 @@ import { BookingSearchBar } from "./BookingSearchBar";
 import { BookingDetailPanel } from "./BookingDetailPanel";
 import { CreateBookingModal, type CheckinBookingPrefill } from "./CreateBookingModal";
 import { UnassignedBookings } from "./UnassignedBookings";
+import { PendingWebsiteReservations } from "./PendingWebsiteReservations";
 import { DateRangeSelector } from "./DateRangeSelector";
 import { getDateRange, getHostelToday, platformLogo, rangeCoveringStay, STATUS_LABELS } from "./utils";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { AdminLoading } from "../AdminLoading";
-import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm, BookingContactMethod, CalendarMarkers } from "./types";
+import type { DashboardBooking, BedAssignment, BookingStatus, DateRange, CalendarDorm, BookingContactMethod, CalendarMarkers, PendingWebsiteReservation } from "./types";
 import type { Role } from "../types";
 import { hasPermission } from "../types";
 import { fetchWithRetry } from "@/components/admin/useAdminApi";
@@ -90,6 +91,7 @@ export function BookingDashboard({
   const [dorms, setDorms] = useState<CalendarDorm[]>([]);
   const [calendarMarkers, setCalendarMarkers] = useState<CalendarMarkers>({});
   const [unassignedBookings, setUnassignedBookings] = useState<DashboardBooking[]>([]);
+  const [pendingWebsiteReservations, setPendingWebsiteReservations] = useState<PendingWebsiteReservation[]>([]);
   const [selectedBookingId, setSelectedBookingId] = useState<number | null>(null);
   const [externalDetail, setExternalDetail] = useState<{ booking: DashboardBooking; assignments: BedAssignment[]; contactMethods: BookingContactMethod[] } | null>(null);
   const openingInitialBookingId = useRef<number | null>(null);
@@ -186,6 +188,7 @@ export function BookingDashboard({
         if (unRes.ok) {
           const data = await unRes.json();
           setUnassignedBookings(data.bookings || []);
+          setPendingWebsiteReservations(data.pendingWebsiteReservations || []);
         } else {
           const data = await unRes.json().catch(() => ({ error: "Failed to load unassigned bookings" }));
           showApiError({ response: unRes, data, action: "getUnassigned", endpoint: "/api/admin/bookings" }, "Could not load unassigned bookings.");
@@ -450,6 +453,7 @@ export function BookingDashboard({
       </div>
 
       {/* Unassigned panel */}
+      <PendingWebsiteReservations reservations={pendingWebsiteReservations} />
       {showUnassigned && (
         <div className="shrink-0">
           <UnassignedBookings

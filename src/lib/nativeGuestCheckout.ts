@@ -9,7 +9,7 @@ import {
 import {
   addBooking, assignBedToBooking, getAllBeds, getAllDailyRates, getAllDorms, getAvailableBedsForRange,
   getRatePlanMappings, getRoomTypeMappings, getSetting, transitionBookingStatus, unassignBookingBeds,
-  unassignBookingBedsByBedIds, updateBookingFull, addBookingHistoryEntry, getBookingHistoryEntries,
+  unassignBookingBedsByBedIds, updateBookingFull, addBookingHistoryEntry, getBookingHistoryEntries, addSystemLog,
 } from "@/db/queries";
 import { directBookingRate } from "@/lib/bookingPricing";
 import { generateGokoBookingId, generateGuestAccessToken, hashToken } from "@/lib/bookingReference";
@@ -1041,6 +1041,11 @@ export async function fulfilGuestCheckout(checkoutId: string, ownerToken?: strin
         ),
         performedBy: "website",
       });
+      await addSystemLog({
+        level: "error", source: "website-checkout",
+        message: `Website payment captured but booking #${row.bookingId} is unfulfilled`,
+        details: `checkout=${checkoutId}; ${unfulfilledDetail("allocation failed", error)}`,
+      });
       throw new GuestCheckoutError(
         "Payment was captured but beds could not be assigned. Goko will complete this booking manually — do not pay again.",
         503,
@@ -1540,6 +1545,11 @@ export async function fulfilGuestAmend(checkoutId: string, ownerToken?: string, 
           error,
         ),
         performedBy: "website",
+      });
+      await addSystemLog({
+        level: "error", source: "website-checkout",
+        message: `Website amendment payment captured but booking #${row.bookingId} is unfulfilled`,
+        details: `checkout=${checkoutId}; ${unfulfilledDetail("allocation failed", error)}`,
       });
       throw new GuestCheckoutError(
         "Payment was captured but beds could not be reassigned. Goko will complete this change manually — do not pay again.",

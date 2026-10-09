@@ -15,6 +15,7 @@ type DualState = {
   writeOffAmount?: number;
   loggedIn: boolean;
   editPreview?: boolean;
+  pendingWebsiteReservations?: unknown[];
 };
 
 function sampleBooking(state: DualState) {
@@ -130,7 +131,7 @@ async function mockDualOccupancyApis(page: Page, state: DualState) {
         return;
       }
       if (action === "getUnassigned") {
-        await route.fulfill({ json: { bookings: [] } });
+        await route.fulfill({ json: { bookings: [], pendingWebsiteReservations: state.pendingWebsiteReservations || [] } });
         return;
       }
       await route.fulfill({ json: { success: true, bookings: [], dorms: [] } });
@@ -168,6 +169,31 @@ async function mockDualOccupancyApis(page: Page, state: DualState) {
     await route.fulfill({ json: {} });
   });
 }
+
+test("unpaid website reservations are shown separately from Unassigned", async ({ page }) => {
+  const state: DualState = {
+    bookingCheckedIn: false,
+    bedOccupied: false,
+    paymentStatus: "pay_at_hotel",
+    amountTotal: 0,
+    amountPaid: 0,
+    loggedIn: false,
+    pendingWebsiteReservations: [{
+      booking: { ...sampleBooking({ bookingCheckedIn: false, bedOccupied: false, paymentStatus: "pay_at_hotel", amountTotal: 0, amountPaid: 0, loggedIn: false }), guestName: "Pending Guest", platform: "Website", bookingRef: "GOKO-PENDING", source: "website", status: "hold" },
+      checkoutState: "ready",
+      dueNowPaise: 50100,
+      holdExpiresAt: Math.floor(Date.now() / 1000) + 600,
+      requestedRooms: "3 × Dorm 2 – single bed",
+    }],
+  };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToBookings(page);
+
+  await expect(page.getByRole("heading", { name: /Pending website payments/i })).toBeVisible();
+  await expect(page.getByText("Reserved: 3 × Dorm 2 – single bed")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Unassigned/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Assign" })).toHaveCount(0);
+});
 
 async function adminLoginToBookings(page: Page) {
   await page.goto("/admin?section=bookings");

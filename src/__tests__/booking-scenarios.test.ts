@@ -13,6 +13,8 @@ const q = vi.hoisted(() => ({
   getBookingDetail: vi.fn(),
   searchBookings: vi.fn(),
   getUnassignedBookings: vi.fn(),
+  getPendingWebsiteReservations: vi.fn(),
+  hasPendingWebsiteCheckout: vi.fn(),
   checkBedAvailability: vi.fn(),
   getAvailableBedsForRange: vi.fn(),
   validateBedsForRange: vi.fn(),
@@ -75,6 +77,8 @@ vi.mock("@/db/queries", () => ({
   getBookingDetail: q.getBookingDetail,
   searchBookings: q.searchBookings,
   getUnassignedBookings: q.getUnassignedBookings,
+  getPendingWebsiteReservations: q.getPendingWebsiteReservations,
+  hasPendingWebsiteCheckout: q.hasPendingWebsiteCheckout,
   checkBedAvailability: q.checkBedAvailability,
   getAvailableBedsForRange: q.getAvailableBedsForRange,
   validateBedsForRange: q.validateBedsForRange,
@@ -546,6 +550,22 @@ describe("assignBeds permutations", () => {
     q.authenticateUser.mockResolvedValue(admin);
     vi.mocked(pushIfOtaChanged).mockReset();
     vi.mocked(pushIfOtaChanged).mockResolvedValue(undefined);
+  });
+
+  it("rejects manual assignment while a website checkout is awaiting payment", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: {
+        id: 42, checkinDate: "2026-09-05", checkoutDate: "2026-09-06",
+        status: "hold", source: "website",
+      },
+      assignments: [],
+    });
+    q.hasPendingWebsiteCheckout.mockResolvedValue(true);
+
+    const res = await POST(req({ password: "x", action: "assignBeds", bookingId: 42, bedIds: [7] }));
+
+    expect(res.status).toBe(409);
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
   });
 
   it("assigns 3 beds for a 5-night channel_manager stay on the online pool with no push", async () => {

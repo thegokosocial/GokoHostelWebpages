@@ -18,7 +18,7 @@ import {
 } from "@/lib/channelAutoAssign";
 import { pushNoShow } from "@/lib/aiosell";
 import {
-  getCalendarAvailability, getBookingCalendarData, getBookingTableData, getBookingDetail, searchBookings, getUnassignedBookings,
+  getCalendarAvailability, getBookingCalendarData, getBookingTableData, getBookingDetail, searchBookings, getUnassignedBookings, getPendingWebsiteReservations, hasPendingWebsiteCheckout,
   checkBedAvailability, getAvailableBedsForRange, validateBedsForRange, assignBedToBooking, unassignBookingBeds,
   unassignBookingBedsByBedIds,
   cancelBedAssignments, addBookingHistoryEntry, getBookingHistoryEntries, getBookingAuditEntries,
@@ -87,6 +87,20 @@ function stayCheckout(checkinDate: string, checkoutDate?: string | null): string
 
 function stayClosed(status?: string | null): boolean {
   return status === "checked_out" || status === "no_show" || status === "cancelled" || status === "guest_declined";
+}
+
+function websiteReservationRooms(bedIdsJson: string, allBeds: Awaited<ReturnType<typeof getAllBeds>>) {
+  let ids: number[] = [];
+  try { ids = JSON.parse(bedIdsJson) as number[]; } catch { return "Reserved room"; }
+  const grouped = new Map<string, number>();
+  for (const id of ids) {
+    const bed = allBeds.find((candidate) => candidate.id === id);
+    if (!bed) continue;
+    const type = bed.type === "Double" ? "double bed" : "single bed";
+    const label = `${bed.dormName} – ${type}`;
+    grouped.set(label, (grouped.get(label) || 0) + (bed.type === "Double" ? 0.5 : 1));
+  }
+  return [...grouped].map(([label, quantity]) => `${quantity} × ${label}`).join(", ") || "Reserved room";
 }
 
 function isBookingDotCom(platform?: string | null): boolean {
@@ -571,12 +585,23 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "getUnassigned") {
-      const results = await getUnassignedBookings();
-      const mappings = await getRoomTypeMappings();
-      const units = sellableUnits((await getAllBeds()) || []);
+      const [results, mappings, allBeds, pending] = await Promise.all([
+        getUnassignedBookings(),
+        getRoomTypeMappings(),
+        getAllBeds(),
+        isPiRuntime() ? Promise.resolve([]) : getPendingWebsiteReservations(),
+      ]);
+      const units = sellableUnits(allBeds || []);
       const doubleDormIds = new Set(units.filter((unit) => unit.type === "Double").map((unit) => unit.dormId));
       return NextResponse.json({
         bookings: results.map((b) => enrichUnassignedBooking(b, mappings, doubleDormIds)),
+        pendingWebsiteReservations: (pending || []).map((reservation) => ({
+          booking: reservation.booking,
+          checkoutState: reservation.checkoutState,
+          dueNowPaise: reservation.dueNowPaise,
+          holdExpiresAt: reservation.holdExpiresAt,
+          requestedRooms: websiteReservationRooms(reservation.holdBedIds, allBeds || []),
+        })),
       });
     }
 
@@ -964,6 +989,9 @@ export async function POST(req: NextRequest) {
       if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
       if (stayClosed(detail.booking.status)) {
         return NextResponse.json({ error: "Cannot assign beds on a closed booking" }, { status: 409 });
+      }
+      if (!isPiRuntime() && detail.booking.source === "website" && await hasPendingWebsiteCheckout(detail.booking.id)) {
+        return NextResponse.json({ error: "This website reservation is awaiting payment; its beds are already held" }, { status: 409 });
       }
 
       const checkinDate = detail.booking.checkinDate;

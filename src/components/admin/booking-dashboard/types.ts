@@ -64,6 +64,14 @@ export type DashboardBooking = {
   rawData?: string;
 };
 
+export type PendingWebsiteReservation = {
+  booking: DashboardBooking;
+  checkoutState: string;
+  dueNowPaise: number;
+  holdExpiresAt: number;
+  requestedRooms: string;
+};
+
 export type BedAssignment = {
   id: number;
   bookingId: number;

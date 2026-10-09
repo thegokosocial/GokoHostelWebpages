@@ -2406,11 +2406,60 @@ export async function getUnassignedBookings() {
     return db.select().from(bookings).where(
       sql`${bookings.status} NOT IN ('cancelled', 'checked_out', 'guest_declined', 'no_show')
         AND NOT EXISTS (
+          SELECT 1
+          FROM ${nativeBookingCheckouts} checkout
+          WHERE checkout.booking_id = ${bookings.id}
+            AND checkout.state IN ('preparing', 'order_unknown', 'ready', 'claimed')
+        )
+        AND NOT EXISTS (
           SELECT 1 FROM ${bookingBedAssignments}
           WHERE ${bookingBedAssignments.bookingId} = ${bookings.id}
             AND ${bookingBedAssignments.status} = 'assigned'
         )`
     ).orderBy(desc(bookings.id));
+  });
+}
+
+/** A website checkout that is still awaiting payment must never be manually assigned. */
+export async function hasPendingWebsiteCheckout(bookingId: number) {
+  return dbRead(async () => {
+    const db = getDb();
+    const [row] = await db.select({ id: nativeBookingCheckouts.id }).from(nativeBookingCheckouts)
+      .innerJoin(bookings, eq(bookings.id, nativeBookingCheckouts.bookingId))
+      .where(and(
+        eq(bookings.id, bookingId),
+        eq(bookings.source, "website"),
+        inArray(nativeBookingCheckouts.state, ["preparing", "order_unknown", "ready", "claimed"]),
+      ))
+      .limit(1);
+    return Boolean(row);
+  });
+}
+
+/** Unpaid website reservations that own an active physical inventory hold. Cloudflare only. */
+export async function getPendingWebsiteReservations(bookingId?: number) {
+  return dbRead(() => {
+    const db = getDb();
+    return db.select({
+      booking: bookings,
+      checkoutId: nativeBookingCheckouts.id,
+      checkoutState: nativeBookingCheckouts.state,
+      dueNowPaise: nativeBookingCheckouts.dueNowPaise,
+      holdId: nativeInventoryHolds.id,
+      holdBedIds: nativeInventoryHolds.bedIds,
+      holdExpiresAt: nativeInventoryHolds.expiresAt,
+    }).from(bookings)
+      .innerJoin(nativeBookingCheckouts, eq(nativeBookingCheckouts.bookingId, bookings.id))
+      .innerJoin(nativeInventoryHolds, eq(nativeInventoryHolds.id, nativeBookingCheckouts.holdId))
+      .where(and(
+        eq(bookings.source, "website"),
+        eq(bookings.status, "hold"),
+        eq(nativeInventoryHolds.state, "held"),
+        sql`${nativeInventoryHolds.expiresAt} > CAST(strftime('%s','now') AS INTEGER)`,
+        inArray(nativeBookingCheckouts.state, ["preparing", "order_unknown", "ready", "claimed"]),
+        bookingId == null ? undefined : eq(bookings.id, bookingId),
+      ))
+      .orderBy(desc(bookings.id));
   });
 }
 

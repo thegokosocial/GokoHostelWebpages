@@ -270,7 +270,7 @@ export function UnassignedBookings({
             )}
           </div>
           <p className="mt-0.5 text-[11px] text-orange-800/80 dark:text-orange-300/80">
-            Online units in the requested room type were full, or a website stay could not auto-assign beds after payment.
+            Online units in the requested room type were full, or a paid website stay could not auto-assign beds.
             Assign available units{canReject ? " or reject." : "."}
           </p>
         </div>
