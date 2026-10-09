@@ -51,7 +51,7 @@ const TABS: { id: ManagementTab; label: string; icon: React.ReactNode; adminOnly
   { id: "logs", label: "Logs", icon: <FileTextIcon className="h-3.5 w-3.5" />, permission: "canViewLogs" },
   { id: "health", label: "Health & Stats", icon: <HeartPulseIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "history", label: "History", icon: <HistoryIcon className="h-3.5 w-3.5" /> },
-  { id: "rates", label: "Rates", icon: <IndianRupeeIcon className="h-3.5 w-3.5" /> },
+  { id: "rates", label: "Rates", icon: <IndianRupeeIcon className="h-3.5 w-3.5" />, permission: "canViewManagement" },
   { id: "menu", label: "Menu", icon: <UtensilsIcon className="h-3.5 w-3.5" />, permission: "canViewMenu" },
   { id: "website", label: "Website", icon: <GlobeIcon className="h-3.5 w-3.5" />, adminOnly: true },
   { id: "foodSettings", label: "Food Settings", icon: <SettingsIcon className="h-3.5 w-3.5" />, permission: "canManageFoodSettings" },

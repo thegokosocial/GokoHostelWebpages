@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
       getUsers: "admin_only", createUser: "admin_only", updateUser: "admin_only", deleteUser: "admin_only",
       getAuditLog: "canViewAudit", getInventoryAuditLog: "canViewAudit", getAuditRetention: "admin_only", setAuditRetention: "admin_only", cleanupAuditLog: "admin_only",
       getSystemLogs: "canViewLogs", runBackup: "admin_only",
-      getLatestRateScrape: "admin_only", getRateScrapeStatus: "admin_only",
+      getLatestRateScrape: "canViewManagement", getRateScrapeStatus: "canViewManagement",
       startRateScrape: "admin_only", updateRateScrapeResults: "admin_only",
       backfillManagerPermissions: "admin_only",
     };

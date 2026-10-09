@@ -170,7 +170,8 @@ Before deletion, Records checks linked food orders using `getDeleteInfo` and sho
 | deleteBooking | `canDeleteBooking` |
 | audit reads (`getAuditLog`, `getInventoryAuditLog`) | `canViewAudit` |
 | system/PMS log reads (`getSystemLogs`, `getSyncLogs`) | `canViewLogs` |
-| users, audit retention, backup, settings, stats, health, rate scrape, initDorms… | admin_only |
+| users, audit retention, backup, settings, stats, health, rate scrape writes (`startRateScrape`, `updateRateScrapeResults`), initDorms… | admin_only |
+| saved rate scrape reads (`getLatestRateScrape`, `getRateScrapeStatus`) | `canViewManagement` |
 
 Audit presentation fields are read-only enrichments; they do not change the `canViewAudit` requirement or grant access to any additional data.
 

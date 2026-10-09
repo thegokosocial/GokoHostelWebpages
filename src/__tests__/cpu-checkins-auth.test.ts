@@ -13,6 +13,8 @@ const getAuditEntries = vi.hoisted(() => vi.fn());
 const getInventoryAuditEntries = vi.hoisted(() => vi.fn());
 const getAuditPresentationContext = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
 const createRateScrape = vi.hoisted(() => vi.fn());
+const getLatestRateScrape = vi.hoisted(() => vi.fn());
+const getRateScrapeById = vi.hoisted(() => vi.fn());
 const updateRateScrape = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth", () => ({
@@ -58,8 +60,8 @@ vi.mock("@/db/queries", () => ({
   updateBookingStatus: vi.fn(),
   deleteBooking: vi.fn(),
   createRateScrape,
-  getLatestRateScrape: vi.fn(),
-  getRateScrapeById: vi.fn(),
+  getLatestRateScrape,
+  getRateScrapeById,
   updateRateScrape,
   getAllUsers: vi.fn(),
   getUserByUsername: vi.fn(),
@@ -100,6 +102,8 @@ describe("Checkins auth-vs-list workflows", () => {
     getCheckinsByDateRange.mockReset();
     getSystemLogs.mockReset();
     createRateScrape.mockReset();
+    getLatestRateScrape.mockReset();
+    getRateScrapeById.mockReset();
     updateRateScrape.mockReset();
     getAuditEntries.mockReset();
     getInventoryAuditEntries.mockReset();
@@ -128,6 +132,32 @@ describe("Checkins auth-vs-list workflows", () => {
     const res = await POST(req({ password: "x", action: "list", month: "2026-08" }));
     expect(res.status).toBe(403);
     expect(getCheckinsByMonth).not.toHaveBeenCalled();
+  });
+
+  it("lets Management viewers read saved rates but not scrape or alter them", async () => {
+    authenticateUser.mockResolvedValue({
+      role: "staff",
+      displayName: "Rates",
+      permissions: { canViewManagement: true },
+    });
+    getLatestRateScrape.mockResolvedValue({ id: 7, city: "Gokarna", status: "done", results: "[]" });
+    getRateScrapeById.mockResolvedValue({ id: 7, city: "Gokarna", status: "done", results: "[]" });
+
+    const latest = await POST(req({ password: "x", action: "getLatestRateScrape", city: "Gokarna" }));
+    expect(latest.status).toBe(200);
+    expect(getLatestRateScrape).toHaveBeenCalledWith("Gokarna");
+
+    expect((await POST(req({ password: "x", action: "getRateScrapeStatus", scrapeId: 7 }))).status).toBe(200);
+    expect((await POST(req({ password: "x", action: "startRateScrape", city: "Gokarna", startDate: "2026-10-01", endDate: "2026-10-08" }))).status).toBe(403);
+    expect((await POST(req({ password: "x", action: "updateRateScrapeResults", scrapeId: 7, status: "done", results: "[]" }))).status).toBe(403);
+  });
+
+  it("keeps saved rate results private from users without Management access", async () => {
+    authenticateUser.mockResolvedValue(bookingsOnly);
+    expect((await POST(req({ password: "x", action: "getLatestRateScrape", city: "Gokarna" }))).status).toBe(403);
+    expect((await POST(req({ password: "x", action: "getRateScrapeStatus", scrapeId: 7 }))).status).toBe(403);
+    expect(getLatestRateScrape).not.toHaveBeenCalled();
+    expect(getRateScrapeById).not.toHaveBeenCalled();
   });
 
   it("passes scrape dates from the request to the GitHub scraper", async () => {

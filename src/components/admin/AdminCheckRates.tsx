@@ -42,9 +42,10 @@ function applyScrapePayload(scrape: Record<string, unknown>): ScrapeData {
   };
 }
 
-export function AdminCheckRates({ password, username, role: _role }: { password: string; username?: string; role: Role }) {
+export function AdminCheckRates({ password, username, role }: { password: string; username?: string; role: Role }) {
   const { apiCall } = useAdminApi(password, username);
   const { showError, showApiError } = useAdminToast();
+  const canScrape = role === "admin";
   const [loading, setLoading] = useState(false);
   const [scrapeData, setScrapeData] = useState<ScrapeData | null>(null);
   const [scraping, setScraping] = useState(false);
@@ -156,12 +157,12 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
 
       {/* Controls */}
       <div className="rounded-2xl border border-brand-mist bg-white dark:bg-card p-5 shadow-sm dark:shadow-none">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className={cn("grid gap-4", canScrape && "sm:grid-cols-2 lg:grid-cols-5")}>
           <div>
             <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">City</label>
             <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Gokarna" />
           </div>
-          <div className="sm:col-span-2">
+          {canScrape && <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Date range</label>
             <DateRangePicker
               variant="admin"
@@ -173,8 +174,8 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
                 setEndDate(nextEnd);
               }}
             />
-          </div>
-          <div>
+          </div>}
+          {canScrape && <div>
             <label className="mb-1 block text-xs font-medium text-brand-green-dark/60">Property Type</label>
             <select value={propertyType} onChange={(e) => setPropertyType(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
               <option value="hostels">Hostels</option>
@@ -182,22 +183,22 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
               <option value="guesthouses">Guesthouses</option>
               <option value="homestays">Homestays</option>
             </select>
-          </div>
-          <div className="flex items-end">
+          </div>}
+          {canScrape && <div className="flex items-end">
             <Button type="button" variant="cta" className="w-full" onClick={startScrape} disabled={scraping || !city || !startDate || !endDate}>
               {scraping ? <><Loader2Icon className="mr-1 h-4 w-4 animate-spin" /> Starting...</> : "Scrape Rates"}
             </Button>
-          </div>
+          </div>}
         </div>
 
-        {selectedNights > LONG_RANGE_NIGHTS && (
+        {canScrape && selectedNights > LONG_RANGE_NIGHTS && (
           <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
             {selectedNights} nights selected — scrape may take ~{estimateRateScrapeMinutes(selectedNights)} minutes. Prefer a shorter range for a quicker check.
           </p>
         )}
 
         {/* Advanced settings */}
-        <div className="mt-3 border-t border-brand-mist pt-3">
+        {canScrape && <div className="mt-3 border-t border-brand-mist pt-3">
           <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className="text-[11px] font-medium text-brand-green-dark/40 hover:text-brand-green">
             {showAdvanced ? "Hide" : "Show"} advanced settings
           </button>
@@ -221,7 +222,7 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
               </div>
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Status */}
@@ -241,7 +242,7 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
                   Status refreshes automatically.
                 </p>
               )}
-              {scrapeData.status === "pending" && pendingStuck && (
+              {scrapeData.status === "pending" && pendingStuck && (canScrape ? (
                 <p>
                   Still queued after ~{Math.round(STUCK_PENDING_MS / 60_000)} minutes — the Action may not be reporting back.
                   Check{" "}
@@ -251,7 +252,7 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
                   {" "}and repo secrets <code className="text-[11px]">API_URL</code> / <code className="text-[11px]">API_PASSWORD</code>
                   {" "}(password must match Worker <code className="text-[11px]">ADMIN_PASSWORD</code>).
                 </p>
-              )}
+              ) : <p>Still queued after ~{Math.round(STUCK_PENDING_MS / 60_000)} minutes. Ask an administrator to check the scrape.</p>)}
               {scrapeData.status === "in_progress" && (
                 <p>
                   Scrape in progress… fetching rates from Booking.com
@@ -261,7 +262,7 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
               {scrapeData.status === "done" && <p>Scrape completed at {new Date(scrapeData.completedAt).toLocaleString()} — showing {scrapeData.results.length} properties.</p>}
               {scrapeData.status === "partial" && <p>Scrape partially completed. Some prices could not be verified.</p>}
               {!!scrapeData.failedDates?.length && <p>Incomplete dates: {scrapeData.failedDates.join(", ")}</p>}
-              {scrapeData.status === "failed" && (
+              {scrapeData.status === "failed" && (canScrape ? (
                 <p>
                   Scrape failed. Check{" "}
                   <a href={ACTIONS_URL} target="_blank" rel="noopener noreferrer" className="underline font-medium">
@@ -271,21 +272,21 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
                   <code className="text-[11px]">API_PASSWORD</code> no longer matches Worker{" "}
                   <code className="text-[11px]">ADMIN_PASSWORD</code>.
                 </p>
-              )}
+              ) : <p>Scrape failed. Ask an administrator to retry it.</p>)}
             </div>
             <div className="flex flex-wrap gap-2">
-              {(scrapeData.status === "pending" || scrapeData.status === "in_progress") && (
+              {canScrape && (scrapeData.status === "pending" || scrapeData.status === "in_progress") && (
                 <Button type="button" variant="ctaOutline" onClick={() => void pollStatus()} disabled={polling}>
                   {polling ? <Loader2Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCwIcon className="mr-1 h-3.5 w-3.5" />}
                   Check Status
                 </Button>
               )}
-              {scrapeData.status === "failed" && (
+              {canScrape && scrapeData.status === "failed" && (
                 <Button type="button" variant="cta" onClick={startScrape} disabled={scraping}>
                   {scraping ? "Retrying..." : "Retry Scrape"}
                 </Button>
               )}
-              {(scrapeData.status === "done" || scrapeData.status === "partial") && (
+              {canScrape && (scrapeData.status === "done" || scrapeData.status === "partial") && (
                 <Button type="button" variant="ctaOutline" onClick={startScrape} disabled={scraping}>
                   {scraping ? "Starting..." : "New Scrape"}
                 </Button>
@@ -347,7 +348,7 @@ export function AdminCheckRates({ password, username, role: _role }: { password:
       {/* Empty state */}
       {(!scrapeData || (scrapeData.status === "done" && scrapeData.results.length === 0)) && !loading && (
         <div className="rounded-2xl border border-brand-mist bg-white dark:bg-card p-12 text-center shadow-sm dark:shadow-none">
-          <p className="text-brand-green-dark/50">No rate data yet. Select a city and date range, then click &quot;Scrape Rates&quot; to fetch competitor prices.</p>
+          <p className="text-brand-green-dark/50">{canScrape ? "No rate data yet. Select a city and date range, then click \"Scrape Rates\" to fetch competitor prices." : "No saved rate data yet for this city. Ask an administrator to run a scrape."}</p>
         </div>
       )}
     </div>
