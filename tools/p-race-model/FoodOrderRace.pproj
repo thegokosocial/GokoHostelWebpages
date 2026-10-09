@@ -1,0 +1,7 @@
+<Project>
+  <ProjectName>GokoFoodOrderRace</ProjectName>
+  <InputFiles>
+    <PFile>./</PFile>
+  </InputFiles>
+  <OutputDir>./PGenerated/</OutputDir>
+</Project>

@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:p-model": "bash tools/p-race-model/check.sh",
     "frro:server": "tsx scripts/frro-server.ts",
     "analyze": "npm run ffmpeg:assets && ANALYZE=true next build",
     "ffmpeg:assets": "node scripts/copy-ffmpeg-assets.mjs",

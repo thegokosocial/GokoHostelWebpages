@@ -1,6 +1,6 @@
 # Goko Hostel - Raspberry Pi Server Documentation
 
-> **Last Updated:** June 14, 2026  
+> **Last Updated:** October 9, 2026
 > **Server Hostname:** `<pi-host>`
 > **OS:** Raspberry Pi OS Lite 64-bit (Bookworm, kernel 6.12.75)  
 > **Hardware:** Raspberry Pi 4 (8GB RAM), 512GB SD card
@@ -20,8 +20,9 @@
 9. [Network Configuration](#network-configuration)
 10. [Backup Infrastructure](#backup-infrastructure)
 11. [Troubleshooting Commands](#troubleshooting-commands)
-12. [Not Yet Set Up](#not-yet-set-up)
-13. [Change Log](#change-log)
+12. [P Race-Model Runner](#p-race-model-runner)
+13. [Not Yet Set Up](#not-yet-set-up)
+14. [Change Log](#change-log)
 
 ---
 
@@ -178,6 +179,31 @@ Auto-reboots the Pi if the kernel freezes for more than 15 seconds. Not an "acce
 | Nginx | latest | Reverse proxy (port 80 → 3000) |
 | SQLite3 | v3.40.1 | Database engine |
 | Avahi | latest | mDNS (<pi-host> resolution) |
+| Docker | 20.10.24 | Isolated P model checker container support |
+| .NET SDK | 8.0.425, user-local | Builds/runs the local P CLI fallback |
+| Java runtime | OpenJDK 17 headless | P ANTLR parser generation |
+
+## P Race-Model Runner
+
+P model checks are isolated design-time tests. They do not start the Goko app, touch `/home/<pi-user>/goko-data/goko.db`, call Cloudflare D1, or require any Goko credential.
+
+| Item | Path / value |
+|------|--------------|
+| Model workspace | `/home/goko/p-race-model/` |
+| P source clone | `/home/goko/src/P/` |
+| Local P CLI | `/home/goko/.local/bin/p` |
+| Generated checker/output | `PGenerated/` and `PCheckerOutput/` inside the model workspace |
+
+Run the food-inventory model:
+
+```bash
+cd /home/goko/p-race-model
+P_BIN=/home/goko/.local/bin/p bash check.sh
+```
+
+The runner first proves the guarded inventory-reservation model over 100 schedules, then requires the unsafe read-then-write fixture to fail. Its counterexample trace is retained on the Pi for replay. The official GHCR Docker image rejected anonymous pulls during setup, so use the verified local CLI command above until that registry access is resolved.
+
+The committed source is `tools/p-race-model/`; see `docs/p-race-models.md` for model scope and the rule that every relevant counterexample becomes a D1 route/integration regression before a production behavior change.
 
 **Memory:** 4GB swap file configured (+ 512MB existing = 4.5GB total swap)
 

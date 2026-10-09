@@ -18,7 +18,10 @@ npx tsc --noEmit      # required before push; Vitest missed `mode` used-before-a
 npm run ffmpeg:assets # copies unbundled @ffmpeg worker into public/ffmpeg/ (no wasm; gitignored)
 npm run build         # runs ffmpeg:assets then Next CI build — NOT the Worker
 npm run test:e2e      # Playwright browser regression suite (requires local loopback)
+npm run test:p-model  # P race model; needs Docker or P_BIN=/path/to/p
 ```
+
+`tools/p-race-model/` is a separate, bounded design-time checker—not a Next.js dependency or a replacement for D1/Playwright testing. The Pi verifies it with `P_BIN=/home/goko/.local/bin/p bash check.sh`; the guarded food-inventory model passed 100 schedules and the unsafe fixture produced a replayable negative-stock trace. The current GHCR image pull rejects anonymous access, so do not add this job to CI until an authenticated or otherwise verified image source is available.
 
 `dev`, `build`, `cf:build`, `preview:cf`, and `deploy:cf` all run `ffmpeg:assets` first so hero encode can load same-origin `/ffmpeg/worker.js` (core stays on CDN; wasm exceeds Workers’ 25 MiB asset cap). CI (`.github/workflows/ci.yml`): push/PR to `main` → `npm ci` → test → lint → `next build` (via `npm run build`, which copies ffmpeg worker assets) → `npm audit --audit-level=high || true`. **Does not deploy.** Node 20.
 
