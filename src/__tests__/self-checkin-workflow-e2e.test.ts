@@ -357,6 +357,14 @@ describe("self-check-in mock E2E workflows", () => {
       expect((await res.json()).error).toMatch(/at most 2 ID/i);
       expect(q.visionAnalyze).not.toHaveBeenCalled();
     });
+
+    it("normalizes a valid extension-only mobile upload before Vision", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(SUGUMAR_AADHAAR_BOTH));
+      const file = new File(["extension-only"], "aadhaar.jpg", { type: "" });
+      const res = await validateIdPOST(validateRequest({ file, idType: "aadhaar", guestName: "Sugumar G", nationality: "India" }));
+      expect(res.status).toBe(200);
+      expect(q.visionAnalyze).toHaveBeenCalledWith(expect.any(String), "image/jpeg");
+    });
   });
 
   describe("hard rejects still stop the guest", () => {
@@ -468,7 +476,7 @@ describe("self-check-in mock E2E workflows", () => {
       fd.set("idempotencyKey", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
       fd.set("prevIdCardLink", "https://drive.google.com/file/d/prev/view");
       fd.set("prevIdReuseAttestation", await issueCheckinReuseAttestation({
-        category: "id", name: "Sugumar G", nationality: "India", idType: "aadhaar",
+        category: "id", name: "Sugumar G", contact: "9000000010", nationality: "India", idType: "aadhaar",
         links: "https://drive.google.com/file/d/prev/view", verified: "yes",
       }) || "");
       const res = await checkinPOST(new NextRequest("http://localhost/api/checkin", {

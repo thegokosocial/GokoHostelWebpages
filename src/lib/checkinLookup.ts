@@ -31,6 +31,7 @@ export type CheckinLookupRecord = {
 export async function checkinLookupData(record: CheckinLookupRecord) {
   const { issueCheckinReuseAttestation } = await import("@/lib/checkinReuseAttestation");
   const name = record.name;
+  const contact = record.contact;
   const nationality = record.nationality || "India";
   const idType = record.idType || "";
   const idCardLink = record.idCardLink || "";
@@ -46,7 +47,7 @@ export async function checkinLookupData(record: CheckinLookupRecord) {
     idCardLink,
     visaLink,
     formCData: record.formCData || "",
-    idReuseAttestation: await issueCheckinReuseAttestation({ category: "id", name, nationality, idType, links: idCardLink, verified: record.verified || "" }),
-    visaReuseAttestation: await issueCheckinReuseAttestation({ category: "visa", name, nationality, idType, links: visaLink, verified: record.verified || "" }),
+    idReuseAttestation: await issueCheckinReuseAttestation({ category: "id", name, contact, nationality, idType, links: idCardLink, verified: record.verified || "" }),
+    visaReuseAttestation: await issueCheckinReuseAttestation({ category: "visa", name, contact, nationality, idType, links: visaLink, verified: record.verified || "" }),
   };
 }

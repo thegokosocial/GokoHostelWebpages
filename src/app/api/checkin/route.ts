@@ -11,7 +11,7 @@ import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRate
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
 import { digestFiles, verifyCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
 import { checkinReviewReasons } from "@/lib/checkinReview";
-import { checkinDocumentUploadError } from "@/lib/checkinIdUpload";
+import { acceptedIdMimeType, checkinDocumentUploadError, isAcceptedIdFile } from "@/lib/checkinIdUpload";
 import { verifyCheckinReuseAttestation } from "@/lib/checkinReuseAttestation";
 
 function generateBookingId(): string {
@@ -113,10 +113,10 @@ export async function POST(req: NextRequest) {
     }
 
     const validPrevIdCardLink = isReusableDriveLink(prevIdCardLink) && await verifyCheckinReuseAttestation(prevIdReuseAttestation, {
-      category: "id", name, nationality, idType, links: prevIdCardLink,
+      category: "id", name, contact: contactNumber, nationality, idType, links: prevIdCardLink,
     }) ? prevIdCardLink : "";
     const validPrevVisaLink = isReusableDriveLink(prevVisaLink) && await verifyCheckinReuseAttestation(prevVisaReuseAttestation, {
-      category: "visa", name, nationality, idType, links: prevVisaLink,
+      category: "visa", name, contact: contactNumber, nationality, idType, links: prevVisaLink,
     }) ? prevVisaLink : "";
     const hasIdImages = idImages.length > 0 || !!validPrevIdCardLink;
     if (!name || !contactNumber || !nationality || !idType || !hasIdImages || !arrivalDate || !stayingDays || !comingFrom || !numberOfPersons) {
@@ -174,11 +174,11 @@ export async function POST(req: NextRequest) {
 
     if (validationEnabled && !isOfflineMode()) {
       async function validateFile(file: File, category: "id" | "visa", idTypeHint?: string, nameToCheck?: string) {
-        if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
+        if (!isAcceptedIdFile(file).ok) {
           return { valid: false, documentType: "unknown" as const, confidence: "high" as const, message: "Only images and PDFs accepted" };
         }
         const buffer = Buffer.from(await file.arrayBuffer());
-        return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, file.type, nationality);
+        return validateIdDocument(buffer, category, idTypeHint as any, nameToCheck, acceptedIdMimeType(file), nationality);
       }
 
       if (!reusingPrevId && !trustedIdValidation) try {
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
           }
           const buffers = await Promise.all(idImages.map(async (f) => ({
             buffer: Buffer.from(await f.arrayBuffer()),
-            mimeType: f.type,
+            mimeType: acceptedIdMimeType(f),
           })));
           idValidation = await validateMultipleFiles(buffers, "id", idType as any, name, nationality);
           serverVisionCalls += idImages.length;
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
             }
             const buffers = await Promise.all(visaImages.map(async (f) => ({
               buffer: Buffer.from(await f.arrayBuffer()),
-              mimeType: f.type,
+            mimeType: acceptedIdMimeType(f),
             })));
             visaValidation = await validateMultipleFiles(buffers, "visa");
             serverVisionCalls += visaImages.length;

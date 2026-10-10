@@ -4,7 +4,7 @@ import { incrementStat, addSystemLog } from "@/db/queries";
 import { isOfflineMode } from "@/lib/runtime";
 import { digestFiles, issueCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
 import { assertGuestOrigin, guestBookingRateLimit } from "@/lib/guestBookingRateLimit";
-import { checkinDocumentUploadError } from "@/lib/checkinIdUpload";
+import { acceptedIdMimeType, checkinDocumentUploadError } from "@/lib/checkinIdUpload";
 
 export async function POST(req: NextRequest) {
   try { assertGuestOrigin(req); } catch { return NextResponse.json({ error: "Invalid request origin" }, { status: 403 }); }
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         category as "id" | "visa",
         idType as any,
         guestName || undefined,
-        files[0].type,
+        acceptedIdMimeType(files[0]),
         nationality,
       );
       incrementStat("vision", 1).catch(() => {});
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     const buffers = await Promise.all(files.map(async (f) => ({
       buffer: Buffer.from(await f.arrayBuffer()),
-      mimeType: f.type,
+      mimeType: acceptedIdMimeType(f),
     })));
     const result = await validateMultipleFiles(
       buffers,

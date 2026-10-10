@@ -11,8 +11,8 @@ function normalized(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function payload(input: { category: "id" | "visa"; name: string; nationality: string; idType: string; links: string; expiresAt: number }) {
-  return JSON.stringify({ c: input.category, g: normalized(input.name), n: normalized(input.nationality), i: input.idType, l: input.links, e: input.expiresAt });
+function payload(input: { category: "id" | "visa"; name: string; contact: string; nationality: string; idType: string; links: string; expiresAt: number }) {
+  return JSON.stringify({ c: input.category, g: normalized(input.name), p: normalized(input.contact), n: normalized(input.nationality), i: input.idType, l: input.links, e: input.expiresAt });
 }
 
 async function hmacHex(message: string, key: string) {
@@ -28,14 +28,14 @@ function sameHex(a: string, b: string) {
   return difference === 0;
 }
 
-export async function issueCheckinReuseAttestation(input: { category: "id" | "visa"; name: string; nationality: string; idType: string; links: string; verified: string }) {
+export async function issueCheckinReuseAttestation(input: { category: "id" | "visa"; name: string; contact: string; nationality: string; idType: string; links: string; verified: string }) {
   const key = secret();
   if (!key || input.verified !== "yes" || !input.links) return null;
   const expiresAt = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
   return `${expiresAt}.${await hmacHex(payload({ ...input, expiresAt }), key)}`;
 }
 
-export async function verifyCheckinReuseAttestation(token: string, input: { category: "id" | "visa"; name: string; nationality: string; idType: string; links: string }) {
+export async function verifyCheckinReuseAttestation(token: string, input: { category: "id" | "visa"; name: string; contact: string; nationality: string; idType: string; links: string }) {
   const key = secret();
   const match = /^(\d{10})\.([a-f0-9]{64})$/i.exec(token.trim());
   if (!key || !match || Number(match[1]) < Math.floor(Date.now() / 1000)) return false;

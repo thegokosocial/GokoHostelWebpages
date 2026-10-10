@@ -32,6 +32,7 @@ describe("check-in validation attestations", () => {
     const reuse = {
       category: "id" as const,
       name: "Ada Guest",
+      contact: "9876543210",
       nationality: "India",
       idType: "aadhaar",
       links: "https://drive.google.com/file/d/verified/view",
@@ -41,6 +42,7 @@ describe("check-in validation attestations", () => {
     await expect(verifyCheckinReuseAttestation(token!, reuse)).resolves.toBe(true);
     await expect(verifyCheckinReuseAttestation(token!, { ...reuse, links: "https://drive.google.com/file/d/other/view" })).resolves.toBe(false);
     await expect(verifyCheckinReuseAttestation(token!, { ...reuse, name: "Other Guest" })).resolves.toBe(false);
+    await expect(verifyCheckinReuseAttestation(token!, { ...reuse, contact: "9000000000" })).resolves.toBe(false);
     await expect(issueCheckinReuseAttestation({ ...reuse, verified: "pending" })).resolves.toBeNull();
   });
 });

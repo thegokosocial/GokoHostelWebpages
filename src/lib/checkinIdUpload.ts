@@ -30,6 +30,17 @@ export function isAcceptedIdFile(file: File): { ok: true; kind: "image" | "pdf" 
   return { ok: false, reason: `Unsupported file "${file.name}". Use JPEG, PNG, WebP, HEIC, or PDF.` };
 }
 
+/** Canonical MIME to send to Vision when a mobile browser omits it. */
+export function acceptedIdMimeType(file: File): string {
+  const mime = (file.type || "").toLowerCase();
+  if (mime && mime !== "application/octet-stream") return mime;
+  if (PDF_EXT.test(file.name)) return "application/pdf";
+  if (/\.png$/i.test(file.name)) return "image/png";
+  if (/\.webp$/i.test(file.name)) return "image/webp";
+  if (/\.hei[cf]$/i.test(file.name)) return "image/heic";
+  return "image/jpeg";
+}
+
 /** Server-side guard shared by validation and final public submission. */
 export async function checkinDocumentUploadError(files: File[], field: "idImages" | "visaImages"): Promise<string | null> {
   if (files.length > MAX_CHECKIN_DOCUMENT_FILES) {
