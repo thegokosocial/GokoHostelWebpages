@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldCheckIcon, ShieldAlertIcon, Loader2Icon, XIcon, FileTextIcon, LayoutListIcon, TableIcon, PhoneIcon, MapPinIcon, CalendarIcon, CalendarXIcon, EyeIcon, EyeOffIcon, PowerIcon, LinkIcon, CalendarPlusIcon } from "lucide-react";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
-import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
-import { checkinReviewReasons } from "@/lib/checkinReview";
+import { getCheckinReviewState } from "@/lib/checkinReview";
+import { bookingResolutionNeedsAttention } from "@/lib/bookingResolution";
 import { useAdminApi, fetchWithRetry } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { CHECKIN_COLUMNS, type Role, hasPermission } from "./types";
@@ -1115,17 +1115,13 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
               const isExpanded = expandedCard === origIdx;
               const guestDob = row[20] || "";
               const guestDobFromId = row[22] || "";
-              const guestAge = getAgeFromDob(resolveDobForChecks(guestDob, guestDobFromId) || "");
               const guestVibeMatched = row[21] === "1";
-              const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
-              const guestUnderage = guestAge !== null && guestAge < ageRange.min;
-              const guestDobMismatch = getAgeFromDob(guestDob) !== null && getAgeFromDob(guestDobFromId) !== null && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId);
               const verified = row[16] || "";
-              const guestNameReview = !guestVibeMatched && verified === "name_review";
-              const guestDocReview = !guestVibeMatched && verified === "doc_review";
-              const guestAnyFlag = guestFlagged || guestDobMismatch || guestNameReview || guestDocReview;
               const checkinId = parseInt(row[17] || "0", 10);
               const resolution = bookingResolutions[String(checkinId)];
+              const reviewState = getCheckinReviewState({ dob: guestDob, dobFromId: guestDobFromId, verified, vibeMatched: guestVibeMatched, minAge: ageRange.min, maxAge: ageRange.max });
+              const guestAnyFlag = reviewState.unresolved.length > 0;
+              const bookingNeedsAttention = bookingResolutionNeedsAttention(resolution?.state);
               const idLinks = (row[14] || "").includes(" | ") ? (row[14] || "").split(" | ").filter((u: string) => u.startsWith("http")) : (row[14] || "").startsWith("http") ? [row[14]] : [];
               const visaLinks = (row[15] || "").includes(" | ") ? (row[15] || "").split(" | ").filter((u: string) => u.startsWith("http")) : (row[15] || "").startsWith("http") ? [row[15]] : [];
 
@@ -1141,7 +1137,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold text-brand-green-dark">{row[3] || "—"}</span>
-                        {verified === "yes" ? (
+                        {verified === "yes" || reviewState.accepted.length > 0 ? (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 dark:text-green-400"><ShieldCheckIcon className="h-2.5 w-2.5" />Verified</span>
                         ) : verified === "no" ? (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Rejected</span>
@@ -1154,8 +1150,9 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                         ) : verified === "pending" ? (
                           <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-700 dark:text-yellow-400"><ShieldAlertIcon className="h-2.5 w-2.5" />Pending</span>
                         ) : null}
-                        {guestFlagged && <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", guestUnderage ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" : "bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400")}>{guestUnderage ? `Underage (${guestAge})` : `Overage (${guestAge})`}</span>}
-                        {guestDobMismatch && <span className="rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400">DOB mismatch</span>}
+                        {reviewState.unresolved.filter((reason) => reason.id !== "name_check" && reason.id !== "document_check").map((reason) => <span key={reason.id} className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", reason.id === "underage" || reason.id === "dob_mismatch" ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" : "bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400")}>{reason.label}</span>)}
+                        {reviewState.accepted.map((reason) => <span key={reason.id} className="rounded-full bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 dark:text-green-400">{reason.label}</span>)}
+                        {bookingNeedsAttention && <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">No booking linked</span>}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-green-dark/60">
                         <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" />{row[1] || "—"} {row[2] || ""}</span>
@@ -1276,17 +1273,13 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
               filteredRows.map(({ row, origIdx }) => {
                 const guestDob = row[20] || "";
                 const guestDobFromId = row[22] || "";
-                const guestAge = getAgeFromDob(resolveDobForChecks(guestDob, guestDobFromId) || "");
                 const guestVibeMatched = row[21] === "1";
-                const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
-                const guestUnderage = guestAge !== null && guestAge < ageRange.min;
-                const guestDobMismatch = getAgeFromDob(guestDob) !== null && getAgeFromDob(guestDobFromId) !== null && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId);
                 const verifiedCell = row[16] || "";
-                const guestNameReview = !guestVibeMatched && verifiedCell === "name_review";
-                const guestDocReview = !guestVibeMatched && verifiedCell === "doc_review";
-                const guestAnyFlag = guestFlagged || guestDobMismatch || guestNameReview || guestDocReview;
                 const checkinId = parseInt(row[17] || "0", 10);
                 const resolution = bookingResolutions[String(checkinId)];
+                const reviewState = getCheckinReviewState({ dob: guestDob, dobFromId: guestDobFromId, verified: verifiedCell, vibeMatched: guestVibeMatched, minAge: ageRange.min, maxAge: ageRange.max });
+                const guestAnyFlag = reviewState.unresolved.length > 0;
+                const bookingNeedsAttention = bookingResolutionNeedsAttention(resolution?.state);
                 return (
                 <tr key={origIdx} data-record-id={row[17] || origIdx} onClick={(event) => { if (!(event.target as HTMLElement).closest("a,button,input,select,label")) setSelectedRecord(origIdx); }} className={cn("cursor-pointer border-b border-brand-mist/60 last:border-b-0 transition-colors duration-150 hover:bg-brand-sand/40", guestAnyFlag && "bg-orange-50/40 dark:bg-orange-950/40")}>
                   {CHECKIN_COLUMNS.map((col, ci) => {
@@ -1302,20 +1295,9 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                             {showDobInRecords && guestDob && (
                               <span className="text-[10px] text-brand-green-dark/40">DOB: {guestDob}</span>
                             )}
-                            {guestFlagged && (
-                              <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", guestUnderage ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" : "bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400")}>
-                                {guestUnderage ? `Underage (${guestAge})` : `Overage (${guestAge})`}
-                              </span>
-                            )}
-                            {guestDobMismatch && (
-                              <span className="rounded-full bg-red-100 dark:bg-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-700 dark:text-red-400">DOB mismatch</span>
-                            )}
-                            {guestNameReview && (
-                              <span className="rounded-full bg-orange-100 dark:bg-orange-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-400">Name check</span>
-                            )}
-                            {guestDocReview && (
-                              <span className="rounded-full bg-orange-100 dark:bg-orange-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-orange-700 dark:text-orange-400">Doc check</span>
-                            )}
+                            {reviewState.unresolved.filter((reason) => reason.id !== "name_check" && reason.id !== "document_check").map((reason) => <span key={reason.id} className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", reason.id === "underage" || reason.id === "dob_mismatch" ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" : "bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400")}>{reason.label}</span>)}
+                            {reviewState.accepted.map((reason) => <span key={reason.id} className="rounded-full bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 dark:text-green-400">{reason.label}</span>)}
+                            {bookingNeedsAttention && <span className="rounded-full bg-amber-100 dark:bg-amber-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-400">No booking linked</span>}
                           </div>
                         </td>
                       );
@@ -1326,7 +1308,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                       return (
                         <td key={ci} className="whitespace-nowrap px-3 py-3">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {cell === "yes" ? (
+                            {cell === "yes" || reviewState.accepted.length > 0 ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-green-100 dark:bg-green-900/50 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">
                                 <ShieldCheckIcon className="h-3 w-3" /> Verified
                               </span>
@@ -1362,13 +1344,6 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                               >
                                 {vibeMatchingId === checkinId ? "..." : "Vibe?"}
                               </button>
-                            )}
-                            {guestVibeMatched && (
-                              (guestAge !== null && (guestAge < ageRange.min || guestAge > ageRange.max)) ||
-                              (guestDob && guestDobFromId && !dobsMatch(guestDob, guestDobFromId)) ||
-                              cell === "name_review" || cell === "doc_review"
-                            ) && (
-                              <span className="rounded-full bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 dark:text-green-400">Vibe OK</span>
                             )}
                           </div>
                         </td>
@@ -1448,10 +1423,10 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
         const resolution = bookingResolutions[String(checkinId)];
         const guestDob = row[20] || "";
         const guestDobFromId = row[22] || "";
-        const guestAge = getAgeFromDob(resolveDobForChecks(guestDob, guestDobFromId) || "");
         const guestVibeMatched = row[21] === "1";
-        const reviewReasons = checkinReviewReasons({ dob: guestDob, dobFromId: guestDobFromId, verified: row[16], vibeMatched: guestVibeMatched, minAge: ageRange.min, maxAge: ageRange.max });
-        const guestAnyFlag = reviewReasons.length > 0;
+        const reviewState = getCheckinReviewState({ dob: guestDob, dobFromId: guestDobFromId, verified: row[16], vibeMatched: guestVibeMatched, minAge: ageRange.min, maxAge: ageRange.max });
+        const guestAnyFlag = reviewState.unresolved.length > 0;
+        const bookingNeedsAttention = bookingResolutionNeedsAttention(resolution?.state);
         const linksFor = (value: string) => value.includes(" | ") ? value.split(" | ").filter((url) => url.startsWith("http")) : value.startsWith("http") ? [value] : [];
         const idLinks = linksFor(row[14] || "");
         const visaLinks = linksFor(row[15] || "");
@@ -1476,10 +1451,10 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                 <section>
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-brand-green-dark/60">Review and documents</h4>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <span className="rounded-full bg-brand-sand px-2 py-1 text-xs font-medium text-brand-green-dark">{row[16] || "Pending"}</span>
+                    {row[16] === "yes" || reviewState.accepted.length > 0 ? <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700"><ShieldCheckIcon className="h-3 w-3" />Verified</span> : <span className="rounded-full bg-brand-sand px-2 py-1 text-xs font-medium text-brand-green-dark">{row[16] || "Pending"}</span>}
                     {guestAnyFlag && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Needs review</span>}
-                    {reviewReasons.map((reason) => <span key={reason.id} className={cn("rounded-full px-2 py-1 text-xs font-medium", reason.id === "underage" || reason.id === "dob_mismatch" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700")}>{reason.label}</span>)}
-                    {guestVibeMatched && <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Vibe OK</span>}
+                    {reviewState.unresolved.map((reason) => <span key={reason.id} className={cn("rounded-full px-2 py-1 text-xs font-medium", reason.id === "underage" || reason.id === "dob_mismatch" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700")}>{reason.label}</span>)}
+                    {reviewState.accepted.map((reason) => <span key={reason.id} className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">{reason.label}</span>)}
                     {idLinks.map((url, index) => <a key={`id-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-xs font-medium text-brand-green hover:bg-brand-green/[0.12]">ID {idLinks.length > 1 ? index + 1 : "card"}<ExternalLinkIcon className="h-3 w-3" /></a>)}
                     {visaLinks.map((url, index) => <a key={`visa-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">Visa {visaLinks.length > 1 ? index + 1 : ""}<ExternalLinkIcon className="h-3 w-3" /></a>)}
                     {canEdit && idLinks.length === 0 && <Button size="sm" variant="outline" onClick={() => openUploadPopup(selectedRecord, "id", row[3] || "Guest", row[8] || "")}><UploadIcon className="h-3.5 w-3.5" />Upload ID</Button>}
@@ -1488,6 +1463,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                 </section>
                 <section className="border-t border-brand-mist pt-4">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-brand-green-dark/60">Actions</h4>
+                  {bookingNeedsAttention && <p className="mt-2 text-xs font-medium text-amber-700">Booking tracking: No booking linked</p>}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {canAddBooking && (resolution?.state === "pending" || resolution?.state === "matched") && <>
                       <Button size="sm" onClick={() => onNavigate?.("bookings", { checkinId })}><CalendarPlusIcon className="h-3.5 w-3.5" />Create booking</Button>

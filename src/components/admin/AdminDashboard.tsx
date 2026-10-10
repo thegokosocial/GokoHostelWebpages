@@ -9,7 +9,7 @@ import { AdminLoading } from "./AdminLoading";
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { BedDoubleIcon, UsersIcon, CalendarCheckIcon, AlertTriangleIcon, LogOutIcon, Loader2Icon, ExternalLinkIcon, BanknoteIcon, SmartphoneIcon, XIcon, CheckCircleIcon, UtensilsIcon, BookOpenIcon, CalendarPlusIcon, BanIcon, UserRoundCheckIcon, QrCodeIcon } from "lucide-react";
-import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
+import { getCheckinReviewState } from "@/lib/checkinReview";
 import { RecordPaymentModal } from "@/components/admin/RecordPaymentModal";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { hasPermission, type Role, type AdminSection, type ManagementTab } from "./types";
@@ -482,14 +482,9 @@ export function AdminDashboard({
         ) : (
           <motion.div className="mt-3 max-h-80 space-y-2.5 overflow-y-auto pr-1" variants={staggerContainer} initial="hidden" animate="visible">
             {todayCheckins.map((item, i) => {
-              const age = getAgeFromDob(resolveDobForChecks(item.dob, item.dobFromId) || "");
-              const isFlagged = age !== null && !item.vibeMatched && (age < ageRange.min || age > ageRange.max);
-              const isUnderage = age !== null && age < ageRange.min;
-              const hasDobMismatch = getAgeFromDob(item.dob || "") !== null && getAgeFromDob(item.dobFromId || "") !== null && !item.vibeMatched && !dobsMatch(item.dob || "", item.dobFromId || "");
               const verifiedStatus = item.row[14] || "";
-              const hasNameReview = !item.vibeMatched && verifiedStatus === "name_review";
-              const hasDocReview = !item.vibeMatched && verifiedStatus === "doc_review";
-              const isAnyFlagged = isFlagged || hasDobMismatch || hasNameReview || hasDocReview;
+              const reviewState = getCheckinReviewState({ dob: item.dob, dobFromId: item.dobFromId, verified: verifiedStatus, vibeMatched: item.vibeMatched, minAge: ageRange.min, maxAge: ageRange.max });
+              const isAnyFlagged = reviewState.unresolved.length > 0;
               const checkinId = parseInt(item.row[15]);
               const canOpenRecord = hasPermission(role, permissions || {}, "canViewRecords");
               return (
@@ -514,7 +509,7 @@ export function AdminDashboard({
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  {verifiedStatus === "yes" ? (
+                  {verifiedStatus === "yes" || reviewState.accepted.length > 0 ? (
                     <span className="rounded-md bg-green-50 dark:bg-green-950 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">ID verified</span>
                   ) : verifiedStatus === "no" ? (
                     <span className="rounded-md bg-red-50 dark:bg-red-950 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-400">ID rejected</span>
@@ -527,21 +522,8 @@ export function AdminDashboard({
                   ) : !verifiedStatus || verifiedStatus === "pending" ? (
                     <span className="rounded-md bg-yellow-50 dark:bg-yellow-950 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-700 dark:text-yellow-400">ID pending</span>
                   ) : null}
-                  {isFlagged && (
-                    <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold", isUnderage ? "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400" : "bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-400")}>
-                      {isUnderage ? `Underage (${age})` : `Overage (${age})`}
-                    </span>
-                  )}
-                  {hasDobMismatch && (
-                    <span className="rounded-md bg-red-50 dark:bg-red-950 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-400">DOB mismatch</span>
-                  )}
-                  {item.vibeMatched === 1 && (
-                    (age !== null && (age < ageRange.min || age > ageRange.max)) ||
-                    (item.dob && item.dobFromId && !dobsMatch(item.dob, item.dobFromId)) ||
-                    verifiedStatus === "name_review" || verifiedStatus === "doc_review"
-                  ) && (
-                    <span className="rounded-md bg-green-50 dark:bg-green-950 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">Vibe OK</span>
-                  )}
+                  {reviewState.unresolved.filter((reason) => reason.id !== "name_check" && reason.id !== "document_check").map((reason) => <span key={reason.id} className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold", reason.id === "underage" || reason.id === "dob_mismatch" ? "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400" : "bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-400")}>{reason.label}</span>)}
+                  {reviewState.accepted.map((reason) => <span key={reason.id} className="rounded-md bg-green-50 dark:bg-green-950 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">{reason.label}</span>)}
                   {isAnyFlagged && (
                     <button
                       type="button"

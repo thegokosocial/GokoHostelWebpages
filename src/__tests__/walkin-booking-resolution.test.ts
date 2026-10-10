@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bookingReference,
+  bookingResolutionNeedsAttention,
   checkinLinksBooking,
   getCheckinBookingMatch,
   isManualWalkinBooking,
@@ -58,6 +59,15 @@ describe("walk-in booking resolution", () => {
     const checkin = { bookingId: "GOKO1", bookingLinkedRef: "", bookingResolution: "created" as string };
     expect(liveBookingCoversResolution(checkin, [booking({ bookingRef: "GOKO1", status: "cancelled" })])).toBe(false);
     expect(liveBookingCoversResolution(checkin, [booking({ bookingRef: "GOKO1", status: "received" })])).toBe(true);
+  });
+
+  it("flags only unresolved booking associations for Records", () => {
+    expect(bookingResolutionNeedsAttention("pending")).toBe(true);
+    expect(bookingResolutionNeedsAttention("matched")).toBe(true);
+    expect(bookingResolutionNeedsAttention("linked")).toBe(false);
+    expect(bookingResolutionNeedsAttention("created")).toBe(false);
+    expect(bookingResolutionNeedsAttention("resolved")).toBe(false);
+    expect(bookingResolutionNeedsAttention("no_booking_needed")).toBe(false);
   });
 });
 

@@ -58,6 +58,11 @@ export function resolutionNeedsReopen(resolution?: string | null) {
   return resolution === "created" || resolution === "linked";
 }
 
+/** A candidate booking still needs staff to create or link a durable association. */
+export function bookingResolutionNeedsAttention(resolution?: string | null) {
+  return resolution === "pending" || resolution === "matched";
+}
+
 /** Live booking still satisfies this check-in's created/linked resolution. */
 export function liveBookingCoversResolution(
   checkin: Pick<ResolutionCheckin, "bookingId" | "bookingLinkedRef" | "bookingResolution">,

@@ -105,7 +105,7 @@ Native physical hold creation/release, read-only owner recovery (`getNativeInven
 
 `auth` (returns role+permissions, no extra perm). `changeMyPassword` is **not** in `ACTION_PERMISSIONS` → `actionAllowed(undefined)` = allowed for any authenticated user.
 
-Booking resolution actions: `getBookingResolutionData` returns server-validated check-in prefill data; `searchBookingsForCheckin` searches candidates; `linkBookingToCheckin` links a stable booking reference; `markCheckinNoBookingNeeded` dismisses the prompt. These actions require `canAddBooking` except the read action, which also permits `canViewRecords`.
+Booking resolution actions: `getBookingResolutionData` returns server-validated check-in prefill data; `searchBookingsForCheckin` searches candidates; `linkBookingToCheckin` links a stable booking reference; `markCheckinNoBookingNeeded` dismisses the prompt. `list` returns the associated `bookingResolutions`; Records shows its `pending` and suggested `matched` states as **No booking linked** until a booking is created/linked or no booking is needed. These actions require `canAddBooking` except the read action, which also permits `canViewRecords`.
 
 The `getDeleteInfo` action (same `canDeleteRecords` permission as `delete`) returns linked food-order summaries so the Records UI can warn an admin before deletion. The `delete` action then detaches nullable physical-bed and food-order `checkinId` references before deleting a check-in, preserving those historical rows while satisfying the database foreign-key constraint.
 
