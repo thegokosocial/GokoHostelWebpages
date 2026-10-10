@@ -17,7 +17,7 @@ export function checkinReviewReasons(input: {
   const reasons: Array<{ id: CheckinReviewReason; label: string }> = [];
   if (age !== null && age < minAge) reasons.push({ id: "underage", label: `Underage (${age})` });
   if (age !== null && age > maxAge) reasons.push({ id: "overage", label: `Overage (${age})` });
-  if (input.dob && input.dobFromId && !dobsMatch(input.dob, input.dobFromId)) reasons.push({ id: "dob_mismatch", label: "DOB mismatch" });
+  if (getAgeFromDob(input.dob || "") !== null && getAgeFromDob(input.dobFromId || "") !== null && !dobsMatch(input.dob || "", input.dobFromId || "")) reasons.push({ id: "dob_mismatch", label: "DOB mismatch" });
   if (input.verified === "name_review") reasons.push({ id: "name_check", label: "Name check" });
   if (input.verified === "doc_review") reasons.push({ id: "document_check", label: "Document check" });
   return reasons;

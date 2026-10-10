@@ -108,6 +108,22 @@ describe("check-in create idempotency", () => {
     }));
   });
 
+  it("does not create an age-review push from an admin-entered DOB without an ID DOB", async () => {
+    q.getSetting.mockImplementation((key: string) => Promise.resolve(key === "guest_min_age" ? "18" : "40"));
+    const res = await adminPost(new NextRequest("http://localhost/api/admin/checkins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        password: "pw", action: "add", idempotencyKey: KEY,
+        entry: ["2026-09-26T10:00:00.000Z", "2026-09-26", "10:00", "Ada Lovelace", "1", "9000000000", "2", "BLR", "India", "", "", "", "", "aadhaar", "http://id", "", "yes"],
+        dob: `${new Date().getFullYear() - 17}-01-01`,
+      }),
+    }));
+    expect(res.status).toBe(200);
+    expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "checkin.new" }));
+    expect(q.dispatchPush).not.toHaveBeenCalledWith(expect.objectContaining({ notificationType: "checkin.needs_review" }));
+  });
+
   it("self-check-in returns duplicate on key hit before soft visit scan", async () => {
     q.getCheckinByIdempotencyKey.mockResolvedValue({ id: 77 });
     const form = new FormData();

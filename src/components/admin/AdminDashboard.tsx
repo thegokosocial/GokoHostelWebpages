@@ -485,7 +485,7 @@ export function AdminDashboard({
               const age = getAgeFromDob(resolveDobForChecks(item.dob, item.dobFromId) || "");
               const isFlagged = age !== null && !item.vibeMatched && (age < ageRange.min || age > ageRange.max);
               const isUnderage = age !== null && age < ageRange.min;
-              const hasDobMismatch = !!(item.dob && item.dobFromId && !item.vibeMatched && !dobsMatch(item.dob, item.dobFromId));
+              const hasDobMismatch = getAgeFromDob(item.dob || "") !== null && getAgeFromDob(item.dobFromId || "") !== null && !item.vibeMatched && !dobsMatch(item.dob || "", item.dobFromId || "");
               const verifiedStatus = item.row[14] || "";
               const hasNameReview = !item.vibeMatched && verifiedStatus === "name_review";
               const hasDocReview = !item.vibeMatched && verifiedStatus === "doc_review";

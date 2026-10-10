@@ -9,6 +9,7 @@ import { ExternalLinkIcon, Trash2Icon, PlusIcon, UploadIcon, PencilIcon, ShieldC
 import { cn, localDateStr } from "@/lib/utils";
 import { staggerContainer, staggerItem, overlayVariants, modalVariants } from "@/lib/animations";
 import { getAgeFromDob, dobsMatch, resolveDobForChecks } from "@/lib/parseDob";
+import { checkinReviewReasons } from "@/lib/checkinReview";
 import { useAdminApi, fetchWithRetry } from "./useAdminApi";
 import { AdminLoading } from "./AdminLoading";
 import { CHECKIN_COLUMNS, type Role, hasPermission } from "./types";
@@ -1118,7 +1119,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
               const guestVibeMatched = row[21] === "1";
               const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
               const guestUnderage = guestAge !== null && guestAge < ageRange.min;
-              const guestDobMismatch = !!(guestDob && guestDobFromId && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId));
+              const guestDobMismatch = getAgeFromDob(guestDob) !== null && getAgeFromDob(guestDobFromId) !== null && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId);
               const verified = row[16] || "";
               const guestNameReview = !guestVibeMatched && verified === "name_review";
               const guestDocReview = !guestVibeMatched && verified === "doc_review";
@@ -1279,7 +1280,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                 const guestVibeMatched = row[21] === "1";
                 const guestFlagged = guestAge !== null && !guestVibeMatched && (guestAge < ageRange.min || guestAge > ageRange.max);
                 const guestUnderage = guestAge !== null && guestAge < ageRange.min;
-                const guestDobMismatch = !!(guestDob && guestDobFromId && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId));
+                const guestDobMismatch = getAgeFromDob(guestDob) !== null && getAgeFromDob(guestDobFromId) !== null && !guestVibeMatched && !dobsMatch(guestDob, guestDobFromId);
                 const verifiedCell = row[16] || "";
                 const guestNameReview = !guestVibeMatched && verifiedCell === "name_review";
                 const guestDocReview = !guestVibeMatched && verifiedCell === "doc_review";
@@ -1449,11 +1450,8 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
         const guestDobFromId = row[22] || "";
         const guestAge = getAgeFromDob(resolveDobForChecks(guestDob, guestDobFromId) || "");
         const guestVibeMatched = row[21] === "1";
-        const guestAnyFlag = !guestVibeMatched && (
-          (guestAge !== null && (guestAge < ageRange.min || guestAge > ageRange.max)) ||
-          Boolean(guestDob && guestDobFromId && !dobsMatch(guestDob, guestDobFromId)) ||
-          row[16] === "name_review" || row[16] === "doc_review"
-        );
+        const reviewReasons = checkinReviewReasons({ dob: guestDob, dobFromId: guestDobFromId, verified: row[16], vibeMatched: guestVibeMatched, minAge: ageRange.min, maxAge: ageRange.max });
+        const guestAnyFlag = reviewReasons.length > 0;
         const linksFor = (value: string) => value.includes(" | ") ? value.split(" | ").filter((url) => url.startsWith("http")) : value.startsWith("http") ? [value] : [];
         const idLinks = linksFor(row[14] || "");
         const visaLinks = linksFor(row[15] || "");
@@ -1480,6 +1478,7 @@ export function AdminRecords({ password, username, role, permissions = {}, initi
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span className="rounded-full bg-brand-sand px-2 py-1 text-xs font-medium text-brand-green-dark">{row[16] || "Pending"}</span>
                     {guestAnyFlag && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Needs review</span>}
+                    {reviewReasons.map((reason) => <span key={reason.id} className={cn("rounded-full px-2 py-1 text-xs font-medium", reason.id === "underage" || reason.id === "dob_mismatch" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700")}>{reason.label}</span>)}
                     {guestVibeMatched && <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Vibe OK</span>}
                     {idLinks.map((url, index) => <a key={`id-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-brand-green/[0.06] px-2 py-1 text-xs font-medium text-brand-green hover:bg-brand-green/[0.12]">ID {idLinks.length > 1 ? index + 1 : "card"}<ExternalLinkIcon className="h-3 w-3" /></a>)}
                     {visaLinks.map((url, index) => <a key={`visa-${index}`} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">Visa {visaLinks.length > 1 ? index + 1 : ""}<ExternalLinkIcon className="h-3 w-3" /></a>)}

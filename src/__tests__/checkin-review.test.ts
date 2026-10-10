@@ -9,11 +9,13 @@ describe("checkin review reasons", () => {
     }).map((reason) => reason.label)).toEqual(["Underage (17)", "DOB mismatch", "Document check"]);
   });
 
-  it("handles name review and age boundaries without flagging clear or resolved records", () => {
+  it("uses only the ID DOB for age flags while preserving other review reasons", () => {
     const year = new Date().getFullYear();
-    expect(checkinReviewReasons({ dob: `01/01/${year - 40}`, verified: "name_review", minAge: 18, maxAge: 40 }).map((reason) => reason.label))
+    expect(checkinReviewReasons({ dob: `01/01/${year - 17}`, verified: "name_review", minAge: 18, maxAge: 40 }).map((reason) => reason.label))
       .toEqual(["Name check"]);
-    expect(checkinReviewReasons({ dob: `01/01/${year - 41}`, minAge: 18, maxAge: 40 }).map((reason) => reason.label))
+    expect(checkinReviewReasons({ dob: "31/04/2000", dobFromId: `01/01/${year - 17}`, minAge: 18, maxAge: 40 }).map((reason) => reason.label))
+      .toEqual(["Underage (17)"]);
+    expect(checkinReviewReasons({ dobFromId: `01/01/${year - 41}`, minAge: 18, maxAge: 40 }).map((reason) => reason.label))
       .toEqual(["Overage (41)"]);
     expect(checkinReviewReasons({ dob: "2000-01-01", verified: "pending", minAge: 18, maxAge: 40 })).toEqual([]);
     expect(checkinReviewReasons({ dob: "2000-01-01", verified: "doc_review", vibeMatched: 1 })).toEqual([]);

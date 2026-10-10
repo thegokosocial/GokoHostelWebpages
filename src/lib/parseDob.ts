@@ -168,9 +168,9 @@ export function dobsMatch(dob1: string, dob2: string): boolean {
   return n1 === n2;
 }
 
-/** Select the manual DOB first, then a valid DOB extracted from the ID. */
+/** Use only a valid DOB extracted from an ID for age-based review checks. */
 export function resolveDobForChecks(manualDob?: string | null, dobFromId?: string | null): string | null {
-  return normalizeDob(manualDob || "") || normalizeDob(dobFromId || "");
+  return normalizeDob(dobFromId || "");
 }
 
 /** True when a DOB string is the same calendar day as an ISO YYYY-MM-DD arrival date. */

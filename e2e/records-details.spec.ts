@@ -1,7 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+const UNDERAGE_YEAR = new Date().getFullYear() - 17;
 const RECORD = [
-  "2026-10-09T12:00:00.000Z", "2026-10-09", "12:00", "Asha Guest", "2", "9876543210", "3", "Mumbai", "India", "Riya Guest", "9876543211", "Walk-in", "", "aadhaar", "https://drive.example/id", "", "pending", "42", "active", "", "", "", "",
+  "2026-10-09T12:00:00.000Z", "2026-10-09", "12:00", "Asha Guest", "2", "9876543210", "3", "Mumbai", "India", "Riya Guest", "9876543211", "Walk-in", "", "aadhaar", "https://drive.example/id", "", "pending", "42", "active", "", "01/01/2000", "0", `01/01/${UNDERAGE_YEAR}`,
 ];
 const DASHBOARD_CHECKIN = { row: ["", "2026-10-09", "12:00", "Asha Guest", "2", "9876543210", "3", "Mumbai", "India", "", "", "", "", "", "pending", "42"], assignedBed: null, linkedBookingId: null, dob: "", dobFromId: "", vibeMatched: 0 };
 
@@ -44,6 +45,9 @@ test("record details open from desktop row and keep document links separate", as
   await page.getByRole("button", { name: "Asha Guest" }).click();
   await expect(page.getByRole("heading", { name: "Asha Guest" })).toBeVisible();
   await expect(page.getByText("Stay details")).toBeVisible();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Underage (17)")).toBeVisible();
+  await expect(dialog.getByText("DOB mismatch")).toBeVisible();
   await expect(page.getByRole("button", { name: "Verify" })).toBeVisible();
   await page.getByRole("button", { name: "Verify" }).click();
   await expect(page.getByRole("heading", { name: "Manual ID Verification" })).toBeVisible();

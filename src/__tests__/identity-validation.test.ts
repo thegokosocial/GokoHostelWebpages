@@ -39,8 +39,9 @@ describe("DOB validation and resolution", () => {
     expect(dobEqualsArrivalDate("02/06/1996", "2026-09-26")).toBe(false);
   });
 
-  it("matches Likitha-style ISO form DOB against OCR DMY", () => {
+  it("uses the ID DOB rather than the supplied DOB for review checks", () => {
     expect(resolveDobForChecks("2002-08-01", "01/08/2002")).toBe("01/08/2002");
+    expect(resolveDobForChecks("2002-08-01", "")).toBeNull();
   });
 });
 
