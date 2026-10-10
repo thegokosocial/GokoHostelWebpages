@@ -21,7 +21,7 @@ import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { auditRetentionCutoff, AUDIT_RETENTION_SETTING, normalizeAuditRetentionMonths } from "@/lib/auditRetention";
 import {
   getCheckinsByMonth, getCheckinsByDateRange, getActiveCheckins, addCheckin, getCheckinByIdempotencyKey, updateCheckin, deleteCheckin, getCheckinDeleteInfo, getCheckinMonths, markVibeMatched,
-  getAllBeds, getBedById, updateBedStatus, assignPhysicalBed, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
+  getAllBeds, getBedById, updateBedStatus, assignPhysicalBed, movePhysicalBed, getAllDorms, getDormByName, addDorm, addBed, deleteBed, deleteDormAndBeds,
   logBedHistoryEntry, getBedHistoryAll, deleteBedHistoryEntry,
   getSetting, setSetting,
   getAllStats, incrementStat, getMonthKey,
@@ -1269,9 +1269,9 @@ export async function POST(req: NextRequest) {
       if (fromBed.status !== "occupied") return NextResponse.json({ error: "Source bed is not occupied" }, { status: 400 });
       if (toBed.status !== "available") return NextResponse.json({ error: "Target bed is not available" }, { status: 400 });
 
-      const { guestName, guestContact, checkinDate, expectedCheckout, stayingDays, checkinId } = fromBed;
-      await updateBedStatus(fromBedId, { status: "cleanup", checkinId: null });
-      await updateBedStatus(toBedId, { status: "occupied", guestName: guestName || "", guestContact: guestContact || "", checkinDate: checkinDate || "", expectedCheckout: expectedCheckout || "", stayingDays: stayingDays || "", checkinId: checkinId || null });
+      const moved = await movePhysicalBed(fromBed, toBedId);
+      if (!moved) return NextResponse.json({ error: "Bed availability changed. Refresh and choose another bed." }, { status: 409 });
+      const { guestName, guestContact } = fromBed;
       await logBedHistoryEntry({ bedIdLabel: fromBed.bedId, dormName: fromBed.dormName, action: "change-out", guestName: guestName || "", guestContact: guestContact || "" });
       await logBedHistoryEntry({ bedIdLabel: toBed.bedId, dormName: toBed.dormName, action: "change-in", guestName: guestName || "", guestContact: guestContact || "" });
       await addAuditEntry({ username: actingUser, action: "bed_change", target: `${fromBed.bedId} → ${toBed.bedId}` });

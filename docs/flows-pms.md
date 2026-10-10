@@ -38,7 +38,7 @@ Math: `src/lib/inventoryAvailability.ts` (tested). Past nights (`date < todayIST
 
 ## Bed status
 
-`PhysicalBedRace.p` is the bounded concurrency contract for staff claims: exactly one guest may transition an available physical bed to occupied. `assignBed` already uses a conditional `status = 'available'` write. Bed moves need the same target claim before releasing the source; see [P race models](p-race-models.md) for the current hardening status.
+`PhysicalBedRace.p` is the bounded concurrency contract for staff claims: exactly one guest may transition an available physical bed to occupied. `assignBed` uses a conditional `status = 'available'` write, and `changeBed` uses one two-row compare-and-set statement: the observed occupied source and available target must both still match or it returns a retryable `409` without history/audit writes.
 
 ```mermaid
 stateDiagram-v2
@@ -123,7 +123,7 @@ Beds-tab `assignBed` / `checkoutBed` / `unassignBed` / `markClean` do **not** au
 
 Inbound webhook `POST /api/aiosell/reservations`:
 
-OTA webhook contacts are optional metadata: blank or malformed phone/email values are omitted from contact methods and never reject the reservation; an email is never used as a phone. A replay of a duplicate received booking that has no assigned bed safely retries online auto-assignment and repairs the specific legacy email-as-phone corruption without overwriting a valid stored phone; assigned bookings remain idempotent no-ops. Staff assignment validates sellable units: a full double is one requested room unit though it writes two physical-bed assignments; mapped picks must match the room-type unit split, while overflow retains the same total unit count.
+OTA webhook contacts are optional metadata: blank or malformed phone/email values are omitted from contact methods and never reject the reservation; an email is never used as a phone. Non-empty `booking_ref` is unique: a concurrent first webhook that loses the insert race returns duplicate success without a second history/push/assignment. A sequential replay of a received booking with no assigned bed still safely retries online auto-assignment and repairs the specific legacy email-as-phone corruption without overwriting a valid stored phone; assigned bookings remain idempotent no-ops. Staff assignment validates sellable units: a full double is one requested room unit though it writes two physical-bed assignments; mapped picks must match the room-type unit split, while overflow retains the same total unit count.
 
 - 503 if config missing/inactive or `webhookSecret` empty.
 - 401 unless `Authorization` or `x-api-key` equals the secret (or `Bearer {secret}`).

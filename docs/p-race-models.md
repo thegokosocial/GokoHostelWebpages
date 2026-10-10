@@ -36,8 +36,8 @@ This is the coverage boundary for the whole application. A P model belongs only 
 | Guest food order, kitchen, tab | stock reserve; QR capture versus desk payment | modelled | D1 inventory/payment routes + kitchen/browser flows |
 | Website booking and payment | bed hold; stale booking payment | modelled | checkout/payment integration + browser flow |
 | Self check-in and records | retry before Drive upload | modelled | claim/idempotency integration + browser retry |
-| Physical beds and timeline | two staff assign/change/checkout actions | modelled; route hardening required for change | D1 CAS lifecycle regression + Beds UI |
-| Aiosell booking ingest | duplicate or overlapping webhook/fetch delivery | modelled; uniqueness hardening required | webhook integration against duplicate delivery |
+| Physical beds and timeline | two staff assign/change/checkout actions | modelled and guarded by two-row CAS | D1 CAS lifecycle regression + Beds UI |
+| Aiosell booking ingest | duplicate or overlapping webhook/fetch delivery | modelled and guarded by unique non-empty reference | webhook integration against duplicate delivery |
 | Calendar date-range assignment | overlapping bed assignment | modelled indirectly by `NativeHoldRace`; SQL conditional insert already covers the claim | booking-calendar integration |
 | Recurring expenses | cron/manual overlap for one rule/date | modelled | occurrence uniqueness + automatic-post integration |
 | Accounts, payouts, splits, reconciliation | append-only journals and unique receipt/allocation keys | route/integration coverage; add a model only if a concrete stale-write gap is found | financial D1 suites |
@@ -45,7 +45,7 @@ This is the coverage boundary for the whole application. A P model belongs only 
 | CMS, media, settings, quick links, analytics | administrative CRUD only | route/browser coverage | CMS/settings suites |
 | Auth, push preferences, sync/failover | session/replica/provider contracts, not a shared state-machine claim | auth/sync integration coverage | auth/sync suites |
 
-The two **hardening required** rows are intentional findings from this review, not coverage claims: `changeBed` makes two unconditional writes after a stale read, and `bookings.booking_ref` is indexed but not unique. The P models provide the bounded trace; the corresponding D1 regression and production-safe repair must land before those rows can be marked protected.
+The P models provide bounded traces, while the route and D1 regressions protect the application wiring. Production migration preflight fails closed when historical duplicate non-empty booking references need manual reconciliation.
 
 ## Rules for future models
 

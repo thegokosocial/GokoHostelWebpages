@@ -384,4 +384,16 @@ describe("Round 2 webhook book / modify / cancel / fetch", () => {
     }));
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
+
+  it("treats a unique booking-reference collision as a side-effect-free duplicate", async () => {
+    q.addBooking.mockRejectedValue(new Error("UNIQUE constraint failed: bookings.booking_ref"));
+    q.getBookingByRef.mockResolvedValueOnce(null).mockResolvedValueOnce(existingRow());
+
+    const res = await reservationsPOST(req(bookPayload()));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(expect.objectContaining({ success: true }));
+    expect(q.addBookingHistoryEntry).not.toHaveBeenCalled();
+    expect(q.assignBedToBooking).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).not.toHaveBeenCalled();
+  });
 });

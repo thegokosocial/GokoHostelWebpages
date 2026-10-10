@@ -34,7 +34,7 @@ let db: Database;
 async function addBooking(overrides: Partial<typeof bookings.$inferInsert> = {}) {
   const syncId = crypto.randomUUID();
   const inserted = await db.insert(bookings).values({
-    guestName: "Test Guest", contact: "+919900000000", platform: "booking.com", bookingRef: "ota-123",
+    guestName: "Test Guest", contact: "+919900000000", platform: "booking.com", bookingRef: `ota-${syncId}`,
     checkinDate: "2026-10-01", checkoutDate: "2026-10-03", roomType: "dorm", persons: 1,
     paymentStatus: "pay_at_hotel", otaPaymentTerms: "pay_at_hotel", otaCurrency: "INR", status: "received",
     source: "channel_manager", property: "goko_hostel", createdAt: new Date().toISOString(),

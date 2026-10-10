@@ -418,7 +418,15 @@ async function handleNewBooking(payload: ReservationPayload) {
   }
 
   const fields = extractBookingFields(payload);
-  const bookingId = await addBooking(fields);
+  let bookingId: number | null;
+  try {
+    bookingId = await addBooking(fields);
+  } catch (error) {
+    if (!/unique constraint|sqlite_constraint/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    const winner = await getBookingByRef(payload.bookingId);
+    if (!winner) throw error;
+    return respondSuccess("Reservation already exists (concurrent duplicate)");
+  }
 
   if (bookingId) {
     await addBookingHistoryEntry({

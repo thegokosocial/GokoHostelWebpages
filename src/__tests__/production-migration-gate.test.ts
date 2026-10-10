@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { parsePendingMigrationOutput } from "../../scripts/verify-production-migrations";
+import { duplicateBookingRefs } from "../../scripts/migrate-production-d1";
 
 describe("production migration release gate", () => {
   it("recognizes a clean Wrangler migration check", () => {
@@ -37,5 +38,11 @@ describe("production migration release gate", () => {
       expect(source).toContain("CLOUDFLARE_D1_TOKEN");
       expect(source).toContain("CLOUDFLARE_API_TOKEN");
     }
+  });
+
+  it("parses duplicate booking references from Wrangler JSON", () => {
+    expect(duplicateBookingRefs(JSON.stringify([{ results: [{ booking_ref: "OTA-1", ids: "7,12" }] }]))).toEqual([
+      { bookingRef: "OTA-1", ids: "7,12" },
+    ]);
   });
 });

@@ -239,6 +239,39 @@ export async function assignPhysicalBed(bedId: number, data: {
   }, { idempotentWrite: true });
 }
 
+/** Move a guest only when the observed source and target states are still current. */
+export async function movePhysicalBed(fromBed: {
+  id: number; guestName: string | null; guestContact: string | null; checkinDate: string | null;
+  expectedCheckout: string | null; stayingDays: string | null; checkinId: number | null;
+}, toBedId: number) {
+  if (fromBed.id === toBedId) return false;
+  const update = syncUpdate({});
+  return dbWrite(async () => {
+    const result = await getDb().run(sql`
+      UPDATE beds
+      SET status = CASE WHEN id = ${fromBed.id} THEN 'cleanup' ELSE 'occupied' END,
+          guest_name = CASE WHEN id = ${toBedId} THEN ${fromBed.guestName || ""} ELSE guest_name END,
+          guest_contact = CASE WHEN id = ${toBedId} THEN ${fromBed.guestContact || ""} ELSE guest_contact END,
+          checkin_date = CASE WHEN id = ${toBedId} THEN ${fromBed.checkinDate || ""} ELSE checkin_date END,
+          expected_checkout = CASE WHEN id = ${toBedId} THEN ${fromBed.expectedCheckout || ""} ELSE expected_checkout END,
+          staying_days = CASE WHEN id = ${toBedId} THEN ${fromBed.stayingDays || ""} ELSE staying_days END,
+          checkin_id = CASE WHEN id = ${fromBed.id} THEN NULL ELSE ${fromBed.checkinId} END,
+          sync_updated_at = ${update.syncUpdatedAt}, sync_source = ${update.syncSource}
+      WHERE id IN (${fromBed.id}, ${toBedId})
+        AND EXISTS (SELECT 1 FROM beds source WHERE source.id = ${fromBed.id}
+          AND source.status = 'occupied'
+          AND coalesce(source.guest_name, '') = ${fromBed.guestName || ""}
+          AND coalesce(source.guest_contact, '') = ${fromBed.guestContact || ""}
+          AND coalesce(source.checkin_date, '') = ${fromBed.checkinDate || ""}
+          AND coalesce(source.expected_checkout, '') = ${fromBed.expectedCheckout || ""}
+          AND coalesce(source.staying_days, '') = ${fromBed.stayingDays || ""}
+          AND coalesce(source.checkin_id, -1) = ${fromBed.checkinId ?? -1})
+        AND EXISTS (SELECT 1 FROM beds target WHERE target.id = ${toBedId} AND target.status = 'available')
+    `);
+    return sqliteWriteCount(result) === 2;
+  }, { idempotentWrite: true });
+}
+
 export async function addBed(data: { dormId: number; dormName: string; bedId: string; position: string; type: string }) {
   const db = getDb();
   return db.insert(beds).values(syncInsert({ ...data, status: "available", guestName: "", guestContact: "", checkinDate: "", expectedCheckout: "", stayingDays: "" }));

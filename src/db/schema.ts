@@ -482,6 +482,7 @@ export const bookings = sqliteTable("bookings", {
   index("idx_bookings_platform").on(table.platform),
   index("idx_bookings_status").on(table.status),
   index("idx_bookings_ref").on(table.bookingRef),
+  uniqueIndex("idx_bookings_ref_unique_nonempty").on(table.bookingRef).where(sql`${table.bookingRef} <> ''`),
   index("idx_bookings_goko_id").on(table.gokoBookingId),
 ]);
 

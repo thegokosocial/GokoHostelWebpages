@@ -7,6 +7,7 @@ const q = vi.hoisted(() => ({
   getBedById: vi.fn(),
   updateBedStatus: vi.fn(),
   assignPhysicalBed: vi.fn(),
+  movePhysicalBed: vi.fn(),
   logBedHistoryEntry: vi.fn(),
   getCheckinsByMonth: vi.fn(),
   getAllBookings: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("@/db/queries", () => ({
   getBedById: q.getBedById,
   updateBedStatus: q.updateBedStatus,
   assignPhysicalBed: q.assignPhysicalBed,
+  movePhysicalBed: q.movePhysicalBed,
   logBedHistoryEntry: q.logBedHistoryEntry,
   getCheckinsByMonth: q.getCheckinsByMonth,
   getAllBookings: q.getAllBookings,
@@ -105,6 +107,7 @@ beforeEach(() => {
   q.getAllBookings.mockResolvedValue([]);
   q.getPendingFoodTab.mockResolvedValue({ checkinId: null, pendingTab: 0, pendingOrders: 0, orderIds: [] });
   q.assignPhysicalBed.mockResolvedValue(true);
+  q.movePhysicalBed.mockResolvedValue(true);
   // getBeds awaits .where() (assignments); assignBed/changeBed use .where().limit()
   q.getDb.mockReturnValue({
     select: () => ({
@@ -254,5 +257,31 @@ describe("Beds / Timeline RBAC and side effects", () => {
     const res = await POST(req({ action: "unassignBed", bedId: 7 }));
     expect(res.status).toBe(200);
     expect(q.getPendingFoodTab).not.toHaveBeenCalled();
+  });
+
+  it("moves a bed only through the guarded shared helper", async () => {
+    q.authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    q.getBedById.mockResolvedValueOnce({ id: 7, status: "occupied", bedId: "A1", dormName: "Dorm", guestName: "Ada", guestContact: "900", checkinDate: "2026-10-10", expectedCheckout: "2026-10-12", stayingDays: "2", checkinId: 12 })
+      .mockResolvedValueOnce({ id: 8, status: "available", bedId: "A2", dormName: "Dorm" });
+    q.movePhysicalBed.mockResolvedValue(true);
+    q.logBedHistoryEntry.mockResolvedValue(undefined);
+    q.addAuditEntry.mockResolvedValue(undefined);
+
+    const res = await POST(req({ action: "changeBed", fromBedId: 7, toBedId: 8 }));
+    expect(res.status).toBe(200);
+    expect(q.movePhysicalBed).toHaveBeenCalledWith(expect.objectContaining({ id: 7, guestName: "Ada" }), 8);
+    expect(q.updateBedStatus).not.toHaveBeenCalled();
+  });
+
+  it("returns conflict without history when a bed move loses its claim", async () => {
+    q.authenticateUser.mockResolvedValue({ role: "admin", displayName: "Admin", permissions: {} });
+    q.getBedById.mockResolvedValueOnce({ id: 7, status: "occupied", bedId: "A1", dormName: "Dorm", guestName: "Ada", guestContact: "900" })
+      .mockResolvedValueOnce({ id: 8, status: "available", bedId: "A2", dormName: "Dorm" });
+    q.movePhysicalBed.mockResolvedValue(false);
+
+    const res = await POST(req({ action: "changeBed", fromBedId: 7, toBedId: 8 }));
+    expect(res.status).toBe(409);
+    expect(q.logBedHistoryEntry).not.toHaveBeenCalled();
+    expect(q.addAuditEntry).not.toHaveBeenCalled();
   });
 });
