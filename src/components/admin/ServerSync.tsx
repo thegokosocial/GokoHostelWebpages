@@ -263,7 +263,8 @@ export function ServerSync({ password, username, role }: { password: string; use
       const data = await res.json();
       setDeployMessage(data.message || "Deploy triggered.");
     } else {
-      setDeployMessage("Failed to trigger deploy.");
+      const data = await res?.json().catch(() => null);
+      setDeployMessage(data?.error || "Failed to trigger deploy.");
     }
     setDeploying(false);
   };

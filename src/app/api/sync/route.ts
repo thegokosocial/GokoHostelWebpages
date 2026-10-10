@@ -17,6 +17,7 @@ import { eq, sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { exec } from "child_process";
 import { getAuthSession } from "@/lib/authSession";
+import { remoteSyncCredentials } from "@/lib/syncCredentials";
 
 async function authenticateSync(password: string, syncSecret?: string): Promise<boolean> {
   const session = await getAuthSession("admin");
@@ -210,7 +211,7 @@ export async function POST(request: NextRequest) {
         const { mode = "full" } = body;
         const localRuntime = getRuntimeName();
         const remoteUrl = getRemoteUrl();
-        const remotePassword = process.env.ADMIN_PASSWORD;
+        const remoteCredentials = remoteSyncCredentials();
 
         if (!remoteUrl) {
           return NextResponse.json(
@@ -250,7 +251,7 @@ export async function POST(request: NextRequest) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 action: "pull",
-                password: remotePassword,
+                ...remoteCredentials,
                 since: sinceTs,
               }),
               signal: AbortSignal.timeout(30000),
@@ -280,7 +281,7 @@ export async function POST(request: NextRequest) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   action: "push",
-                  password: remotePassword,
+                ...remoteCredentials,
                   bundles: pushBundles,
                   source: localRuntime,
                 }),
@@ -498,8 +499,7 @@ export async function POST(request: NextRequest) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            password: process.env.ADMIN_PASSWORD,
-            syncSecret: process.env.SYNC_SECRET,
+            ...remoteSyncCredentials(),
             action: "pull",
             since: "1970-01-01T00:00:00Z",
             limit: 10000,
@@ -521,7 +521,7 @@ export async function POST(request: NextRequest) {
           "employee_attendance_history", "employee_attendance", "employee_leave_policy", "employee_compensation_history",
           "expenses", "payable_bill_adjustments", "payable_bill_notes", "payable_bills", "bed_history", "beds", "booking_contact_methods", "bookings",
           "menu_items", "menu_categories",
-          "accounts", "vendors", "employees",
+          "accounts", "vendors", "employees", "tasks", "platform_payment_profiles",
           "qr_history", "users", "checkins", "dorms",
         ];
         // Clear sync infrastructure
@@ -609,7 +609,7 @@ export async function POST(request: NextRequest) {
           const proxyRes = await fetch(`${piUrl}/api/sync`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password: process.env.ADMIN_PASSWORD, action }),
+            body: JSON.stringify({ ...remoteSyncCredentials(), action }),
             signal: AbortSignal.timeout(15000),
           });
           const proxyData = await proxyRes.json();

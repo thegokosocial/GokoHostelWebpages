@@ -8,7 +8,7 @@ Code: `src/app/api/sync/route.ts`, `src/lib/syncEngine.ts`. UI: Management → S
 
 ## Auth
 
-`ADMIN_PASSWORD` **or** `SYNC_SECRET`. Pi remote: `CLOUDFLARE_SITE_URL` default `https://www.gokohostel.com`. Cloudflare remote: `PI_PUBLIC_URL`.
+`SYNC_SECRET` is the cross-runtime credential and must match on the Pi and Worker. When present, all Pi↔Cloudflare requests use it instead of an admin password; `ADMIN_PASSWORD` remains a compatibility fallback for installations not yet configured with a sync secret. Pi remote: `CLOUDFLARE_SITE_URL` default `https://www.gokohostel.com`. Cloudflare remote: `PI_PUBLIC_URL`.
 
 ---
 
@@ -27,6 +27,8 @@ Payment events and cycle snapshots use the booking's existing `sync_id` to stay 
 **Never:** CMS `site_*`, **split_***, audit/system logs, api_stats, rate_scrapes, push, reviews, channel manager, inventory/rates/blocks, sync meta tables, **R2 objects**. Drive URLs on checkin and task rows *do* sync (files stay in Google). Task status/text works offline; attachment uploads require network access.
 
 Pi migrator stamps `0035_site_cms.sql`, `0041_splits.sql`, `0081_split_expense_idempotency.sql`, and `0064_food_bill_share_tokens.sql` without applying SQL (Cloudflare-only). It **does** apply `0042_booking_stay_payments.sql` and `0069_ota_postpaid_booking_payments.sql` (booking payment terms/currency, journal, and cycle snapshots are part of the synced booking finance path). Splits nav is hidden on Pi.
+
+For a fresh Pi recovery, configure the matching `SYNC_SECRET`, update the Pi build, then run **Reset and reseed** on the Pi. It pulls Cloudflare before clearing any Pi sync-owned rows and must be followed by Pull Only; never Push Only the discarded Pi dataset.
 
 Integer PKs remapped via `sync_id` UUID + `sync_id_map`. FK remap table in `syncEngine.ts`. Conflicts → `sync_conflicts`.
 
@@ -64,4 +66,4 @@ git pull && npm run db:migrate:pi && npm run build:pi && pm2 restart goko
 
 `db:migrate:pi` skips 0035 CMS. `NEXT_PUBLIC_GOKO_RUNTIME` must be set at **build** time.
 
-Recurring expense rule and occurrence tables are Cloudflare-only: migration `0084_recurring_expenses.sql` is stamped but skipped on Pi. Posted `expenses` continue to use the existing sync path.
+Recurring expense rule and occurrence tables are Cloudflare-only: migration `0084_recurring_expenses.sql` is stamped but skipped on Pi. The Pi applies the transfer columns from `0085_internal_transfers_and_recurring_end.sql` but omits its trailing recurring-rule `end_date` alteration. Posted `expenses` continue to use the existing sync path.

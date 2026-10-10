@@ -52,7 +52,11 @@ for (const file of files) {
     continue;
   }
 
-  const sqlContent = fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf-8");
+  let sqlContent = fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf-8");
+  if (file === "0085_internal_transfers_and_recurring_end.sql") {
+    // 0084's recurring tables are Cloudflare-only; transfers still run on Pi.
+    sqlContent = sqlContent.replace("ALTER TABLE recurring_expense_rules ADD COLUMN end_date TEXT;\n", "");
+  }
   console.log(`Applying: ${file}`);
 
   const transaction = db.transaction(() => {

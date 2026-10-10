@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const sync = readFileSync("src/lib/syncEngine.ts", "utf8");
 const reseed = readFileSync("src/app/api/sync/route.ts", "utf8");
+const syncCredentials = readFileSync("src/lib/syncCredentials.ts", "utf8");
 const ui = readFileSync("src/components/admin/AdminPayableBills.tsx", "utf8");
 
 describe("payable bills sync and mobile wiring", () => {
@@ -12,6 +13,12 @@ describe("payable bills sync and mobile wiring", () => {
     expect(sync).toContain('payable_bill_adjustments: { payableBillId: "payable_bills" }');
     expect(sync).toContain('payable_bill_notes: { payableBillId: "payable_bills" }');
     expect(reseed).toMatch(/"expenses", "payable_bill_adjustments", "payable_bill_notes", "payable_bills"/);
+    expect(reseed).toMatch(/"tasks", "platform_payment_profiles"/);
+  });
+
+  it("prefers the dedicated sync secret for remote requests", () => {
+    expect(syncCredentials).toContain("function remoteSyncCredentials()");
+    expect(syncCredentials).toContain("return syncSecret ? { syncSecret } : { password: process.env.ADMIN_PASSWORD };");
   });
 
   it("keeps the mobile payment workflow available with conditional online account input and receipt upload", () => {
