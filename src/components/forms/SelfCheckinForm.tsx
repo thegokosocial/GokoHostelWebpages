@@ -130,6 +130,7 @@ function MultiDocUpload({
   validationMsg,
   helpText,
   showValidate,
+  maxFiles = 2,
 }: {
   label: string;
   error?: string;
@@ -142,13 +143,14 @@ function MultiDocUpload({
   helpText?: string;
   /** When set, controls Verify visibility (e.g. dual slots where files live in the other slot). */
   showValidate?: boolean;
+  maxFiles?: number;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList) return;
-    Array.from(fileList).forEach((file) => {
+    Array.from(fileList).slice(0, Math.max(0, maxFiles - files.length)).forEach((file) => {
       const check = isAcceptedIdFile(file);
       if (!check.ok) {
         alert(check.reason);
@@ -205,7 +207,8 @@ function MultiDocUpload({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-400 bg-white/80 px-4 py-4 text-sm font-medium text-zinc-900 transition-colors hover:border-brand-green-dark/40 hover:bg-white"
+          disabled={files.length >= maxFiles}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-400 bg-white/80 px-4 py-4 text-sm font-medium text-zinc-900 transition-colors hover:border-brand-green-dark/40 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           <UploadIcon className="h-5 w-5 text-brand-green-dark" />
           {files.length > 0 ? "Add more" : "Upload file"}
@@ -213,7 +216,8 @@ function MultiDocUpload({
         <button
           type="button"
           onClick={() => cameraInputRef.current?.click()}
-          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-400 bg-white/80 px-4 py-4 text-sm font-medium text-zinc-900 transition-colors hover:border-brand-green-dark/40 hover:bg-white"
+          disabled={files.length >= maxFiles}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-400 bg-white/80 px-4 py-4 text-sm font-medium text-zinc-900 transition-colors hover:border-brand-green-dark/40 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           <CameraIcon className="h-5 w-5 text-brand-green-dark" />
           Take photo
@@ -370,6 +374,8 @@ type LookupData = {
   idCardLink: string;
   visaLink: string;
   formCData: string;
+  idReuseAttestation?: string | null;
+  visaReuseAttestation?: string | null;
 };
 
 export function SelfCheckinForm() {
@@ -382,6 +388,8 @@ export function SelfCheckinForm() {
   const [returnGuest, setReturnGuest] = useState<LookupData | null>(null);
   const [prevIdCardLink, setPrevIdCardLink] = useState("");
   const [prevVisaLink, setPrevVisaLink] = useState("");
+  const [prevIdReuseAttestation, setPrevIdReuseAttestation] = useState("");
+  const [prevVisaReuseAttestation, setPrevVisaReuseAttestation] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -501,6 +509,8 @@ export function SelfCheckinForm() {
         const reusableVisa = reusableDriveLinks(d.visaLink || "");
         setPrevIdCardLink(reusableId);
         setPrevVisaLink(reusableVisa);
+        setPrevIdReuseAttestation(reusableId ? d.idReuseAttestation || "" : "");
+        setPrevVisaReuseAttestation(reusableVisa ? d.visaReuseAttestation || "" : "");
 
         const { date: nowDate, time: nowTime } = getNow();
         const formCFields: Record<string, string> = {};
@@ -550,6 +560,8 @@ export function SelfCheckinForm() {
         setReturnGuest(null);
         setPrevIdCardLink("");
         setPrevVisaLink("");
+        setPrevIdReuseAttestation("");
+        setPrevVisaReuseAttestation("");
         prefilledNameRef.current = null;
         setValue("contactNumber", cleaned);
       }
@@ -565,6 +577,8 @@ export function SelfCheckinForm() {
     setReturnGuest(null);
     setPrevIdCardLink("");
     setPrevVisaLink("");
+    setPrevIdReuseAttestation("");
+    setPrevVisaReuseAttestation("");
     prefilledNameRef.current = null;
     const cleaned = phoneInput.replace(/[\s\-]/g, "");
     if (cleaned.length >= 7) {
@@ -595,6 +609,7 @@ export function SelfCheckinForm() {
 
   const addIdFrontFile = (file: File) => {
     setPrevIdCardLink("");
+    setPrevIdReuseAttestation("");
     setValue("prevIdCardLink", undefined);
     setIdValidated(false);
     setIdValidationAttestation("");
@@ -607,6 +622,7 @@ export function SelfCheckinForm() {
 
   const addIdBackFile = (file: File) => {
     setPrevIdCardLink("");
+    setPrevIdReuseAttestation("");
     setValue("prevIdCardLink", undefined);
     setIdValidated(false);
     setIdValidationAttestation("");
@@ -737,6 +753,7 @@ export function SelfCheckinForm() {
 
   const addVisaFile = (file: File) => {
     setPrevVisaLink("");
+    setPrevVisaReuseAttestation("");
     setValue("prevVisaLink", undefined);
 
     appendDocFile(file, visaFiles, setVisaFiles, (next) => {
@@ -827,6 +844,7 @@ export function SelfCheckinForm() {
         if (idValidated && !idServerError && validationEnabled && idValidationAttestation) formData.append("idValidationAttestation", idValidationAttestation);
       } else if (prevIdCardLink) {
         formData.append("prevIdCardLink", prevIdCardLink);
+        if (prevIdReuseAttestation) formData.append("prevIdReuseAttestation", prevIdReuseAttestation);
       }
 
       if (visaFiles.length > 0) {
@@ -836,6 +854,7 @@ export function SelfCheckinForm() {
         if (visaValidationAttestation) formData.append("visaValidationAttestation", visaValidationAttestation);
       } else if (prevVisaLink) {
         formData.append("prevVisaLink", prevVisaLink);
+        if (prevVisaReuseAttestation) formData.append("prevVisaReuseAttestation", prevVisaReuseAttestation);
       }
 
       if (isForeignNationality(data.nationality)) {
@@ -902,6 +921,8 @@ export function SelfCheckinForm() {
       setReturnGuest(null);
       setPrevIdCardLink("");
       setPrevVisaLink("");
+      setPrevIdReuseAttestation("");
+      setPrevVisaReuseAttestation("");
     } catch (err) {
       setSubmitError(messageFromCheckinCatch(err));
     } finally {
@@ -1031,10 +1052,10 @@ export function SelfCheckinForm() {
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-brand-green/20 border-t-brand-green" />
         </div>
         <h2 className="mt-8 font-display text-2xl font-bold text-zinc-900">
-          Submitting your check-in...
+          Saving your check-in...
         </h2>
         <p className="mt-3 text-zinc-700" role="status" aria-live="polite">
-          Uploading documents and saving your details. Please wait and do not press the submit button again.
+          Checking your verified document, saving it securely, and creating your check-in. Please wait and do not press the submit button again.
         </p>
         <div className="mt-6 flex justify-center gap-1">
           <div className="h-2 w-2 animate-bounce rounded-full bg-brand-green [animation-delay:0ms]" />
@@ -1233,7 +1254,13 @@ export function SelfCheckinForm() {
           <CountrySelect
             id="nationality"
             value={nationality}
-            onChange={(val) => setValue("nationality", val, { shouldValidate: true })}
+            onChange={(val) => {
+              setValue("nationality", val, { shouldValidate: true });
+              setPrevIdCardLink("");
+              setPrevVisaLink("");
+              setPrevIdReuseAttestation("");
+              setPrevVisaReuseAttestation("");
+            }}
             error={errors.nationality?.message}
           />
           {errors.nationality && (
@@ -1323,6 +1350,7 @@ export function SelfCheckinForm() {
             onChange={(e) => {
               setValue("idType", e.target.value as any, { shouldValidate: true });
               setPrevIdCardLink("");
+              setPrevIdReuseAttestation("");
               setValue("prevIdCardLink", undefined);
               setIdValidated(false);
               setSidePrompt(null);
@@ -1365,6 +1393,7 @@ export function SelfCheckinForm() {
                     onRemove={() => {
                       const next = removeLinkFromJoined(prevIdCardLink, i);
                       setPrevIdCardLink(next);
+                      setPrevIdReuseAttestation("");
                       setValue("prevIdCardLink", next || undefined);
                       if (!next) {
                         setIdValidated(false);
@@ -1382,6 +1411,7 @@ export function SelfCheckinForm() {
               type="button"
               onClick={() => {
                 setPrevIdCardLink("");
+                setPrevIdReuseAttestation("");
                 setValue("prevIdCardLink", undefined);
                 setIdValidated(false);
                 setIdValidationMsg(null);
@@ -1418,6 +1448,7 @@ export function SelfCheckinForm() {
             validating={validatingId}
             validationMsg={validationEnabled && !showOtherSideSlot ? idValidationMsg : null}
             helpText={bothSidesHelpText(idType, nationality)}
+            maxFiles={1}
           />
 
           {bothSidesCapable && !prevIdOnly && !showOtherSideSlot && idFrontFiles.length > 0 && (
@@ -1460,6 +1491,7 @@ export function SelfCheckinForm() {
                 validating={validatingId}
                 validationMsg={validationEnabled ? idValidationMsg : null}
                 helpText="JPEG, PNG, WebP, PDF. Max 10 MB."
+                maxFiles={1}
               />
             </div>
           )}
@@ -1482,6 +1514,7 @@ export function SelfCheckinForm() {
                     onRemove={() => {
                       const next = removeLinkFromJoined(prevVisaLink, i);
                       setPrevVisaLink(next);
+                      setPrevVisaReuseAttestation("");
                       setValue("prevVisaLink", next || undefined);
                       if (!next) setVisaValidationMsg(null);
                     }}
@@ -1496,6 +1529,7 @@ export function SelfCheckinForm() {
               type="button"
               onClick={() => {
                 setPrevVisaLink("");
+                setPrevVisaReuseAttestation("");
                 setValue("prevVisaLink", undefined);
                 setVisaValidationMsg(null);
               }}

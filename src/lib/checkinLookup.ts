@@ -10,6 +10,8 @@ export const CHECKIN_LOOKUP_DATA_KEYS = [
   "idCardLink",
   "visaLink",
   "formCData",
+  "idReuseAttestation",
+  "visaReuseAttestation",
 ] as const;
 
 export type CheckinLookupRecord = {
@@ -23,19 +25,28 @@ export type CheckinLookupRecord = {
   idCardLink?: string | null;
   visaLink?: string | null;
   formCData?: string | null;
+  verified?: string | null;
 };
 
-export function checkinLookupData(record: CheckinLookupRecord) {
+export async function checkinLookupData(record: CheckinLookupRecord) {
+  const { issueCheckinReuseAttestation } = await import("@/lib/checkinReuseAttestation");
+  const name = record.name;
+  const nationality = record.nationality || "India";
+  const idType = record.idType || "";
+  const idCardLink = record.idCardLink || "";
+  const visaLink = record.visaLink || "";
   return {
-    name: record.name,
+    name,
     contactNumber: record.contact,
     comingFrom: record.comingFrom || "",
-    nationality: record.nationality || "India",
+    nationality,
     emergencyName: record.emergencyName || "",
     emergencyPhone: record.emergencyPhone || "",
-    idType: record.idType || "",
-    idCardLink: record.idCardLink || "",
-    visaLink: record.visaLink || "",
+    idType,
+    idCardLink,
+    visaLink,
     formCData: record.formCData || "",
+    idReuseAttestation: await issueCheckinReuseAttestation({ category: "id", name, nationality, idType, links: idCardLink, verified: record.verified || "" }),
+    visaReuseAttestation: await issueCheckinReuseAttestation({ category: "visa", name, nationality, idType, links: visaLink, verified: record.verified || "" }),
   };
 }

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { issueCheckinValidationAttestation, verifyCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
+import { issueCheckinReuseAttestation, verifyCheckinReuseAttestation } from "@/lib/checkinReuseAttestation";
 
 const input = {
   category: "id" as const,
@@ -24,5 +25,22 @@ describe("check-in validation attestations", () => {
   it("does not issue a proof without the configured secret", async () => {
     vi.stubEnv("CHECKIN_VALIDATION_TOKEN_SECRET", "");
     await expect(issueCheckinValidationAttestation(input)).resolves.toBeNull();
+  });
+
+  it("reuses only the exact verified document links for the same identity", async () => {
+    vi.stubEnv("CHECKIN_VALIDATION_TOKEN_SECRET", "01234567890123456789012345678901");
+    const reuse = {
+      category: "id" as const,
+      name: "Ada Guest",
+      nationality: "India",
+      idType: "aadhaar",
+      links: "https://drive.google.com/file/d/verified/view",
+    };
+    const token = await issueCheckinReuseAttestation({ ...reuse, verified: "yes" });
+    expect(token).toBeTruthy();
+    await expect(verifyCheckinReuseAttestation(token!, reuse)).resolves.toBe(true);
+    await expect(verifyCheckinReuseAttestation(token!, { ...reuse, links: "https://drive.google.com/file/d/other/view" })).resolves.toBe(false);
+    await expect(verifyCheckinReuseAttestation(token!, { ...reuse, name: "Other Guest" })).resolves.toBe(false);
+    await expect(issueCheckinReuseAttestation({ ...reuse, verified: "pending" })).resolves.toBeNull();
   });
 });

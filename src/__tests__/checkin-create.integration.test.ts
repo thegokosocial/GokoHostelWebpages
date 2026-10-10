@@ -140,7 +140,7 @@ describe("self check-in create (disposable SQLite)", () => {
     expect(await res.json()).toEqual({ success: true });
     expect(countCheckins()).toBe(1);
     const row = sqlite.prepare(
-      "SELECT name, contact, nationality, id_type, id_card_link, status, idempotency_key FROM checkins",
+      "SELECT name, contact, nationality, id_type, id_card_link, verified, status, idempotency_key FROM checkins",
     ).get() as Record<string, string>;
     expect(row).toMatchObject({
       name: "Test Guest",
@@ -148,6 +148,7 @@ describe("self check-in create (disposable SQLite)", () => {
       nationality: "India",
       id_type: "aadhaar",
       id_card_link: "offline-pending",
+      verified: "pending",
       status: "active",
       idempotency_key: uuid("111111111111"),
     });

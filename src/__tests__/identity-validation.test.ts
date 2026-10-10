@@ -148,6 +148,21 @@ describe("name matching quality", () => {
     expect(result.needsDocReview || result.layers?.includes("name_partial")).toBeTruthy();
     expect(verifiedFromIdValidation(result)).toBe("name_review");
   });
+
+  it("routes weak but readable full-name evidence to document review", () => {
+    const result = validateIdFromText("Driving Licence Name: Pawan Dhiran", "id", "driving_licence", "Pawan Dhiran", "India");
+    expect(result.valid).toBe(true);
+    expect(result.documentConfidence).toBeGreaterThanOrEqual(15);
+    expect(result.documentConfidence).toBeLessThan(65);
+    expect(result.needsDocReview).toBe(true);
+    expect(verifiedFromIdValidation(result)).toBe("doc_review");
+  });
+
+  it("keeps a partial name match in staff review even at a high document score", () => {
+    const result = validateIdFromText(SUGUMAR_AADHAAR_BOTH, "id", "aadhaar", "Sugumar Patel", "India");
+    expect(result.documentConfidence).toBeGreaterThanOrEqual(65);
+    expect(verifiedFromIdValidation(result)).toBe("name_review");
+  });
 });
 
 describe("DigiLocker Aadhaar and verified mapping", () => {

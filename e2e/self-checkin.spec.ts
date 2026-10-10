@@ -15,6 +15,7 @@ type CheckinCapture = {
   raw: string;
   hasIdempotencyKey: boolean;
   idValidationAttestation: string | null;
+  prevIdReuseAttestation: string | null;
 };
 
 async function stubSelfCheckinApis(
@@ -83,10 +84,12 @@ async function stubSelfCheckinApis(
       const raw = route.request().postData() || "";
       const keyMatch = raw.match(/name="idempotencyKey"\r?\n\r?\n([0-9a-f-]{36})/i);
       const attestationMatch = raw.match(/name="idValidationAttestation"\r?\n\r?\n([^\r\n]+)/i);
+      const reuseMatch = raw.match(/name="prevIdReuseAttestation"\r?\n\r?\n([^\r\n]+)/i);
       opts.onCheckin?.({
         raw,
         hasIdempotencyKey: Boolean(keyMatch?.[1]),
         idValidationAttestation: attestationMatch?.[1] ?? null,
+        prevIdReuseAttestation: reuseMatch?.[1] ?? null,
       });
       await route.fulfill(opts.checkinResponse ?? { json: { success: true } });
       return;
@@ -268,6 +271,26 @@ test.describe("self check-in guest journeys", () => {
     await page.getByRole("button", { name: "Remove Previous ID 1" }).click();
     await expect(page.getByText("ID document (from previous visit)")).toHaveCount(0);
     await expect(page.getByText("Aadhaar document *")).toBeVisible();
+  });
+
+  test("returning guest sends the server-issued reuse proof", async ({ page }) => {
+    let capture: CheckinCapture | null = null;
+    await stubSelfCheckinApis(page, {
+      lookup: {
+        name: "Ada Guest", contactNumber: "9876543210", comingFrom: "Bangalore", nationality: "India",
+        emergencyName: "Friend", emergencyPhone: "9876543210", idType: "aadhaar",
+        idCardLink: "https://drive.google.com/file/d/prevId1/view", visaLink: "", formCData: "",
+        idReuseAttestation: "server-signed-reuse-proof",
+      },
+      onCheckin: (value) => { capture = value; },
+    });
+    await page.goto("/self-checkin");
+    await page.locator("#phoneLookup").fill("9876543210");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await fillRequiredGuestFields(page, { firstName: "Ada", lastName: "Guest" });
+    await page.getByRole("button", { name: "Complete Check-in" }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible({ timeout: 10_000 });
+    expect((capture as CheckinCapture | null)?.prevIdReuseAttestation).toBe("server-signed-reuse-proof");
   });
 
   test("skip new guest reaches form without lookup", async ({ page }) => {

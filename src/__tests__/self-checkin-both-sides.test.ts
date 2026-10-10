@@ -106,19 +106,20 @@ describe("Vision-down allows single Aadhaar file (no 2-file gate)", () => {
 
 describe("checkinIdUpload helpers", () => {
   it("accepts jpeg/png/webp/pdf and extension fallbacks", () => {
-    expect(isAcceptedIdFile(new File([""], "a.jpg", { type: "image/jpeg" })).ok).toBe(true);
-    expect(isAcceptedIdFile(new File([""], "a.png", { type: "image/png" })).ok).toBe(true);
-    expect(isAcceptedIdFile(new File([""], "a.webp", { type: "image/webp" })).ok).toBe(true);
-    expect(isAcceptedIdFile(new File([""], "a.pdf", { type: "application/pdf" })).ok).toBe(true);
-    expect(isAcceptedIdFile(new File([""], "a.heic", { type: "image/heic" })).ok).toBe(true);
-    expect(isAcceptedIdFile(new File([""], "scan.PDF", { type: "" })).ok).toBe(true);
-    expect(isAcceptedIdFile(new File([""], "photo.JPG", { type: "application/octet-stream" })).ok).toBe(true);
+    expect(isAcceptedIdFile(new File(["x"], "a.jpg", { type: "image/jpeg" })).ok).toBe(true);
+    expect(isAcceptedIdFile(new File(["x"], "a.png", { type: "image/png" })).ok).toBe(true);
+    expect(isAcceptedIdFile(new File(["x"], "a.webp", { type: "image/webp" })).ok).toBe(true);
+    expect(isAcceptedIdFile(new File(["x"], "a.pdf", { type: "application/pdf" })).ok).toBe(true);
+    expect(isAcceptedIdFile(new File(["x"], "a.heic", { type: "image/heic" })).ok).toBe(true);
+    expect(isAcceptedIdFile(new File(["x"], "scan.PDF", { type: "" })).ok).toBe(true);
+    expect(isAcceptedIdFile(new File(["x"], "photo.JPG", { type: "application/octet-stream" })).ok).toBe(true);
   });
 
   it("rejects oversized and unsupported types", () => {
     const big = new File([new Uint8Array(11 * 1024 * 1024)], "big.jpg", { type: "image/jpeg" });
     expect(isAcceptedIdFile(big).ok).toBe(false);
     expect(isAcceptedIdFile(new File([""], "x.txt", { type: "text/plain" })).ok).toBe(false);
+    expect(isAcceptedIdFile(new File([""], "empty.jpg", { type: "image/jpeg" })).ok).toBe(false);
   });
 
   it("detects HEIC by mime or extension", () => {

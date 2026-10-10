@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles } from "@/lib/validateIdDocument";
 import { incrementStat, addSystemLog } from "@/db/queries";
 import { isOfflineMode } from "@/lib/runtime";
-import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
 import { digestFiles, issueCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
 import { assertGuestOrigin, guestBookingRateLimit } from "@/lib/guestBookingRateLimit";
+import { checkinDocumentUploadError } from "@/lib/checkinIdUpload";
 
 export async function POST(req: NextRequest) {
   try { assertGuestOrigin(req); } catch { return NextResponse.json({ error: "Invalid request origin" }, { status: 403 }); }
@@ -12,10 +12,6 @@ export async function POST(req: NextRequest) {
   if (!guestBookingRateLimit(`validate-id:${ip}`, 12, 10 * 60_000)) {
     return NextResponse.json({ error: "Too many document checks. Please wait a few minutes and try again." }, { status: 429 });
   }
-  if (isOfflineMode()) {
-    return NextResponse.json({ valid: false, unavailable: true, offline: true, message: "ID validation unavailable offline" }, { status: 503 });
-  }
-
   try {
     const formData = await req.formData();
     const files = formData.getAll("file") as File[];
@@ -27,17 +23,12 @@ export async function POST(req: NextRequest) {
     if (files.length === 0) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
+    const field = category === "visa" ? "visaImages" : "idImages";
+    const uploadError = await checkinDocumentUploadError(files, field);
+    if (uploadError) return NextResponse.json({ error: uploadError }, { status: 422 });
 
-    for (const file of files) {
-      if (file.size > 10 * 1024 * 1024) {
-        return NextResponse.json({ error: `File "${file.name}" exceeds 10 MB` }, { status: 400 });
-      }
-      if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
-        return NextResponse.json({ error: "File must be an image or PDF" }, { status: 400 });
-      }
-      if (file.type === "application/pdf" && isPasswordProtectedPdf(await file.arrayBuffer())) {
-        return NextResponse.json({ error: `File "${file.name}" is password-protected. Upload an unlocked PDF or a photo instead.` }, { status: 422 });
-      }
+    if (isOfflineMode()) {
+      return NextResponse.json({ valid: false, unavailable: true, offline: true, message: "ID validation unavailable offline" }, { status: 503 });
     }
 
     if (files.length === 1) {

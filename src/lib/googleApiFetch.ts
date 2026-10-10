@@ -246,6 +246,11 @@ export async function driveUploadFile(
     signal: AbortSignal.timeout(15_000),
   });
   if (!permRes.ok) {
+    // The file exists but was never returned to a caller, so remove it here.
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => undefined);
     throw new Error(`Drive sharing failed (${permRes.status})`);
   }
 

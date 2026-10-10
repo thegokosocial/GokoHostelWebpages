@@ -116,6 +116,8 @@ export type ValidationResult = {
   valid: boolean;
   documentType: DocumentType;
   confidence: "high" | "medium" | "low";
+  /** Deterministic document-evidence score used for self-check-in review routing. */
+  documentConfidence?: number;
   message: string;
   nameMatch?: boolean;
   nameMatchQuality?: NameMatchQuality;
@@ -356,6 +358,26 @@ function hasAddressEvidence(text: string): boolean {
   return countPatternHits(text, ADDRESS_PATTERNS) >= 2;
 }
 
+function documentConfidence(
+  text: string,
+  matchCount: number,
+  nameQuality: NameMatchQuality,
+  requiresBothSides: boolean,
+  hasBothSides: boolean,
+): number {
+  const readable = text.trim().length >= 120 ? 25 : text.trim().length >= 40 ? 15 : 5;
+  const typeEvidence = matchCount >= 3 ? 30 : matchCount >= 2 ? 20 : 10;
+  const holderName = nameQuality === "full" ? 30 : nameQuality === "partial" ? 15 : 0;
+  const sideCoverage = !requiresBothSides || hasBothSides ? 15 : 0;
+  return readable + typeEvidence + holderName + sideCoverage;
+}
+
+function isHolderBearingPage(text: string, type: DocumentType): boolean {
+  if (type === "aadhaar") return hasAadhaarFrontEvidence(text);
+  if (type === "passport") return hasPassportBioEvidence(text);
+  return type === "driving_licence" && hasStrongDlCues(text);
+}
+
 function detectDocumentType(text: string): { type: DocumentType; matchCount: number } {
   const checks: { type: DocumentType; patterns: RegExp[]; minStrong?: () => boolean }[] = [
     { type: "aadhaar", patterns: AADHAAR_PATTERNS, minStrong: () => hasStrongAadhaarCues(text) },
@@ -481,7 +503,9 @@ function runTextValidation(
       };
     }
 
-    let needsDocReview = false;
+    const sides = evaluateIdSides(text, type, nationality);
+    const score = documentConfidence(text, matchCount, nameResult.quality, sides.requiresBothSides, sides.missing === null);
+    let needsDocReview = score < 65;
     if (guestName && nameResult.quality === "partial") {
       layers.push("name_partial");
     } else if (guestName && nameResult.quality === "full") {
@@ -507,6 +531,7 @@ function runTextValidation(
       valid: true,
       documentType: type,
       confidence: conf,
+      documentConfidence: score,
       nameMatch: nameResult.quality === "full",
       nameMatchQuality: nameResult.quality,
       needsDocReview: nameResult.quality === "partial" || needsDocReview,
@@ -644,58 +669,77 @@ export async function validateMultipleFiles(
       analyses.push(...await Promise.all(batch.map((file) => visionAnalyze(file.buffer.toString("base64"), file.mimeType))));
     }
     const allTexts: string[] = [];
-    const allLabels: string[] = [];
-    const allObjects: string[] = [];
-    let safeSearch: VisionAnalysis["safeSearch"] | null = null;
 
     for (const analysis of analyses) {
       allTexts.push(analysis.text);
-      allLabels.push(...analysis.labels);
-      allObjects.push(...analysis.objects);
-      if (analysis.safeSearch && !safeSearch) safeSearch = analysis.safeSearch;
+      if (analysis.labels.length > 0) {
+        const { isDoc, reason } = checkIsDocument(analysis.labels, analysis.objects);
+        if (!isDoc) {
+          return { valid: false, documentType: "unknown", confidence: "high", layers: ["label_rejected"], message: reason || "This does not appear to be an ID document." };
+        }
+      }
+      if (analysis.safeSearch && !analysis.isPdf) {
+        const { safe, reason } = checkSafeSearch(analysis.safeSearch);
+        if (!safe) {
+          return { valid: false, documentType: "unknown", confidence: "high", layers: ["safesearch_rejected"], message: reason };
+        }
+      }
     }
 
     const combinedText = allTexts.join("\n");
-    const layers: string[] = [];
-
-    if (allLabels.length > 0) {
-      const { isDoc, reason } = checkIsDocument(allLabels, allObjects);
-      if (!isDoc) {
-        return { valid: false, documentType: "unknown", confidence: "high", layers: ["label_rejected"], message: reason || "This does not appear to be an ID document." };
-      }
-      layers.push("label_ok");
-    }
-
-    const textResult = runTextValidation(combinedText, expectedCategory, expectedIdType, guestName, nationality);
+    const layers: string[] = ["label_ok", "safesearch_ok"];
+    const textResult = runTextValidation(combinedText, expectedCategory, expectedIdType, undefined, nationality);
     layers.push(...(textResult.layers || []));
 
-    if (!textResult.valid) {
-      return { ...textResult, layers };
+    if (!textResult.valid) return { ...textResult, layers };
+
+    if (expectedCategory === "id" && guestName) {
+      const holderMatches = allTexts
+        .filter((text) => isHolderBearingPage(text, textResult.documentType))
+        .map((text) => checkNameMatchQuality(text, guestName));
+      const nameResult = holderMatches.find((result) => result.quality === "full")
+        || holderMatches.find((result) => result.quality === "partial")
+        || { quality: "none" as const, matched: false };
+      if (nameResult.quality === "none") {
+        return {
+          valid: false,
+          documentType: textResult.documentType,
+          confidence: textResult.confidence,
+          documentConfidence: 0,
+          nameMatch: false,
+          nameMatchQuality: "none",
+          layers: [...layers, "name_mismatch"],
+          message: `This ID does not show your name. Please upload your own valid ${textResult.documentType.replace("_", " ")}, or approach our staff for assisted check-in.`,
+        };
+      }
+      const detected = detectDocumentType(combinedText);
+      const sides = evaluateIdSides(combinedText, textResult.documentType, nationality);
+      const score = documentConfidence(combinedText, detected.matchCount, nameResult.quality, sides.requiresBothSides, sides.missing === null);
+      if (nameResult.quality === "partial") layers.push("name_partial"); else layers.push("name_verified");
+      if (score < 65) layers.push("doc_review");
+      textResult.nameMatch = nameResult.quality === "full";
+      textResult.nameMatchQuality = nameResult.quality;
+      textResult.needsDocReview = nameResult.quality === "partial" || score < 65;
+      textResult.documentConfidence = score;
+      textResult.message = `${textResult.documentType.replace("_", " ")} detected.${nameResult.quality === "full" ? " Name verified." : " Name partially matches — staff will confirm."}`;
     }
 
     if (textResult.documentType === "aadhaar" && allTexts.length > 1) {
       layers.push("aadhaar_multi_page");
     }
 
-    const isDigiLockerMulti = /digilocker|digi\s*locker|m[\s-]?aadhaar/i.test(combinedText);
     let spoofWarningMulti = false;
-    if (safeSearch) {
-      if (isDigiLockerMulti) {
+    for (const analysis of analyses) {
+      if (!analysis.safeSearch || analysis.isPdf) continue;
+      if (/digilocker|digi\s*locker|m[\s-]?aadhaar/i.test(analysis.text)) {
         layers.push("digilocker_trusted");
-      } else {
-        const { safe, reason } = checkSafeSearch(safeSearch);
-        if (!safe) {
-          return { valid: false, documentType: textResult.documentType, confidence: "high", layers: [...layers, "safesearch_rejected"], message: reason };
-        }
-        if (safeSearch.spoof === "LIKELY") {
-          spoofWarningMulti = true;
-          layers.push("spoof_warning");
-        }
+      } else if (analysis.safeSearch.spoof === "LIKELY") {
+        spoofWarningMulti = true;
+        layers.push("spoof_warning");
       }
-      layers.push("safesearch_ok");
     }
 
-    return { ...textResult, layers, message: textResult.message, ocrText: combinedText, spoofWarning: spoofWarningMulti };
+    return { ...textResult, layers, ocrText: combinedText, spoofWarning: spoofWarningMulti };
   } catch (error) {
     console.error("Multi-file validation error:", error);
     return unavailableResult();

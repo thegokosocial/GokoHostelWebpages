@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateIdDocument, validateMultipleFiles, verifiedFromIdValidation } from "@/lib/validateIdDocument";
-import { driveUploadFile, driveGetOrCreateFolder } from "@/lib/googleApiFetch";
+import { driveUploadFile, driveGetOrCreateFolder, driveDeleteFile } from "@/lib/googleApiFetch";
 import { addCheckin, getActiveCheckins, getCheckinByIdempotencyKey, claimCheckinSubmission, releaseCheckinSubmissionClaim, incrementStat, getMonthKey, getSetting, addAuditEntry, addSystemLog } from "@/db/queries";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
 import { isOfflineMode } from "@/lib/runtime";
@@ -9,9 +9,10 @@ import { isSameCheckinVisit } from "@/lib/checkinDuplicate";
 import { dobEqualsArrivalDate, getAgeFromDob } from "@/lib/parseDob";
 import { guestBookingRateLimit, assertGuestOrigin } from "@/lib/guestBookingRateLimit";
 import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/createIdempotency";
-import { isPasswordProtectedPdf } from "@/lib/pdfSecurity";
 import { digestFiles, verifyCheckinValidationAttestation } from "@/lib/checkinValidationAttestation";
 import { checkinReviewReasons } from "@/lib/checkinReview";
+import { checkinDocumentUploadError } from "@/lib/checkinIdUpload";
+import { verifyCheckinReuseAttestation } from "@/lib/checkinReuseAttestation";
 
 function generateBookingId(): string {
   const now = new Date();
@@ -36,6 +37,10 @@ async function uploadToDrive(file: File, guestName: string, fileType: string, ta
 function isReusableDriveLink(value: string) {
   const links = value.split(" | ").map((link) => link.trim()).filter(Boolean);
   return links.length > 0 && links.every((link) => /^https:\/\/drive\.google\.com\/file\/d\/[^/]+\/view(?:\?|$)/.test(link));
+}
+
+function driveFileId(link: string) {
+  return /^https:\/\/drive\.google\.com\/file\/d\/([^/]+)\/view(?:\?|$)/.exec(link)?.[1] || null;
 }
 
 async function uploadFiles(files: File[], guestName: string, prefix: string, folderId?: string) {
@@ -78,6 +83,8 @@ export async function POST(req: NextRequest) {
 
     const prevIdCardLink = formData.get("prevIdCardLink") as string || "";
     const prevVisaLink = formData.get("prevVisaLink") as string || "";
+    const prevIdReuseAttestation = formData.get("prevIdReuseAttestation") as string || "";
+    const prevVisaReuseAttestation = formData.get("prevVisaReuseAttestation") as string || "";
     const idValidationAttestation = (formData.get("idValidationAttestation") as string || "").trim();
     const visaValidationAttestation = (formData.get("visaValidationAttestation") as string || "").trim();
 
@@ -105,8 +112,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, duplicate: true, checkinId: existingByKey.id });
     }
 
-    const validPrevIdCardLink = isReusableDriveLink(prevIdCardLink) ? prevIdCardLink : "";
-    const validPrevVisaLink = isReusableDriveLink(prevVisaLink) ? prevVisaLink : "";
+    const validPrevIdCardLink = isReusableDriveLink(prevIdCardLink) && await verifyCheckinReuseAttestation(prevIdReuseAttestation, {
+      category: "id", name, nationality, idType, links: prevIdCardLink,
+    }) ? prevIdCardLink : "";
+    const validPrevVisaLink = isReusableDriveLink(prevVisaLink) && await verifyCheckinReuseAttestation(prevVisaReuseAttestation, {
+      category: "visa", name, nationality, idType, links: prevVisaLink,
+    }) ? prevVisaLink : "";
     const hasIdImages = idImages.length > 0 || !!validPrevIdCardLink;
     if (!name || !contactNumber || !nationality || !idType || !hasIdImages || !arrivalDate || !stayingDays || !comingFrom || !numberOfPersons) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -131,14 +142,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, duplicate: true, checkinId: duplicate.id });
     }
 
-    for (const file of [...idImages, ...visaImages]) {
-      if (file.size > 10 * 1024 * 1024) {
-        return NextResponse.json({ error: `File "${file.name}" exceeds 10 MB limit` }, { status: 400 });
-      }
-      if (file.type === "application/pdf" && isPasswordProtectedPdf(await file.arrayBuffer())) {
-        return NextResponse.json({ error: `File "${file.name}" is password-protected. Upload an unlocked PDF or a photo instead.`, field: idImages.includes(file) ? "idImages" : "visaImages" }, { status: 422 });
-      }
-    }
+    const idUploadError = await checkinDocumentUploadError(idImages, "idImages");
+    if (idUploadError) return NextResponse.json({ error: idUploadError, field: "idImages" }, { status: 422 });
+    const visaUploadError = await checkinDocumentUploadError(visaImages, "visaImages");
+    if (visaUploadError) return NextResponse.json({ error: visaUploadError, field: "visaImages" }, { status: 422 });
 
     // Public check-in is fail-closed for known bad documents. The admin Vision
     // display setting must not turn this identity boundary into client trust.
@@ -264,6 +271,9 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
+    const submissionStartedAt = Date.now();
+    const uploadedLinks: string[] = [];
+    let persisted = false;
     try {
     if (serverVisionCalls > 0) incrementStat("vision", serverVisionCalls).catch(() => {});
 
@@ -287,7 +297,9 @@ export async function POST(req: NextRequest) {
       idCardLink = "offline-pending";
     } else {
       try {
-        idCardLink = (await uploadFiles(idImages, name, "id", monthFolderId)).join(" | ");
+        const links = await uploadFiles(idImages, name, "id", monthFolderId);
+        uploadedLinks.push(...links);
+        idCardLink = links.join(" | ");
       } catch (uploadErr: any) {
         console.error("ID upload failed:", uploadErr?.message);
         return NextResponse.json({ error: "Could not save your ID document. Please try again." }, { status: 503 });
@@ -300,7 +312,9 @@ export async function POST(req: NextRequest) {
       visaLink = visaImages.length > 0 ? "offline-pending" : "";
     } else {
       try {
-        visaLink = (await uploadFiles(visaImages, name, "visa", monthFolderId)).join(" | ");
+        const links = await uploadFiles(visaImages, name, "visa", monthFolderId);
+        uploadedLinks.push(...links);
+        visaLink = links.join(" | ");
       } catch (uploadErr: any) {
         console.error("Visa upload failed:", uploadErr?.message);
         return NextResponse.json({ error: "Could not save your visa document. Please try again." }, { status: 503 });
@@ -309,6 +323,8 @@ export async function POST(req: NextRequest) {
     const submittedAt = new Date().toISOString();
     const verified = reusingPrevId
       ? "yes"
+      : isOfflineMode()
+        ? "pending"
       : !validationEnabled || validationFailed
         ? "pending"
         : idVerifiedOverride
@@ -409,12 +425,14 @@ export async function POST(req: NextRequest) {
         throw insertErr;
       }
     }
+    persisted = true;
 
     const newUploads = (reusingPrevId ? 0 : idImages.length) + (reusingPrevVisa ? 0 : visaImages.length);
     if (newUploads > 0) incrementStat("drive", newUploads).catch(() => {});
 
     addAuditEntry({ username: "guest", action: "self_checkin", target: name }).catch(() => {});
     addSystemLog({ level: "info", source: "checkin", message: `Self check-in: ${name}` }).catch(() => {});
+    addSystemLog({ level: "info", source: "checkin", message: `Self check-in timing: total=${Date.now() - submissionStartedAt}ms` }).catch(() => {});
 
     if (!isOfflineMode()) {
       void Promise.resolve(dispatchPush({
@@ -443,6 +461,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
     } finally {
+      if (!persisted) {
+        await Promise.all(uploadedLinks.map(async (link) => {
+          const fileId = driveFileId(link);
+          if (fileId) await driveDeleteFile(fileId).catch(() => undefined);
+        }));
+      }
       await releaseCheckinSubmissionClaim(idempotencyKey).catch(() => undefined);
     }
   } catch (error: any) {

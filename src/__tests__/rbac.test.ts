@@ -469,8 +469,8 @@ describe("RBAC: All admin-only actions are accounted for", () => {
 });
 
 describe("Check-in lookup contract", () => {
-  it("keeps returning-guest fields including Drive links and Form C", () => {
-    const data = checkinLookupData({
+  it("keeps returning-guest fields including Drive links and Form C", async () => {
+    const data = await checkinLookupData({
       name: "Ada Guest",
       contact: "test-contact-001",
       comingFrom: "Goa",

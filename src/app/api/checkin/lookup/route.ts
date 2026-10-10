@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       found: true,
-      data: checkinLookupData(record),
+      data: await checkinLookupData(record),
     });
   } catch (error: any) {
     console.error("Lookup error:", error?.message || error);

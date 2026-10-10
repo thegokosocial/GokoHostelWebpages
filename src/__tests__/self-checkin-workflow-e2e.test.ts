@@ -13,6 +13,7 @@ import {
 } from "./fixtures/id-ocr";
 import { isStaffReviewValidation, messageFromCheckinFailure } from "@/lib/checkinSubmitError";
 import { verifiedFromIdValidation } from "@/lib/validateIdDocument";
+import { issueCheckinReuseAttestation } from "@/lib/checkinReuseAttestation";
 
 const q = vi.hoisted(() => ({
   getActiveCheckins: vi.fn(),
@@ -328,6 +329,36 @@ describe("self-check-in mock E2E workflows", () => {
     });
   });
 
+  describe("multi-file ownership", () => {
+    it("does not let a name on a separate non-holder page satisfy ID ownership", async () => {
+      q.visionAnalyze
+        .mockResolvedValueOnce(visionOk(DL_WITH_TRANSPORT.replace(/Pawan Dhiran/gi, "Chinmay")))
+        .mockResolvedValueOnce(visionOk("Guest declaration: Sai Nikhil"));
+      const fd = new FormData();
+      fd.append("file", idFile("licence.jpg"));
+      fd.append("file", idFile("declaration.jpg"));
+      fd.set("category", "id");
+      fd.set("idType", "driving_licence");
+      fd.set("guestName", "Sai Nikhil");
+      fd.set("nationality", "India");
+      const res = await validateIdPOST(new NextRequest("http://localhost/api/validate-id", { method: "POST", body: fd }));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.valid).toBe(false);
+      expect(body.nameMatchQuality).toBe("none");
+    });
+
+    it("rejects more than two public ID uploads before Vision", async () => {
+      const fd = new FormData();
+      for (const name of ["one.jpg", "two.jpg", "three.jpg"]) fd.append("file", idFile(name));
+      fd.set("category", "id");
+      const res = await validateIdPOST(new NextRequest("http://localhost/api/validate-id", { method: "POST", body: fd }));
+      expect(res.status).toBe(422);
+      expect((await res.json()).error).toMatch(/at most 2 ID/i);
+      expect(q.visionAnalyze).not.toHaveBeenCalled();
+    });
+  });
+
   describe("hard rejects still stop the guest", () => {
     it("PAN card soft-fails validate and 422s check-in without insert", async () => {
       q.visionAnalyze.mockResolvedValue(visionOk(PRAVALLIKA_PAN));
@@ -431,11 +462,15 @@ describe("self-check-in mock E2E workflows", () => {
   });
 
   describe("edge workflows", () => {
-    it("reuses prevIdCardLink without Vision and marks verified yes", async () => {
+    it("reuses a signed previous ID without Vision and marks verified yes", async () => {
       const fd = new FormData();
       for (const [k, v] of Object.entries(baseFields({ contactNumber: "9000000010" }))) fd.set(k, v);
       fd.set("idempotencyKey", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
       fd.set("prevIdCardLink", "https://drive.google.com/file/d/prev/view");
+      fd.set("prevIdReuseAttestation", await issueCheckinReuseAttestation({
+        category: "id", name: "Sugumar G", nationality: "India", idType: "aadhaar",
+        links: "https://drive.google.com/file/d/prev/view", verified: "yes",
+      }) || "");
       const res = await checkinPOST(new NextRequest("http://localhost/api/checkin", {
         method: "POST",
         body: fd,
@@ -445,6 +480,18 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.visionAnalyze).not.toHaveBeenCalled();
       expect(q.addCheckin.mock.calls[0][0].verified).toBe("yes");
       expect(q.addCheckin.mock.calls[0][0].idCardLink).toContain("prev");
+    });
+
+    it("rejects an unsigned arbitrary previous Drive link", async () => {
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(baseFields({ contactNumber: "9000000018" }))) fd.set(k, v);
+      fd.set("idempotencyKey", "cccccccc-cccc-4ccc-8ccc-cccccccccc18");
+      fd.set("prevIdCardLink", "https://drive.google.com/file/d/arbitrary/view");
+      const res = await checkinPOST(new NextRequest("http://localhost/api/checkin", {
+        method: "POST", body: fd, headers: { origin: "http://localhost" },
+      }));
+      expect(res.status).toBe(400);
+      expect(q.visionAnalyze).not.toHaveBeenCalled();
     });
 
     it("does not reuse a failed-upload placeholder as identity evidence", async () => {
