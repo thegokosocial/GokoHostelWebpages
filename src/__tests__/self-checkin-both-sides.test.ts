@@ -86,13 +86,13 @@ describe("hard both-sides reject matrix", () => {
     expect(result.layers).toContain("both_sides_ok");
   });
 
-  it("still soft-allows name mismatch after both sides pass", () => {
+  it("rejects complete name mismatch after both sides pass", () => {
     const result = validateIdFromText(SUGUMAR_AADHAAR_BOTH, "id", "aadhaar", "Wrong Name", "India");
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.nameMatchQuality).toBe("none");
     expect(result.layers).toContain("both_sides_ok");
     expect(result.layers).toContain("name_mismatch");
-    expect(isStaffReviewValidation(result)).toBe(true);
+    expect(isStaffReviewValidation(result)).toBe(false);
   });
 });
 

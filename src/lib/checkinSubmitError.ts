@@ -38,9 +38,7 @@ export function isStaffReviewValidation(result: {
   return !!(
     result.needsDocReview
     || result.nameMatchQuality === "partial"
-    || result.nameMatchQuality === "none"
     || layers.includes("name_partial")
-    || layers.includes("name_mismatch")
     || layers.includes("doc_review")
     || layers.includes("unreadable")
     || layers.includes("visa_unidentified")

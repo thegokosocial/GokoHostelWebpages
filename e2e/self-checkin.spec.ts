@@ -204,6 +204,58 @@ test.describe("self check-in guest journeys", () => {
     await expect(page.getByRole("button", { name: "Complete Check-in" })).toBeDisabled();
   });
 
+  test("complete name mismatch clears the ID and requires the guest's own document", async ({ page }) => {
+    let checkinCalls = 0;
+    await stubSelfCheckinApis(page, {
+      lookup: null,
+      onCheckin: () => { checkinCalls += 1; },
+      validateSequence: [{
+        valid: false,
+        documentType: "driving_licence",
+        confidence: "high",
+        nameMatch: false,
+        nameMatchQuality: "none",
+        layers: ["type_match", "name_mismatch"],
+        message: "This ID does not show your name. Please upload your own valid driving licence, or approach our staff for assisted check-in.",
+      }],
+    });
+    await skipToForm(page);
+    await fillRequiredGuestFields(page, { firstName: "Sai", lastName: "Nikhil" });
+    await page.locator("#idType").selectOption("driving_licence");
+    await galleryInputs(page).first().setInputFiles({ ...tinyJpeg, name: "someone-else-id.jpg" });
+    await page.getByRole("button", { name: "Verify document" }).click();
+
+    await expect(page.getByText(/does not show your name.*assisted check-in/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("someone-else-id.jpg")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Complete Check-in" })).toBeDisabled();
+    expect(checkinCalls).toBe(0);
+  });
+
+  test("partial name match remains submit-able and visibly flagged for staff review", async ({ page }) => {
+    await stubSelfCheckinApis(page, {
+      lookup: null,
+      validateSequence: [{
+        valid: true,
+        attestation: "test-partial-name-attestation",
+        documentType: "driving_licence",
+        confidence: "high",
+        nameMatch: false,
+        nameMatchQuality: "partial",
+        layers: ["type_match", "name_partial"],
+        needsDocReview: true,
+        message: "Driving licence detected. Name partially matches — staff will confirm.",
+      }],
+    });
+    await skipToForm(page);
+    await fillRequiredGuestFields(page, { firstName: "Sai", lastName: "Nikhil" });
+    await page.locator("#idType").selectOption("driving_licence");
+    await galleryInputs(page).first().setInputFiles(tinyJpeg);
+    await page.getByRole("button", { name: "Verify document" }).click();
+
+    await expect(page.getByText(/name partially matches.*staff will confirm/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Complete Check-in" })).toBeEnabled();
+  });
+
   test("returning guest: Remove X clears previous ID preview", async ({ page }) => {
     await stubSelfCheckinApis(page);
     await page.goto("/self-checkin");

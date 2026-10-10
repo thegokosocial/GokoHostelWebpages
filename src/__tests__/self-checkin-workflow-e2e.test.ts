@@ -224,7 +224,7 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.addCheckin).not.toHaveBeenCalled();
     });
 
-    it("name mismatch soft-allows as name_review for staff Vibe OK", async () => {
+    it("complete name mismatch rejects validation and direct submission before Drive or persistence", async () => {
       q.visionAnalyze.mockResolvedValue(visionOk(DL_WITH_TRANSPORT));
 
       const validateRes = await validateIdPOST(validateRequest({
@@ -233,24 +233,20 @@ describe("self-check-in mock E2E workflows", () => {
         nationality: "India",
       }));
       const validated = await validateRes.json();
-      expect(validated.valid).toBe(true);
+      expect(validated.valid).toBe(false);
       expect(validated.nameMatchQuality).toBe("none");
-      expect(verifiedFromIdValidation(validated)).toBe("name_review");
+      expect(validated.layers).toContain("name_mismatch");
+      expect(validated.message).toMatch(/does not show your name.*assisted check-in/i);
+      expect(validated.attestation).toBeUndefined();
 
       const checkinRes = await checkinPOST(checkinRequest(baseFields({
         name: "Sameer Joshi",
         idType: "driving_licence",
         contactNumber: "9000000002",
       })));
-      expect(checkinRes.status).toBe(200);
-      expect(q.addCheckin.mock.calls[0][0].verified).toBe("name_review");
-      expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({ notificationType: "checkin.new" }));
-      expect(q.dispatchPush).toHaveBeenCalledWith(expect.objectContaining({
-        notificationType: "checkin.needs_review",
-        title: "Check-in needs review",
-        body: "Sameer · Name check",
-        url: "/admin?section=records",
-      }));
+      expect(checkinRes.status).toBe(422);
+      expect(q.addCheckin).not.toHaveBeenCalled();
+      expect(q.driveUploadFile).not.toHaveBeenCalled();
     });
 
     it("Vision outage is the only pending staff-review fallback", async () => {
@@ -517,16 +513,30 @@ describe("self-check-in mock E2E workflows", () => {
       expect(q.visionAnalyze).not.toHaveBeenCalled();
     });
 
-    it("never auto-sets vibeMatched on name soft-allow insert", async () => {
-      q.visionAnalyze.mockResolvedValue(visionOk(DL_WITH_TRANSPORT));
+    it("persists a partial name match as staff review without auto-vibing", async () => {
+      q.visionAnalyze.mockResolvedValue(visionOk(SUGUMAR_AADHAAR_BOTH));
       await checkinPOST(checkinRequest(baseFields({
-        name: "Sameer Joshi",
-        idType: "driving_licence",
+        name: "Sugumar Patel",
+        idType: "aadhaar",
         contactNumber: "9000000014",
       })));
       const saved = q.addCheckin.mock.calls[0][0];
       expect(saved.verified).toBe("name_review");
       expect(saved.vibeMatched).toBeUndefined();
+    });
+
+    it("treats missing Vision credentials as unavailable and never issues an attestation", async () => {
+      vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_KEY", "");
+      const res = await validateIdPOST(validateRequest({
+        idType: "aadhaar",
+        guestName: "Sugumar G",
+        nationality: "India",
+      }));
+      expect(res.status).toBe(503);
+      const body = await res.json();
+      expect(body).toMatchObject({ valid: false, unavailable: true });
+      expect(body.attestation).toBeUndefined();
+      expect(q.visionAnalyze).not.toHaveBeenCalled();
     });
 
     it("skips second Vision pass only with an attestation for the exact upload", async () => {

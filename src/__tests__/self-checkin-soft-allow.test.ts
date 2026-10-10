@@ -21,8 +21,9 @@ describe("checkin submit error mapping", () => {
     expect(messageFromCheckinFailure(500, {})).toMatch(/front desk/i);
   });
 
-  it("flags soft-accept outcomes as staff review (not hard side failures)", () => {
-    expect(isStaffReviewValidation({ valid: true, nameMatchQuality: "none", layers: ["name_mismatch"] })).toBe(true);
+  it("flags partial and document-review outcomes as staff review (not hard failures)", () => {
+    expect(isStaffReviewValidation({ valid: true, nameMatchQuality: "partial", layers: ["name_partial"] })).toBe(true);
+    expect(isStaffReviewValidation({ valid: false, nameMatchQuality: "none", layers: ["name_mismatch"] })).toBe(false);
     expect(isStaffReviewValidation({ valid: true, needsDocReview: true, layers: ["doc_review"] })).toBe(true);
     expect(isStaffReviewValidation({ valid: true, layers: ["validation_unavailable"] })).toBe(true);
     expect(isStaffReviewValidation({ valid: true, layers: ["name_verified"] })).toBe(false);

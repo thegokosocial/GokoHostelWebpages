@@ -133,12 +133,12 @@ describe("name matching quality", () => {
     expect(result.nameMatchQuality).toBe("full");
   });
 
-  it("soft-allows when no name tokens match for staff Vibe OK", () => {
+  it("rejects when no name tokens match and asks for the guest's own ID", () => {
     const result = validateIdFromText(idText, "id", "driving_licence", "Sameer Joshi", "India");
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
     expect(result.nameMatchQuality).toBe("none");
     expect(result.layers).toContain("name_mismatch");
-    expect(verifiedFromIdValidation(result)).toBe("name_review");
+    expect(result.message).toMatch(/does not show your name.*assisted check-in/i);
   });
 
   it("accepts partial name match with name_partial for staff Vibe", () => {
@@ -157,11 +157,12 @@ describe("DigiLocker Aadhaar and verified mapping", () => {
     expect(result.documentType).toBe("aadhaar");
   });
 
-  it("maps validation_unavailable to pending and name_mismatch to name_review", () => {
+  it("maps validation unavailable and legacy review states", () => {
     expect(verifiedFromIdValidation({ layers: ["validation_unavailable"] })).toBe("pending");
     expect(verifiedFromIdValidation({ layers: ["doc_review"], needsDocReview: true })).toBe("doc_review");
     expect(verifiedFromIdValidation({ spoofWarning: true })).toBe("spoof_warning");
     expect(verifiedFromIdValidation({ layers: ["name_verified"] })).toBe("yes");
+    // Retain the historical mapping for already-persisted rows. New mismatches are invalid.
     expect(verifiedFromIdValidation({ nameMatchQuality: "none", layers: ["name_mismatch"] })).toBe("name_review");
     expect(verifiedFromIdValidation({ layers: ["unreadable", "doc_review"], needsDocReview: true })).toBe("doc_review");
   });

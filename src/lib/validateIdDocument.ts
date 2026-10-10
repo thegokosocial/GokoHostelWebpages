@@ -434,7 +434,7 @@ function runTextValidation(
     }
     layers.push("type_match");
 
-    // Both-sides hard rule before name soft-allow (blocks back-only surname matches).
+    // Both-sides hard rule before name validation (blocks back-only surname matches).
     if (requiresBothIdSides(type, nationality)) {
       const sides = evaluateIdSides(text, type, nationality);
       if (sides.missing === "front") {
@@ -471,14 +471,13 @@ function runTextValidation(
       if (matchCount < 2) layers.push("weak_id");
       layers.push("name_mismatch");
       return {
-        valid: true,
+        valid: false,
         documentType: type,
         confidence: matchCount < 2 ? "medium" : "high",
         nameMatch: false,
         nameMatchQuality: "none",
-        needsDocReview: true,
         layers,
-        message: `Name on the ${type.replace("_", " ")} could not be matched automatically. You can still submit — staff will confirm.`,
+        message: `This ID does not show your name. Please upload your own valid ${type.replace("_", " ")}, or approach our staff for assisted check-in.`,
       };
     }
 
@@ -566,7 +565,7 @@ export async function validateIdDocument(
 ): Promise<ValidationResult> {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) {
-    return { valid: true, documentType: "unknown", confidence: "low", layers: ["validation_skipped"], message: "Validation skipped (no credentials)" };
+    return unavailableResult();
   }
 
   try {
@@ -635,7 +634,7 @@ export async function validateMultipleFiles(
 ): Promise<ValidationResult> {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) {
-    return { valid: true, documentType: "unknown", confidence: "low", layers: ["validation_skipped"], message: "Validation skipped (no credentials)" };
+    return unavailableResult();
   }
 
   try {
