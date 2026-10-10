@@ -147,7 +147,7 @@ Existing section selectors within Management use a shared wrapping style based o
 | `tab` | UI | Permissions | Notes |
 |-------|-----|-------------|-------|
 | `preferences` | `ManagementPreferences` | any authenticated admin user | device-local WhatsApp app preference; no permission key |
-| `dorms` | `AdminSetup` | admin only | init/remove dorms/beds |
+| `dorms` | `AdminSetup` | admin only | init/remove dorms/beds; the Bunk count is bunk units (each creates an upper and lower bookable bed) |
 | `users` | `ManagementUsers` | admin only | permission checkboxes |
 | `backup` | `ManagementBackup` | admin only | |
 | `audit` | `ManagementAudit` | `canViewAudit` | Audit Logs includes Room/general, inventory, booking, attendance, and food audit views. Every view has search and From/To date filters, and server reads are clamped to the global audit-retention window. Entries retain raw values while the UI presents friendly action names, resolved room/rate-plan labels, readable dates, counts, and PMS results where available. Inventory mutations are excluded from Room/general and shown in their own responsive Records/Table view with expandable records, wrapped full-text targets/details, preserved columns, and horizontal scrolling. Food order history is preserved as operational data and has no separate destructive cleanup control. Retention controls remain admin-only. |

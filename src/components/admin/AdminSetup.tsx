@@ -130,7 +130,8 @@ export function AdminSetup({ password, username }: { password: string; username?
             <Input value={newDorm} onChange={(e) => setNewDorm(e.target.value)} placeholder="e.g. Mixed Dorm 1" className="mt-1" />
           </div>
           <div>
-            <Label className="text-xs">Number of beds</Label>
+            <Label className="text-xs">Number of units</Label>
+            <p className="mt-1 text-xs text-brand-green-dark/50">The selected bed type determines how many bookable beds each unit creates.</p>
             <Input type="number" value={newBedCount} onChange={(e) => setNewBedCount(e.target.value)} min="1" max="20" className="mt-1" />
           </div>
           <div>

@@ -35,8 +35,8 @@ describe("Guest availability SQL and rate assembly", () => {
     state.adult2 = 1400;
     const doubleRate = async () => (await searchGuestRooms(stay())).rooms.find(room => room.type === "Double")?.rates;
     expect(await doubleRate()).toMatchObject([{ subtotalRupees: 2800 }]);
-    state.missingDoubleNight = true; expect(await doubleRate()).toEqual([]);
-    state.missingDoubleNight = false; state.closedDeparture = true; expect(await doubleRate()).toEqual([]);
+    state.missingDoubleNight = true; expect(await doubleRate()).toBeUndefined();
+    state.missingDoubleNight = false; state.closedDeparture = true; expect(await doubleRate()).toBeUndefined();
   });
   it("uses Inventory occupancy tariffs, returns saved limits, and rejects corrupt settings", async () => {
     state.adult1 = 700; state.settings = JSON.stringify({ maxSelectedBeds: 12 });
@@ -82,8 +82,8 @@ describe("Guest availability SQL and rate assembly", () => {
     sqlite.exec("DROP TABLE native_inventory_holds"); expect((await searchGuestRooms(stay())).rooms).toHaveLength(1);
     state.broken = true; await expect(searchGuestRooms(stay())).rejects.toThrow();
   });
-  it("never selects an inactive plan or guesses an ambiguous mapping", async () => {
-    state.active = false; expect((await searchGuestRooms(stay())).rooms[0].rates).toEqual([]);
-    state.active = true; state.ambiguous = true; expect((await searchGuestRooms(stay())).rooms[0].rates).toEqual([]);
+  it("hides rooms with an inactive plan or ambiguous mapping", async () => {
+    state.active = false; expect((await searchGuestRooms(stay())).rooms).toEqual([]);
+    state.active = true; state.ambiguous = true; expect((await searchGuestRooms(stay())).rooms).toEqual([]);
   });
 });

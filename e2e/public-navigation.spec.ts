@@ -32,4 +32,22 @@ test.describe("public website navigation", () => {
     await expect(page).toHaveURL(/\/story(?:\?|$)/);
     await expect(page.locator("main")).toBeVisible();
   });
+
+  test("homepage room types use published accommodation content", async ({ page }) => {
+    await page.route("**/api/site?page=stay", async (route) => {
+      await route.fulfill({ json: {
+        rooms: [{
+          publicName: "Garden six-bunk dorm",
+          description: "A new separately mapped dorm.",
+          amenities: ["12 bookable beds", "Private lockers"],
+          roomPhotos: ["/images/stay/female-dorm-6bed/mixed-dorm1.jpg"],
+          washroomPhotos: [],
+        }],
+        property: { exteriorPhotos: [], commonPhotos: [], washroomPhotos: [] },
+      } });
+    });
+    await page.goto("/", { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await expect(page.getByRole("tab", { name: "Garden six-bunk dorm" })).toBeVisible();
+    await expect(page.getByText("A new separately mapped dorm.")).toBeVisible();
+  });
 });

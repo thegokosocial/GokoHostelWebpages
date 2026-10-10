@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { homeRooms, type RoomTab } from "@/content/home";
 import { ImageCarousel } from "@/components/media/ImageCarousel";
 import { BookNowButton } from "@/components/booking/BookNowButton";
 import { cn } from "@/lib/utils";
 import { Reveal } from "@/components/motion/Reveal";
+import type { PublicAccommodationContent } from "@/lib/accommodationContent";
 
 const accentRing: Record<RoomTab["accent"], string> = {
   blue: "ring-brand-green/25 data-[active=true]:bg-brand-sand",
@@ -14,8 +15,29 @@ const accentRing: Record<RoomTab["accent"], string> = {
 };
 
 export function RoomTabs() {
+  const [rooms, setRooms] = useState<RoomTab[]>(homeRooms);
   const [activeId, setActiveId] = useState(homeRooms[0].id);
-  const room = homeRooms.find((r) => r.id === activeId) ?? homeRooms[0];
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/site?page=stay")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: PublicAccommodationContent | null) => {
+        if (cancelled || !data?.rooms?.length) return;
+        const live = data.rooms.map((room, index) => ({
+          id: `live-${index}`,
+          name: room.publicName,
+          tagline: room.amenities.slice(0, 2).join(" · ") || "Stay at Goko",
+          description: room.description || "Comfortable hostel accommodation with Goko's shared facilities.",
+          images: [...room.roomPhotos, ...room.washroomPhotos],
+          accent: (["blue", "green", "orange"] as const)[index % 3],
+        }));
+        setRooms(live);
+        setActiveId(live[0].id);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const room = rooms.find((r) => r.id === activeId) ?? rooms[0];
 
   return (
     <div>
@@ -24,7 +46,7 @@ export function RoomTabs() {
         role="tablist"
         aria-label="Room types"
       >
-        {homeRooms.map((r) => (
+        {rooms.map((r) => (
           <button
             key={r.id}
             type="button"

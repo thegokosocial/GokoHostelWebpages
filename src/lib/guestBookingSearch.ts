@@ -140,8 +140,10 @@ export async function searchGuestRooms(input: unknown, opts?: { excludeBookingId
     nativeCheckoutReady = readiness.nativeCheckoutReady;
     if (readiness.paymentOptions) paymentOptions = readiness.paymentOptions;
   } catch { /* advisory search must not fail closed on readiness checks */ }
+  // A visible room must also be selectable. Mapping and rate setup stay manual in Channel Manager.
+  const bookableRooms = rooms.filter((room) => room.rates?.length);
   return {
-    rooms, maxSelectedBeds: settings.maxSelectedBeds,
+    rooms: bookableRooms, maxSelectedBeds: settings.maxSelectedBeds,
     taxPercent: await websiteBookingTaxPercent(),
     nights: stayNights(stay.checkinDate, stay.checkoutDate).length,
     currency: "INR", priceBasis: "tax-inclusive-estimate",
