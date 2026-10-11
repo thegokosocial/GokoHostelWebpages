@@ -213,6 +213,22 @@ test("Booking Settings omits the retired checkout readiness banner", async ({ pa
   }
 });
 
+test("mobile Booking Settings uses Management-style section buttons", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInToManagement(page);
+
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  await page.locator("#management-mobile-nav").getByRole("option", { name: "Booking Settings", exact: true }).click();
+
+  await expect(page.getByLabel("Booking settings section")).toHaveCount(0);
+  const sections = page.getByRole("navigation", { name: "Booking settings sections" });
+  const calendar = sections.getByRole("button", { name: "Calendar & Holidays" });
+  await expect(calendar).toBeVisible();
+  await calendar.click();
+  await expect(calendar).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "Calendar & holidays" })).toBeVisible();
+});
+
 test("Website Rooms & Photos reuses the accommodation editor", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signInToManagement(page);

@@ -173,12 +173,7 @@ export function BookingSettings({ password, username }: { password: string; user
   };
 
   return <div className="space-y-5">
-    <label className="grid gap-1 text-sm sm:hidden">Booking settings section
-      <select className="min-h-12 rounded-xl border bg-white px-3" value={section} onChange={(event) => setSection(event.target.value as Section)}>
-        <option value="policies">Booking & Policies</option><option value="calendar">Calendar & Holidays</option><option value="rooms">Rooms & Rates</option><option value="payments">Payments & Readiness</option><option value="emails">Email Templates</option><option value="sms">Text Templates</option>
-      </select>
-    </label>
-    <nav aria-label="Booking settings sections" className={cn(managementSectionTabsClass, "hidden sm:flex")}>
+    <nav aria-label="Booking settings sections" className={managementSectionTabsClass}>
       {([["policies", "Booking & Policies"], ["calendar", "Calendar & Holidays"], ["rooms", "Rooms & Rates"], ["payments", "Payments & Readiness"], ["emails", "Email Templates"], ["sms", "Text Templates"]] as const).map(([id, title]) =>
         <button
           type="button"
