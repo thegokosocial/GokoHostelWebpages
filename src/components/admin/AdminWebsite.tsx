@@ -29,6 +29,7 @@ import {
   managementSectionTabInactiveClass,
 } from "./managementSectionTabs";
 import { AdminHeroVideos } from "./AdminHeroVideos";
+import { AccommodationContentManager } from "./AccommodationContentManager";
 
 type EventRow = {
   id: number;
@@ -93,7 +94,7 @@ function discardUnsavedMedia(urls: string[], keep: string[], password: string, u
 
 export function AdminWebsite({ password, username, role }: { password: string; username?: string; role: Role }) {
   const { showError, showSuccess } = useAdminToast();
-  const [tab, setTab] = useState<"events" | "community" | "heroes">("events");
+  const [tab, setTab] = useState<"events" | "community" | "heroes" | "rooms">("events");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -332,7 +333,7 @@ export function AdminWebsite({ password, username, role }: { password: string; u
     setShowSpaceForm(true);
   };
 
-  const liveHref = tab === "events" ? "/events" : tab === "community" ? "/community-area" : "/";
+  const liveHref = tab === "events" ? "/events" : tab === "community" ? "/community-area" : "/stay";
 
   return (
     <div className="flex flex-col gap-6">
@@ -340,7 +341,7 @@ export function AdminWebsite({ password, username, role }: { password: string; u
         <div>
           <h3 className="font-display text-lg font-bold text-brand-green">Website</h3>
           <p className="mt-1 max-w-xl text-sm text-brand-green-dark/70">
-            What guests see on Events and Community Area. Photos preview here; they go live when you save.
+            Manage Events, Community Area, hero videos, and the shared rooms and property gallery. Photos go live when you save.
           </p>
         </div>
         {tab !== "heroes" ? (
@@ -360,6 +361,7 @@ export function AdminWebsite({ password, username, role }: { password: string; u
           ["events", "Events"],
           ["community", "Community Area"],
           ["heroes", "Hero Videos"],
+          ["rooms", "Rooms & Photos"],
         ] as const).map(([id, label]) => (
           <button
             key={id}
@@ -380,6 +382,10 @@ export function AdminWebsite({ password, username, role }: { password: string; u
 
       {tab === "heroes" && (
         <AdminHeroVideos password={password} username={username} />
+      )}
+
+      {tab === "rooms" && (
+        <AccommodationContentManager password={password} username={username} />
       )}
 
       {tab === "events" && (

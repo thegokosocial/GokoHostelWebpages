@@ -34,6 +34,11 @@ async function mockAdminApi(page: Page) {
       ? { role: "admin", permissions: {} }
       : url.pathname === "/api/admin/booking-settings" && body.action === "getSettings"
         ? { settings: DEFAULT_WEBSITE_BOOKING_SETTINGS, revision: "e2e" }
+      : url.pathname === "/api/admin/booking-settings" && body.action === "getAccommodationContent"
+        ? {
+          rooms: [{ dormId: 1, operationalName: "Dorm 1", publicName: "Beach Dorm", description: "Sea breeze", amenities: ["Locker"], roomPhotos: ["/images/room.jpg"], washroomPhotos: [], revision: "room-e2e", mapped: true }],
+          property: { exteriorPhotos: ["/images/exterior.jpg"], commonPhotos: [], washroomPhotos: [], revision: "property-e2e" },
+        }
       : url.pathname === "/api/admin/booking-payments" && body.action === "listTestAttempts"
         ? { attempts: [], webhooks: [], previewEnabled: false, nativeCheckoutReady: false }
       : url.pathname === "/api/admin/food-payments" && body.action === "listFoodQrAttempts"
@@ -191,6 +196,22 @@ test("desktop Management tabs still switch directly", async ({ page }) => {
 
   await page.getByRole("button", { name: "Rates", exact: true }).click();
   await expect(page).toHaveURL(/tab=rates/);
+});
+
+test("Website Rooms & Photos reuses the accommodation editor", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToManagement(page);
+
+  await page.getByRole("button", { name: "Website", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Website" })).toBeVisible();
+  const accommodationRequest = page.waitForRequest((request) => request.url().includes("/api/admin/booking-settings")
+    && JSON.parse(request.postData() || "{}").action === "getAccommodationContent");
+  await page.getByRole("tab", { name: "Rooms & Photos" }).click();
+  await accommodationRequest;
+
+  await expect(page.getByText("Room photos & details")).toBeVisible();
+  await expect(page.getByText("Beach Dorm")).toBeVisible();
+  await expect(page.getByText("Property photos")).toBeVisible();
 });
 
 test("notification preferences expose and save the actionable check-in alert", async ({ page }) => {

@@ -101,6 +101,13 @@ describe("admin mobile navigation", () => {
     expect(managementTabStyles).toContain('"bg-brand-green text-white"');
   });
 
+  it("reuses the accommodation editor in the Website Rooms & Photos tab", () => {
+    expect(website).toContain('import { AccommodationContentManager } from "./AccommodationContentManager"');
+    expect(website).toContain('["rooms", "Rooms & Photos"]');
+    expect(website).toContain('<AccommodationContentManager password={password} username={username} />');
+    expect(website).toContain(': "/stay";');
+  });
+
   it("bounds long Management dialogs and public order history to the dynamic viewport", () => {
     const boundedScroller = "max-h-[min(90dvh,100%)]";
     expect(tasks).toContain(boundedScroller);
