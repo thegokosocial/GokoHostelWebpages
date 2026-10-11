@@ -37,17 +37,12 @@ Previous mobile validation: 103 files / 1,662 tests passed; browser checks cover
 
 ## Private existing-booking workflow
 
-1. **Find my booking** takes a confirmation reference plus the booking email. The tab notes that lookup currently supports bookings made through the Goko website only. POST `/api/guest-booking/lookup` action `request` searches nondeleted PMS bookings by Goko/external reference and email, case-insensitively. Missing and duplicate matches disclose nothing.
-2. **OTP gate** is Admin setting `requireLookupOtp` (default **true**), exposed on `/api/booking/config` and availability `paymentOptions`. When **on**: every request returns a fresh opaque challenge ID and the same generic message; a matched booking atomically claims one code per booking/email per ten minutes. When **off**: a unique match returns the booking (and manage token if applicable) immediately; mismatches return a generic miss message with no challenge and no booking blob.
-3. When OTP is on: six-digit codes are emailed from **booking@gokohostel.com**. Only a salted/secret-bound hash is stored. `verify` accepts UUID challenge + six digits; max five attempts; codes consumed once.
-4. After successful verify (or direct fetch when OTP off):
-   - **Website booking** (checkout row): mint `guestAccessToken`, store hash, return `{ booking, guestAccessToken, manageUrl }`. **Find my booking** stores sessionStorage and redirects to `/booking/[reference]`.
-   - **Non-website / no checkout:** minimized booking snapshot only — no token.
-5. `/booking/[reference]` renders `GuestBookingManage` (status, rooms, payment, due). Changes go through copy-details + in-card WhatsApp (site float hidden on this route); Cancel is a full button when `canCancel`. `canModify` is always false in the public snapshot.
-6. **Emailed `{MANAGE_URL}`** is `/booking/{ref}?m={exp}.{hmac}` (HMAC-SHA256 of `{REF}|{exp}` with `GUEST_BOOKING_LOOKUP_SECRET`; expiry = stay checkout date + 7 IST days). Opening it calls `POST /api/guest-booking/open-manage-link`, mints `guestAccessToken`, stores sessionStorage, strips `?m=` via `history.replaceState`, and shows details without Find my booking. Reference alone remains unauthorized. Expired/invalid magic → message pointing at Find my booking on `/book`.
-7. Cross-origin rejected; 4 KiB body limit; Pi 403.
+1. **Find my booking** takes a confirmation reference plus the guest's last name (a single-word stored name must be entered in full). POST `/api/guest-booking/lookup` searches nondeleted PMS bookings by Goko, external, or channel-manager reference, case-insensitively. The name check is Unicode-normalized and exact; missing, duplicate, unknown-name, and mismatched rows disclose nothing.
+2. A match returns only `{ reference, checkinDate, checkoutDate, roomType }`. It never returns guest/contact/payment data, mints no guest token, and cannot open `/booking/[reference]`, amend, cancel, or manage a stay. The endpoint is same-origin, cloud-only, 4 KiB, and limited to ten attempts per IP per ten minutes.
+3. `/booking/[reference]` still renders `GuestBookingManage` only after the stronger checkout session or emailed signed link authorization.
+4. **Emailed `{MANAGE_URL}`** is `/booking/{ref}?m={exp}.{hmac}` (HMAC-SHA256 of `{REF}|{exp}` with `GUEST_BOOKING_LOOKUP_SECRET`; expiry = stay checkout date + 7 IST days). Opening it calls `POST /api/guest-booking/open-manage-link`, mints `guestAccessToken`, stores sessionStorage, strips `?m=` via `history.replaceState`, and shows details without Find my booking. Reference alone remains unauthorized.
 
-Activation requires migration **0061**, `GUEST_BOOKING_LOOKUP_SECRET` (≥32 chars), and EMAIL binding. Turning off OTP weakens proof to reference+email only — document for ops.
+Migration **0061** and the legacy `requireLookupOtp` setting remain for compatibility but are inactive for Find my booking. `GUEST_BOOKING_LOOKUP_SECRET` remains required for emailed manage links.
 
 ## Safe visual preview
 

@@ -1102,7 +1102,7 @@ Index: state/arrival/departure/expiry. Triggers enforce same-database hold/assig
 
 Settings JSON extension (not a new SQL column): `website_booking_settings_v1.maxSelectedBeds`, integer 1–100, default 4 for absent fields; stock and combined whole-bed count constrain advisory guest selection. No SQL migration required for this field.
 
-`id` text PK; `request_key` text unique digest; `booking_id` integer FK bookings; `code_hash` text; `expires_at` epoch seconds; `attempts` integer default 0 constrained 0–5; `used` integer default 0 constrained 0/1. Cloud-only ephemeral verification; no sync columns/contact/plaintext OTP. Runtime secret and delivery binding are not database columns.
+`id` text PK; `request_key` text unique digest; `booking_id` integer FK bookings; `code_hash` text; `expires_at` epoch seconds; `attempts` integer default 0 constrained 0–5; `used` integer default 0 constrained 0/1. This cloud-only, unsynced legacy table is inactive after the read-only reference + last-name lookup replaced email OTP; no plaintext contact or OTP is retained.
 
 # Native guest checkout (migration 0062)
 

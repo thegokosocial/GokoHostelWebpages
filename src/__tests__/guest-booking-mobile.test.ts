@@ -15,7 +15,7 @@ describe("Mobile-first booking layout contracts", () => {
     expect(readFileSync("src/components/dates/DateRangePicker.tsx", "utf8")).toContain("min={minNights}");
     expect(readFileSync("src/components/dates/DateRangePicker.tsx", "utf8")).toContain("max={maxNights ?? undefined}");
     expect(panel).toContain('type="tel"');
-    expect(panel).toContain('inputMode="numeric"'); expect(panel).toContain('autoComplete="one-time-code"');
+    expect(panel).toContain('inputMode="numeric"'); expect(panel).toContain('autoComplete="family-name"');
   });
   it("keeps date picker full-width on narrow screens and mobile search full-width", () => {
     expect(panel).toContain("col-span-2 min-w-0 text-sm font-semibold lg:col-span-2");
@@ -122,7 +122,7 @@ describe("Mobile-first booking layout contracts", () => {
     expect(searchBody).toContain("await runAvailabilitySearch(stay)");
     expect(previewPage).not.toContain("subtotalRupees"); expect(previewPage).not.toContain("rooms:");
     expect(panel).not.toContain("Sample rate"); expect(panel).not.toContain("preview?.taxPercent");
-    expect(panel).toContain("Booking lookup and email sending are disabled in this preview.");
+    expect(panel).toContain("Booking lookup is disabled in this preview.");
   });
 
   it("hands homepage Check availability off to /book with dates and auto-searches", () => {
@@ -136,13 +136,16 @@ describe("Mobile-first booking layout contracts", () => {
     expect(panel).toContain("void runAvailabilitySearch({ checkinDate, checkoutDate })");
   });
 
-  it("declutters hero CTAs and booking panel copy; Find my booking notes website-only", () => {
+  it("declutters hero CTAs and keeps Find my booking to its read-only confirmation fields", () => {
     expect(home).not.toContain("BookNowButton");
     expect(home).not.toContain("Explore rooms");
     expect(panel).not.toContain("Find your bed by the beach");
     expect(panel).toContain("Find my booking");
     expect(panel).not.toContain('"My booking"');
-    expect(panel).toContain("Currently we only support finding bookings made through the Goko website.");
+    expect(panel).toContain("confirmation number and last name");
+    expect(panel).toContain("This shows confirmation details only.");
+    expect(panel).not.toContain("Booking email");
+    expect(panel).not.toContain("Email verification code");
   });
 
   it("shows strikethrough compare-at prices when direct-booking discount applies", () => {

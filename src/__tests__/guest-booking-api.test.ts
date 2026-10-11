@@ -4,10 +4,10 @@ import { ZodError } from "zod";
 const state = vi.hoisted(() => ({ pi: false, search: vi.fn(), lookup: vi.fn() }));
 vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => state.pi }));
 vi.mock("@/lib/guestBookingSearch", () => ({ searchGuestRooms: state.search }));
-vi.mock("@/lib/guestBookingLookup", () => ({ guestBookingLookup: state.lookup, LookupCodeError: class extends Error {} }));
+vi.mock("@/lib/guestBookingLookup", () => ({ guestBookingLookup: state.lookup }));
 import { GET } from "@/app/api/guest-booking/availability/route";
 import { POST } from "@/app/api/guest-booking/lookup/route";
-const post = (body: string, origin?: string) => new NextRequest("https://www.gokohostel.com/api/guest-booking/lookup", { method: "POST", body, headers: origin ? { origin } : {} });
+const post = (body: string, origin?: string, ip?: string) => new NextRequest("https://www.gokohostel.com/api/guest-booking/lookup", { method: "POST", body, headers: { ...(origin ? { origin } : {}), ...(ip ? { "cf-connecting-ip": ip } : {}) } });
 beforeEach(() => { state.pi = false; state.search.mockReset(); state.lookup.mockReset(); });
 describe("Public guest booking endpoints", () => {
   it("returns non-cacheable search data and rejects repeated keys", async () => {
@@ -37,10 +37,16 @@ describe("Public guest booking endpoints", () => {
     expect(state.lookup).not.toHaveBeenCalled();
   });
   it("never caches private details and hides infrastructure failures", async () => {
-    state.lookup.mockResolvedValueOnce({ challengeId: crypto.randomUUID() });
+    state.lookup.mockResolvedValueOnce({ booking: { reference: "EXT-42" } });
     const result = await POST(post("{}", "https://www.gokohostel.com"));
     expect(result.status).toBe(200); expect(result.headers.get("cache-control")).toBe("no-store");
     state.lookup.mockRejectedValueOnce(new Error("PRIVATE"));
     const failed = await POST(post("{}")); expect(failed.status).toBe(503); expect(await failed.text()).not.toContain("PRIVATE");
+  });
+  it("rate-limits repeated lookup attempts", async () => {
+    state.lookup.mockResolvedValue({ message: "No match" });
+    const ip = "lookup-rate-test";
+    for (let attempt = 0; attempt < 10; attempt++) expect((await POST(post("{}", undefined, ip))).status).toBe(200);
+    expect((await POST(post("{}", undefined, ip))).status).toBe(429);
   });
 });

@@ -16,7 +16,7 @@ import {
   armCheckoutLeaveGuard,
 } from "@/lib/guestCheckoutAbandonClient";
 
-type BookingDetails = { reference: string | null; externalReference: string | null; guestName: string; checkinDate: string; checkoutDate: string; roomType: string; guests: number; status: string; paymentStatus: string | null; total: number | null; paid: number | null; refunded: number | null };
+type BookingDetails = { reference: string; checkinDate: string; checkoutDate: string; roomType: string };
 type CheckoutOutcome =
   | { kind: "failed"; text: string }
   | { kind: "cancelled"; text: string }
@@ -77,16 +77,12 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
   const [persons, setPersons] = useState("");
   const [stay, setStay] = useState(preview?.stay ?? { checkinDate: "", checkoutDate: "" });
   const [searchedStay, setSearchedStay] = useState<typeof stay | null>(null);
-  const [reference, setReference] = useState(""), [email, setEmail] = useState("");
-  const [challengeId, setChallengeId] = useState(""), [code, setCode] = useState("");
+  const [reference, setReference] = useState(""), [lastName, setLastName] = useState("");
   const [booking, setBooking] = useState<BookingDetails | null>(null);
-  const [manageUrl, setManageUrl] = useState("");
   const [nativeCheckoutReady, setNativeCheckoutReady] = useState(false);
   const [paymentOptions, setPaymentOptions] = useState<{
     advancePercent: number; allowFullPayment: boolean; allowPayAtProperty: boolean; gatewayEnvironment?: "test" | "live";
-    requireLookupOtp?: boolean;
   } | null>(null);
-  const [requireLookupOtp, setRequireLookupOtp] = useState(true);
   const [paymentChoice, setPaymentChoice] = useState<"advance" | "full" | "property">("advance");
   const [holdExpiresAt, setHoldExpiresAt] = useState<number | null>(null);
   const [checkoutRequestKey, setCheckoutRequestKey] = useState<string | null>(null);
@@ -130,20 +126,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     }
     setReview(true);
   }
-  useEffect(() => {
-    let active = true;
-    fetch("/api/booking/config", { cache: "no-store", signal: AbortSignal.timeout(15000) })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!active) return;
-        if (typeof data.requireLookupOtp === "boolean") setRequireLookupOtp(data.requireLookupOtp);
-        else if (typeof data.paymentOptions?.requireLookupOtp === "boolean") {
-          setRequireLookupOtp(data.paymentOptions.requireLookupOtp);
-        }
-      })
-      .catch(() => { /* keep default OTP-on */ });
-    return () => { active = false; };
-  }, []);
   const stayReady = Boolean(stay.checkinDate && stay.checkoutDate && stay.checkoutDate > stay.checkinDate);
   const autoSearchStarted = useRef(false);
   async function runAvailabilitySearch(next: { checkinDate: string; checkoutDate: string }) {
@@ -153,7 +135,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       setRooms(data.rooms); setTaxPercent(data.taxPercent); setMaxSelectedBeds(data.maxSelectedBeds); setSearchedStay({ ...next });
       setNativeCheckoutReady(Boolean(data.nativeCheckoutReady));
       setPaymentOptions(data.paymentOptions || null);
-      if (typeof data.paymentOptions?.requireLookupOtp === "boolean") setRequireLookupOtp(data.paymentOptions.requireLookupOtp);
       const choice = data.paymentOptions?.allowFullPayment ? "full"
         : data.paymentOptions?.advancePercent > 0 ? "advance"
         : data.paymentOptions?.allowPayAtProperty ? "property" : "advance";
@@ -184,27 +165,14 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     await runAvailabilitySearch(stay);
   }
   async function lookup(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setMessage(""); setBooking(null); setManageUrl("");
+    event.preventDefault(); setBusy(true); setMessage(""); setBooking(null);
     try {
-      if (preview) { setMessage("Demo only. Booking lookup and email sending are disabled in this preview."); return; }
+      if (preview) { setMessage("Demo only. Booking lookup is disabled in this preview."); return; }
       const data = await readResponse(await fetch("/api/guest-booking/lookup", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(challengeId ? { action: "verify", challengeId, code } : { action: "request", reference, email }), cache: "no-store", signal: AbortSignal.timeout(15000) }));
+        body: JSON.stringify({ reference, lastName }), cache: "no-store", signal: AbortSignal.timeout(15000) }));
       if (data.booking) {
-        setBooking(data.booking); setCode(""); setChallengeId("");
-        if (data.guestAccessToken) {
-          const ref = data.booking.reference || data.booking.externalReference;
-          if (ref) {
-            sessionStorage.setItem(`goko_booking_${ref}`, JSON.stringify({ guestAccessToken: data.guestAccessToken }));
-            const href = typeof data.manageUrl === "string" && data.manageUrl.startsWith("/booking/")
-              ? data.manageUrl
-              : `/booking/${encodeURIComponent(ref)}`;
-            setManageUrl(href);
-            window.location.assign(href);
-            return;
-          }
-        }
+        setBooking(data.booking);
       }
-      else if (data.challengeId) { setChallengeId(data.challengeId); setMessage(data.message); }
       else { setMessage(data.message || "Could not find that booking."); }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not retrieve your booking."); }
     finally { setBusy(false); }
@@ -427,7 +395,6 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
       setSearchedStay({ ...searchedStay });
       setNativeCheckoutReady(Boolean(data.nativeCheckoutReady));
       setPaymentOptions(data.paymentOptions || null);
-      if (typeof data.paymentOptions?.requireLookupOtp === "boolean") setRequireLookupOtp(data.paymentOptions.requireLookupOtp);
       const choice = data.paymentOptions?.allowFullPayment ? "full"
         : data.paymentOptions?.advancePercent > 0 ? "advance"
         : data.paymentOptions?.allowPayAtProperty ? "property" : "advance";
@@ -729,24 +696,20 @@ export function BookingHeroPanel({ preview }: { preview?: { stay: { checkinDate:
     </div> : <div role="tabpanel" id="panel-booking" aria-labelledby="tab-booking">
       <h2 className="font-display text-2xl font-bold">Find your booking</h2>
       <p className="mt-1 text-sm">
-        {requireLookupOtp
-          ? "Enter your confirmation number and the email used for your booking. We’ll email a verification code from booking@gokohostel.com."
-          : "Enter your confirmation number and the email used for your booking to open it."}
+        Enter your confirmation number and last name to view basic stay details.
       </p>
       <p className="mt-2 text-sm text-brand-green-dark/80">
-        Currently we only support finding bookings made through the Goko website.
+        This shows confirmation details only. Contact Goko for changes, payment information, or help.
       </p>
       <form onSubmit={lookup} className="mt-5 grid items-end gap-3 md:grid-cols-3">
-        {!challengeId ? <><label className="text-sm font-semibold">Confirmation number<input className={field} required maxLength={120} disabled={busy} autoComplete="off" value={reference} onChange={e => setReference(e.target.value)} /></label><label className="text-sm font-semibold">Booking email<input className={field} required type="email" maxLength={254} disabled={busy} autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} /></label></> : <label className="text-sm font-semibold md:col-span-2">Email verification code<input className={field} required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} disabled={busy} value={code} onChange={e => setCode(e.target.value)} /></label>}
-        <button className={action} disabled={busy}>{busy ? "Please wait…" : challengeId ? "View booking" : requireLookupOtp ? "Send verification code" : "Find booking"}</button>
+        <label className="text-sm font-semibold">Confirmation number<input className={field} required maxLength={120} disabled={busy} autoComplete="off" value={reference} onChange={e => setReference(e.target.value)} /></label>
+        <label className="text-sm font-semibold">Last name<input className={field} required maxLength={120} disabled={busy} autoComplete="family-name" value={lastName} onChange={e => setLastName(e.target.value)} /></label>
+        <button className={action} disabled={busy}>{busy ? "Please wait…" : "Find booking"}</button>
       </form>
-      {challengeId && <button type="button" disabled={busy} className="mt-3 min-h-12 text-left text-sm underline" onClick={() => { setChallengeId(""); setCode(""); setMessage(""); }}>Change details / request again after 10 minutes</button>}
       {booking && <div className="mt-5 rounded-xl bg-brand-sand p-5">
-        <h3 className="font-semibold">Booking {booking.reference || booking.externalReference}</h3>
-        <p>{booking.guestName} · {booking.guests} guests · {booking.roomType}</p>
-        <p>{booking.checkinDate} – {booking.checkoutDate}</p><p>Status: {booking.status} · Payment: {booking.paymentStatus || "Awaiting update"}</p>
-        <p>Total: {booking.total == null ? "Not recorded" : money(booking.total)} · Paid: {booking.paid == null ? "Not recorded" : money(booking.paid)} · Refunded: {booking.refunded == null ? "Not recorded" : money(booking.refunded)}</p>
-        {manageUrl && <a className={`${action} mt-4 inline-flex items-center justify-center`} href={manageUrl}>Manage booking</a>}
+        <h3 className="font-semibold">Booking {booking.reference}</h3>
+        <p>{booking.checkinDate} – {booking.checkoutDate}</p>
+        <p>Room type: {booking.roomType || "Not recorded"}</p>
       </div>}
     </div>}
     {message && <div className="mt-4 break-words text-sm" role={availabilityFailed ? "alert" : "status"} aria-live="polite">

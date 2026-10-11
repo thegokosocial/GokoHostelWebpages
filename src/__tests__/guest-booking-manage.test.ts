@@ -97,12 +97,13 @@ describe("Guest booking manage details", () => {
     expect(amendRoute).toContain("WhatsApp");
   });
 
-  it("My booking stores manage token and redirects to confirmation", () => {
+  it("My booking remains a read-only confirmation lookup", () => {
     const panel = readFileSync("src/components/booking/BookingHeroPanel.tsx", "utf8");
-    expect(panel).toContain("data.guestAccessToken");
-    expect(panel).toContain("sessionStorage.setItem(`goko_booking_${ref}`");
-    expect(panel).toContain("window.location.assign(href)");
-    expect(panel).toContain("Manage booking");
+    const lookup = panel.slice(panel.indexOf("async function lookup"), panel.indexOf("const selectedCount"));
+    expect(panel).toContain("JSON.stringify({ reference, lastName })");
+    expect(panel).toContain("This shows confirmation details only.");
+    expect(lookup).not.toContain("guestAccessToken");
+    expect(lookup).not.toContain("window.location");
   });
 
   it("admin Edit Booking is available for website and manual sources", () => {

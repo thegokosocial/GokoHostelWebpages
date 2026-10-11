@@ -7,7 +7,7 @@ Goko uses Cloudflare **Email Sending** (outbound) and **Email Routing** (inbound
 | Address | Role |
 |---------|------|
 | `info@gokohostel.com` | Public website contact (footer, security.txt, vCard QR) |
-| `booking@gokohostel.com` | Booking transactional sender (enquiry auto-reply, My Booking OTP, future confirmations) |
+| `booking@gokohostel.com` | Booking transactional sender (enquiry auto-reply and confirmations) |
 | `admin@gokohostel.com` | Receives staff notifications (booking enquiries, internal alerts) |
 
 Inbound mail for all three addresses forwards to `thegokosocial@gmail.com` after the destination is verified in Cloudflare.
@@ -18,7 +18,6 @@ Inbound mail for all three addresses forwards to `thegokosocial@gmail.com` after
 - `POST /api/booking-enquiry` — public JSON endpoint used by `/booking-enquiry`.
 - `src/lib/email.ts`:
   - `sendBookingEnquiryEmails()` — staff notification and guest auto-reply from `booking@`.
-  - `sendBookingLookupCode()` — My Booking verification OTP from `booking@`.
   - Future booking confirmation outbox must also send from `booking@`.
 
 If the binding is missing (e.g. plain `next dev` without Wrangler), the API returns **503**.
