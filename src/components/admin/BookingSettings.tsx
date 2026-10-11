@@ -145,7 +145,6 @@ export function BookingSettings({ password, username }: { password: string; user
     </label>
   );
 
-  const envLabel = settings.gatewayEnvironment === "live" ? "Live (real money)" : "Test";
   const activeEmail = emailTemplates[emailKind];
   const activeSms = smsTemplates[smsKind];
   const smsLen = activeSms.body.length;
@@ -174,16 +173,6 @@ export function BookingSettings({ password, username }: { password: string; user
   };
 
   return <div className="space-y-5">
-    <div className={`rounded-xl border p-4 text-sm ${settings.gatewayEnvironment === "live" ? "border-brand-red bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
-      <h3 className="font-semibold">
-        {readiness?.nativeCheckoutReady
-          ? `Native checkout ready — ${envLabel}`
-          : "Native booking setup — clear readiness blockers before guests can pay"}
-      </h3>
-      <p className="mt-1">
-        Flip Test ↔ Live below, then Save. Live uses <code>RAZORPAY_LIVE_*</code> Worker secrets and charges real money.
-      </p>
-    </div>
     <label className="grid gap-1 text-sm sm:hidden">Booking settings section
       <select className="min-h-12 rounded-xl border bg-white px-3" value={section} onChange={(event) => setSection(event.target.value as Section)}>
         <option value="policies">Booking & Policies</option><option value="calendar">Calendar & Holidays</option><option value="rooms">Rooms & Rates</option><option value="payments">Payments & Readiness</option><option value="emails">Email Templates</option><option value="sms">Text Templates</option>

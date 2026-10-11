@@ -198,6 +198,21 @@ test("desktop Management tabs still switch directly", async ({ page }) => {
   await expect(page).toHaveURL(/tab=rates/);
 });
 
+test("Booking Settings omits the retired checkout readiness banner", async ({ page }) => {
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await signInToManagement(page);
+    if (viewport.width < 640) {
+      await page.getByRole("button", { name: "History", exact: true }).click();
+      await page.locator("#management-mobile-nav").getByRole("option", { name: "Booking Settings", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "Booking Settings", exact: true }).click();
+    }
+    await expect(page.getByText("Native checkout ready", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("Native booking setup", { exact: false })).toHaveCount(0);
+  }
+});
+
 test("Website Rooms & Photos reuses the accommodation editor", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signInToManagement(page);

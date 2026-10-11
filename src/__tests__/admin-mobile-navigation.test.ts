@@ -108,6 +108,11 @@ describe("admin mobile navigation", () => {
     expect(website).toContain(': "/stay";');
   });
 
+  it("does not render the retired checkout readiness banner", () => {
+    expect(bookingSettings).not.toContain("Native checkout ready —");
+    expect(bookingSettings).not.toContain("Native booking setup — clear readiness blockers before guests can pay");
+  });
+
   it("bounds long Management dialogs and public order history to the dynamic viewport", () => {
     const boundedScroller = "max-h-[min(90dvh,100%)]";
     expect(tasks).toContain(boundedScroller);
