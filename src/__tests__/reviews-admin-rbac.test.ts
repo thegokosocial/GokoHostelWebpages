@@ -61,6 +61,7 @@ describe("Reviews admin action RBAC and settings", () => {
       role: "staff", displayName: "Viewer", permissions: { canViewReviews: true },
     });
     expect((await POST(req({ action: "getSettings" }))).status).toBe(200);
+    expect((await POST(req({ action: "getReviewWhatsAppTemplates" }))).status).toBe(200);
     expect((await POST(req({ action: "listResponses" }))).status).toBe(200);
     expect((await POST(req({ action: "getAnalytics" }))).status).toBe(200);
 
@@ -68,6 +69,8 @@ describe("Reviews admin action RBAC and settings", () => {
       action: "updateSettings", settings: { review_google_url: "https://g.page/x" },
     }))).status).toBe(403);
     expect(q.setSetting).not.toHaveBeenCalled();
+
+    expect((await POST(req({ action: "saveReviewWhatsAppTemplates", templates: [] }))).status).toBe(403);
 
     expect((await POST(req({
       action: "sendWhatsApp", checkinId: 1, guestName: "Ada", guestContact: "+44 7700 900123",
@@ -88,7 +91,7 @@ describe("Reviews admin action RBAC and settings", () => {
     expect(q.setSetting).not.toHaveBeenCalled();
   });
 
-  it("canManageReviewSettings + canViewReviews allows updateSettings and strips non-review keys", async () => {
+  it("canManageReviewSettings + canViewReviews allows known settings and routes templates through validation", async () => {
     q.authenticateUser.mockResolvedValue({
       role: "staff",
       displayName: "Settings",
@@ -96,12 +99,31 @@ describe("Reviews admin action RBAC and settings", () => {
     });
     const res = await POST(req({
       action: "updateSettings",
-      settings: { review_google_url: "https://g.page/x", food_tax_rate: "99", review_send_delay: "1d" },
+      settings: { review_google_url: "https://g.page/x", food_tax_rate: "99", review_send_delay: "1d", review_whatsapp_templates: "not-json" },
     }));
     expect(res.status).toBe(200);
     expect(q.setSetting).toHaveBeenCalledWith("review_google_url", "https://g.page/x");
     expect(q.setSetting).toHaveBeenCalledWith("review_send_delay", "1d");
     expect(q.setSetting).not.toHaveBeenCalledWith("food_tax_rate", expect.anything());
+    expect(q.setSetting).not.toHaveBeenCalledWith("review_whatsapp_templates", expect.anything());
+  });
+
+  it("reads the legacy fallback and saves validated review templates", async () => {
+    q.authenticateUser.mockResolvedValue({
+      role: "staff", displayName: "Settings", permissions: { canViewReviews: true, canManageReviewSettings: true },
+    });
+    q.getSetting.mockImplementation(async (key: string) => key === "review_message_template" ? "Legacy {REVIEW_URL}" : "");
+    const fallback = await (await POST(req({ action: "getReviewWhatsAppTemplates" }))).json();
+    expect(fallback.templates).toMatchObject([
+      { id: "review-feedback", message: "Legacy {REVIEW_URL}" },
+      { id: "google-review", message: expect.stringContaining("{GOOGLE_REVIEW_URL}") },
+    ]);
+
+    const templates = [{ id: "google", name: "Google", message: "Rate {GOOGLE_REVIEW_URL}" }];
+    const res = await POST(req({ action: "saveReviewWhatsAppTemplates", templates }));
+    expect(res.status).toBe(200);
+    expect(q.setSetting).toHaveBeenCalledWith("review_whatsapp_templates", JSON.stringify(templates));
+    expect((await POST(req({ action: "saveReviewWhatsAppTemplates", templates: [{ id: "x", name: "", message: "bad" }] }))).status).toBe(400);
   });
 
   it("rejects invalid updateSettings payload", async () => {

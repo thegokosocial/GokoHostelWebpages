@@ -11,6 +11,7 @@ import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { bookingWhatsAppNumber } from "@/lib/bookingWhatsApp";
+import { REVIEW_WHATSAPP_SETTING, defaultReviewWhatsAppTemplates, parseReviewWhatsAppTemplates, validateReviewWhatsAppTemplates } from "@/lib/reviewWhatsApp";
 
 function generateToken(): string {
   const bytes = new Uint8Array(18);
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
     const actionPermissions: Record<string, ActionPerm> = {
       sendWhatsApp: "canSendReviewRequests",
       updateSettings: "canManageReviewSettings",
+      saveReviewWhatsAppTemplates: "canManageReviewSettings",
       editReviewRequest: "canEditReviewRequests",
       resetReviewRequest: "canEditReviewRequests",
     };
@@ -134,13 +136,30 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (action === "getReviewWhatsAppTemplates") {
+      const [storedTemplates, legacyMessage] = await Promise.all([
+        getSetting(REVIEW_WHATSAPP_SETTING),
+        getSetting("review_message_template"),
+      ]);
+      const templates = parseReviewWhatsAppTemplates(storedTemplates);
+      return NextResponse.json({ templates: templates ?? defaultReviewWhatsAppTemplates(legacyMessage) });
+    }
+
+    if (action === "saveReviewWhatsAppTemplates") {
+      const templates = validateReviewWhatsAppTemplates(rest.templates);
+      if (!templates) return NextResponse.json({ error: "Invalid templates (maximum 10)" }, { status: 400 });
+      await setSetting(REVIEW_WHATSAPP_SETTING, JSON.stringify(templates));
+      return NextResponse.json({ success: true, templates });
+    }
+
     if (action === "updateSettings") {
       const { settings: settingsData } = rest;
       if (!settingsData || typeof settingsData !== "object") {
         return NextResponse.json({ error: "Invalid settings" }, { status: 400 });
       }
+      const editableSettings = new Set(["review_google_url", "review_send_delay", "review_whatsapp_enabled", "review_message_template"]);
       for (const [key, value] of Object.entries(settingsData)) {
-        if (key.startsWith("review_")) {
+        if (editableSettings.has(key)) {
           await setSetting(key, String(value));
         }
       }

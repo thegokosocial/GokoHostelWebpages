@@ -6,6 +6,8 @@ import { cn, localDateStr } from "@/lib/utils";
 import { bookingWhatsAppNumber } from "@/lib/bookingWhatsApp";
 import { useStaffWhatsApp } from "./StaffWhatsAppProvider";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
+import { WhatsAppTemplateManager } from "./booking-dashboard/WhatsAppTemplateManager";
+import { fillReviewWhatsAppTemplate, reviewGoogleUrl, REVIEW_WHATSAPP_PLACEHOLDERS, type ReviewWhatsAppTemplate } from "@/lib/reviewWhatsApp";
 
 interface ReviewRequest {
   id: number;
@@ -30,7 +32,6 @@ interface Settings {
   review_google_url: string;
   review_send_delay: string;
   review_whatsapp_enabled: boolean;
-  review_message_template: string;
 }
 
 interface Props {
@@ -67,6 +68,10 @@ export function ReviewAskTab({ password, username }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [templates, setTemplates] = useState<ReviewWhatsAppTemplate[]>([]);
+  const [templateGuest, setTemplateGuest] = useState<GuestRow | null>(null);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [editGuest, setEditGuest] = useState<GuestRow | null>(null);
   const [editRating, setEditRating] = useState<string>("");
   const [editSentCount, setEditSentCount] = useState<string>("0");
@@ -125,7 +130,6 @@ export function ReviewAskTab({ password, username }: Props) {
           review_google_url: settings.review_google_url,
           review_send_delay: settings.review_send_delay,
           review_whatsapp_enabled: String(settings.review_whatsapp_enabled),
-          review_message_template: settings.review_message_template,
         },
       });
     } catch {}
@@ -133,11 +137,34 @@ export function ReviewAskTab({ password, username }: Props) {
     setShowSettings(false);
   };
 
-  const handleSendWhatsApp = async (guest: GuestRow) => {
+  const chooseTemplate = async (guest: GuestRow) => {
+    setSendError("");
+    if (!bookingWhatsAppNumber(guest.guestContact)) {
+      setSendError("A valid guest phone number is required before preparing a review message.");
+      return;
+    }
+    setTemplatesLoading(true);
+    try {
+      const res = await apiCall({ action: "getReviewWhatsAppTemplates" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load review templates.");
+      setTemplates(data.templates || []);
+      setTemplateGuest(guest);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Could not load review templates. Please try again.");
+    } finally { setTemplatesLoading(false); }
+  };
+
+  const handleSendWhatsApp = async (guest: GuestRow, template: ReviewWhatsAppTemplate) => {
     if (preparing.current) return;
     setSendError("");
     if (!bookingWhatsAppNumber(guest.guestContact)) {
       setSendError("A valid guest phone number is required before preparing a review message.");
+      return;
+    }
+    const googleUrl = reviewGoogleUrl(settings?.review_google_url);
+    if (template.message.includes("{GOOGLE_REVIEW_URL}") && !googleUrl) {
+      setSendError("Set a valid Google Review URL in Review Settings before using this template.");
       return;
     }
     preparing.current = true;
@@ -155,10 +182,9 @@ export function ReviewAskTab({ password, username }: Props) {
       const token = data.token;
       if (typeof token !== "string" || !token) throw new Error("The review link was not returned. Please try again.");
       const reviewUrl = `${window.location.origin}/review/${encodeURIComponent(token)}`;
-      const template = settings?.review_message_template ||
-        "Thank you for staying with us! ❤️\n\nHow was your experience? Please rate your stay:\n{REVIEW_URL}";
-      const message = template.split("{REVIEW_URL}").join(reviewUrl);
+      const message = fillReviewWhatsAppTemplate(template.message, { reviewUrl, googleReviewUrl: googleUrl });
       prepareWhatsApp(guest.guestContact, message, "reviews");
+      setTemplateGuest(null);
       await loadGuests();
     } catch (error) {
       setSendError(error instanceof Error ? error.message : "Could not prepare the review message. Please try again.");
@@ -323,8 +349,8 @@ export function ReviewAskTab({ password, username }: Props) {
                         <div className="inline-flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => handleSendWhatsApp(g)}
-                            disabled={btn.disabled || sendingId !== null}
+                            onClick={() => void chooseTemplate(g)}
+                            disabled={btn.disabled || sendingId !== null || templatesLoading}
                             className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors", btn.className)}
                           >
                             {sendingId === g.checkinId ? (
@@ -370,8 +396,8 @@ export function ReviewAskTab({ password, username }: Props) {
                     <div className="ml-2 flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => handleSendWhatsApp(g)}
-                        disabled={btn.disabled || sendingId !== null}
+                        onClick={() => void chooseTemplate(g)}
+                        disabled={btn.disabled || sendingId !== null || templatesLoading}
                         className={cn("flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors", btn.className)}
                       >
                         {sendingId === g.checkinId ? (
@@ -467,6 +493,47 @@ export function ReviewAskTab({ password, username }: Props) {
         </div>
       )}
 
+      {templateGuest && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm" onClick={() => setTemplateGuest(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-brand-mist bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-brand-green-dark">Message {templateGuest.guestName}</h3>
+                <p className="text-xs text-brand-green-dark/60">Choose a template, then review the message in WhatsApp.</p>
+              </div>
+              <button type="button" onClick={() => setTemplateGuest(null)} className="rounded-md p-1 text-brand-green-dark/40 hover:text-brand-green-dark"><XIcon className="h-5 w-5" /><span className="sr-only">Close</span></button>
+            </div>
+            <div className="mt-4 max-h-80 space-y-2 overflow-y-auto">
+              {templates.length === 0 ? (
+                <p className="rounded-lg border border-dashed p-4 text-center text-sm text-brand-green-dark/60">No review templates are saved. A user with Review Settings access can add them from Settings.</p>
+              ) : templates.map((template) => {
+                const needsGoogleUrl = template.message.includes("{GOOGLE_REVIEW_URL}");
+                const unavailable = needsGoogleUrl && !reviewGoogleUrl(settings?.review_google_url);
+                return <button key={template.id} type="button" disabled={unavailable || sendingId !== null} onClick={() => void handleSendWhatsApp(templateGuest, template)} className="flex w-full items-center gap-3 rounded-lg border border-brand-mist p-3 text-left hover:bg-brand-green/[0.06] disabled:cursor-not-allowed disabled:opacity-50">
+                  <SendIcon className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span className="min-w-0 text-sm font-medium text-brand-green-dark">{template.name}{unavailable && <span className="mt-0.5 block text-xs font-normal text-amber-700">Set a valid Google Review URL in Settings first.</span>}</span>
+                </button>;
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTemplateManager && (
+        <WhatsAppTemplateManager
+          apiCall={apiCall}
+          onClose={() => setShowTemplateManager(false)}
+          onSaved={setTemplates}
+          getAction="getReviewWhatsAppTemplates"
+          saveAction="saveReviewWhatsAppTemplates"
+          title="WhatsApp Review Templates"
+          templateLabel="Shared review templates"
+          placeholders={REVIEW_WHATSAPP_PLACEHOLDERS}
+          preview={(message) => fillReviewWhatsAppTemplate(message, { reviewUrl: "https://goko.test/review/example", googleReviewUrl: reviewGoogleUrl(settings?.review_google_url) || "https://g.page/r/example" })}
+          helperText="Use the Goko feedback link for the private rating funnel or the direct Google review link. Templates using the Google placeholder need a valid Google Review URL in Settings."
+        />
+      )}
+
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto">
@@ -494,17 +561,13 @@ export function ReviewAskTab({ password, username }: Props) {
                     className="w-full rounded-lg border border-brand-mist px-3 py-2 text-sm"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-brand-green-dark/70 mb-1">Message Template</label>
-                  <textarea
-                    value={settings.review_message_template}
-                    onChange={(e) => setSettings({ ...settings, review_message_template: e.target.value })}
-                    rows={4}
-                    className="w-full rounded-lg border border-brand-mist px-3 py-2 text-sm"
-                    placeholder="Use {REVIEW_URL} as placeholder for the review link"
-                  />
-                  <p className="mt-1 text-xs text-brand-green-dark/40">Use {"{REVIEW_URL}"} where you want the review link to appear.</p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTemplateManager(true)}
+                  className="w-full rounded-lg border border-brand-mist px-3 py-2 text-left text-sm font-medium text-brand-green hover:bg-brand-green/[0.06]"
+                >
+                  Manage review message templates
+                </button>
                 <div>
                   <label className="block text-xs font-medium text-brand-green-dark/70 mb-1">Send Delay After Checkout</label>
                   <select

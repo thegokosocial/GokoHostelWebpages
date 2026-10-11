@@ -7,7 +7,7 @@ Staff messaging uses the shared StaffWhatsAppProvider and staffWhatsApp link bui
 | Entry point | Behavior |
 | --- | --- |
 | Admin booking details → message → template | Prepares the message and follows the current device preference. The draft panel remains available with explicit choices. |
-| Admin Reviews → Send WhatsApp | Validates the number, calls existing `sendWhatsApp` API to prepare the review token, then follows the device preference while retaining the draft panel. |
+| Admin Reviews → Send WhatsApp | Shows shared review templates first. The feedback template uses the Goko review link; the direct-Google template uses the configured Google Review URL only. Selecting either calls `sendWhatsApp` to count preparation, then follows the device preference while retaining the draft panel. |
 | Guest food-order sharing | Existing standard WhatsApp link to kitchen; unchanged. |
 | Admin Food Orders → Bill / Combined Bill → WhatsApp | Mints opaque `food_bill_share_tokens` via `createBillShareLink`, then uses the shared staff launcher with `/my-bills?t=` (not `?phone=`). |
 | Public booking enquiry | Existing template link to Goko; unchanged. |
@@ -17,7 +17,7 @@ Android staff links target `com.whatsapp.w4b` for Business and `com.whatsapp` fo
 
 Only one prepared draft is retained per tab, owned by the logged-in username, for at most 30 minutes. It contains number/message, section and creation time, never credentials. A new draft replaces it. Dismissal/logout removes it; invalid, expired or different-owner stored drafts are discarded. Reload restores the draft after login. If session storage is blocked, the panel keeps the message in memory and Business launch uses a new tab so recovery controls remain available. Guest content is never put in the browser fallback URL. Clipboard failure leaves selectable text.
 
-Booking and review numbers use the existing shared formatter: unprefixed 10-digit local numbers default to India; explicit `+`/`00` international numbers preserve their country code. Malformed numbers are rejected before preparing a review request, with equivalent server validation.
+Booking and review numbers use the existing shared formatter: unprefixed 10-digit local numbers default to India; explicit `+`/`00` international numbers preserve their country code. Malformed numbers are rejected before preparing a review request, with equivalent server validation. Review templates are shared settings (`review_whatsapp_templates`, maximum 10): when absent, the legacy single review message is the first template and a direct-Google starter is the second. `{REVIEW_URL}` is the internal feedback funnel; `{GOOGLE_REVIEW_URL}` is direct Google and is unavailable until Review Settings contains a valid absolute HTTP(S) Google URL. Direct Google messages deliberately bypass private low-rating feedback.
 
 ## Review counter compatibility
 

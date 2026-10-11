@@ -104,32 +104,35 @@ describe("staff WhatsApp workflows", () => {
   const provider = "src/components/admin/StaffWhatsAppProvider.tsx";
   const file = "src/components/admin/ReviewAskTab.tsx";
   const guest = { checkinId: 1, guestName: "Ada", guestContact: "+44 7700 900123", bookingId: "G-1" };
+  const feedbackTemplate = { id: "feedback", name: "Feedback", message: "Rate {REVIEW_URL}\nAgain {REVIEW_URL}" };
+  const googleTemplate = { id: "google", name: "Google", message: "Google: {GOOGLE_REVIEW_URL}" };
   function review(fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ token: "abc" }) })) {
     const globals = {
       preparing: { current: false }, bookingWhatsAppNumber, setSendError: vi.fn(), setSendingId: vi.fn(),
-      apiCall: fetcher, settings: { review_message_template: "Rate {REVIEW_URL}\nAgain {REVIEW_URL}" },
+      apiCall: fetcher, settings: { review_google_url: "https://g.page/r/goko" }, reviewGoogleUrl: (value: string) => value,
+      fillReviewWhatsAppTemplate: (message: string, values: { reviewUrl: string; googleReviewUrl: string }) => message.replaceAll("{REVIEW_URL}", values.reviewUrl).replaceAll("{GOOGLE_REVIEW_URL}", values.googleReviewUrl),
       window: { location: { origin: "https://goko.test" } }, prepareWhatsApp: vi.fn(), loadGuests: vi.fn(),
     };
     return { ...globals, run: handler(file, "handleSendWhatsApp", globals) };
   }
   it("prepares once and leaves native launch for an explicit tap", async () => {
     const state = review();
-    await state.run(guest);
+    await state.run(guest, feedbackTemplate);
     expect(state.apiCall).toHaveBeenCalledTimes(1);
     expect(state.prepareWhatsApp).toHaveBeenCalledWith(guest.guestContact, "Rate https://goko.test/review/abc\nAgain https://goko.test/review/abc", "reviews");
     expect(state.preparing.current).toBe(false);
   });
   it("does not count invalid phones or concurrent taps", async () => {
     const state = review();
-    await state.run({ ...guest, guestContact: "12" });
+    await state.run({ ...guest, guestContact: "12" }, feedbackTemplate);
     expect(state.apiCall).not.toHaveBeenCalled();
     state.preparing.current = true;
-    await state.run(guest);
+    await state.run(guest, feedbackTemplate);
     expect(state.apiCall).not.toHaveBeenCalled();
   });
   it("shows preparation errors and releases the busy state", async () => {
     const state = review(vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "Denied" }) }));
-    await state.run(guest);
+    await state.run(guest, feedbackTemplate);
     expect(state.prepareWhatsApp).not.toHaveBeenCalled();
     expect(state.setSendError).toHaveBeenCalledWith("Denied");
     expect(state.preparing.current).toBe(false);
@@ -142,11 +145,16 @@ describe("staff WhatsApp workflows", () => {
         return {};
       } };
     }));
-    await state.run(guest);
+    await state.run(guest, feedbackTemplate);
     expect(state.prepareWhatsApp).not.toHaveBeenCalled();
     expect(state.preparing.current).toBe(false);
     expect(state.setSendingId).toHaveBeenLastCalledWith(null);
     expect(state.setSendError.mock.calls.some(([message]) => !!message)).toBe(true);
+  });
+  it("uses the direct Google URL without putting the review token in the message", async () => {
+    const state = review();
+    await state.run(guest, googleTemplate);
+    expect(state.prepareWhatsApp).toHaveBeenCalledWith(guest.guestContact, "Google: https://g.page/r/goko", "reviews");
   });
   it.each([
     ["ask", 0], ["business", 1], ["regular", 1],

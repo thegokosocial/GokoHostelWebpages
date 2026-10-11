@@ -12,6 +12,9 @@ import {
   type BookingWhatsAppTemplate,
 } from "@/lib/bookingWhatsApp";
 
+type Template = BookingWhatsAppTemplate;
+type TemplatePlaceholder = { token: string; label: string };
+
 const SAMPLE_VALUES = {
   "{GUEST_NAME}": "Alex",
   "{CHECK_IN}": "2026-09-06",
@@ -25,12 +28,26 @@ export function WhatsAppTemplateManager({
   apiCall,
   onClose,
   onSaved,
+  getAction = "getWhatsAppTemplates",
+  saveAction = "saveWhatsAppTemplates",
+  title = "WhatsApp Message Templates",
+  templateLabel = "Shared templates",
+  placeholders = BOOKING_WHATSAPP_PLACEHOLDERS,
+  preview = (message) => fillBookingWhatsAppTemplate(message, SAMPLE_VALUES),
+  helperText = "Guest name, dates, guest-facing platform/reference, balance, and property name are replaced with the selected booking’s actual details when sending. Internal Goko database IDs are never included.",
 }: {
   apiCall: (body: Record<string, unknown>) => Promise<Response>;
   onClose: () => void;
-  onSaved: (templates: BookingWhatsAppTemplate[]) => void;
+  onSaved: (templates: Template[]) => void;
+  getAction?: string;
+  saveAction?: string;
+  title?: string;
+  templateLabel?: string;
+  placeholders?: readonly TemplatePlaceholder[];
+  preview?: (message: string) => string;
+  helperText?: string;
 }) {
-  const [templates, setTemplates] = useState<BookingWhatsAppTemplate[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
@@ -39,7 +56,7 @@ export function WhatsAppTemplateManager({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    void apiCall({ action: "getWhatsAppTemplates" })
+    void apiCall({ action: getAction })
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Could not load templates");
@@ -47,15 +64,15 @@ export function WhatsAppTemplateManager({
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [apiCall]);
+  }, [apiCall, getAction]);
 
   const resetForm = () => { setEditingId(null); setName(""); setMessage(""); setError(""); };
 
-  const persist = async (next: BookingWhatsAppTemplate[]) => {
+  const persist = async (next: Template[]) => {
     setSaving(true);
     setError("");
     try {
-      const res = await apiCall({ action: "saveWhatsAppTemplates", templates: next });
+      const res = await apiCall({ action: saveAction, templates: next });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not save templates");
       setTemplates(data.templates || next);
@@ -84,8 +101,8 @@ export function WhatsAppTemplateManager({
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-popover p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">WhatsApp Message Templates</h3>
-            <p className="text-xs text-muted-foreground">Shared templates · {templates.length}/{MAX_BOOKING_WHATSAPP_TEMPLATES}</p>
+            <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+            <p className="text-xs text-muted-foreground">{templateLabel} · {templates.length}/{MAX_BOOKING_WHATSAPP_TEMPLATES}</p>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={onClose}><XIcon className="size-4" /><span className="sr-only">Close</span></Button>
         </div>
@@ -116,16 +133,16 @@ export function WhatsAppTemplateManager({
               <div>
                 <p className="mb-1.5 text-xs font-medium text-foreground">Supported placeholders — click to insert</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {BOOKING_WHATSAPP_PLACEHOLDERS.map(({ token, label }) => (
+                  {placeholders.map(({ token, label }) => (
                     <button key={token} type="button" title={label} onClick={() => setMessage((current) => current + token)} className="rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-foreground hover:bg-muted">{token}</button>
                   ))}
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">Guest name, dates, guest-facing platform/reference, balance, and property name are replaced with the selected booking’s actual details when sending. Internal Goko database IDs are never included.</p>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">{helperText}</p>
               </div>
               {message && (
                 <div className="rounded-lg bg-muted/50 p-3">
                   <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Example preview</p>
-                  <p className="whitespace-pre-wrap text-xs text-foreground">{fillBookingWhatsAppTemplate(message, SAMPLE_VALUES)}</p>
+                  <p className="whitespace-pre-wrap text-xs text-foreground">{preview(message)}</p>
                 </div>
               )}
               {error && <p className="text-xs text-red-600">{error}</p>}

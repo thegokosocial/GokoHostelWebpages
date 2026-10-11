@@ -9,7 +9,7 @@ The helper stays active during a submission, refuses shutdown while a job is in 
 
 ## Review funnel
 
-Staff (Reviews tab, `canViewReviews` or admin): `listAskReview` = checked-out guests with `checkedOutAt` set. Mutations need dedicated keys on top of entry: `sendWhatsApp` → `canSendReviewRequests`; `updateSettings` → `canManageReviewSettings`; `editReviewRequest` / `resetReviewRequest` → `canEditReviewRequests` (view alone is not enough). `sendWhatsApp` validates the phone and increments preparation attempts in the compatibility-named send-count field. It does not confirm transmission. The prepared panel launches Business on Android via a fresh tap; retries/copy do not increment the counter. See [WhatsApp messaging](whatsapp-messaging.md). Token on `review_requests`. Guest URL `/review/[token]` (robots `disallow: /review/`). Google URL from setting `review_google_url`.
+Staff (Reviews tab, `canViewReviews` or admin): `listAskReview` = checked-out guests with `checkedOutAt` set. Mutations need dedicated keys on top of entry: `sendWhatsApp` → `canSendReviewRequests`; `updateSettings` and `saveReviewWhatsAppTemplates` → `canManageReviewSettings`; `editReviewRequest` / `resetReviewRequest` → `canEditReviewRequests` (view alone is not enough). Send opens a template chooser before it calls `sendWhatsApp`; that action validates the phone and increments preparation attempts in the compatibility-named send-count field. The feedback template uses `/review/[token]` (robots `disallow: /review/`); the direct-Google template substitutes `review_google_url` and intentionally bypasses internal feedback. It does not confirm transmission. The prepared panel launches Business on Android via a fresh tap; retries/copy do not increment the counter. See [WhatsApp messaging](whatsapp-messaging.md).
 
 Guest API `POST /api/review` (no staff password):
 
@@ -27,7 +27,7 @@ flowchart TD
   F --> RF[review_feedback]
 ```
 
-Admin actions: `listAskReview`, `sendWhatsApp`, `listResponses`, `getAnalytics`, `getSettings`, `updateSettings`, `editReviewRequest`, `resetReviewRequest`.
+Admin actions: `listAskReview`, `sendWhatsApp`, `listResponses`, `getAnalytics`, `getSettings`, `updateSettings`, `getReviewWhatsAppTemplates`, `saveReviewWhatsAppTemplates`, `editReviewRequest`, `resetReviewRequest`.
 
 ---
 

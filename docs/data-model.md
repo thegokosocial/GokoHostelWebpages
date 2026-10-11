@@ -207,7 +207,7 @@ Synced to Pi (`syncEngine` `SYNCABLE_SETTINGS`):
 
 `image_validation`, `guest_min_age`, `guest_max_age`, `show_dob_in_records`, `log_level`, `food_tax_rate`, `food_kitchen_hours`, `food_tab_limit`, `food_kitchen_busy`, `food_confirm_with_guest`, `food_kannada_labels` (**stale name**), `food_cafe_tables`, `primary_server`.
 
-Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kannada_kitchen_display`, `food_kitchen_whatsapp`, `food_customer_whatsapp`, `food_show_out_of_stock`, `food_payment_history_days`, `food_approval_in_kitchen`, `review_google_url`, `failover_enabled`, `pi_local_url`, OAuth blobs.
+Also used but **not** in that sync list: `food_kannada_kitchen_print`, `food_kannada_kitchen_display`, `food_kitchen_whatsapp`, `food_customer_whatsapp`, `food_show_out_of_stock`, `food_payment_history_days`, `food_approval_in_kitchen`, `review_google_url`, `review_whatsapp_templates`, `failover_enabled`, `pi_local_url`, OAuth blobs.
 
 **Not synced as tables:** OAuth in settings, CMS, channel_config, push, reviews, inventory/rates, **split_***.
 
