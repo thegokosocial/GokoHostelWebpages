@@ -437,7 +437,7 @@ describe("Booking Calendar: sticky dates and row colour", () => {
     expect(slice).toContain("overflow-x-auto overflow-y-visible");
     expect(grid).toMatch(/sticky top-0 z-20/);
     expect(grid).toMatch(/sticky top-0 left-0 z-30/);
-    expect(grid).toMatch(/sticky left-0 z-20/);
+    expect(grid).toMatch(/sticky left-0 z-30/);
   });
 
   it("uses a narrower two-line label column on phones without changing row alignment or desktop width", () => {

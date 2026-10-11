@@ -203,6 +203,21 @@ async function adminLoginToBookings(page: Page) {
   await expect(page.getByRole("heading", { name: /Booking/i })).toBeVisible({ timeout: 15_000 });
 }
 
+test("Booking Calendar keeps Dorms and Beds above scrolled dates", async ({ page }) => {
+  const state: DualState = { bookingCheckedIn: false, bedOccupied: false, paymentStatus: "pay_at_hotel", amountTotal: 0, amountPaid: 0, loggedIn: false };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToBookings(page);
+
+  const grid = page.locator("div.isolate.overflow-x-auto");
+  await grid.evaluate((element) => { element.scrollLeft = 100; });
+  const dorm = page.getByRole("button", { name: "Dorm A", exact: true });
+  await expect(dorm).toBeVisible();
+  const box = await dorm.boundingBox();
+  expect(box).not.toBeNull();
+  const topText = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.textContent, { x: box!.x + 75, y: box!.y + box!.height / 2 });
+  expect(topText).toContain("Dorm A");
+});
+
 test("Bookings checkIn leaves bed available until physical assignBed", async ({ page }) => {
   const state: DualState = {
     bookingCheckedIn: false,

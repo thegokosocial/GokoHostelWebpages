@@ -109,7 +109,7 @@ export function BookingCalendarGrid({
     <div className="isolate overflow-x-auto overflow-y-visible overscroll-x-contain rounded-xl border border-border bg-white dark:bg-card">
       <div className="inline-flex min-w-full">
           {/* Sticky left column: dorm/bed labels */}
-          <div className="sticky left-0 z-20 w-[104px] shrink-0 border-r border-border bg-white dark:bg-card sm:w-[140px]">
+          <div className="sticky left-0 z-30 w-[104px] shrink-0 border-r border-border bg-white dark:bg-card sm:w-[140px]">
             <div className="sticky top-0 left-0 z-30 flex h-[76px] items-end border-b border-border bg-brand-sand px-2 pb-1 shadow-[0_1px_4px_rgba(45,92,63,0.08)] dark:bg-zinc-800 dark:shadow-[0_1px_4px_rgba(0,0,0,0.4)]">
               <span className="text-[10px] font-medium text-muted-foreground">Dorms / Beds</span>
             </div>

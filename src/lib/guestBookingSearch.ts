@@ -141,7 +141,10 @@ export async function searchGuestRooms(input: unknown, opts?: { excludeBookingId
     if (readiness.paymentOptions) paymentOptions = readiness.paymentOptions;
   } catch { /* advisory search must not fail closed on readiness checks */ }
   // A visible room must also be selectable. Mapping and rate setup stay manual in Channel Manager.
-  const bookableRooms = rooms.filter((room) => room.rates?.length);
+  const bookableRooms = rooms.filter((room) => room.rates?.length).sort((a, b) => {
+    const lowestNightlyRate = (room: GuestRoom) => Math.min(...room.rates!.flatMap(rate => rate.nightlyRates.map(night => night.rupees)));
+    return lowestNightlyRate(a) - lowestNightlyRate(b) || a.name.localeCompare(b.name) || a.type.localeCompare(b.type);
+  });
   return {
     rooms: bookableRooms, maxSelectedBeds: settings.maxSelectedBeds,
     taxPercent: await websiteBookingTaxPercent(),

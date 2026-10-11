@@ -4,26 +4,26 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { searchGuestRooms } from "@/lib/guestBookingSearch";
 import { todayIST } from "@/lib/utils";
 import { addCalendarDays } from "@/lib/inventoryAvailability";
-const state = vi.hoisted(() => ({ db: null as any, pool: "online", broken: false, active: true, ambiguous: false, settings: null as string | null, taxRate: "0" as string, taxApplyWebsite: null as string | null, adult1: null as number | null, adult2: null as number | null, missingDoubleNight: false, closedDeparture: false }));
+const state = vi.hoisted(() => ({ db: null as any, pool: "online", broken: false, active: true, ambiguous: false, settings: null as string | null, taxRate: "0" as string, taxApplyWebsite: null as string | null, adult1: null as number | null, adult2: null as number | null, missingDoubleNight: false, closedDeparture: false, dorms: [{ id: 1, name: "Mixed dorm", deletedAt: null }], mappings: [{ id: 1, dormId: 1, isActive: 1 }], plans: [{ id: 1, roomMappingId: 1, isActive: 1, ratePlanName: "Standard" }], rates: null as null | Array<Record<string, unknown>> }));
 vi.mock("@/db", () => ({ getDb: () => state.db }));
 vi.mock("@/db/queries", () => ({
-  getAllDorms: async () => [{ id: 1, name: "Mixed dorm", deletedAt: null }],
+  getAllDorms: async () => state.dorms,
   getSetting: async (key: string) => {
     if (key === "booking_tax_rate") return state.taxRate;
     if (key === "booking_tax_apply_website") return state.taxApplyWebsite;
     return state.settings;
   },
   getAvailableBedsForRange: async () => { if (state.broken) throw new Error("PRIVATE"); return [{ id: 1, pool: state.pool, guestName: "PRIVATE" }, ...[2, 3, 4].map(id => ({ id, pool: state.pool }))]; },
-  getRoomTypeMappings: async () => state.ambiguous ? [{ id: 1, dormId: 1, isActive: 1 }, { id: 2, dormId: 1, isActive: 1 }] : [{ id: 1, dormId: 1, isActive: 1 }],
-  getRatePlanMappings: async () => [{ id: 1, roomMappingId: 1, isActive: state.active ? 1 : 0, ratePlanName: "Standard" }],
-  getAllDailyRates: async (start: string, end: string) => [start, addCalendarDays(start, 1), end].map(date => ({ ratePlanId: 1, date, rate: 850, adult1Rate: state.adult1, adult2Rate: date === end || (state.missingDoubleNight && date === start) ? null : state.adult2, stopSell: 0, minimumStay: 1, maximumStay: null, closeOnArrival: 0, closeOnDeparture: date === end && state.closedDeparture ? 1 : 0, minimumAdvanceReservation: null, maximumAdvanceReservation: null })),
+  getRoomTypeMappings: async () => state.ambiguous ? [{ id: 1, dormId: 1, isActive: 1 }, { id: 2, dormId: 1, isActive: 1 }] : state.mappings,
+  getRatePlanMappings: async () => state.plans.map(plan => ({ ...plan, isActive: state.active ? 1 : 0 })),
+  getAllDailyRates: async (start: string, end: string) => state.rates || [start, addCalendarDays(start, 1), end].map(date => ({ ratePlanId: 1, date, rate: 850, adult1Rate: state.adult1, adult2Rate: date === end || (state.missingDoubleNight && date === start) ? null : state.adult2, stopSell: 0, minimumStay: 1, maximumStay: null, closeOnArrival: 0, closeOnDeparture: date === end && state.closedDeparture ? 1 : 0, minimumAdvanceReservation: null, maximumAdvanceReservation: null })),
 }));
 let sqlite: SQLite.Database;
 const stay = () => ({ checkinDate: addCalendarDays(todayIST(), 1), checkoutDate: addCalendarDays(todayIST(), 3) });
 beforeEach(() => {
   state.pool = "online"; state.broken = false; state.active = true; state.ambiguous = false;
   state.settings = null; state.taxRate = "0"; state.taxApplyWebsite = null; state.adult1 = null;
-  state.adult2 = null; state.missingDoubleNight = false; state.closedDeparture = false;
+  state.adult2 = null; state.missingDoubleNight = false; state.closedDeparture = false; state.dorms = [{ id: 1, name: "Mixed dorm", deletedAt: null }]; state.mappings = [{ id: 1, dormId: 1, isActive: 1 }]; state.plans = [{ id: 1, roomMappingId: 1, isActive: 1, ratePlanName: "Standard" }]; state.rates = null;
   sqlite = new SQLite(":memory:");
   sqlite.exec("CREATE TABLE beds (id INTEGER PRIMARY KEY,dorm_id INTEGER,bed_id TEXT,type TEXT,deleted_at TEXT); INSERT INTO beds VALUES(1,1,'A1','Bunk',NULL),(2,1,'A2','Bunk','deleted'); CREATE TABLE native_inventory_holds(bed_ids TEXT,state TEXT,expires_at INTEGER,checkin_date TEXT,checkout_date TEXT)");
   state.db = drizzle(sqlite);
@@ -59,6 +59,18 @@ describe("Guest availability SQL and rate assembly", () => {
     expect(result.nativeCheckoutReady).toBe(false); expect(JSON.stringify(result)).not.toContain("PRIVATE");
     expect(result.taxPercent).toBe(0);
     state.pool = "offline"; expect((await searchGuestRooms(stay())).rooms).toEqual([]);
+  });
+  it("sorts bookable room cards by their displayed lowest nightly price, then name", async () => {
+    sqlite.exec("INSERT INTO beds VALUES(3,2,'B1','Bunk',NULL)");
+    state.dorms = [{ id: 1, name: "Zulu dorm", deletedAt: null }, { id: 2, name: "Alpha dorm", deletedAt: null }];
+    state.mappings = [{ id: 1, dormId: 1, isActive: 1 }, { id: 2, dormId: 2, isActive: 1 }];
+    state.plans = [{ id: 1, roomMappingId: 1, isActive: 1, ratePlanName: "Standard" }, { id: 2, roomMappingId: 2, isActive: 1, ratePlanName: "Standard" }];
+    const { checkinDate, checkoutDate } = stay();
+    state.rates = [checkinDate, addCalendarDays(checkinDate, 1), checkoutDate].flatMap(date => [
+      { ratePlanId: 1, date, rate: 900, adult1Rate: 900, adult2Rate: null, stopSell: 0, minimumStay: 1, maximumStay: null, closeOnArrival: 0, closeOnDeparture: 0, minimumAdvanceReservation: null, maximumAdvanceReservation: null },
+      { ratePlanId: 2, date, rate: 700, adult1Rate: 700, adult2Rate: null, stopSell: 0, minimumStay: 1, maximumStay: null, closeOnArrival: 0, closeOnDeparture: 0, minimumAdvanceReservation: null, maximumAdvanceReservation: null },
+    ]);
+    expect((await searchGuestRooms({ checkinDate, checkoutDate })).rooms.map(room => room.name)).toEqual(["Alpha dorm", "Zulu dorm"]);
   });
   it("returns taxPercent 0 when website tax apply is off even if rate is set", async () => {
     state.taxRate = "5";
