@@ -4,15 +4,15 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { DateRangePicker } from "@/components/dates/DateRangePicker";
 import { Button } from "@/components/ui/button";
-import { CalendarIcon } from "lucide-react";
 import { getDateRange, getHostelToday } from "./utils";
 import type { DateRange } from "./types";
 
 const MODES = [
-  { value: "15days" as const, label: "15 Days" },
-  { value: "30days" as const, label: "30 Days" },
-  { value: "60days" as const, label: "60 Days" },
-  { value: "custom" as const, label: "Custom" },
+  { value: "15days" as const, label: "15d", ariaLabel: "Upcoming 15 days" },
+  { value: "30days" as const, label: "30d", ariaLabel: "Upcoming 30 days" },
+  { value: "60days" as const, label: "60d", ariaLabel: "Upcoming 60 days" },
+  { value: "past60days" as const, label: "Past 60", ariaLabel: "Past 60 days" },
+  { value: "custom" as const, label: "Custom", ariaLabel: "Custom date range" },
 ];
 
 export function DateRangeSelector({
@@ -53,11 +53,6 @@ export function DateRangeSelector({
     onChange({ startDate: customStart, endDate: customEnd, mode: "custom" });
   };
 
-  const handleToday = () => {
-    const { start, end } = getDateRange("15days");
-    onChange({ startDate: start, endDate: end, mode: "15days" });
-  };
-
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex rounded-lg border border-input">
@@ -66,6 +61,8 @@ export function DateRangeSelector({
             key={m.value}
             type="button"
             onClick={() => handleModeChange(m.value)}
+            aria-label={m.ariaLabel}
+            title={m.ariaLabel}
             className={cn(
               "px-2.5 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
               dateRange.mode === m.value
@@ -99,11 +96,6 @@ export function DateRangeSelector({
       )}
 
       {customError && <span className="text-xs text-destructive">{customError}</span>}
-
-      <Button variant="ghost" size="xs" onClick={handleToday} className="text-xs">
-        <CalendarIcon className="size-3" />
-        Today
-      </Button>
     </div>
   );
 }

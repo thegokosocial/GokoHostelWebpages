@@ -14,8 +14,11 @@ type DualState = {
   amountPaid: number;
   writeOffAmount?: number;
   loggedIn: boolean;
+  role?: "admin" | "staff";
+  permissions?: Record<string, boolean>;
   editPreview?: boolean;
   pendingWebsiteReservations?: unknown[];
+  unpaidStays?: Array<{ id: number; guestName: string; contact: string; checkinDate: string; checkoutDate: string; due: number; amountTotal: number }>;
 };
 
 function sampleBooking(state: DualState) {
@@ -65,13 +68,13 @@ async function mockDualOccupancyApis(page: Page, state: DualState) {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/login") {
       state.loggedIn = true;
-      await route.fulfill({ json: { role: "admin", username: "e2e-admin", permissions: {} } });
+      await route.fulfill({ json: { role: state.role || "admin", username: "e2e-admin", permissions: state.permissions || {} } });
       return;
     }
     if (url.pathname === "/api/auth/session") {
       if (state.loggedIn) {
         await route.fulfill({
-          json: { authenticated: true, role: "admin", username: "e2e-admin", permissions: {} },
+          json: { authenticated: true, role: state.role || "admin", username: "e2e-admin", permissions: state.permissions || {} },
         });
         return;
       }
@@ -89,7 +92,7 @@ async function mockDualOccupancyApis(page: Page, state: DualState) {
 
     if (action === "auth") {
       state.loggedIn = true;
-      await route.fulfill({ json: { role: "admin", permissions: {} } });
+      await route.fulfill({ json: { role: state.role || "admin", permissions: state.permissions || {} } });
       return;
     }
 
@@ -139,6 +142,14 @@ async function mockDualOccupancyApis(page: Page, state: DualState) {
     }
 
     if (url.pathname.includes("/checkins")) {
+      if (action === "getDashboard") {
+        await route.fulfill({ json: {
+          todayCheckins: [], todayCheckouts: [], todayBookings: [], todayBookingCount: 0, todayCancellationCount: 0,
+          unpaidStays: state.unpaidStays || [], stats: { total: 0, occupied: 0, available: 0, cleanup: 0 },
+          validationEnabled: true, myTasks: [],
+        } });
+        return;
+      }
       if (action === "getBeds") {
         const beds = state.bedOccupied
           ? [["Dorm A", "B1", "Lower", "Bunk", "occupied", "Dual Guest", "9000000000", "2026-09-20", "2026-09-22", "2", "7", "12"]]
@@ -202,6 +213,49 @@ async function adminLoginToBookings(page: Page) {
   await page.getByRole("button", { name: "Login" }).click();
   await expect(page.getByRole("heading", { name: /Booking/i })).toBeVisible({ timeout: 15_000 });
 }
+
+async function adminLoginToDashboard(page: Page) {
+  await page.goto("/admin?section=dashboard");
+  await page.locator("#admin-user").fill("e2e-admin");
+  await page.locator("#admin-pw").fill("e2e-only-password");
+  await page.getByRole("button", { name: "Login" }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 15_000 });
+}
+
+test("Dashboard opens an old unpaid stay outside the upcoming booking range", async ({ page }) => {
+  const state: DualState = {
+    bookingCheckedIn: true,
+    bedOccupied: false,
+    paymentStatus: "paid",
+    amountTotal: 1200,
+    amountPaid: 1000,
+    loggedIn: false,
+    unpaidStays: [{ id: 5, guestName: "Dual Guest", contact: "9000000000", checkinDate: "2026-09-20", checkoutDate: "2026-09-22", due: 200, amountTotal: 1200 }],
+  };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToDashboard(page);
+
+  await page.getByRole("button", { name: "Open booking" }).click();
+  await expect(page.getByRole("button", { name: "Write Off Balance" })).toBeVisible({ timeout: 15_000 });
+});
+
+test("Dashboard hides Open booking without booking-view permission", async ({ page }) => {
+  const state: DualState = {
+    bookingCheckedIn: true,
+    bedOccupied: false,
+    paymentStatus: "paid",
+    amountTotal: 1200,
+    amountPaid: 1000,
+    loggedIn: false,
+    role: "staff",
+    permissions: { canViewDashboard: true },
+    unpaidStays: [{ id: 5, guestName: "Dual Guest", contact: "9000000000", checkinDate: "2026-09-20", checkoutDate: "2026-09-22", due: 200, amountTotal: 1200 }],
+  };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToDashboard(page);
+
+  await expect(page.getByRole("button", { name: "Open booking" })).toHaveCount(0);
+});
 
 test("Booking Calendar keeps Dorms and Beds above scrolled dates", async ({ page }) => {
   const state: DualState = { bookingCheckedIn: false, bedOccupied: false, paymentStatus: "pay_at_hotel", amountTotal: 0, amountPaid: 0, loggedIn: false };

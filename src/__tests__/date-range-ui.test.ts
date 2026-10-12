@@ -11,13 +11,15 @@ function inclusiveDays(start: string, end: string): number {
 }
 
 describe("admin custom date ranges", () => {
-  it("offers 15, 30, and 60 day Booking presets with 15 days as the default", () => {
-    expect(bookings).toContain('label: "15 Days"');
-    expect(bookings).toContain('label: "30 Days"');
-    expect(bookings).toContain('label: "60 Days"');
+  it("labels compact Booking presets accessibly and offers recent history with 15 days as the default", () => {
+    expect(bookings).toContain('label: "15d", ariaLabel: "Upcoming 15 days"');
+    expect(bookings).toContain('label: "30d", ariaLabel: "Upcoming 30 days"');
+    expect(bookings).toContain('label: "60d", ariaLabel: "Upcoming 60 days"');
+    expect(bookings).toContain('label: "Past 60", ariaLabel: "Past 60 days"');
+    expect(bookings).toContain("aria-label={m.ariaLabel}");
     expect(bookings).not.toContain('label: "Week"');
     expect(bookings).not.toContain('label: "10 Days"');
-    expect(bookings).toContain('getDateRange("15days")');
+    expect(bookings).toContain("getDateRange(mode)");
     expect(bookingDashboard).toContain('getDateRange("15days")');
     expect(bookingDashboard).toContain('mode: "15days"');
   });

@@ -31,6 +31,7 @@ vi.mock("@/lib/runtime", () => ({ isPiRuntime: () => mocks.pi }));
 import { POST as openManageLinkPost } from "@/app/api/guest-booking/open-manage-link/route";
 
 let sqlite: SQLite.Database;
+const CHECKOUT_DATE = "2099-10-03";
 
 function seedDb() {
   if (sqlite) sqlite.close();
@@ -41,7 +42,7 @@ function seedDb() {
     guest_name TEXT, checkin_date TEXT, checkout_date TEXT, room_type TEXT, persons INTEGER,
     status TEXT, payment_status TEXT, amount_total INTEGER, amount_paid INTEGER, amount_refunded INTEGER
   );
-  INSERT INTO bookings VALUES(1,'ada@example.com','GOKO-42','EXT-42',NULL,'Ada','2026-10-01','2026-10-03',
+  INSERT INTO bookings VALUES(1,'ada@example.com','GOKO-42','EXT-42',NULL,'Ada','2099-10-01','2099-10-03',
     'Mixed',2,'received','paid',2000,2000,0);`);
   sqlite.exec(`CREATE TABLE native_booking_checkouts (
     id TEXT PRIMARY KEY, booking_id INTEGER, guest_access_hash TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -56,7 +57,7 @@ beforeEach(() => {
   mocks.getGuestBookingStatus.mockReset();
   mocks.getGuestBookingStatus.mockResolvedValue({
     reference: "GOKO-42", state: "fulfilled", bookingStatus: "received", guestName: "Ada",
-    checkinDate: "2026-10-01", checkoutDate: "2026-10-03", amountTotal: 2000, amountPaid: 2000,
+    checkinDate: "2099-10-01", checkoutDate: CHECKOUT_DATE, amountTotal: 2000, amountPaid: 2000,
   });
   vi.stubEnv("GUEST_BOOKING_LOOKUP_SECRET", "s".repeat(32));
 });
@@ -68,7 +69,7 @@ afterEach(() => {
 
 describe("guest manage magic links", () => {
   it("signs and verifies a compact ?m=exp.sig magic for a reference", async () => {
-    const exp = manageLinkExpiryUnix("2026-10-03");
+    const exp = manageLinkExpiryUnix(CHECKOUT_DATE);
     expect(exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
     const magic = await signGuestManageMagic("goko-42", exp);
     expect(magic).toMatch(/^\d+\.[a-f0-9]{64}$/);
@@ -76,7 +77,7 @@ describe("guest manage magic links", () => {
   });
 
   it("rejects tampered, wrong-ref, expired, malformed, and missing-secret magics", async () => {
-    const exp = manageLinkExpiryUnix("2026-10-03");
+    const exp = manageLinkExpiryUnix(CHECKOUT_DATE);
     const magic = await signGuestManageMagic("GOKO-42", exp);
     await expect(verifyGuestManageMagic("OTHER", magic)).rejects.toBeInstanceOf(ManageLinkError);
     await expect(verifyGuestManageMagic("GOKO-42", magic.replace(/.$/, magic.endsWith("a") ? "b" : "a")))
@@ -97,17 +98,17 @@ describe("guest manage magic links", () => {
   });
 
   it("buildGuestManageUrl embeds a verifiable magic; empty ref falls back to /book", async () => {
-    const url = await buildGuestManageUrl("GOKO-42", "2026-10-03");
+    const url = await buildGuestManageUrl("GOKO-42", CHECKOUT_DATE);
     expect(url).toMatch(/^https:\/\/www\.gokohostel\.com\/booking\/GOKO-42\?m=\d+\.[a-f0-9]{64}$/);
     const magic = new URL(url).searchParams.get("m")!;
     await expect(verifyGuestManageMagic("GOKO-42", magic)).resolves.toBeTruthy();
-    const relative = await buildGuestManageUrl("GOKO-42", "2026-10-03", false);
+    const relative = await buildGuestManageUrl("GOKO-42", CHECKOUT_DATE, false);
     expect(relative.startsWith("/booking/GOKO-42?m=")).toBe(true);
-    expect(await buildGuestManageUrl("  ", "2026-10-03")).toBe("https://www.gokohostel.com/book");
+    expect(await buildGuestManageUrl("  ", CHECKOUT_DATE)).toBe("https://www.gokohostel.com/book");
   });
 
   it("openGuestManageLink mints a token, updates hash, and returns status", async () => {
-    const magic = await signGuestManageMagic("GOKO-42", manageLinkExpiryUnix("2026-10-03"));
+    const magic = await signGuestManageMagic("GOKO-42", manageLinkExpiryUnix(CHECKOUT_DATE));
     const result = await openGuestManageLink("GOKO-42", magic) as {
       guestAccessToken: string; reference: string; guestName: string;
     };
@@ -123,14 +124,14 @@ describe("guest manage magic links", () => {
   });
 
   it("openGuestManageLink accepts booking_ref aliases", async () => {
-    const magic = await signGuestManageMagic("EXT-42", manageLinkExpiryUnix("2026-10-03"));
+    const magic = await signGuestManageMagic("EXT-42", manageLinkExpiryUnix(CHECKOUT_DATE));
     const result = await openGuestManageLink("ext-42", magic) as { guestAccessToken: string };
     expect(result.guestAccessToken).toMatch(/^[a-f0-9]{64}$/);
     expect(mocks.getGuestBookingStatus).toHaveBeenCalledWith("GOKO-42", result.guestAccessToken);
   });
 
   it("openGuestManageLink rejects missing checkout, deleted, and unknown bookings", async () => {
-    const magic = await signGuestManageMagic("GOKO-42", manageLinkExpiryUnix("2026-10-03"));
+    const magic = await signGuestManageMagic("GOKO-42", manageLinkExpiryUnix(CHECKOUT_DATE));
     sqlite.exec("DELETE FROM native_booking_checkouts");
     await expect(openGuestManageLink("GOKO-42", magic)).rejects.toBeInstanceOf(ManageLinkError);
     expect(mocks.getGuestBookingStatus).not.toHaveBeenCalled();
@@ -139,7 +140,7 @@ describe("guest manage magic links", () => {
     sqlite.exec("UPDATE bookings SET deleted_at='deleted'");
     await expect(openGuestManageLink("GOKO-42", magic)).rejects.toBeInstanceOf(ManageLinkError);
 
-    const missing = await signGuestManageMagic("MISSING", manageLinkExpiryUnix("2026-10-03"));
+    const missing = await signGuestManageMagic("MISSING", manageLinkExpiryUnix(CHECKOUT_DATE));
     await expect(openGuestManageLink("MISSING", missing)).rejects.toBeInstanceOf(ManageLinkError);
   });
 });
@@ -151,7 +152,7 @@ describe("POST /api/guest-booking/open-manage-link", () => {
   );
 
   it("returns status + token for a valid magic link", async () => {
-    const magic = await signGuestManageMagic("GOKO-42", manageLinkExpiryUnix("2026-10-03"));
+    const magic = await signGuestManageMagic("GOKO-42", manageLinkExpiryUnix(CHECKOUT_DATE));
     const res = await openManageLinkPost(post(
       JSON.stringify({ reference: "GOKO-42", magic }),
       "https://www.gokohostel.com",
@@ -175,7 +176,7 @@ describe("POST /api/guest-booking/open-manage-link", () => {
 
     const denied = await openManageLinkPost(post(JSON.stringify({
       reference: "GOKO-42",
-      magic: `${manageLinkExpiryUnix("2026-10-03")}.${"c".repeat(64)}`,
+      magic: `${manageLinkExpiryUnix(CHECKOUT_DATE)}.${"c".repeat(64)}`,
     })));
     expect(denied.status).toBe(401);
     expect(await denied.json()).toMatchObject({ error: expect.stringContaining("Find my booking") });

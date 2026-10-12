@@ -103,8 +103,13 @@ export function getHostelToday(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
-export function getDateRange(mode: "15days" | "30days" | "60days"): { start: string; end: string } {
+export function getDateRange(mode: "15days" | "30days" | "60days" | "past60days"): { start: string; end: string } {
   const today = new Date(getHostelToday() + "T12:00:00Z");
+  if (mode === "past60days") {
+    const startDate = new Date(today);
+    startDate.setUTCDate(startDate.getUTCDate() - 59);
+    return { start: startDate.toISOString().split("T")[0], end: today.toISOString().split("T")[0] };
+  }
   const yesterday = new Date(today);
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const start = yesterday.toISOString().split("T")[0];

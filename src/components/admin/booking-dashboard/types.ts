@@ -132,5 +132,5 @@ export type CalendarBed = {
 export type DateRange = {
   startDate: string;
   endDate: string;
-  mode: "15days" | "30days" | "60days" | "custom";
+  mode: "15days" | "30days" | "60days" | "past60days" | "custom";
 };

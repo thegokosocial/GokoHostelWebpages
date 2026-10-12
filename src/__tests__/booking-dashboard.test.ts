@@ -17,9 +17,18 @@ describe("Booking calendar date presets", () => {
     ["15days", 15],
     ["30days", 30],
     ["60days", 60],
+    ["past60days", 60],
   ] as const)("returns an inclusive %s range", (mode, expectedDays) => {
     const range = getDateRange(mode);
     expect(getDatesArray(range.start, range.end)).toHaveLength(expectedDays);
+  });
+
+  it("covers the 60 calendar days ending today", () => {
+    const range = getDateRange("past60days");
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const start = new Date(`${today}T12:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 59);
+    expect(range).toEqual({ start: start.toISOString().split("T")[0], end: today });
   });
 });
 

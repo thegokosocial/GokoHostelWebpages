@@ -402,6 +402,15 @@ export function AdminDashboard({
                     <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950 px-2 py-1 text-xs font-semibold text-red-700 dark:text-red-400">
                       ₹{s.due.toLocaleString("en-IN")}
                     </span>
+                    {canViewBookings && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate("bookings", { bookingId: s.id })}
+                        className="rounded-lg border border-brand-mist px-3 py-1.5 text-xs font-semibold text-brand-green-dark hover:bg-brand-sand dark:text-zinc-100"
+                      >
+                        Open booking
+                      </button>
+                    )}
                     {canCollectStay && (
                       <button
                         type="button"
