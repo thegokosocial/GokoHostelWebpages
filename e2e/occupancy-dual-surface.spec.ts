@@ -235,11 +235,12 @@ test("Dashboard opens an old unpaid stay outside the upcoming booking range", as
   await mockDualOccupancyApis(page, state);
   await adminLoginToDashboard(page);
 
-  await page.getByRole("button", { name: "Open booking" }).click();
+  await expect(page.getByRole("button", { name: "Mark Paid" })).toBeVisible();
+  await page.getByRole("button", { name: "Open booking for Dual Guest" }).click();
   await expect(page.getByRole("button", { name: "Write Off Balance" })).toBeVisible({ timeout: 15_000 });
 });
 
-test("Dashboard hides Open booking without booking-view permission", async ({ page }) => {
+test("Dashboard does not make unpaid stays booking links without booking-view permission", async ({ page }) => {
   const state: DualState = {
     bookingCheckedIn: true,
     bedOccupied: false,
@@ -254,7 +255,7 @@ test("Dashboard hides Open booking without booking-view permission", async ({ pa
   await mockDualOccupancyApis(page, state);
   await adminLoginToDashboard(page);
 
-  await expect(page.getByRole("button", { name: "Open booking" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open booking for Dual Guest" })).toHaveCount(0);
 });
 
 test("Booking Calendar keeps Dorms and Beds above scrolled dates", async ({ page }) => {

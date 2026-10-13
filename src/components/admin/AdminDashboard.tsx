@@ -393,25 +393,35 @@ export function AdminDashboard({
           <motion.div className="mt-3 max-h-80 space-y-2.5 overflow-y-auto pr-1" variants={staggerContainer} initial="hidden" animate="visible">
             {unpaidStays.map((s) => (
               <motion.div key={s.id} variants={staggerItem} className="rounded-xl border border-gray-100 dark:border-zinc-700/50 bg-white dark:bg-zinc-900 p-3 shadow-sm dark:shadow-none">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-semibold text-brand-green-dark dark:text-zinc-100">{s.guestName}</p>
-                    <p className="mt-0.5 text-xs text-brand-green-dark/50 dark:text-zinc-500">{s.checkinDate} → {s.checkoutDate}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950 px-2 py-1 text-xs font-semibold text-red-700 dark:text-red-400">
-                      ₹{s.due.toLocaleString("en-IN")}
-                    </span>
-                    {canViewBookings && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigate("bookings", { bookingId: s.id })}
-                        className="rounded-lg border border-brand-mist px-3 py-1.5 text-xs font-semibold text-brand-green-dark hover:bg-brand-sand dark:text-zinc-100"
-                      >
-                        Open booking
-                      </button>
-                    )}
-                    {canCollectStay && (
+                <div className="flex items-center gap-2">
+                  {canViewBookings ? (
+                    <button
+                      type="button"
+                      onClick={() => onNavigate("bookings", { bookingId: s.id })}
+                      aria-label={`Open booking for ${s.guestName}`}
+                      className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg text-left transition-colors hover:bg-brand-sand/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2 dark:hover:bg-zinc-800/50"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[15px] font-semibold text-brand-green-dark dark:text-zinc-100">{s.guestName}</p>
+                        <p className="mt-0.5 text-xs text-brand-green-dark/50 dark:text-zinc-500">{s.checkinDate} → {s.checkoutDate}</p>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-red-50 dark:bg-red-950 px-2 py-1 text-xs font-semibold text-red-700 dark:text-red-400">
+                        ₹{s.due.toLocaleString("en-IN")}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-[15px] font-semibold text-brand-green-dark dark:text-zinc-100">{s.guestName}</p>
+                        <p className="mt-0.5 text-xs text-brand-green-dark/50 dark:text-zinc-500">{s.checkinDate} → {s.checkoutDate}</p>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-red-50 dark:bg-red-950 px-2 py-1 text-xs font-semibold text-red-700 dark:text-red-400">
+                        ₹{s.due.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
+                  {canCollectStay && (
+                    <div className="flex shrink-0 items-center">
                       <button
                         type="button"
                         onClick={() => setStayPay({ id: s.id, name: s.guestName, due: s.due })}
@@ -419,8 +429,8 @@ export function AdminDashboard({
                       >
                         Mark Paid
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ))}
