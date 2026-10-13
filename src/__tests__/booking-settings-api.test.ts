@@ -128,4 +128,13 @@ describe("Booking Settings API", () => {
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ code: "ACCOMMODATION_CONTENT_CONFLICT" });
   });
+
+  it("rejects display-only room fields instead of persisting them", async () => {
+    const response = await POST(request({ action: "saveRoomContent", password: "pw", content: {
+      dormId: 1, publicName: "Beach Dorm", description: "Sea breeze", amenities: [], roomPhotos: [], washroomPhotos: [], revision: "room-v1",
+      operationalName: "Dorm 1", mapped: true,
+    } }));
+    expect(response.status).toBe(400);
+    expect(mocks.saveSiteRoomContent).not.toHaveBeenCalled();
+  });
 });

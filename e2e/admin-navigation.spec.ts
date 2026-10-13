@@ -279,7 +279,9 @@ test("Website Rooms & Photos saves an uploaded room photo", async ({ page }) => 
   const saved = page.waitForRequest((request) => request.url().includes("/api/admin/booking-settings")
     && (JSON.parse(request.postData() || "{}") as { action?: string }).action === "saveRoomContent");
   await save.click();
-  await saved;
+  const request = await saved;
+  expect((JSON.parse(request.postData() || "{}") as { content: Record<string, unknown> }).content).not.toHaveProperty("operationalName");
+  expect((JSON.parse(request.postData() || "{}") as { content: Record<string, unknown> }).content).not.toHaveProperty("mapped");
   await expect(page.getByRole("heading", { name: "Edit room" })).toHaveCount(0);
   await expect(page.getByRole("status")).toContainText("Room content published");
 });

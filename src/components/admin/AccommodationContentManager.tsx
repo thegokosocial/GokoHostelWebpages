@@ -91,7 +91,8 @@ export function AccommodationContentManager({ password, username }: { password: 
     if (!editing) return;
     setBusy(true); setMessage(""); setRoomError(""); setRoomConflict(false);
     try {
-      const result = await call("saveRoomContent", { content: editing });
+      const { operationalName: _operationalName, mapped: _mapped, ...content } = editing;
+      const result = await call("saveRoomContent", { content });
       setData((current) => current ? { ...current, rooms: current.rooms.map((room) => room.dormId === editing.dormId ? result.content : room) } : current);
       setEditing(null); setMessage("Room content published.");
     } catch (error) {
