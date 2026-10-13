@@ -7,16 +7,25 @@ const mocks = vi.hoisted(() => ({
   isPiRuntime: vi.fn(),
   getSetting: vi.fn(),
   setSetting: vi.fn(),
+  getAllDorms: vi.fn(),
   compareAndSetWebsiteSettings: vi.fn(),
   evaluateNativeCheckoutReadiness: vi.fn(),
+  loadAccommodationContent: vi.fn(),
+  saveSiteRoomContent: vi.fn(),
+  saveSitePropertyContent: vi.fn(),
+  countMediaUrlRefs: vi.fn(),
+  deleteMediaKeys: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ authenticateUser: mocks.authenticateUser }));
 vi.mock("@/lib/runtime", () => ({ isPiRuntime: mocks.isPiRuntime }));
-vi.mock("@/db/queries", () => ({ getSetting: mocks.getSetting, setSetting: mocks.setSetting }));
+vi.mock("@/db/queries", () => ({ getSetting: mocks.getSetting, setSetting: mocks.setSetting, getAllDorms: mocks.getAllDorms }));
 vi.mock("@/lib/websiteBookingSettingsStore", () => ({ compareAndSetWebsiteSettings: mocks.compareAndSetWebsiteSettings }));
 vi.mock("@/lib/nativeCheckoutReadiness", () => ({ evaluateNativeCheckoutReadiness: mocks.evaluateNativeCheckoutReadiness }));
 vi.mock("@/lib/site", () => ({ site: { url: "https://goko.test" } }));
+vi.mock("@/lib/accommodationContent", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/accommodationContent")>(), loadAccommodationContent: mocks.loadAccommodationContent }));
+vi.mock("@/db/siteQueries", () => ({ countMediaUrlRefs: mocks.countMediaUrlRefs, saveSiteRoomContent: mocks.saveSiteRoomContent, saveSitePropertyContent: mocks.saveSitePropertyContent }));
+vi.mock("@/lib/mediaR2", () => ({ deleteMediaKeys: mocks.deleteMediaKeys }));
 
 import { POST } from "@/app/api/admin/booking-settings/route";
 
@@ -38,8 +47,14 @@ describe("Booking Settings API", () => {
     mocks.isPiRuntime.mockReturnValue(false);
     mocks.getSetting.mockResolvedValue("");
     mocks.setSetting.mockResolvedValue(undefined);
+    mocks.getAllDorms.mockResolvedValue([{ id: 1, deletedAt: null }]);
     mocks.compareAndSetWebsiteSettings.mockResolvedValue(true);
     mocks.evaluateNativeCheckoutReadiness.mockResolvedValue({ gateway: "test", nativeCheckoutReady: false, blockerMessages: [] });
+    const content = { dormId: 1, operationalName: "Dorm 1", publicName: "Beach Dorm", description: "Sea breeze", amenities: ["Locker"], roomPhotos: ["/images/room.jpg"], washroomPhotos: [], revision: "room-v1", mapped: true };
+    mocks.loadAccommodationContent.mockResolvedValue({ rooms: [content], property: { exteriorPhotos: [], commonPhotos: [], washroomPhotos: [], revision: "property-v1" } });
+    mocks.saveSiteRoomContent.mockResolvedValue([content]);
+    mocks.saveSitePropertyContent.mockResolvedValue([{ id: 1 }]);
+    mocks.countMediaUrlRefs.mockResolvedValue(1);
   });
 
   it("rejects malformed JSON and unauthenticated requests", async () => {
@@ -100,5 +115,17 @@ describe("Booking Settings API", () => {
     mocks.getSetting.mockResolvedValue(null);
     const response = await POST(request({ action: "getSettings", password: "pw" }));
     expect((await response.json()).settings.autoMarkReleasedNoShows).toBe(false);
+  });
+
+  it("persists room photos with the supplied revision and reports stale saves", async () => {
+    const content = { dormId: 1, publicName: "Beach Dorm", description: "Sea breeze", amenities: ["Locker"], roomPhotos: ["/api/media/rooms/new.jpg"], washroomPhotos: [], revision: "room-v1" };
+    const saved = await POST(request({ action: "saveRoomContent", password: "pw", content }));
+    expect(saved.status).toBe(200);
+    expect(mocks.saveSiteRoomContent).toHaveBeenCalledWith(expect.objectContaining({ dormId: 1, roomPhotos: JSON.stringify(content.roomPhotos) }), "room-v1");
+
+    mocks.saveSiteRoomContent.mockResolvedValueOnce([]);
+    const stale = await POST(request({ action: "saveRoomContent", password: "pw", content }));
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ code: "ACCOMMODATION_CONTENT_CONFLICT" });
   });
 });

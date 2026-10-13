@@ -28,8 +28,13 @@ async function mockAdminApi(page: Page) {
       return;
     }
 
+    if (url.pathname === "/api/admin/website/upload") {
+      await route.fulfill({ json: { url: "/api/media/rooms/e2e-upload.jpg" } });
+      return;
+    }
+
     const rawBody = route.request().postData();
-    const body = rawBody ? JSON.parse(rawBody) as { action?: string } : {};
+    const body = rawBody ? JSON.parse(rawBody) as { action?: string; content?: unknown } : {};
     const response = body.action === "auth"
       ? { role: "admin", permissions: {} }
       : url.pathname === "/api/admin/booking-settings" && body.action === "getSettings"
@@ -39,6 +44,8 @@ async function mockAdminApi(page: Page) {
           rooms: [{ dormId: 1, operationalName: "Dorm 1", publicName: "Beach Dorm", description: "Sea breeze", amenities: ["Locker"], roomPhotos: ["/images/room.jpg"], washroomPhotos: [], revision: "room-e2e", mapped: true }],
           property: { exteriorPhotos: ["/images/exterior.jpg"], commonPhotos: [], washroomPhotos: [], revision: "property-e2e" },
         }
+      : url.pathname === "/api/admin/booking-settings" && body.action === "saveRoomContent"
+        ? { success: true, content: body.content }
       : url.pathname === "/api/admin/booking-payments" && body.action === "listTestAttempts"
         ? { attempts: [], webhooks: [], previewEnabled: false, nativeCheckoutReady: false }
       : url.pathname === "/api/admin/food-payments" && body.action === "listFoodQrAttempts"
@@ -257,6 +264,50 @@ test("Website Rooms & Photos reuses the accommodation editor", async ({ page }) 
   await expect(page.getByText("Room photos & details")).toBeVisible();
   await expect(page.getByText("Beach Dorm")).toBeVisible();
   await expect(page.getByText("Property photos")).toBeVisible();
+});
+
+test("Website Rooms & Photos saves an uploaded room photo", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Website", exact: true }).click();
+  await page.getByRole("tab", { name: "Rooms & Photos" }).click();
+  await page.getByLabel("Edit Beach Dorm").click();
+
+  await page.locator('input[type="file"][multiple]').first().setInputFiles("public/images/stay/luxury-dorm-8bed/mixed-dorm1.jpg");
+  const save = page.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeEnabled();
+  const saved = page.waitForRequest((request) => request.url().includes("/api/admin/booking-settings")
+    && (JSON.parse(request.postData() || "{}") as { action?: string }).action === "saveRoomContent");
+  await save.click();
+  await saved;
+  await expect(page.getByRole("heading", { name: "Edit room" })).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("Room content published");
+});
+
+test("Website Rooms & Photos keeps a failed room-photo save visible and recoverable", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Website", exact: true }).click();
+  await page.getByRole("tab", { name: "Rooms & Photos" }).click();
+  await page.getByLabel("Edit Beach Dorm").click();
+
+  await page.locator('input[type="file"][multiple]').first().setInputFiles("public/images/stay/luxury-dorm-8bed/mixed-dorm1.jpg");
+  const save = page.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeEnabled();
+
+  await page.route("**/api/admin/booking-settings", async (route) => {
+    const body = JSON.parse(route.request().postData() || "{}") as { action?: string };
+    if (body.action === "saveRoomContent") {
+      await route.fulfill({ status: 409, json: { error: "Room content changed in another session. Reload before saving.", code: "ACCOMMODATION_CONTENT_CONFLICT" } });
+      return;
+    }
+    await route.fallback();
+  });
+  await save.click();
+  await expect(page.getByText("Room content changed in another session. Reload before saving.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reload latest room" })).toBeVisible();
+  await page.getByRole("button", { name: "Reload latest room" }).click();
+  await expect(page.getByRole("heading", { name: "Edit room" })).toHaveCount(0);
 });
 
 test("notification preferences expose and save the actionable check-in alert", async ({ page }) => {
