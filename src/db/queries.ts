@@ -692,6 +692,16 @@ export async function getUpcomingBookings() {
     .orderBy(bookings.checkinDate);
 }
 
+/** Booking.com filtering remains in the workflow because legacy platform labels are normalized there. */
+export async function getReleasedBookingsEligibleForAutoNoShow(today: string) {
+  const db = getDb();
+  return db.select().from(bookings).where(and(
+    eq(bookings.source, "channel_manager"),
+    eq(bookings.status, "guest_declined"),
+    sql`${bookings.checkinDate} < ${today}`,
+  )).orderBy(bookings.checkinDate, bookings.id);
+}
+
 export async function addBooking(data: {
   guestName: string; contact?: string; platform: string; bookingRef?: string;
   checkinDate: string; checkoutDate?: string; roomType?: string; persons?: number;

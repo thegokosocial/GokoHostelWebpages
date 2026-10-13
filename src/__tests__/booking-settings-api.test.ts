@@ -95,4 +95,10 @@ describe("Booking Settings API", () => {
     expect(await response.json()).toMatchObject({ code: "BOOKING_SETTINGS_CONFLICT" });
     expect(mocks.compareAndSetWebsiteSettings).not.toHaveBeenCalled();
   });
+
+  it("defaults automatic no-show marking to disabled", async () => {
+    mocks.getSetting.mockResolvedValue(null);
+    const response = await POST(request({ action: "getSettings", password: "pw" }));
+    expect((await response.json()).settings.autoMarkReleasedNoShows).toBe(false);
+  });
 });

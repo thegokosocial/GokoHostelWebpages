@@ -12,6 +12,7 @@ test.describe("Find my booking", () => {
       } } });
     });
     await page.goto("/book", { waitUntil: "domcontentloaded" });
+    await expect(page.locator('[data-booking-in-view="true"]')).toBeVisible();
     await page.getByRole("tab", { name: "Find my booking" }).click();
     await page.getByLabel("Confirmation number").fill("EXT-42");
     await page.getByLabel("Last name").fill("Lovelace");

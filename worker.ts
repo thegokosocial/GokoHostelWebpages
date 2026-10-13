@@ -8,21 +8,24 @@ type WorkerContext = { waitUntil(promise: Promise<unknown>): void };
 export default {
   fetch: openNextWorker.fetch,
   async scheduled(controller: { cron: string }, env: WorkerEnv, ctx: WorkerContext) {
-    const path = controller.cron === "*/5 * * * *" ? "aiosell-inventory"
-      : controller.cron === "30 3 * * *" ? "aiosell-mappings"
-      : controller.cron === "30 4,6,8,10,12,14,16 * * *" ? "reconciliation-reminder"
-      : controller.cron === "35 18 * * *" ? "recurring-expenses" : null;
-    if (!path) return;
+    const paths = controller.cron === "*/5 * * * *" ? ["aiosell-inventory"]
+      : controller.cron === "30 3 * * *" ? ["aiosell-mappings"]
+      : controller.cron === "30 4 * * *" ? ["reconciliation-reminder", "auto-no-show"]
+      : controller.cron === "30 6,8,10,12,14,16 * * *" ? ["reconciliation-reminder"]
+      : controller.cron === "35 18 * * *" ? ["recurring-expenses"] : [];
+    if (!paths.length) return;
     if (!env.CRON_SECRET) {
       throw new Error("Scheduled job failed: CRON_SECRET is not configured");
     }
-    const request = new Request(`https://goko.internal/api/cron/${path}`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${env.CRON_SECRET}` },
-    });
-    const response = await openNextWorker.fetch(request, env, ctx);
-    if (!response.ok) {
-      throw new Error(`Scheduled job ${path} failed: HTTP ${response.status}`);
+    for (const path of paths) {
+      const request = new Request(`https://goko.internal/api/cron/${path}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${env.CRON_SECRET}` },
+      });
+      const response = await openNextWorker.fetch(request, env, ctx);
+      if (!response.ok) {
+        throw new Error(`Scheduled job ${path} failed: HTTP ${response.status}`);
+      }
     }
   },
 };

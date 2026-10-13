@@ -229,6 +229,20 @@ test("mobile Booking Settings uses Management-style section buttons", async ({ p
   await expect(page.getByRole("heading", { name: "Calendar & holidays" })).toBeVisible();
 });
 
+test("Booking Settings saves automatic released no-show opt-in", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInToManagement(page);
+  await page.getByRole("button", { name: "Booking Settings", exact: true }).click();
+  const toggle = page.getByLabel("Automatically mark released Booking.com stays as no-show");
+  await expect(toggle).not.toBeChecked();
+  const saved = page.waitForRequest((request) => request.url().includes("/api/admin/booking-settings")
+    && JSON.parse(request.postData() || "{}").action === "saveSettings"
+    && JSON.parse(request.postData() || "{}").settings.autoMarkReleasedNoShows === true);
+  await toggle.check();
+  await page.getByRole("button", { name: "Save booking settings" }).click();
+  await saved;
+});
+
 test("Website Rooms & Photos reuses the accommodation editor", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signInToManagement(page);
