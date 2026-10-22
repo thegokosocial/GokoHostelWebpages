@@ -1582,6 +1582,9 @@ export async function POST(req: NextRequest) {
 
       const detail = await getBookingDetail(bookingId);
       if (!detail) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (detail.booking.status !== "checked_out") {
+        return NextResponse.json({ error: "Only a checked-out booking can be restored" }, { status: 409 });
+      }
       const restoreCheckout = stayCheckout(detail.booking.checkinDate, detail.booking.checkoutDate);
       const assigned = detail.assignments.filter((a) => a.status === "assigned");
       const dates = restoreCheckout ? bookingDateRange(detail.booking.checkinDate, restoreCheckout) : [];

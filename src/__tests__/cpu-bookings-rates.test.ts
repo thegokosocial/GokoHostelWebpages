@@ -562,7 +562,7 @@ describe("Bookings calendar and rates workflows", () => {
 
   it("rollbackCheckOut restores assignment checkout from the booking dates", async () => {
     q.getBookingDetail.mockResolvedValue({
-      booking: { checkinDate: "2026-08-01", checkoutDate: "2026-09-10" },
+      booking: { status: "checked_out", checkinDate: "2026-08-01", checkoutDate: "2026-09-10" },
       assignments: [{ status: "assigned", dormId: 3, bedId: 7, checkoutDate: "2026-08-20" }],
     });
     q.checkBedAvailability.mockResolvedValue(true);
@@ -575,13 +575,25 @@ describe("Bookings calendar and rates workflows", () => {
 
   it("rollbackCheckOut 409s when nights between shortened checkout and planned checkout were taken", async () => {
     q.getBookingDetail.mockResolvedValue({
-      booking: { checkinDate: "2026-08-01", checkoutDate: "2026-09-10" },
+      booking: { status: "checked_out", checkinDate: "2026-08-01", checkoutDate: "2026-09-10" },
       assignments: [{ status: "assigned", dormId: 3, bedId: 7, checkoutDate: "2026-08-20" }],
     });
     q.checkBedAvailability.mockResolvedValue(false);
     const res = await POST(req({ password: "x", action: "rollbackCheckOut", bookingId: 5 }));
     expect(res.status).toBe(409);
     expect(q.checkBedAvailability).toHaveBeenCalledWith(7, "2026-08-20", "2026-09-10", 5);
+    expect(q.shortenAssignedCheckout).not.toHaveBeenCalled();
+    expect(q.updateBookingFull).not.toHaveBeenCalled();
+  });
+
+  it("rollbackCheckOut rejects a booking that is not checked out", async () => {
+    q.getBookingDetail.mockResolvedValue({
+      booking: { status: "checked_in", checkinDate: "2026-08-01", checkoutDate: "2026-09-10" },
+      assignments: [{ status: "assigned", dormId: 3, bedId: 7, checkoutDate: "2026-08-20" }],
+    });
+    const res = await POST(req({ password: "x", action: "rollbackCheckOut", bookingId: 5 }));
+    expect(res.status).toBe(409);
+    expect(q.checkBedAvailability).not.toHaveBeenCalled();
     expect(q.shortenAssignedCheckout).not.toHaveBeenCalled();
     expect(q.updateBookingFull).not.toHaveBeenCalled();
   });

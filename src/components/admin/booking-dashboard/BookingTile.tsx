@@ -8,22 +8,29 @@ import type { DashboardBooking } from "./types";
 
 export function BookingTile({
   booking,
+  occupancyCheckinDate,
+  occupancyCheckoutDate,
   isMultiBed,
   isSelected,
   onClick,
 }: {
   booking: DashboardBooking;
+  occupancyCheckinDate: string;
+  occupancyCheckoutDate: string;
   isMultiBed: boolean;
   isSelected: boolean;
   onClick: () => void;
 }) {
   const statusColor = STATUS_COLORS[booking.status] ?? STATUS_COLORS.received;
+  const occupancyDiffers = occupancyCheckinDate !== booking.checkinDate || occupancyCheckoutDate !== booking.checkoutDate;
+  const label = `${booking.guestName} - ${booking.platform} (bed occupancy: ${occupancyCheckinDate} to ${occupancyCheckoutDate})${occupancyDiffers ? `; scheduled stay: ${booking.checkinDate} to ${booking.checkoutDate}` : ""}`;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      title={`${booking.guestName} - ${booking.platform} (${booking.checkinDate} to ${booking.checkoutDate})`}
+      title={label}
+      aria-label={label}
       className={cn(
         "group flex h-full w-full items-center gap-1 overflow-hidden rounded-md px-1.5 text-left text-[11px] leading-tight transition-all",
         statusColor.bg,

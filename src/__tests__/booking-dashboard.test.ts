@@ -774,7 +774,7 @@ describe("Booking calendar: off-screen stays after Unassigned assign", () => {
     const shown = rangeCoveringStay(assignment.checkinDate, assignment.checkoutDate, sepView);
     const shownDates = getDatesArray(shown.startDate, shown.endDate);
     expect(computeTilePlacements(bedId, [assignment], shownDates, bookingIds, none)).toEqual([
-      { bookingId, startCol: 0, spanCols: 1, isMultiBed: false },
+      { bookingId, startCol: 0, spanCols: 1, isMultiBed: false, checkinDate: "2026-08-25", checkoutDate: "2026-08-26" },
     ]);
   });
 
@@ -789,7 +789,18 @@ describe("Booking calendar: off-screen stays after Unassigned assign", () => {
       new Set([99]),
       new Set(),
     );
-    expect(tiles).toEqual([{ bookingId: 99, startCol: dates.indexOf("2026-09-05"), spanCols: 1, isMultiBed: false }]);
+    expect(tiles).toEqual([{ bookingId: 99, startCol: dates.indexOf("2026-09-05"), spanCols: 1, isMultiBed: false, checkinDate: "2026-09-05", checkoutDate: "2026-09-06" }]);
+  });
+
+  it("retains actual assignment dates for a shortened checked-out calendar tile", () => {
+    const dates = getDatesArray("2026-09-20", "2026-09-23");
+    expect(computeTilePlacements(
+      7,
+      [{ bedId: 7, bookingId: 99, checkinDate: "2026-09-20", checkoutDate: "2026-09-21", status: "assigned" }],
+      dates,
+      new Set([99]),
+      new Set(),
+    )).toEqual([{ bookingId: 99, startCol: 0, spanCols: 1, isMultiBed: false, checkinDate: "2026-09-20", checkoutDate: "2026-09-21" }]);
   });
 
   it("skips a tile when the booking row is missing from the calendar payload", () => {

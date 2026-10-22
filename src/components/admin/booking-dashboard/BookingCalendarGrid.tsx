@@ -12,6 +12,8 @@ type TilePlacement = {
   startCol: number;
   spanCols: number;
   isMultiBed: boolean;
+  checkinDate: string;
+  checkoutDate: string;
 };
 
 export function BookingCalendarGrid({
@@ -245,7 +247,7 @@ export function BookingCalendarGrid({
                   ).flatMap((p) => {
                     const booking = bookingMap.get(p.bookingId);
                     if (!booking) return [];
-                    return [{ booking, startCol: p.startCol, spanCols: p.spanCols, isMultiBed: p.isMultiBed }];
+                    return [{ booking, startCol: p.startCol, spanCols: p.spanCols, isMultiBed: p.isMultiBed, checkinDate: p.checkinDate, checkoutDate: p.checkoutDate }];
                   });
                   const bedRowBg = bedIdx % 2 === 0
                       ? "bg-white dark:bg-card"
@@ -278,6 +280,8 @@ export function BookingCalendarGrid({
                         >
                           <BookingTile
                             booking={p.booking}
+                            occupancyCheckinDate={p.checkinDate}
+                            occupancyCheckoutDate={p.checkoutDate}
                             isMultiBed={p.isMultiBed}
                             isSelected={selectedBookingId === p.booking.id}
                             onClick={() => onSelectBooking(p.booking.id)}

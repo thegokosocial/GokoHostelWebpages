@@ -284,7 +284,12 @@ export function BookingDetailPanel({
     ...fallbackContacts,
   ];
   const canManageContacts = hasPermission(role, permissions, "canManageBookingContacts");
-  const hasAssignedBed = assignments.some((a) => a.status === "assigned");
+  const assignedBeds = assignments.filter((a) => a.status === "assigned");
+  const hasAssignedBed = assignedBeds.length > 0;
+  const assignmentWindows = [...new Set(assignedBeds.map((a) => `${a.checkinDate} to ${a.checkoutDate}`))];
+  const actualBedStay = assignmentWindows.length === 1 ? assignmentWindows[0] : "Varies by assigned bed — see below";
+  const bedStayDiffersFromSchedule = booking.status === "checked_out"
+    && assignedBeds.some((a) => a.checkinDate !== booking.checkinDate || a.checkoutDate !== booking.checkoutDate);
   const canCancelStay = hasAssignedBed
     ? hasPermission(role, permissions, "canDeleteBooking")
     : (role === "admin" || role === "manager");
@@ -323,6 +328,7 @@ export function BookingDetailPanel({
   const canReleaseForNoShow = booking.source === "channel_manager"
     && (booking.platform || "").toLowerCase().replace(/[._\s-]/g, "") === "bookingcom"
     && hasPermission(role, permissions, "canDeleteBooking");
+  const canUndoCheckout = role === "admin" && booking.status === "checked_out";
 
   return (
     <>
@@ -372,8 +378,9 @@ export function BookingDetailPanel({
                   || (booking.source === "manual" ? `#${booking.id}` : "")
                 }
               />
-              <InfoRow label="Check-in" value={booking.checkinDate} />
-              <InfoRow label="Check-out" value={booking.checkoutDate} />
+              <InfoRow label="Scheduled check-in" value={booking.checkinDate} />
+              <InfoRow label="Scheduled check-out" value={booking.checkoutDate} />
+              {bedStayDiffersFromSchedule && <InfoRow label="Actual bed stay" value={actualBedStay} />}
               <InfoRow label="Nights" value={String(nights)} />
               <InfoRow label="Persons" value={String(booking.persons)} />
               <InfoRow label="Room Type" value={booking.roomType} />
@@ -398,7 +405,7 @@ export function BookingDetailPanel({
                           : "border-border bg-muted/30",
                       )}
                     >
-                      <span className="font-medium">{a.dormName} - {a.bedLabel}</span>
+                      <span className="min-w-0"><span className="font-medium">{a.dormName} - {a.bedLabel}</span>{bedStayDiffersFromSchedule && <span className="block text-[10px] text-muted-foreground">Bed stay: {a.checkinDate} to {a.checkoutDate}</span>}</span>
                       <span className="text-muted-foreground">{a.status}</span>
                     </div>
                   ))}
@@ -693,6 +700,23 @@ export function BookingDetailPanel({
               >
                 <LogOutIcon className="size-3.5" />
                 Check Out
+              </Button>
+            )}
+            {canUndoCheckout && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmAction({
+                  action: "rollbackCheckOut",
+                  title: "Undo check-out",
+                  description: `Return ${booking.guestName} to checked in and restore the planned bed stay? This is only possible while those bed nights are still free.`,
+                  variant: "default",
+                  confirmLabel: "Undo check-out",
+                })}
+                disabled={busy}
+              >
+                <RotateCcwIcon className="size-3.5" />
+                Undo check-out
               </Button>
             )}
             {canCollectStay && (

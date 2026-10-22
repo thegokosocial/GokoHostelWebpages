@@ -211,6 +211,8 @@ export type CalendarTile = {
   startCol: number;
   spanCols: number;
   isMultiBed: boolean;
+  checkinDate: string;
+  checkoutDate: string;
 };
 
 /** Place an assigned stay on the inclusive date columns. Exclusive checkout. */
@@ -246,6 +248,8 @@ export function computeTilePlacements(
       startCol: startIdx,
       spanCols: endIdx - startIdx,
       isMultiBed: multiBedBookings.has(assign.bookingId),
+      checkinDate: assign.checkinDate,
+      checkoutDate: assign.checkoutDate,
     });
   }
 

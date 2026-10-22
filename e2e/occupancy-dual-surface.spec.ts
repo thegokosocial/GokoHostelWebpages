@@ -8,6 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 type DualState = {
   bookingCheckedIn: boolean;
+  bookingCheckedOut?: boolean;
   bedOccupied: boolean;
   paymentStatus: "pay_at_hotel" | "prepaid" | "paid";
   amountTotal: number;
@@ -17,6 +18,7 @@ type DualState = {
   role?: "admin" | "staff";
   permissions?: Record<string, boolean>;
   editPreview?: boolean;
+  rollbackConflict?: boolean;
   pendingWebsiteReservations?: unknown[];
   unpaidStays?: Array<{ id: number; guestName: string; contact: string; checkinDate: string; checkoutDate: string; due: number; amountTotal: number }>;
 };
@@ -37,7 +39,7 @@ function sampleBooking(state: DualState) {
     roomType: "",
     ratePlan: "",
     persons: 1,
-    status: state.bookingCheckedIn ? "checked_in" : "received",
+    status: state.bookingCheckedOut ? "checked_out" : state.bookingCheckedIn ? "checked_in" : "received",
     source: "manual",
     property: "goko_hostel",
     specialRequests: "",
@@ -107,11 +109,24 @@ async function mockDualOccupancyApis(page: Page, state: DualState) {
         await route.fulfill({ json: { success: true } });
         return;
       }
+      if (action === "rollbackCheckOut") {
+        if (state.rollbackConflict) {
+          await route.fulfill({ status: 409, json: { error: "Beds no longer available for remaining nights" } });
+          return;
+        }
+        state.bookingCheckedOut = false;
+        state.bookingCheckedIn = true;
+        await route.fulfill({ json: { success: true } });
+        return;
+      }
       if (action === "getDetail") {
         await route.fulfill({
           json: {
             booking: sampleBooking(state),
-            assignments: [],
+            assignments: state.bookingCheckedOut ? [{
+              id: 10, bookingId: 5, bedId: 7, dormId: 1, dormName: "Dorm A", bedLabel: "B1",
+              checkinDate: "2026-09-20", checkoutDate: "2026-09-21", status: "assigned", assignedBy: "e2e", assignedAt: "2026-09-20T00:00:00Z",
+            }] : [],
             contactMethods: [],
           },
         });
@@ -326,6 +341,51 @@ test("Bookings checkIn leaves bed available until physical assignBed", async ({ 
   await page.getByRole("button", { name: /Dorm A/ }).click();
   await expect(page.locator("p.font-semibold", { hasText: "Dual Guest" })).toBeVisible();
   await expect(page.locator("span").filter({ hasText: /^Available$/ })).toHaveCount(0);
+});
+
+test("admin can undo a mistaken checkout and sees actual bed occupancy dates", async ({ page }) => {
+  const state: DualState = {
+    bookingCheckedIn: false,
+    bookingCheckedOut: true,
+    bedOccupied: false,
+    paymentStatus: "pay_at_hotel",
+    amountTotal: 0,
+    amountPaid: 0,
+    loggedIn: false,
+  };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToBookings(page);
+
+  await page.getByPlaceholder(/search/i).first().fill("Dual Guest");
+  await page.getByText("Dual Guest").first().click();
+  await expect(page.getByText("Scheduled check-out")).toBeVisible();
+  await expect(page.getByText("Actual bed stay")).toBeVisible();
+  await page.getByRole("button", { name: "Undo check-out" }).click();
+  await expect(page.getByRole("heading", { name: "Undo check-out" })).toBeVisible();
+  await page.getByRole("button", { name: "Undo check-out" }).last().click();
+  await expect.poll(() => state.bookingCheckedIn).toBe(true);
+  await expect(page.getByRole("button", { name: "Check Out" })).toBeVisible();
+});
+
+test("undo check-out remains usable on a phone-sized booking detail", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state: DualState = {
+    bookingCheckedIn: false,
+    bookingCheckedOut: true,
+    bedOccupied: false,
+    paymentStatus: "pay_at_hotel",
+    amountTotal: 0,
+    amountPaid: 0,
+    loggedIn: false,
+  };
+  await mockDualOccupancyApis(page, state);
+  await adminLoginToBookings(page);
+
+  await page.getByPlaceholder(/search/i).first().fill("Dual Guest");
+  await page.getByText("Dual Guest").first().click();
+  await page.getByRole("button", { name: "Undo check-out" }).click();
+  await page.getByRole("button", { name: "Undo check-out" }).last().click();
+  await expect.poll(() => state.bookingCheckedIn).toBe(true);
 });
 
 test("Check-in popup shows Collect payment then Payment done for prepaid", async ({ page }) => {
