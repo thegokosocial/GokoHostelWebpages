@@ -463,7 +463,7 @@ describe("PMS inbound webhook workflows", () => {
       paymentStatus: "pay_at_hotel",
     }));
     expect(queryMocks.assignBedToBooking).not.toHaveBeenCalled();
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05"], [8]);
   });
 
   it("auto-assigns 1 online executive bed for a 1-person book and does not push", async () => {
@@ -599,7 +599,7 @@ describe("PMS inbound webhook workflows", () => {
     expect(triggerInventoryPush).not.toHaveBeenCalled();
   });
 
-  it("stays Unassigned when only offline beds remain in the requested room type", async () => {
+  it("stays Unassigned and immediately re-fences every affected room-night when only offline beds remain", async () => {
     queryMocks.getAvailableBedsForRange.mockResolvedValue([
       { id: 70, bedId: "EXE-OFF", dormId: 8, dormName: "Executive", pool: "offline" },
     ]);
@@ -624,7 +624,64 @@ describe("PMS inbound webhook workflows", () => {
     expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
       action: "Unassigned",
     }));
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      action: "OTA Inventory Reconciliation Warning",
+      details: expect.stringContaining("re-fenced"),
+    }));
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05"], [8]);
+  });
+
+  it("keeps the OTA hold and records a queued reconciliation when the capacity fence is not confirmed", async () => {
+    queryMocks.getAvailableBedsForRange.mockResolvedValue([
+      { id: 70, bedId: "EXE-OFF", dormId: 8, dormName: "Executive", pool: "offline" },
+    ]);
+    vi.mocked(triggerInventoryPush).mockResolvedValue({ attempted: true, accepted: false, message: "Aiosell unavailable" });
+    const res = await reservationsPOST(req({
+      action: "book",
+      hotelCode: "GOKO-001",
+      channel: "booking.com",
+      bookingId: "BK-OVERFLOW-RETRY",
+      checkin: "2026-09-05",
+      checkout: "2026-09-07",
+      guest: { firstName: "Ada", lastName: "Lovelace" },
+      rooms: [{ roomCode: "executive", occupancy: { adults: 1, children: 0 } }],
+    }, { authorization: "whsec-test" }));
+
+    expect(res.status).toBe(200);
+    expect(queryMocks.assignBedToBooking).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06"], [8]);
+    expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      action: "OTA Inventory Reconciliation Warning",
+      details: expect.stringContaining("queued a retry"),
+    }));
+  });
+
+  it("re-fences a mapped stay after conditional bed claims lose every concurrent race", async () => {
+    queryMocks.getAvailableBedsForRange
+      .mockResolvedValueOnce([{ id: 71, bedId: "EXE-1", dormId: 8, dormName: "Executive", pool: "online" }])
+      .mockResolvedValueOnce([{ id: 72, bedId: "EXE-2", dormId: 8, dormName: "Executive", pool: "online" }])
+      .mockResolvedValueOnce([{ id: 73, bedId: "EXE-3", dormId: 8, dormName: "Executive", pool: "online" }]);
+    queryMocks.assignBedToBooking.mockResolvedValue(false);
+
+    const res = await reservationsPOST(req({
+      action: "book",
+      hotelCode: "GOKO-001",
+      channel: "booking.com",
+      bookingId: "BK-OVERFLOW-RACE",
+      checkin: "2026-09-05",
+      checkout: "2026-09-07",
+      guest: { firstName: "Ada", lastName: "Lovelace" },
+      rooms: [{ roomCode: "executive", occupancy: { adults: 1, children: 0 } }],
+    }, { authorization: "whsec-test" }));
+
+    expect(res.status).toBe(200);
+    expect(queryMocks.assignBedToBooking).toHaveBeenCalledTimes(3);
+    expect(queryMocks.unassignBookingBeds).toHaveBeenCalledTimes(3);
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06"], [8]);
+    expect(addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      action: "OTA Inventory Reconciliation Warning",
+      details: expect.stringContaining("re-fenced"),
+    }));
   });
 
   it("auto-assigns 2 beds when occupancy includes a child", async () => {
@@ -769,7 +826,7 @@ describe("PMS inbound webhook workflows", () => {
       action: "Unassigned",
       details: expect.stringMatching(/Dorm 1 \(dorm-6\)/),
     }));
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06"], [8, 9]);
   });
 
   it("JSON occupancy adults 0 children 0 auto-assigns 1 bed", async () => {
@@ -876,6 +933,7 @@ describe("PMS inbound webhook workflows", () => {
       action: "Unassigned",
       details: expect.stringMatching(/Suite \(suite\)/),
     }));
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-08-31"], [11]);
   });
 
   it("modify of an unassigned stay auto-assigns when online beds now exist", async () => {
@@ -1047,7 +1105,7 @@ describe("PMS inbound webhook workflows", () => {
       source: "channel_manager",
     }));
     expect(queryMocks.assignBedToBooking).not.toHaveBeenCalled();
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06", "2026-09-07"], [8, 9]);
   });
 
   it("duplicate book is still a single success log (idempotent)", async () => {

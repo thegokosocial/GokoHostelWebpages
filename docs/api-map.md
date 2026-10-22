@@ -47,7 +47,7 @@ API failures retain the existing `{ error: string }` field and progressively add
 | `/api/booking-enquiry` | POST JSON | none | Booking enquiry form → Cloudflare Email Sending (`booking@` auto-reply + `admin@` staff notification); honeypot `_hp`; 503 if `EMAIL` binding unavailable |
 | `/api/review` | POST | token in JSON | `getReviewRequest`, `submitRating`, `submitFeedback` |
 | `/api/form-c/[id]` | GET | token = `ADMIN_PASSWORD` | FRRO payload + photo |
-| `/api/aiosell/reservations` | POST | `Authorization` or `x-api-key` = D1 `channel_config.webhookSecret` (raw or `Bearer …`) | Inbound `book` / `modify` / `cancel` |
+| `/api/aiosell/reservations` | POST | `Authorization` or `x-api-key` = D1 `channel_config.webhookSecret` (raw or `Bearer …`) | Inbound `book` / `modify` / `cancel`; a mapped `book`/`modify` that cannot claim its online unit remains Unassigned and immediately pushes recalculated availability for its mapped room-nights (failed/unconfirmed push remains in the dirty retry queue) |
 | `/api/failover-config` | GET | **none** (service worker) | `{ failoverEnabled, piLocalUrl, runtime }` from settings; 30s cache. **Not** a toggle — toggle is `/api/sync` `toggleFailover`. |
 
 ---

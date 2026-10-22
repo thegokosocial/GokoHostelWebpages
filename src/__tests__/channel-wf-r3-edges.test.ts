@@ -422,14 +422,14 @@ describe("Round 3 edges: closed-stay modify / duplicate book / cancelled rebook"
     expect(q.addBookingHistoryEntry).toHaveBeenCalledWith(expect.objectContaining({ action: "Modified from Channel" }));
   });
 
-  it("duplicate live received book does not overwrite", async () => {
+  it("duplicate incomplete live received book does not overwrite and retries its capacity fence", async () => {
     q.getBookingByRef.mockResolvedValue(existingRow({ status: "received" }));
     const res = await reservationsPOST(webhookReq(bookPayload()));
     expect(res.status).toBe(200);
     expect((await res.json()).message).toMatch(/duplicate/i);
     expect(q.addBooking).not.toHaveBeenCalled();
     expect(q.updateBookingFull).not.toHaveBeenCalled();
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06", "2026-09-07"], [8]);
   });
 
   it("duplicate checked_out book is not a cancelled-style rebook", async () => {

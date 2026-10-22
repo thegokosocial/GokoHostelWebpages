@@ -310,10 +310,10 @@ describe("Webhook reservation combinations", () => {
       nightlyRate: 900,
       source: "channel_manager",
     }));
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06", "2026-09-07"], [9]);
   });
 
-  it("Hostelworld 1-night book is unassigned and does not push", async () => {
+  it("Hostelworld 1-night capacity breach is unassigned and re-fenced", async () => {
     const res = await reservationsPOST(jsonReq("http://localhost/api/aiosell/reservations", bookPayload({
       channel: "hostelworld",
       bookingId: "HW-1",
@@ -336,7 +336,7 @@ describe("Webhook reservation combinations", () => {
       checkoutDate: "2026-09-06",
     }));
     expect(q.assignBedToBooking).not.toHaveBeenCalled();
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05"], [9]);
   });
 
   it("auto-assigns 1 online bed per person for any mapped room type and does not push", async () => {
@@ -400,7 +400,7 @@ describe("Webhook reservation combinations", () => {
       status: "received",
       cancelledAt: "",
     }));
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06", "2026-09-07"], [8]);
   });
 
   it("modify of a cancelled stay updates guest but does not move dates or beds", async () => {
@@ -484,7 +484,7 @@ describe("Webhook reservation combinations", () => {
     expect(q.addBooking).not.toHaveBeenCalled();
   });
 
-  it("duplicate live book is idempotent", async () => {
+  it("duplicate incomplete live book retries its capacity fence", async () => {
     q.getBookingByRef.mockResolvedValue({ id: 12, status: "received", bookingRef: "BK-OPS-1" });
     const res = await reservationsPOST(jsonReq(
       "http://localhost/api/aiosell/reservations",
@@ -495,7 +495,7 @@ describe("Webhook reservation combinations", () => {
     expect((await res.json()).message).toMatch(/duplicate/i);
     expect(q.addBooking).not.toHaveBeenCalled();
     expect(q.updateBookingFull).not.toHaveBeenCalled();
-    expect(triggerInventoryPush).not.toHaveBeenCalled();
+    expect(triggerInventoryPush).toHaveBeenCalledWith(["2026-09-05", "2026-09-06", "2026-09-07"], [8]);
   });
 
   it("stores cmBookingId on book", async () => {

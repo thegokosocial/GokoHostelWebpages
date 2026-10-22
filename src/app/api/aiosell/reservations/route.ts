@@ -4,7 +4,7 @@ import { syncBookingContactSnapshot } from "@/db/queries";
 import { triggerInventoryPush } from "@/lib/aiosellSync";
 import { parseReservationPayload, type ReservationPayload } from "@/lib/aiosell";
 import { occupiedNights, exclusiveEndDate } from "@/lib/inventoryAvailability";
-import { autoAssignOnlineChannelBeds, channelAssignmentNeedsReseat, channelBedNeeds, channelPersonCount } from "@/lib/channelAutoAssign";
+import { autoAssignOnlineChannelBeds, channelAssignmentNeedsReseat, channelBedNeeds, channelPersonCount, requestedNeedsByDorm } from "@/lib/channelAutoAssign";
 import { logPmsCall } from "@/lib/pmsLog";
 import { dispatchPush, notificationFirstName, notificationDate, notificationStayDates } from "@/lib/pushNotify";
 import { bookingAmountsFromRaw, recordPlatformAdjustment, subtractPlatformAmounts } from "@/lib/platformReceivables";
@@ -318,13 +318,20 @@ async function tryAutoAssignChannelBeds(
     details: `${result.reason || "No online beds in requested room type"}. Assign offline beds or reject.`,
     performedBy: "channel_manager",
   });
-  if (result.reason?.startsWith("no online beds left in ")) {
+  const assignmentReason = result.reason || "";
+  const capacityBreach = assignmentReason.startsWith("no online beds left in ")
+    || assignmentReason === "bed conflict while auto-assigning";
+  if (capacityBreach) {
     const stay = notificationStayDates(checkin, checkout);
-    const room = result.reason.replace("no online beds left in ", "");
+    const room = assignmentReason.startsWith("no online beds left in ")
+      ? assignmentReason.replace("no online beds left in ", "")
+      : "the requested mapped room-night";
+    const affectedDormIds = requestedNeedsByDorm(needs, mappings).map((need) => need.dormId);
+    const fence = await triggerInventoryPush(occupiedNights(checkin, co), affectedDormIds);
     await addBookingHistoryEntry({
       bookingId,
       action: "OTA Inventory Reconciliation Warning",
-      details: `Inbound OTA booking accepted, but local online inventory had no sellable bed for ${stay}. Verify the channel mapping, online pool, and Aiosell availability before assigning an offline bed.`,
+      details: `Inbound OTA booking accepted, but local online inventory had no sellable bed for ${stay}. Goko re-fenced the mapped room-night inventory${fence?.accepted ? "" : " and queued a retry"}; verify the channel mapping, online pool, and Aiosell availability before assigning an offline bed.`,
       performedBy: "channel_manager",
     });
     await dispatchPush({
