@@ -15,7 +15,7 @@ async function mockRecords(page: Page, { verified = "pending", bookingResolution
     if (url.pathname === "/api/auth/logout") return route.fulfill({ json: { success: true } });
     if (url.pathname !== "/api/admin/checkins") return route.fulfill({ json: {} });
     const body = JSON.parse(route.request().postData() || "{}") as { action?: string; key?: string };
-    if (body.action === "getDashboard") return route.fulfill({ json: { todayCheckins: [DASHBOARD_CHECKIN] } });
+    if (body.action === "getDashboard") return route.fulfill({ json: { todayCheckins: [DASHBOARD_CHECKIN], todayCompletedGuestCount: 2, todayExpectedGuestCount: 5 } });
     if (body.action === "list") return route.fulfill({ json: { rows: [[...RECORD.slice(0, 16), verified, ...RECORD.slice(17)]], tabs: ["OCTOBER-2026"], currentTab: "OCTOBER-2026", bookingResolutions: { "42": { state: currentBookingResolution } } } });
     if (body.action === "getSetting") return route.fulfill({ json: { value: body.key === "show_dob_in_records" ? "false" : "" } });
     if (body.action === "auth") return route.fulfill({ json: { role: "admin", permissions: {} } });
@@ -36,6 +36,9 @@ async function signIn(page: Page, width = 1280, section = "records") {
 test("dashboard check-in opens the matching Records details dialog", async ({ page }) => {
   await mockRecords(page);
   await signIn(page, 1280, "dashboard");
+  await expect(page.getByText("Checked in / expected guests", { exact: true })).toBeVisible();
+  await expect(page.getByText("2").first()).toBeVisible();
+  await expect(page.getByText("/ 5", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "View details for Asha Guest" }).click();
   await expect(page).toHaveURL(/section=records/);
   await expect(page.getByRole("heading", { name: "Asha Guest" })).toBeVisible();

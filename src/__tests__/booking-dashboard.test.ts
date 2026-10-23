@@ -307,6 +307,14 @@ describe("Dashboard booking activity", () => {
     expect(dashboardRoute).not.toMatch(/inArray\(bookingHistory\.action,[\s\S]{0,120}"Beds Unassigned"/);
   });
 
+  it("reports today’s check-in progress as guests, not booking rows", () => {
+    expect(dashboardRoute).toContain("todayCompletedGuestCount");
+    expect(dashboardRoute).toContain("todayExpectedGuestCount");
+    expect(dashboardRoute).toContain("guestCount(checkin.persons)");
+    expect(dashboardRoute).toContain("guestCount(booking.persons)");
+    expect(dashboard).toContain("Checked in / expected guests");
+  });
+
   it("exposes separate room and food checkout status and marks fully clear linked guests", () => {
     expect(dashboardRoute).toContain("roomStatus: linkedBooking ? (roomDue != null && roomDue > 0 ? \"pending\" : \"clear\") : \"not_linked\"");
     expect(dashboardRoute).toContain("roomDue");

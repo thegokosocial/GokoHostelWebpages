@@ -44,6 +44,7 @@ import { isUniqueConstraintError, parseCreateIdempotencyKey } from "@/lib/create
 import { syncInsert } from "@/db/syncMeta";
 import { collectInBatches, uniqueInBatches } from "@/lib/dbBatch";
 import { checkinReviewReasons } from "@/lib/checkinReview";
+import { guestCount } from "@/lib/guestCount";
 
 async function triggerGithubScrape(scrapeId: number, city: string, startDate: string, endDate: string, propertyType: string, proxyUrl: string = "") {
   const token = process.env.GITHUB_TOKEN;
@@ -763,7 +764,9 @@ export async function POST(req: NextRequest) {
       const allCheckins = await getCheckinsByMonth(monthKey);
       const today = todayIST();
       const todayCheckins = allCheckins.filter((r) => r.arrivalDate === today && r.status === "active");
-      const todayCompletedCheckinCount = allCheckins.filter((r) => r.arrivalDate === today && (r.status === "active" || r.status === "checked_out")).length;
+      const todayCompletedGuestCount = allCheckins
+        .filter((r) => r.arrivalDate === today && (r.status === "active" || r.status === "checked_out"))
+        .reduce((total, checkin) => total + guestCount(checkin.persons), 0);
 
       const allBeds = await getAllBeds();
       const allBookings = await getAllBookings();
@@ -949,7 +952,7 @@ export async function POST(req: NextRequest) {
           sql`${bookingHistory.performedAt} >= ${todayStart}`,
           sql`${bookingHistory.performedAt} < ${tomorrowStart}`,
         )),
-        db.select({ count: sql<number>`COUNT(*)` }).from(bookings).where(and(
+        db.select({ persons: bookings.persons }).from(bookings).where(and(
           eq(bookings.checkinDate, today),
           sql`${bookings.status} IN ('received', 'confirmed', 'checked_in', 'checked_out')`,
         )),
@@ -988,8 +991,8 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         todayCheckins: todayCheckinsWithBed,
-        todayCompletedCheckinCount,
-        todayExpectedCheckinCount: Number(expectedCheckinRows[0]?.count) || 0,
+        todayCompletedGuestCount,
+        todayExpectedGuestCount: expectedCheckinRows.reduce((total, booking) => total + guestCount(booking.persons), 0),
         todayCheckouts: todayCheckoutBeds,
         todayBookings,
         todayBookingCount: todayBookings.length,

@@ -31,6 +31,7 @@ vi.mock("@/lib/pushNotify", () => ({
 
 import { POST as bookingsPOST } from "@/app/api/admin/bookings/route";
 import { POST as checkinsPOST } from "@/app/api/admin/checkins/route";
+import { getMonthKey } from "@/db/queries";
 
 const skippedMigrations = new Set([
   "0035_site_cms.sql",
@@ -206,6 +207,36 @@ describe("bookings calendar (disposable SQLite)", () => {
     const bed = sqlite.prepare("SELECT status, guest_name FROM beds WHERE id = 2").get() as { status: string; guest_name: string };
     expect(bed.status).toBe("occupied");
     expect(bed.guest_name).toBe("Physical Guest");
+  });
+
+  it("dashboard counts completed and expected check-in guests, not booking rows", async () => {
+    const today = todayIST();
+    const checkout = addCalendarDays(today, 1);
+    const createdMonth = getMonthKey();
+    sqlite.prepare(`
+      INSERT INTO checkins (submitted_at, arrival_date, name, persons, contact, created_month, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      `${today}T06:00:00.000Z`, today, "Group check-in", "3", "9000000001", createdMonth, "active",
+      `${today}T07:00:00.000Z`, today, "Legacy check-in", "0", "9000000002", createdMonth, "checked_out",
+      `${today}T08:00:00.000Z`, today, "Cancelled check-in", "9", "9000000003", createdMonth, "cancelled",
+    );
+    sqlite.prepare(`
+      INSERT INTO bookings (guest_name, platform, booking_ref, checkin_date, checkout_date, persons, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "Three guests", "Walk-in", "DASH-1", today, checkout, 3, "received", `${today}T01:00:00.000Z`,
+      "Two guests", "Walk-in", "DASH-2", today, checkout, 2, "checked_in", `${today}T02:00:00.000Z`,
+      "Cancelled guests", "Walk-in", "DASH-3", today, checkout, 9, "cancelled", `${today}T03:00:00.000Z`,
+    );
+
+    const res = await checkinsPOST(checkinsReq({ action: "getDashboard" }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      todayCompletedGuestCount: 4,
+      todayExpectedGuestCount: 5,
+    });
   });
 
   it("calendar checkOut shortens assignment nights and does not force bed cleanup", async () => {
