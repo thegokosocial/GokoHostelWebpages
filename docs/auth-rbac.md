@@ -160,7 +160,7 @@ Management tabs: My Preferences is self-service for every authenticated admin-sh
 | delete | `canDeleteRecords` |
 | getDeleteInfo | `canDeleteRecords` |
 | getDashboard, markVibeMatched | `canViewDashboard` |
-| checkoutBed, checkoutGuest, undoCheckout, getPendingFoodTab | `canCheckout` **or** `canViewDashboard` |
+| checkoutBed, checkoutGuest, bulkCheckoutGuests, undoCheckout, getPendingFoodTab | `canCheckout` **or** `canViewDashboard` |
 | getBeds | `canViewBeds` **or** `canViewTimeline` |
 | getBedHistory | `canViewBeds` |
 | assignBed, unassignBed, changeBed | `canAssignBed` **or** `canViewBeds`; physical bed assignment is independent of online booking-bed assignment, so a checked-in online guest uses the normal Beds flow and may take any physically available slot; assignment targets the check-in identity |

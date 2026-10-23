@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { accounts, bookingPaymentEvents, bookings, revenueWriteoffs } from "@/db/schema";
+import { accounts, bedHistory, beds, bookingBedAssignments, bookingHistory, bookingPaymentEvents, bookings, checkins, revenueWriteoffs } from "@/db/schema";
 import { authenticateUser } from "@/lib/auth";
 import { actionAllowed, type ActionPerm } from "@/lib/actionPermissions";
 import { isRedundantOtaMoneyHistoryAction } from "@/lib/otaPaymentHistory";
@@ -29,7 +29,7 @@ import {
   getCheckinById, updateCheckin, getBookingByRef,
   syncBookingContactSnapshot,
   reopenWalkinCheckinsForBooking, hardDeleteBookingCascade, bookingHasPlatformFinance, findWalkinCheckinsByBookingRefs,
-  addAuditEntry,
+  addAuditEntry, createReviewRequest, getReviewRequestByCheckinId,
 } from "@/db/queries";
 import { isRecordsLinkedWalkinBooking, checkinLinksBooking } from "@/lib/bookingResolution";
 import { todayIST } from "@/lib/utils";
@@ -1507,20 +1507,60 @@ export async function POST(req: NextRequest) {
         checkedOutAt: now,
         checkedOutBy: actingUser,
       };
-      if (oldCheckout && today < oldCheckout) {
-        const cut = today <= detail.booking.checkinDate ? detail.booking.checkinDate : today;
-        await shortenAssignedCheckout(bookingId, cut);
+      const references = [detail.booking.bookingRef, detail.booking.gokoBookingId, detail.booking.cmBookingId]
+        .map((reference) => String(reference || "").trim()).filter(Boolean);
+      const cut = oldCheckout && today < oldCheckout ? (today <= detail.booking.checkinDate ? detail.booking.checkinDate : today) : null;
+      // Older unreferenced bookings cannot safely identify a check-in or physical bed.
+      if (references.length === 0) {
+        if (cut) await shortenAssignedCheckout(bookingId, cut);
+        await updateBookingFull(bookingId, updates);
+        await addBookingHistoryEntry({ bookingId, action: "Checked Out", details: `Checked out by ${actingUser}`, performedBy: actingUser });
+        await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
+        return NextResponse.json({ success: true });
       }
-      await updateBookingFull(bookingId, updates);
-      await addBookingHistoryEntry({
-        bookingId,
-        action: "Checked Out",
-        details: `Checked out by ${actingUser}`,
-        performedBy: actingUser,
+      const db = getDb();
+      const linkedCheckins = references.length === 0 ? [] : await db.select().from(checkins).where(and(
+        eq(checkins.status, "active"),
+        or(inArray(checkins.bookingId, references), inArray(checkins.bookingLinkedRef, references)),
+      ));
+      const linkedIds = linkedCheckins.map((checkin) => checkin.id);
+      const occupiedBeds = linkedIds.length === 0 ? [] : await db.select().from(beds).where(and(
+        eq(beds.status, "occupied"), inArray(beds.checkinId, linkedIds),
+      ));
+      const writes: any[] = [
+        db.update(bookings).set(syncUpdate(updates)).where(and(eq(bookings.id, bookingId), eq(bookings.status, detail.booking.status))),
+        db.insert(bookingHistory).values({ bookingId, action: "Checked Out", details: `Checked out by ${actingUser}${linkedCheckins.length ? `; closed ${linkedCheckins.length} linked check-in(s)` : ""}`, performedBy: actingUser, performedAt: now }),
+      ];
+      if (cut) writes.push(db.update(bookingBedAssignments).set({ checkoutDate: cut }).where(and(eq(bookingBedAssignments.bookingId, bookingId), eq(bookingBedAssignments.status, "assigned"))));
+      for (const checkin of linkedCheckins) writes.push(db.update(checkins).set(syncUpdate({ status: "checked_out", checkedOutAt: now })).where(and(eq(checkins.id, checkin.id), eq(checkins.status, "active"))));
+      for (const bed of occupiedBeds) {
+        writes.push(db.update(beds).set(syncUpdate({ status: "cleanup", checkinId: null })).where(and(eq(beds.id, bed.id), eq(beds.status, "occupied"), eq(beds.checkinId, bed.checkinId!))));
+        writes.push(db.insert(bedHistory).values(syncInsert({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "checkout", guestName: bed.guestName || "", guestContact: bed.guestContact || "", createdAt: now })));
+      }
+      if (typeof (db as any).batch === "function") await (db as any).batch(writes);
+      else db.transaction((tx: any) => {
+        tx.update(bookings).set(syncUpdate(updates)).where(and(eq(bookings.id, bookingId), eq(bookings.status, detail.booking.status))).run();
+        tx.insert(bookingHistory).values({ bookingId, action: "Checked Out", details: `Checked out by ${actingUser}${linkedCheckins.length ? `; closed ${linkedCheckins.length} linked check-in(s)` : ""}`, performedBy: actingUser, performedAt: now }).run();
+        if (cut) tx.update(bookingBedAssignments).set({ checkoutDate: cut }).where(and(eq(bookingBedAssignments.bookingId, bookingId), eq(bookingBedAssignments.status, "assigned"))).run();
+        for (const checkin of linkedCheckins) tx.update(checkins).set(syncUpdate({ status: "checked_out", checkedOutAt: now })).where(and(eq(checkins.id, checkin.id), eq(checkins.status, "active"))).run();
+        for (const bed of occupiedBeds) {
+          tx.update(beds).set(syncUpdate({ status: "cleanup", checkinId: null })).where(and(eq(beds.id, bed.id), eq(beds.status, "occupied"), eq(beds.checkinId, bed.checkinId!))).run();
+          tx.insert(bedHistory).values(syncInsert({ bedIdLabel: bed.bedId, dormName: bed.dormName, action: "checkout", guestName: bed.guestName || "", guestContact: bed.guestContact || "", createdAt: now })).run();
+        }
       });
+      await addAuditEntry({ username: actingUser, action: "booking_checkout_linked_records", target: `booking:${bookingId}`, details: `Closed ${linkedCheckins.length} exact linked check-in(s) and moved ${occupiedBeds.length} bed(s) to cleanup` });
+      for (const checkin of linkedCheckins) {
+        try {
+          if (!await getReviewRequestByCheckinId(checkin.id)) {
+            const bytes = new Uint8Array(18); crypto.getRandomValues(bytes);
+            const token = Array.from(bytes).map((byte) => byte.toString(36).padStart(2, "0")).join("").slice(0, 24);
+            await createReviewRequest({ token, checkinId: checkin.id, guestName: checkin.name, guestContact: checkin.contact, bookingId: checkin.bookingId || "" });
+          }
+        } catch { /* Checkout is durable even when review delivery setup is unavailable. */ }
+      }
       await pushIfGokoOccupancy(detail.booking.source, before, dormIds, dates);
 
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, checkedOutCheckinIds: linkedIds, cleanupBedIds: occupiedBeds.map((bed) => bed.id) });
     }
 
     // --- Rollback Check In (admin only) ---

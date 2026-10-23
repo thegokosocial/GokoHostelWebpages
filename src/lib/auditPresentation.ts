@@ -50,6 +50,8 @@ const ACTION_LABELS: Record<string, string> = {
   bed_assign: "Bed assigned",
   bed_checkout: "Bed checked out",
   guest_checkout_direct: "Guest checked out",
+  guest_bulk_checkout: "Guest checked out in bulk",
+  booking_checkout_linked_records: "Booking checkout linked records",
   bed_clean: "Bed marked clean",
   bed_unassign: "Bed unassigned",
   bed_change: "Guest moved to another bed",

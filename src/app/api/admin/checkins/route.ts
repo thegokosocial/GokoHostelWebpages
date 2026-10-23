@@ -99,6 +99,72 @@ function generateBookingId(): string {
   return `GOKO${yyyy}${mm}${dd}${random}`;
 }
 
+type UnassignedCheckoutEligibility = {
+  eligible: boolean;
+  checkoutDate: string;
+  roomDue: number;
+  foodDue: number;
+  reason?: "not_due" | "room_due" | "food_due" | "food_unavailable";
+};
+
+function visibleUnassignedCheckins(allBeds: Awaited<ReturnType<typeof getAllBeds>>, monthCheckins: Awaited<ReturnType<typeof getCheckinsByMonth>>) {
+  const assignedCheckinIds = new Set<number>(allBeds
+    .filter((bed) => bed.status === "occupied" && bed.checkinId)
+    .map((bed) => bed.checkinId)
+    .filter((id): id is number => typeof id === "number"));
+  const legacyAssignedCounts = new Map<string, number>();
+  for (const bed of allBeds) {
+    if (bed.status === "occupied" && !bed.checkinId && bed.guestContact) {
+      const key = checkinIdentity(bed.guestName || "", bed.guestContact);
+      legacyAssignedCounts.set(key, (legacyAssignedCounts.get(key) || 0) + 1);
+    }
+  }
+  return dedupeCheckins(monthCheckins.filter((row) => row.status === "active" && row.contact), assignedCheckinIds)
+    .filter((row) => {
+      if (assignedCheckinIds.has(row.id)) return false;
+      const key = checkinIdentity(row.name, row.contact);
+      const legacyCount = legacyAssignedCounts.get(key) || 0;
+      if (legacyCount > 0) { legacyAssignedCounts.set(key, legacyCount - 1); return false; }
+      return true;
+    });
+}
+
+async function unassignedCheckoutEligibility(unassignedCheckins: Awaited<ReturnType<typeof getCheckinsByMonth>>, allBookings: Awaited<ReturnType<typeof getAllBookings>>) {
+  const today = todayIST();
+  const eligible: Record<string, UnassignedCheckoutEligibility> = {};
+  const activeCheckins = await getActiveCheckins();
+  const relevantIds = new Set<number>();
+  for (const checkin of unassignedCheckins) {
+    relevantIds.add(checkin.id);
+    for (const id of checkinIdsMatchingContact(activeCheckins, checkin.contact)) relevantIds.add(id);
+  }
+  const foodByCheckin = new Map<number, number>();
+  try {
+    const db = getDb();
+    const rows = await collectInBatches([...relevantIds], (batch) => db.select({ checkinId: foodOrders.checkinId, total: foodOrders.total }).from(foodOrders).where(and(
+      inArray(foodOrders.checkinId, batch),
+      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
+      sql`${foodOrders.status} != 'cancelled'`,
+    )));
+    for (const row of rows) if (row.checkinId != null) foodByCheckin.set(row.checkinId, (foodByCheckin.get(row.checkinId) || 0) + (Number(row.total) || 0));
+  } catch {
+    for (const checkin of unassignedCheckins) {
+      eligible[String(checkin.id)] = { eligible: false, checkoutDate: addCalendarDays(checkin.arrivalDate, Math.max(1, Number(checkin.stayingDays) || 1)), roomDue: 0, foodDue: 0, reason: "food_unavailable" };
+    }
+    return eligible;
+  }
+  for (const checkin of unassignedCheckins) {
+    const checkoutDate = addCalendarDays(checkin.arrivalDate, Math.max(1, Number(checkin.stayingDays) || 1));
+    const reference = String(checkin.bookingLinkedRef || checkin.bookingId || "").trim();
+    const booking = reference ? allBookings.find((item) => !["cancelled", "no_show"].includes(item.status) && [item.bookingRef, item.gokoBookingId, item.cmBookingId].some((value) => String(value || "").trim() === reference)) : undefined;
+    const roomDue = booking ? Math.max(0, stayDueAtHotel(booking.paymentStatus, booking.amountTotal, booking.amountPaid, booking.amountRefunded, booking.writeOffAmount)) : 0;
+    const foodDue = checkinIdsMatchingContact(activeCheckins, checkin.contact).reduce((total, id) => total + (foodByCheckin.get(id) || 0), foodByCheckin.get(checkin.id) || 0);
+    const reason = checkoutDate >= today ? "not_due" : roomDue > 0 ? "room_due" : foodDue > 0 ? "food_due" : undefined;
+    eligible[String(checkin.id)] = { eligible: !reason, checkoutDate, roomDue, foodDue, reason };
+  }
+  return eligible;
+}
+
 export async function POST(req: NextRequest) {
   let role: UserRole | null = null;
   let permissions: Record<string, boolean> = {};
@@ -130,7 +196,7 @@ export async function POST(req: NextRequest) {
       verifyCheckin: "canViewRecords", getFormCData: "canViewRecords",
       reExtractFormC: "admin_only", updateFormCData: "admin_only", removeFormCSubmission: "admin_only",
       getDashboard: "canViewDashboard", markVibeMatched: "canViewDashboard",
-      checkoutBed: ["canCheckout", "canViewDashboard"], checkoutGuest: ["canCheckout", "canViewDashboard"], undoCheckout: ["canCheckout", "canViewDashboard"],
+      checkoutBed: ["canCheckout", "canViewDashboard"], checkoutGuest: ["canCheckout", "canViewDashboard"], bulkCheckoutGuests: ["canCheckout", "canViewDashboard"], undoCheckout: ["canCheckout", "canViewDashboard"],
       getPendingFoodTab: ["canCheckout", "canViewDashboard"],
       getBeds: ["canViewBeds", "canViewTimeline"], assignBed: ["canAssignBed", "canViewBeds"], unassignBed: ["canAssignBed", "canViewBeds"],
       changeBed: ["canAssignBed", "canViewBeds"], markClean: "canMarkClean",
@@ -1031,25 +1097,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const assignedCheckinIds = new Set<number>(allBeds
-        .filter((b) => b.status === "occupied" && b.checkinId)
-        .map((b) => b.checkinId)
-        .filter((id): id is number => typeof id === "number"));
-      const legacyAssignedCounts = new Map<string, number>();
-      for (const bed of allBeds) {
-        if (bed.status === "occupied" && !bed.checkinId && bed.guestContact) {
-          const key = checkinIdentity(bed.guestName || "", bed.guestContact);
-          legacyAssignedCounts.set(key, (legacyAssignedCounts.get(key) || 0) + 1);
-        }
-      }
-      const dedupedMonthCheckins = dedupeCheckins(monthCheckins.filter((r) => r.status === "active" && r.contact), assignedCheckinIds);
-      const unassignedCheckins = dedupedMonthCheckins.filter((r) => {
-        if (assignedCheckinIds.has(r.id)) return false;
-        const key = checkinIdentity(r.name, r.contact);
-        const legacyCount = legacyAssignedCounts.get(key) || 0;
-        if (legacyCount > 0) { legacyAssignedCounts.set(key, legacyCount - 1); return false; }
-        return true;
-      });
+      const unassignedCheckins = visibleUnassignedCheckins(allBeds, monthCheckins);
+      const checkoutEligibility = await unassignedCheckoutEligibility(unassignedCheckins, allBookings);
 
       const bedsArr = allBeds.map((b) => [
         b.dormName, b.bedId, b.position, b.type, b.status,
@@ -1104,7 +1153,7 @@ export async function POST(req: NextRequest) {
           };
         }
       }
-      return NextResponse.json({ beds: bedsArr, unassigned: unassignedArr, linkedBookingDetails, role });
+      return NextResponse.json({ beds: bedsArr, unassigned: unassignedArr, linkedBookingDetails, unassignedCheckoutEligibility: checkoutEligibility, role });
     }
 
     if (action === "assignBed") {
@@ -1232,6 +1281,42 @@ export async function POST(req: NextRequest) {
       await addAuditEntry({ username: actingUser, action: "guest_checkout_direct", target: checkoutGuestName || `id:${checkinId}` });
       addSystemLog({ level: "info", source: "admin-api", message: `Direct checkout: ${checkoutGuestName || "unknown"} (id:${checkinId}) by ${actingUser}` }).catch(() => {});
       return NextResponse.json({ success: true });
+    }
+
+    if (action === "bulkCheckoutGuests") {
+      const { scope, checkinIds } = rest;
+      if (scope !== "selected" && scope !== "displayed") return NextResponse.json({ error: "Invalid checkout scope" }, { status: 400 });
+      if (scope === "selected" && (!Array.isArray(checkinIds) || checkinIds.some((id) => !isValidId(id) || id === 0))) {
+        return NextResponse.json({ error: "A valid selection is required" }, { status: 400 });
+      }
+
+      const allBeds = await getAllBeds();
+      const visible = visibleUnassignedCheckins(allBeds, await getCheckinsByMonth(getMonthKey()));
+      const eligibility = await unassignedCheckoutEligibility(visible, await getAllBookings());
+      const wanted = scope === "displayed" ? visible.map((checkin) => checkin.id) : [...new Set(checkinIds as number[])];
+      const visibleById = new Map(visible.map((checkin) => [checkin.id, checkin]));
+      const checkedOutIds: number[] = [];
+      const skipped: { id: number; reason: string }[] = [];
+      const db = getDb();
+      const now = new Date().toISOString();
+      for (const id of wanted) {
+        const guest = visibleById.get(id);
+        const gate = eligibility[String(id)];
+        if (!guest || !gate?.eligible) { skipped.push({ id, reason: gate?.reason || "not_visible" }); continue; }
+        const result = await db.update(checkins).set({ status: "checked_out", checkedOutAt: now }).where(and(eq(checkins.id, id), eq(checkins.status, "active")));
+        if (sqliteWriteCount(result) === 0) { skipped.push({ id, reason: "already_checked_out" }); continue; }
+        checkedOutIds.push(id);
+        await addAuditEntry({ username: actingUser, action: "guest_bulk_checkout", target: `${guest.name} (id:${id})` });
+        try {
+          if (!await getReviewRequestByCheckinId(id)) {
+            const bytes = new Uint8Array(18); crypto.getRandomValues(bytes);
+            const token = Array.from(bytes).map((byte) => byte.toString(36).padStart(2, "0")).join("").slice(0, 24);
+            await createReviewRequest({ token, checkinId: id, guestName: guest.name, guestContact: guest.contact, bookingId: guest.bookingId || "" });
+          }
+        } catch (error: any) { addSystemLog({ level: "warn", source: "review-funnel", message: `Bulk checkout review creation failed: ${error?.message || "unknown"}` }).catch(() => {}); }
+      }
+      addSystemLog({ level: "info", source: "admin-api", message: `Bulk checkout: ${checkedOutIds.length} guest(s) by ${actingUser}` }).catch(() => {});
+      return NextResponse.json({ success: true, checkedOutIds, skipped });
     }
 
     if (action === "markClean") {

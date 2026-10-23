@@ -272,6 +272,36 @@ describe("bookings calendar (disposable SQLite)", () => {
     expect(bedStatuses().find((b) => b.id === 1)?.status).toBe("available");
   });
 
+  it("booking checkout closes only exact linked check-ins and moves their physical beds to cleanup", async () => {
+    const created = await (await bookingsPOST(bookingsReq({
+      action: "createBooking", guestName: "Linked Guest", checkinDate, checkoutDate, persons: 1, staySubtotal: 2500, bedIds: [1],
+    }))).json();
+    const reference = sqlite.prepare("SELECT goko_booking_id FROM bookings WHERE id = ?").get(created.bookingId) as { goko_booking_id: string };
+    const month = getMonthKey();
+    sqlite.prepare("INSERT INTO checkins (submitted_at, arrival_date, name, persons, contact, booking_id, created_month, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(`${checkinDate}T10:00:00.000Z`, checkinDate, "Linked Guest", "1", "9000000008", reference.goko_booking_id, month, "active");
+    const checkin = sqlite.prepare("SELECT id FROM checkins WHERE contact = ?").get("9000000008") as { id: number };
+    sqlite.prepare("UPDATE beds SET status = 'occupied', checkin_id = ?, guest_name = ?, guest_contact = ? WHERE id = 1").run(checkin.id, "Linked Guest", "9000000008");
+
+    const res = await bookingsPOST(bookingsReq({ action: "checkOut", bookingId: created.bookingId }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ checkedOutCheckinIds: [checkin.id], cleanupBedIds: [1] });
+    expect(sqlite.prepare("SELECT status FROM checkins WHERE id = ?").get(checkin.id)).toMatchObject({ status: "checked_out" });
+    expect(bedStatuses().find((bed) => bed.id === 1)?.status).toBe("cleanup");
+  });
+
+  it("bulk checkout accepts only an eligible past unassigned guest", async () => {
+    const arrival = addCalendarDays(todayIST(), -3);
+    sqlite.prepare("INSERT INTO checkins (submitted_at, arrival_date, name, persons, contact, staying_days, created_month, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(`${arrival}T10:00:00.000Z`, arrival, "Past unassigned", "1", "9000000009", "1", getMonthKey(), "active");
+    const checkin = sqlite.prepare("SELECT id FROM checkins WHERE contact = ?").get("9000000009") as { id: number };
+
+    const res = await checkinsPOST(checkinsReq({ action: "bulkCheckoutGuests", scope: "selected", checkinIds: [checkin.id] }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ checkedOutIds: [checkin.id], skipped: [] });
+    expect(sqlite.prepare("SELECT status FROM checkins WHERE id = ?").get(checkin.id)).toMatchObject({ status: "checked_out" });
+  });
+
   it("rollbackCheckIn is admin_only for staff", async () => {
     const created = await (await bookingsPOST(bookingsReq({
       action: "createBooking",

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useAdminApi } from "./useAdminApi";
 import { useAdminToast } from "@/components/admin/AdminToast";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,8 @@ import { UserPlusIcon, SparklesIcon, ClockIcon, Loader2Icon } from "lucide-react
 import { parseBedRow, type Role, type BedRow, hasPermission } from "./types";
 import { AdminLoading } from "./AdminLoading";
 import { canLookupFoodTab, foodTabUncheckedMessage, unpaidFoodCheckoutMessage } from "@/lib/foodTab";
+
+type CheckoutEligibility = { eligible: boolean; checkoutDate: string; roomDue: number; foodDue: number; reason?: "not_due" | "room_due" | "food_due" | "food_unavailable" };
 
 function getDaysRemaining(expectedCheckout: string): number {
   if (!expectedCheckout) return 0;
@@ -146,10 +149,14 @@ function BedCard({ bed, onAssign, onCheckout, onMarkClean, onUnassign, onChangeB
 
 export function AdminBeds({ password, username, role, permissions = {}, pendingAssignCheckinId, onPendingAssignConsumed }: { password: string; username?: string; role: Role; permissions?: Record<string, boolean>; pendingAssignCheckinId?: number | null; onPendingAssignConsumed?: () => void }) {
   const { apiCall } = useAdminApi(password, username);
-  const { showError } = useAdminToast();
+  const { showError, showSuccess } = useAdminToast();
   const [beds, setBeds] = useState<BedRow[]>([]);
   const [unassigned, setUnassigned] = useState<string[][]>([]);
   const [linkedBookingDetails, setLinkedBookingDetails] = useState<Record<string, { id: number; persons: number; roomType: string; reference: string; source: string; plannedBedLabels: string[]; matchMethod: "reference" | "phone" | "name" }>>({});
+  const [unassignedCheckoutEligibility, setUnassignedCheckoutEligibility] = useState<Record<string, CheckoutEligibility>>({});
+  const [selectedGuestIds, setSelectedGuestIds] = useState<number[]>([]);
+  const [bulkCheckoutConfirm, setBulkCheckoutConfirm] = useState<{ scope: "selected" | "displayed"; ids: number[] } | null>(null);
+  const [bulkCheckingOut, setBulkCheckingOut] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingBedIdx, setLoadingBedIdx] = useState<number | null>(null);
   const [selectedDorm, setSelectedDorm] = useState<string | null>(null);
@@ -184,6 +191,8 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         const data = await res.json();
         setBeds((data.beds || []).map(parseBedRow));
         setUnassigned(data.unassigned || []);
+        setUnassignedCheckoutEligibility(data.unassignedCheckoutEligibility || {});
+        setSelectedGuestIds((selected) => selected.filter((id) => data.unassignedCheckoutEligibility?.[String(id)]?.eligible));
         const bookingDetails = data.linkedBookingDetails || {};
         setLinkedBookingDetails(Object.fromEntries(Object.entries(bookingDetails).map(([key, value]) => [key, {
           ...(value as object),
@@ -191,6 +200,20 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
         }] )) as Record<string, { id: number; persons: number; roomType: string; reference: string; source: string; plannedBedLabels: string[]; matchMethod: "reference" | "phone" | "name" }>);
       }
     } finally { setLoading(false); }
+  };
+
+  const checkoutGuestsBulk = async () => {
+    if (!bulkCheckoutConfirm) return;
+    setBulkCheckingOut(true);
+    try {
+      const res = await apiCall({ action: "bulkCheckoutGuests", scope: bulkCheckoutConfirm.scope, checkinIds: bulkCheckoutConfirm.ids });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showError(data.error || "Could not check out the selected guests"); return; }
+      setBulkCheckoutConfirm(null);
+      setSelectedGuestIds([]);
+      showSuccess(`${data.checkedOutIds?.length || 0} guest${data.checkedOutIds?.length === 1 ? "" : "s"} checked out`);
+      await loadBeds();
+    } finally { setBulkCheckingOut(false); }
   };
 
   const checkoutGuestDirect = async (guest: string[]) => {
@@ -310,6 +333,15 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
   }
 
   const dorms = [...new Set(beds.map((b) => b.dormName))];
+  const eligibleGuestIds = unassigned.filter((guest) => unassignedCheckoutEligibility[guest[15]]?.eligible).map((guest) => Number(guest[15]));
+  const allEligibleSelected = eligibleGuestIds.length > 0 && eligibleGuestIds.every((id) => selectedGuestIds.includes(id));
+  const checkoutEligibilityMessage = (guest: string[]) => {
+    const reason = unassignedCheckoutEligibility[guest[15]]?.reason;
+    if (reason === "not_due") return "Checkout date has not passed";
+    if (reason === "room_due") return "Room payment is outstanding";
+    if (reason === "food_due") return "Food payment is outstanding";
+    return "Food balance could not be verified";
+  };
   const dormStats = dorms.map((name) => {
     const dormBeds = beds.filter((b) => b.dormName === name);
     const uppers = dormBeds.filter((b) => b.position === "Upper").length;
@@ -372,17 +404,31 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
       {/* Unassigned guests */}
       {unassigned.length > 0 && !assigningGuest && (
         <div className="mt-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 p-4">
-          <h3 className="font-medium text-blue-800 dark:text-blue-300">{unassigned.length} guest{unassigned.length !== 1 ? "s" : ""} without bed assignment</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-medium text-blue-800 dark:text-blue-300">{unassigned.length} guest{unassigned.length !== 1 ? "s" : ""} without bed assignment</h3>
+            {hasPermission(role, permissions, "canCheckout") && <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs font-medium text-blue-800 dark:text-blue-300">
+                <Checkbox aria-label="Select all eligible guests" checked={allEligibleSelected} disabled={eligibleGuestIds.length === 0} onCheckedChange={(checked) => setSelectedGuestIds(checked ? eligibleGuestIds : [])} />
+                Select eligible
+              </label>
+              <Button type="button" size="sm" variant="outline" disabled={selectedGuestIds.length === 0} onClick={() => setBulkCheckoutConfirm({ scope: "selected", ids: selectedGuestIds })}>Checkout selected</Button>
+              <Button type="button" size="sm" disabled={eligibleGuestIds.length === 0} onClick={() => setBulkCheckoutConfirm({ scope: "displayed", ids: eligibleGuestIds })}>Checkout all eligible</Button>
+            </div>}
+          </div>
           <motion.div className="mt-2 space-y-2" variants={staggerContainer} initial="hidden" animate="visible">
             {unassigned.map((guest, i) => (
               <motion.div key={i} variants={staggerItem} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg bg-white dark:bg-card px-3 py-2 transition-all duration-200 hover:shadow-soft dark:hover:shadow-none">
-                <div>
+                <div className="flex min-w-0 items-start gap-3">
+                  {hasPermission(role, permissions, "canCheckout") && <Checkbox aria-label={`Select ${guest[3]} for checkout`} checked={selectedGuestIds.includes(Number(guest[15]))} disabled={!unassignedCheckoutEligibility[guest[15]]?.eligible} onCheckedChange={(checked) => setSelectedGuestIds((selected) => checked ? [...new Set([...selected, Number(guest[15])])] : selected.filter((id) => id !== Number(guest[15])))} />}
+                  <div>
                   <span className="font-medium text-brand-green-dark">{guest[3]}</span>
                   <span className="ml-2 text-xs text-brand-green-dark/50">{guest[6]} days · {guest[7]}</span>
                   {linkedBookingDetails[guest[15]] && <span className="ml-2 text-xs text-blue-700 dark:text-blue-400">
                     Planned booking · {linkedBookingDetails[guest[15]].roomType || "room type not specified"} · {linkedBookingDetails[guest[15]].persons} person{linkedBookingDetails[guest[15]].persons === 1 ? "" : "s"}
                     {linkedBookingDetails[guest[15]].plannedBedLabels.length > 0 && ` · ${linkedBookingDetails[guest[15]].plannedBedLabels.join(", ")}`}
                   </span>}
+                  {!unassignedCheckoutEligibility[guest[15]]?.eligible && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{checkoutEligibilityMessage(guest)}</p>}
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => void openGuestCheckout(guest)}
@@ -436,6 +482,19 @@ export function AdminBeds({ password, username, role, permissions = {}, pendingA
                 className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-50">
                 {checkingOut ? "Processing..." : (checkoutConfirm.pendingTab > 0 || checkoutConfirm.tabUnchecked) ? "Checkout anyway" : "Yes, Checkout"}
               </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      {bulkCheckoutConfirm && (
+        <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" variants={overlayVariants} initial="hidden" animate="visible" exit="exit">
+          <motion.div className="w-full min-w-0 max-w-sm rounded-2xl bg-white dark:bg-card p-6 shadow-xl dark:shadow-none" variants={modalVariants} initial="hidden" animate="visible" exit="exit">
+            <h3 className="font-display text-lg font-bold text-brand-green-dark">Confirm bulk checkout</h3>
+            <p className="mt-2 text-sm text-brand-green-dark/80">Check out {bulkCheckoutConfirm.ids.length} eligible guest{bulkCheckoutConfirm.ids.length === 1 ? "" : "s"}? Their room and food balances are clear.</p>
+            <p className="mt-1 text-xs text-brand-green-dark/50">Eligibility will be checked again before each checkout.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setBulkCheckoutConfirm(null)} disabled={bulkCheckingOut} className="rounded-lg border border-brand-mist px-4 py-2 text-sm font-medium text-brand-green-dark transition-colors hover:bg-brand-sand/50">Cancel</button>
+              <button type="button" onClick={checkoutGuestsBulk} disabled={bulkCheckingOut} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-50">{bulkCheckingOut ? "Processing..." : `Checkout ${bulkCheckoutConfirm.ids.length} guest${bulkCheckoutConfirm.ids.length === 1 ? "" : "s"}`}</button>
             </div>
           </motion.div>
         </motion.div>
