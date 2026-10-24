@@ -14,7 +14,7 @@ import { addCalendarDays, sellableUnits } from "@/lib/inventoryAvailability";
 import { stayDueAtHotel } from "@/lib/stayPayment";
 import { checkinIdsMatchingContact } from "@/lib/foodTab";
 import { getReconciliationStatus } from "@/lib/reconciliation";
-import { activeCheckinIdsForContact, getPendingFoodTab } from "@/lib/foodTabDb";
+import { activeCheckinIdsForContact, getPendingFoodTab, pendingFoodTabsForCheckinIds } from "@/lib/foodTabDb";
 import { dedupeCheckins } from "@/lib/checkinDuplicate";
 import { bookingReference, checkinLinksBooking, getCheckinBookingMatch, isManualWalkinBooking, isWalkinBookingCheckin, liveBookingCoversResolution, resolutionNeedsReopen } from "@/lib/bookingResolution";
 import { dispatchPush, notificationFirstName } from "@/lib/pushNotify";
@@ -140,13 +140,9 @@ async function unassignedCheckoutEligibility(unassignedCheckins: Awaited<ReturnT
   }
   const foodByCheckin = new Map<number, number>();
   try {
-    const db = getDb();
-    const rows = await collectInBatches([...relevantIds], (batch) => db.select({ checkinId: foodOrders.checkinId, total: foodOrders.total }).from(foodOrders).where(and(
-      inArray(foodOrders.checkinId, batch),
-      inArray(foodOrders.paymentStatus, ["on_tab", "pending"]),
-      sql`${foodOrders.status} != 'cancelled'`,
-    )));
-    for (const row of rows) if (row.checkinId != null) foodByCheckin.set(row.checkinId, (foodByCheckin.get(row.checkinId) || 0) + (Number(row.total) || 0));
+    for (const [checkinId, balance] of await pendingFoodTabsForCheckinIds(relevantIds)) {
+      foodByCheckin.set(checkinId, balance.pendingTab);
+    }
   } catch {
     for (const checkin of unassignedCheckins) {
       eligible[String(checkin.id)] = { eligible: false, checkoutDate: addCalendarDays(checkin.arrivalDate, Math.max(1, Number(checkin.stayingDays) || 1)), roomDue: 0, foodDue: 0, reason: "food_unavailable" };

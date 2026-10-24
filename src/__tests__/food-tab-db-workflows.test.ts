@@ -40,8 +40,8 @@ describe("getPendingFoodTab db workflows", () => {
     await expect(getPendingFoodTab({ checkinId: 10 })).resolves.toEqual({
       checkinId: 10,
       pendingTab: 25000,
-      pendingOrders: 3,
-      orderIds: [1, 2, 3],
+      pendingOrders: 2,
+      orderIds: [1, 2],
     });
     expect(getDb).toHaveBeenCalledTimes(1);
   });
@@ -179,6 +179,38 @@ describe("getPendingFoodTab db workflows", () => {
       pendingTab: 4200,
       pendingOrders: 1,
       orderIds: [9],
+    });
+  });
+
+  it("uses the collectible balance rather than legacy payment status", async () => {
+    getDb.mockReturnValueOnce(
+      drizzleChain([
+        { id: 1, checkinId: 77, total: 10000, amountPaid: 4000, amountRefunded: 0, writeOffAmount: 0, paymentStatus: "on_tab" },
+        { id: 2, checkinId: 77, total: 5000, amountPaid: 5000, amountRefunded: 0, writeOffAmount: 0, paymentStatus: "on_tab" },
+        { id: 3, checkinId: 77, total: 3000, amountPaid: 0, amountRefunded: 0, writeOffAmount: 3000, paymentStatus: "pending" },
+      ]),
+    );
+
+    await expect(getPendingFoodTab({ checkinId: 77 })).resolves.toEqual({
+      checkinId: 77,
+      pendingTab: 6000,
+      pendingOrders: 1,
+      orderIds: [1],
+    });
+  });
+
+  it("counts a refund as reducing the collectible food balance", async () => {
+    getDb.mockReturnValueOnce(
+      drizzleChain([
+        { id: 1, checkinId: 77, total: 10000, amountPaid: 10000, amountRefunded: 2500, writeOffAmount: 0, paymentStatus: "paid" },
+      ]),
+    );
+
+    await expect(getPendingFoodTab({ checkinId: 77 })).resolves.toEqual({
+      checkinId: 77,
+      pendingTab: 2500,
+      pendingOrders: 1,
+      orderIds: [1],
     });
   });
 });

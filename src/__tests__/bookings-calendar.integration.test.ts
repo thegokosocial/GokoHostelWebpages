@@ -302,6 +302,36 @@ describe("bookings calendar (disposable SQLite)", () => {
     expect(sqlite.prepare("SELECT status FROM checkins WHERE id = ?").get(checkin.id)).toMatchObject({ status: "checked_out" });
   });
 
+  it("bulk checkout blocks the remaining food balance, not the full order total", async () => {
+    const arrival = addCalendarDays(todayIST(), -3);
+    const now = `${arrival}T10:00:00.000Z`;
+    sqlite.prepare("INSERT INTO checkins (submitted_at, arrival_date, name, persons, contact, staying_days, created_month, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(now, arrival, "Food balance", "1", "9000000010", "1", getMonthKey(), "active");
+    const checkin = sqlite.prepare("SELECT id FROM checkins WHERE contact = ?").get("9000000010") as { id: number };
+    sqlite.prepare("INSERT INTO food_orders (order_number, guest_type, checkin_id, guest_name, status, payment_status, total, amount_paid, amount_refunded, write_off_amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run("F-BULK-DUE", "hostel", checkin.id, "Food balance", "placed", "on_tab", 10000, 4000, 0, 0, now, now);
+
+    const res = await checkinsPOST(checkinsReq({ action: "bulkCheckoutGuests", scope: "selected", checkinIds: [checkin.id] }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ checkedOutIds: [], skipped: [{ id: checkin.id, reason: "food_due" }] });
+    expect(sqlite.prepare("SELECT status FROM checkins WHERE id = ?").get(checkin.id)).toMatchObject({ status: "active" });
+  });
+
+  it("bulk checkout permits a fully settled order even when its legacy status is on_tab", async () => {
+    const arrival = addCalendarDays(todayIST(), -3);
+    const now = `${arrival}T10:00:00.000Z`;
+    sqlite.prepare("INSERT INTO checkins (submitted_at, arrival_date, name, persons, contact, staying_days, created_month, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(now, arrival, "Settled food", "1", "9000000011", "1", getMonthKey(), "active");
+    const checkin = sqlite.prepare("SELECT id FROM checkins WHERE contact = ?").get("9000000011") as { id: number };
+    sqlite.prepare("INSERT INTO food_orders (order_number, guest_type, checkin_id, guest_name, status, payment_status, total, amount_paid, amount_refunded, write_off_amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run("F-BULK-SETTLED", "hostel", checkin.id, "Settled food", "placed", "on_tab", 10000, 10000, 0, 0, now, now);
+
+    const res = await checkinsPOST(checkinsReq({ action: "bulkCheckoutGuests", scope: "selected", checkinIds: [checkin.id] }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ checkedOutIds: [checkin.id], skipped: [] });
+    expect(sqlite.prepare("SELECT status FROM checkins WHERE id = ?").get(checkin.id)).toMatchObject({ status: "checked_out" });
+  });
+
   it("rollbackCheckIn is admin_only for staff", async () => {
     const created = await (await bookingsPOST(bookingsReq({
       action: "createBooking",

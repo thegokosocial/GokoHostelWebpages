@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function mockBeds(page: Page, requests: Array<Record<string, unknown>>) {
+type CheckoutEligibility = { eligible: boolean; checkoutDate: string; roomDue: number; foodDue: number; reason?: "food_due" };
+
+async function mockBeds(page: Page, requests: Array<Record<string, unknown>>, eligibility: CheckoutEligibility = { eligible: true, checkoutDate: "2026-10-21", roomDue: 0, foodDue: 0 }) {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/login") return route.fulfill({ json: { role: "admin", username: "e2e-admin", permissions: {} } });
@@ -13,7 +15,7 @@ async function mockBeds(page: Page, requests: Array<Record<string, unknown>>) {
       beds: [],
       unassigned: [["", "2026-10-20", "", "Past guest", "1", "9000000000", "1", "Bengaluru", "India", "", "", "", "", "", "", "55", ""]],
       linkedBookingDetails: {},
-      unassignedCheckoutEligibility: { "55": { eligible: true, checkoutDate: "2026-10-21", roomDue: 0, foodDue: 0 } },
+      unassignedCheckoutEligibility: { "55": eligibility },
     } });
     if (body.action === "bulkCheckoutGuests") return route.fulfill({ json: { success: true, checkedOutIds: [55], skipped: [] } });
     return route.fulfill({ json: {} });
@@ -47,4 +49,18 @@ test("mobile bulk checkout submits all eligible displayed guests", async ({ page
   await page.getByRole("button", { name: "Checkout all eligible" }).click();
   await page.getByRole("button", { name: "Checkout 1 guest" }).click();
   expect(requests.find((request) => request.action === "bulkCheckoutGuests")).toMatchObject({ scope: "displayed", checkinIds: [55] });
+});
+
+test("food debt keeps checkout selection unavailable on desktop and mobile", async ({ page }) => {
+  const requests: Array<Record<string, unknown>> = [];
+  await mockBeds(page, requests, { eligible: false, checkoutDate: "2026-10-21", roomDue: 0, foodDue: 5000, reason: "food_due" });
+  await signIn(page);
+  await expect(page.getByText("Food payment is outstanding")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Select Past guest for checkout" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Checkout all eligible" })).toBeDisabled();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("Food payment is outstanding")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Select Past guest for checkout" })).toBeDisabled();
+  expect(requests.find((request) => request.action === "bulkCheckoutGuests")).toBeUndefined();
 });

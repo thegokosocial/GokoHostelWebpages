@@ -136,7 +136,7 @@ erDiagram
 
 Aiosell availability prefers date-aware assignment + blocks + overrides + active native website holds (`getDateAwareAvailability`), not only “is this bed occupied right now.”
 
-Hostel food tabs attach to **`checkins`**, not `bookings`. Checkout lookup is phone-normalized against active check-ins (`getPendingFoodTab`). Cafe walk-in orders with no `checkin_id` are not matched.
+Hostel food tabs attach to **`checkins`**, not `bookings`. Checkout lookup is phone-normalized against active check-ins (`getPendingFoodTab`) and uses the same net collectible amount as Food Orders: total less collected payments, plus refunds, less write-offs. Cafe walk-in orders with no `checkin_id` are not matched.
 
 ---
 
