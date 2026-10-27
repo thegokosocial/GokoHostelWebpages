@@ -163,8 +163,8 @@ Wrangler `migrations` tags v1/v2 create then **delete** OpenNext ISR Durable Obj
 | Script | What |
 |--------|------|
 | `npm run dev` | Next dev (no Wrangler unless env flags) |
-| `npm run build` | `next build` — **CI**, not the Worker |
-| `npm run cf:build` | OpenNext Worker bundle |
+| `npm run build` | `next build --webpack` — **CI**, not the Worker; FFmpeg worker loading is not Turbopack-compatible |
+| `npm run cf:build` | OpenNext Worker bundle; retains Edge `middleware.ts` because this adapter does not support Next 16 Node proxy |
 | `npm run deploy:cf` | OpenNext build + deploy |
 | `npm run build:pi` | Standalone with `GOKO_RUNTIME=pi` |
 

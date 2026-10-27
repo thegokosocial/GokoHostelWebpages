@@ -5,7 +5,7 @@
 
 **GokoWeb** (`package.json` name `goko-premium`) is the digital backbone of **Goko Hostel & Community Space** in Gokarna, India. Canonical public URL: `https://www.gokohostel.com` (`src/lib/site.ts`).
 
-It is one Next.js 15.5 App Router app (React 19, TypeScript, Tailwind, shadcn/Base UI) that serves:
+It is one Next.js 16 App Router app (React 19, TypeScript, Tailwind, shadcn/Base UI) that serves:
 
 1. A **marketing website** (administrator-configured “Book now”, GTM, CMS-backed Events + Community Area).
 2. **Guest tools** — self check-in with ID photos, food ordering, my-bills, review links.

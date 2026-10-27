@@ -26,7 +26,7 @@ Interactive UI is built with the [shadcn](https://ui.shadcn.com/) **base-nova** 
 ## Scripts
 
 - `npm run dev` — development server
-- `npm run build` — plain `next build` (what OpenNext calls internally; also fine as Cloudflare’s **Build command**)
+- `npm run build` — `next build --webpack`; required because the FFmpeg worker loader is not Turbopack-compatible
 - `npm run cf:build` — full **OpenNext** bundle (`.open-next/`) for Cloudflare
 - `npm run start` — serve the last Next output locally (`next start`)
 - `npm run lint` — ESLint (Next core web vitals)
