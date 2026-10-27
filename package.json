@@ -34,7 +34,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@hookform/resolvers": "^5.2.2",
-    "@opennextjs/cloudflare": "^1.18.0",
+    "@opennextjs/cloudflare": "^1.20.13",
     "@pushforge/builder": "^2.0.5",
     "@radix-ui/react-popover": "^1.1.23",
     "class-variance-authority": "^0.7.1",
@@ -72,12 +72,13 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.17.0",
     "eslint-config-next": "16.4.3",
+    "miniflare": "^4.20260722.1",
     "postcss": "^8.4.49",
     "shadcn": "^4.1.2",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.22.3",
     "typescript": "^5.7.0",
     "vitest": "^4.1.8",
-    "wrangler": "^4.115.0"
+    "wrangler": "^4.153.0"
   }
 }
