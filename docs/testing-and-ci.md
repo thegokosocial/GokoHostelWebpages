@@ -53,7 +53,7 @@ Any dynamic D1/SQLite `IN (...)` lookup must use `src/lib/dbBatch.ts` (`collectI
 
 Cloudflare production builds also run `npm run db:verify:prod` before compiling. This is intentionally separate from local migration tests: local/disposable D1 proves SQL correctness, while the release gate proves the remote migration ledger is caught up. If D1 is unavailable or migrations are pending, the Worker build fails closed. Root typography uses local system stacks, not `next/font/google`, so Workers Builds never depend on Google Fonts availability; `cloud-build-fonts.test.ts` guards that contract.
 
-Dependency security checks use `npm audit`. Next stays on the supported 15.5 patch line; its private PostCSS copy is overridden to the audited patched release. SheetJS is pinned to the official patched `cdn.sheetjs.com` distribution because the abandoned npm-registry `xlsx` package has no repaired release. Keep the existing authenticated 5 MB / 500-row import limits when updating spreadsheet parsing.
+Dependency security checks use `npm audit`. Next 16.4 is paired with OpenNext Cloudflare 1.20.13 or later, which supports its runtime manifests; do not suppress OpenNext's unsupported-Next check. SheetJS is pinned to the official patched `cdn.sheetjs.com` distribution because the abandoned npm-registry `xlsx` package has no repaired release. Keep the existing authenticated 5 MB / 500-row import limits when updating spreadsheet parsing.
 
 ## Test files (`src/__tests__/`)
 
