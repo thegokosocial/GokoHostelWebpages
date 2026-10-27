@@ -112,6 +112,10 @@ const ALIGN_RIGHT = cmd(ESC, 0x61, 2);
 const DOUBLE_WIDTH_ON = cmd(GS, 0x21, 0x10);
 const DOUBLE_WIDTH_OFF = cmd(GS, 0x21, 0x00);
 const FEED_CUT = cmd(LF, LF, LF, GS, 0x56, 0x00);
+const RASTER_WIDTH = 384;
+const KANNADA_LEFT_MARGIN = 40;
+const KANNADA_FONT = '18px "Noto Sans Kannada", "Nirmala UI", sans-serif';
+const KANNADA_LINE_HEIGHT = 24;
 
 function textBytes(text: string): Uint8Array {
   const encoder = new TextEncoder();
@@ -155,6 +159,61 @@ function twoColumn(left: string, right: string): string {
   const rightWidth = right.length;
   const leftWidth = LINE_WIDTH - rightWidth - 1;
   return padRight(left, leftWidth) + " " + right;
+}
+
+export function encodeEscPosRaster(width: number, height: number, pixels: Uint8ClampedArray): Uint8Array {
+  const widthBytes = Math.ceil(width / 8);
+  const data = new Uint8Array(8 + widthBytes * height);
+  data.set([GS, 0x76, 0x30, 0, widthBytes & 0xff, widthBytes >> 8, height & 0xff, height >> 8]);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const pixel = (y * width + x) * 4;
+      if (pixels[pixel + 3] > 0 && pixels[pixel] + pixels[pixel + 1] + pixels[pixel + 2] < 720) {
+        data[8 + y * widthBytes + (x >> 3)] |= 0x80 >> (x & 7);
+      }
+    }
+  }
+
+  return data;
+}
+
+function wrapKannadaText(context: CanvasRenderingContext2D, text: string): string[] {
+  const maxWidth = RASTER_WIDTH - KANNADA_LEFT_MARGIN;
+  const words = text.trim().split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (context.measureText(next).width <= maxWidth) {
+      current = next;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function rasterKannadaText(text: string): Uint8Array {
+  const canvas = document.createElement("canvas");
+  canvas.width = RASTER_WIDTH;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not prepare Kannada printer text");
+
+  context.font = KANNADA_FONT;
+  const lines = wrapKannadaText(context, text);
+  canvas.height = Math.max(KANNADA_LINE_HEIGHT, lines.length * KANNADA_LINE_HEIGHT + 4);
+  context.font = KANNADA_FONT;
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#000";
+  context.textBaseline = "top";
+  lines.forEach((printedLine, index) => context.fillText(printedLine, KANNADA_LEFT_MARGIN, index * KANNADA_LINE_HEIGHT + 2));
+
+  return encodeEscPosRaster(canvas.width, canvas.height, context.getImageData(0, 0, canvas.width, canvas.height).data);
 }
 
 // --- Public Print Functions ---
@@ -302,8 +361,9 @@ export async function printOrderTicket(data: OrderTicketData): Promise<void> {
     parts.push(BOLD_ON);
     parts.push(line(`  ${item.quantity}x ${item.name}`));
     parts.push(BOLD_OFF);
-    if (item.nameKannada) {
-      parts.push(line(`     ${item.nameKannada}`));
+    const nameKannada = item.nameKannada?.trim();
+    if (nameKannada) {
+      parts.push(rasterKannadaText(nameKannada));
     }
   }
 

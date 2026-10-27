@@ -946,6 +946,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [kannadaPrintEnabled, setKannadaPrintEnabled] = useState(true);
   const [filter, setFilter] = useState<SummaryFilter>("all");
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
   usePanelHistory(selectedGroupKey !== null, () => setSelectedGroupKey(null));
@@ -1019,6 +1020,7 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
         historyDays = Math.min(90, Math.max(1, parseInt(data.paymentHistoryDays) || 7));
         setCategories(data.categories || []);
         setMenuItems((data.items || []).map((i: any) => ({ id: i.id, categoryId: i.categoryId, name: i.name, nameKannada: i.nameKannada || "", description: i.description || "", price: i.price, priceText: i.priceText || "", tags: i.tags || "[]", isAvailable: i.isAvailable })));
+        if (data.kannadaPrint !== undefined) setKannadaPrintEnabled(data.kannadaPrint);
       }
       const paidFrom = new Date();
       paidFrom.setDate(paidFrom.getDate() - historyDays);
@@ -2078,7 +2080,11 @@ function OrderSummary({ apiCall, password, username, onOrderMore, onAddNewOrder,
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  const items = order.items.filter(i => i.status !== "voided").map(i => ({ name: i.itemName, quantity: i.quantity }));
+                                  const items = order.items.filter(i => i.status !== "voided").map(i => ({
+                                    name: i.itemName,
+                                    nameKannada: kannadaPrintEnabled ? menuItems.find((menuItem) => menuItem.id === i.menuItemId)?.nameKannada || undefined : undefined,
+                                    quantity: i.quantity,
+                                  }));
                                   if (items.length === 0) return;
                                   try {
                                     await printOrderTicket({ orderNumber: order.orderNumber, guestName: selectedGroup.guestName, guestType: selectedGroup.guestType === "hostel" ? "hostel" : "walkin", roomInfo: selectedGroup.roomInfo || undefined, items, specialInstructions: order.specialInstructions || undefined, createdAt: order.createdAt });

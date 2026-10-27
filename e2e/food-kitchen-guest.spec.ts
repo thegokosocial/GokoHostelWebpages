@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { KITCHEN_ORDER } from "./helpers/foodMocks";
+import { KITCHEN_ORDER, mockBluetoothTicketPrinter, readMockBluetoothTicketPrinter } from "./helpers/foodMocks";
 
 test.describe.configure({ timeout: 90_000 });
 
@@ -208,6 +208,52 @@ test("live /kitchen advances placed → preparing", async ({ page }) => {
     status: "preparing",
     scope: "kitchen",
   });
+});
+
+test("Kitchen Dashboard prints Kannada tickets on mobile", async ({ page }) => {
+  await mockBluetoothTicketPrinter(page);
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/auth/login") {
+      await route.fulfill({ json: { role: "staff", username: "kitchen", permissions: {} } });
+      return;
+    }
+    if (url.pathname === "/api/auth/session") {
+      await route.fulfill({ status: 401, json: { authenticated: false } });
+      return;
+    }
+    if (url.pathname === "/api/food/kitchen") {
+      const body = JSON.parse(route.request().postData() || "{}") as Record<string, unknown>;
+      if (body.action === "listOrders") {
+        await route.fulfill({ json: { success: true, data: { orders: [{ ...KITCHEN_ORDER, status: "placed" }], isBusy: false } } });
+        return;
+      }
+      if (body.action === "getMenuItems") {
+        await route.fulfill({
+          json: {
+            success: true,
+            data: {
+              items: [{ id: 7, categoryId: 1, name: "Masala Dosa", nameKannada: "ಮಸಾಲೆ ದೋಸೆ", price: 10000, isAvailable: 1, tags: "[]" }],
+              categories: [], kannadaPrint: true, kannadaDisplay: true, approvalInKitchen: false,
+            },
+          },
+        });
+        return;
+      }
+      await route.fulfill({ json: { success: true, data: {} } });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/kitchen");
+  await page.getByPlaceholder("Enter password").fill("e2e-kitchen");
+  await page.getByRole("button", { name: "Enter Kitchen" }).click();
+  await expect(page.getByRole("heading", { name: "Kitchen" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Print Ticket" }).first().click();
+  await expect.poll(async () => (await readMockBluetoothTicketPrinter(page)).chunks.length).toBeGreaterThan(0);
+  expect((await readMockBluetoothTicketPrinter(page)).renderedText).toContain("ಮಸಾಲೆ ದೋಸೆ");
 });
 
 test("kitchen Out of Stock panel toggles item availability", async ({ page }) => {

@@ -3,8 +3,10 @@ import {
   SAMPLE_ORDER,
   defaultFoodOrdersResponse,
   loginAdmin,
+  mockBluetoothTicketPrinter,
   mockAdminShell,
   openWalkinOrderDrawer,
+  readMockBluetoothTicketPrinter,
 } from "./helpers/foodMocks";
 
 test.describe.configure({ timeout: 90_000 });
@@ -60,6 +62,80 @@ test("Order Summary cash pay records markOrderPaid", async ({ page }) => {
     orderIds: [10],
     paymentMethod: "cash",
   });
+});
+
+test("Admin Order Summary prints Kannada as a raster kitchen-ticket line when enabled", async ({ page }) => {
+  await mockBluetoothTicketPrinter(page);
+  const order = {
+    ...SAMPLE_ORDER,
+    status: "placed",
+    items: [{ ...SAMPLE_ORDER.items[0], itemName: "Aloo Paratha" }],
+  };
+  await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true },
+    onFoodOrders: (body) => {
+      if (body.action === "getMenu") {
+        return {
+          json: {
+            categories: [{ id: 1, name: "Snacks", discountExempt: 0 }],
+            items: [{ id: 4, categoryId: 1, name: "Aloo Paratha", nameKannada: "ಆಲೂ ಪರಾಠ", description: "", price: 20000, priceText: "", tags: "[]", isAvailable: 1 }],
+            paymentHistoryDays: 7,
+            kannadaPrint: true,
+          },
+        };
+      }
+      return { json: defaultFoodOrdersResponse(body, order) };
+    },
+  });
+
+  await loginAdmin(page);
+  const drawer = await openWalkinOrderDrawer(page);
+  await drawer.locator('[data-order-id="10"] button[title="Print kitchen ticket"]').click();
+  await expect.poll(async () => {
+    const bytes = (await readMockBluetoothTicketPrinter(page)).chunks.flat();
+    return bytes.some((byte, index) => byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30);
+  }).toBe(true);
+  const ticket = await readMockBluetoothTicketPrinter(page);
+  const bytes = ticket.chunks.flat();
+  expect(ticket.renderedText).toContain("ಆಲೂ ಪರಾಠ");
+  const rasterStart = bytes.findIndex((byte, index) => byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30);
+  expect(rasterStart).toBeGreaterThanOrEqual(0);
+  const rasterLength = (bytes[rasterStart + 4] + bytes[rasterStart + 5] * 256) * (bytes[rasterStart + 6] + bytes[rasterStart + 7] * 256);
+  expect(bytes.slice(rasterStart + 8, rasterStart + 8 + rasterLength).some(Boolean)).toBe(true);
+});
+
+test("Admin Order Summary omits Kannada raster data when kitchen-ticket Kannada is disabled", async ({ page }) => {
+  await mockBluetoothTicketPrinter(page);
+  const order = {
+    ...SAMPLE_ORDER,
+    status: "placed",
+    items: [{ ...SAMPLE_ORDER.items[0], itemName: "Aloo Paratha" }],
+  };
+  await mockAdminShell(page, {
+    permissions: { canViewFoodOrders: true, canViewFoodTabs: true },
+    onFoodOrders: (body) => body.action === "getMenu"
+      ? {
+        json: {
+          categories: [{ id: 1, name: "Snacks", discountExempt: 0 }],
+          items: [{ id: 4, categoryId: 1, name: "Aloo Paratha", nameKannada: "ಆಲೂ ಪರಾಠ", description: "", price: 20000, priceText: "", tags: "[]", isAvailable: 1 }],
+          paymentHistoryDays: 7,
+          kannadaPrint: false,
+        },
+      }
+      : { json: defaultFoodOrdersResponse(body, order) },
+  });
+
+  await loginAdmin(page);
+  const drawer = await openWalkinOrderDrawer(page);
+  await drawer.locator('[data-order-id="10"] button[title="Print kitchen ticket"]').click();
+  await expect.poll(async () => {
+    const bytes = (await readMockBluetoothTicketPrinter(page)).chunks.flat();
+    return bytes.some((byte, index) => byte === 0x1d && bytes[index + 1] === 0x56 && bytes[index + 2] === 0);
+  }).toBe(true);
+  const ticket = await readMockBluetoothTicketPrinter(page);
+  const bytes = ticket.chunks.flat();
+  expect(ticket.renderedText).not.toContain("ಆಲೂ ಪರಾಠ");
+  expect(bytes.some((byte, index) => byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30)).toBe(false);
 });
 
 test("Order Summary discount applies via Apply Discount", async ({ page }) => {

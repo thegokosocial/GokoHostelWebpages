@@ -2,6 +2,48 @@ import { expect, type Page } from "@playwright/test";
 
 export type FoodRequest = Record<string, unknown>;
 
+export async function mockBluetoothTicketPrinter(page: Page) {
+  await page.addInitScript(() => {
+    const ticketPrinter = { chunks: [] as number[][], renderedText: [] as string[] };
+    const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+      ticketPrinter.renderedText.push(String(text));
+      if (maxWidth === undefined) return originalFillText.call(this, text, x, y);
+      return originalFillText.call(this, text, x, y, maxWidth);
+    };
+    Object.defineProperty(navigator, "bluetooth", {
+      configurable: true,
+      value: {
+        requestDevice: async () => ({
+          gatt: {
+            connect: async () => ({
+              getPrimaryService: async () => ({
+                getCharacteristic: async () => ({
+                  properties: { writeWithoutResponse: true },
+                  writeValueWithoutResponse: async (value: BufferSource) => {
+                    ticketPrinter.chunks.push(Array.from(new Uint8Array(value as ArrayBuffer)));
+                  },
+                }),
+              }),
+            }),
+          },
+          addEventListener: () => {},
+        }),
+      },
+    });
+    (window as Window & { __ticketPrinter?: typeof ticketPrinter }).__ticketPrinter = ticketPrinter;
+  });
+}
+
+export function readMockBluetoothTicketPrinter(page: Page) {
+  return page.evaluate(() => {
+    const ticketPrinter = (window as Window & {
+      __ticketPrinter?: { chunks: number[][]; renderedText: string[] };
+    }).__ticketPrinter;
+    return ticketPrinter || { chunks: [], renderedText: [] };
+  });
+}
+
 export const SAMPLE_ORDER = {
   id: 10,
   orderNumber: "D265-10",
