@@ -64,12 +64,15 @@ test("Order Summary cash pay records markOrderPaid", async ({ page }) => {
   });
 });
 
-test("Admin Order Summary prints Kannada as a raster kitchen-ticket line when enabled", async ({ page }) => {
+test("Admin Order Summary prints Kannada as an ESC/POS image kitchen-ticket line when enabled", async ({ page }) => {
   await mockBluetoothTicketPrinter(page);
   const order = {
     ...SAMPLE_ORDER,
     status: "placed",
-    items: [{ ...SAMPLE_ORDER.items[0], itemName: "Aloo Paratha" }],
+    items: [
+      { ...SAMPLE_ORDER.items[0], itemName: "Aloo Paratha" },
+      { ...SAMPLE_ORDER.items[0], id: 21, menuItemId: 5, itemName: "Veg Fried Rice" },
+    ],
   };
   await mockAdminShell(page, {
     permissions: { canViewFoodOrders: true, canViewFoodTabs: true },
@@ -78,7 +81,10 @@ test("Admin Order Summary prints Kannada as a raster kitchen-ticket line when en
         return {
           json: {
             categories: [{ id: 1, name: "Snacks", discountExempt: 0 }],
-            items: [{ id: 4, categoryId: 1, name: "Aloo Paratha", nameKannada: "ಆಲೂ ಪರಾಠ", description: "", price: 20000, priceText: "", tags: "[]", isAvailable: 1 }],
+            items: [
+              { id: 4, categoryId: 1, name: "Aloo Paratha", nameKannada: "ಆಲೂ ಪರಾಠ", description: "", price: 20000, priceText: "", tags: "[]", isAvailable: 1 },
+              { id: 5, categoryId: 1, name: "Veg Fried Rice", nameKannada: "ವೆಜ್ ಫ್ರೈಡ್ ರೈಸ್", description: "", price: 20000, priceText: "", tags: "[]", isAvailable: 1 },
+            ],
             paymentHistoryDays: 7,
             kannadaPrint: true,
           },
@@ -93,18 +99,29 @@ test("Admin Order Summary prints Kannada as a raster kitchen-ticket line when en
   await drawer.locator('[data-order-id="10"] button[title="Print kitchen ticket"]').click();
   await expect.poll(async () => {
     const bytes = (await readMockBluetoothTicketPrinter(page)).chunks.flat();
-    return bytes.some((byte, index) => byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30);
+    return bytes.length >= 3 && bytes.slice(-3).every((byte) => byte === 0x0a);
   }).toBe(true);
   const ticket = await readMockBluetoothTicketPrinter(page);
   const bytes = ticket.chunks.flat();
   expect(ticket.renderedText).toContain("ಆಲೂ ಪರಾಠ");
-  const rasterStart = bytes.findIndex((byte, index) => byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30);
-  expect(rasterStart).toBeGreaterThanOrEqual(0);
-  const rasterLength = (bytes[rasterStart + 4] + bytes[rasterStart + 5] * 256) * (bytes[rasterStart + 6] + bytes[rasterStart + 7] * 256);
-  expect(bytes.slice(rasterStart + 8, rasterStart + 8 + rasterLength).some(Boolean)).toBe(true);
+  const imageStart = bytes.findIndex((byte, index) => byte === 0x1b && bytes[index + 1] === 0x2a && bytes[index + 2] === 0x21);
+  expect(imageStart).toBeGreaterThanOrEqual(0);
+  let afterKannada = imageStart;
+  let hasInk = false;
+  while (bytes[afterKannada] === 0x1b && bytes[afterKannada + 1] === 0x2a && bytes[afterKannada + 2] === 0x21) {
+    const imageLength = (bytes[afterKannada + 3] + bytes[afterKannada + 4] * 256) * 3;
+    hasInk ||= bytes.slice(afterKannada + 5, afterKannada + 5 + imageLength).some(Boolean);
+    afterKannada += 5 + imageLength;
+    expect(bytes[afterKannada]).toBe(0x0a);
+    afterKannada += 1;
+  }
+  expect(hasInk).toBe(true);
+  const nextItem = Array.from(new TextEncoder().encode("  2x Veg Fried Rice"));
+  expect(Array.from(bytes.slice(afterKannada, afterKannada + 3))).toEqual([0x1b, 0x45, 1]);
+  expect(Array.from(bytes.slice(afterKannada + 3, afterKannada + 3 + nextItem.length))).toEqual(nextItem);
 });
 
-test("Admin Order Summary omits Kannada raster data when kitchen-ticket Kannada is disabled", async ({ page }) => {
+test("Admin Order Summary omits Kannada image data when kitchen-ticket Kannada is disabled", async ({ page }) => {
   await mockBluetoothTicketPrinter(page);
   const order = {
     ...SAMPLE_ORDER,
@@ -130,12 +147,12 @@ test("Admin Order Summary omits Kannada raster data when kitchen-ticket Kannada 
   await drawer.locator('[data-order-id="10"] button[title="Print kitchen ticket"]').click();
   await expect.poll(async () => {
     const bytes = (await readMockBluetoothTicketPrinter(page)).chunks.flat();
-    return bytes.some((byte, index) => byte === 0x1d && bytes[index + 1] === 0x56 && bytes[index + 2] === 0);
+    return bytes.length >= 3 && bytes.slice(-3).every((byte) => byte === 0x0a);
   }).toBe(true);
   const ticket = await readMockBluetoothTicketPrinter(page);
   const bytes = ticket.chunks.flat();
   expect(ticket.renderedText).not.toContain("ಆಲೂ ಪರಾಠ");
-  expect(bytes.some((byte, index) => byte === 0x1d && bytes[index + 1] === 0x76 && bytes[index + 2] === 0x30)).toBe(false);
+  expect(bytes.some((byte, index) => byte === 0x1b && bytes[index + 1] === 0x2a && bytes[index + 2] === 0x21)).toBe(false);
 });
 
 test("Order Summary discount applies via Apply Discount", async ({ page }) => {
